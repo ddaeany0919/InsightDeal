@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+selenium
+selenium-stealth
+beautifulsoup4
+requests
+google-generativeai
+pytesseract
+pillow
