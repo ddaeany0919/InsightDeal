@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import database
@@ -49,7 +49,8 @@ def get_deals_list(page: int = 1, page_size: int = 20):
             "imageUrl": deal.image_url,
             "category": deal.category,
             "is_closed": deal.is_closed, # 품절/종료 여부
-            "deal_type": deal.deal_type  # 딜 유형 (일반/이벤트)
+            "deal_type": deal.deal_type,  # 딜 유형 (일반/이벤트)
+            "ecommerce_link": deal.ecommerce_link
         } for deal in deals_from_db]
         
         return results
@@ -75,8 +76,10 @@ def get_deal_detail(deal_id: int):
             "shipping_fee": deal.shipping_fee,
             "category": deal.category,        # 카테고리 추가
             "post_link": deal.post_link,        # 출처 링크 추가
-            "ecommerce_link": deal.ecommerce_link, # 상품 링크로 변경
-            "content_html": deal.content_html
+            "content_html": deal.content_html,
+            "ecommerce_link": deal.ecommerce_link,
+            "has_options": getattr(deal, 'has_options', False),
+            "options_data": getattr(deal, 'options_data', None)
         }
     finally:
         db.close()

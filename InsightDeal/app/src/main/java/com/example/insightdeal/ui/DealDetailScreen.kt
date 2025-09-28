@@ -113,16 +113,35 @@ fun DealDetailScreen(
 
                         Button(
                             onClick = {
-                                val rawUrl = deal.purchaseLink ?: deal.postLink
-                                rawUrl?.let {
-                                    val decodedUrl = try {
-                                        val bytes = Base64.decode(it, Base64.DEFAULT)
-                                        String(bytes, charset("UTF-8"))
+                                Log.d("DealDetailScreen", "🔥 버튼 클릭됨!")
+
+                                val rawUrl = deal.ecommerceLink?.takeIf { it.isNotBlank() } ?: deal.postLink
+
+                                rawUrl?.let { url ->
+                                    Log.d("DealDetailScreen", "Selected URL: '$url'")
+
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+                                        // ✨ resolveActivity 체크 제거하고 강제 실행
+                                        context.startActivity(intent)
+                                        Log.d("DealDetailScreen", "Intent 실행 완료: $url")
+
                                     } catch (e: Exception) {
-                                        it // 디코딩 실패하면 원본 그대로 사용
+                                        Log.e("DealDetailScreen", "Intent 실행 실패: $url", e)
+
+                                        // ✨ 실패 시 대체 방법: 시스템 선택기 표시
+                                        try {
+                                            val chooser = Intent.createChooser(
+                                                Intent(Intent.ACTION_VIEW, Uri.parse(url)),
+                                                "브라우저 선택"
+                                            )
+                                            context.startActivity(chooser)
+                                        } catch (e2: Exception) {
+                                            Log.e("DealDetailScreen", "Chooser도 실패: $url", e2)
+                                        }
                                     }
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(decodedUrl))
-                                    context.startActivity(intent)
                                 }
                             },
                             modifier = Modifier

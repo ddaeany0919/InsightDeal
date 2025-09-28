@@ -16,6 +16,7 @@ data class DealItem(
     @SerializedName("category") val category: String? = "기타",
     @SerializedName("is_closed") val isClosed: Boolean,
     @SerializedName("deal_type") val dealType: String,
+    @SerializedName("ecommerce_link") val ecommerceLink: String? = null,
 )
 
 /**
@@ -30,10 +31,12 @@ data class DealDetail(
     @SerializedName("shipping_fee") val shippingFee: String,
     @SerializedName("category") val category: String? = "기타",
     @SerializedName("content_html") val contentHtml: String?,
-    @SerializedName("purchase_link") val purchaseLink: String?,
+    @SerializedName("ecommerce_link") val ecommerceLink: String?,
     @SerializedName("post_link") val postLink: String?,
-    @SerializedName("related_deals")
-    val relatedDeals: List<DealItem> = emptyList() // 기본 빈 리스트 할당으로 null 안정성 강화
+    @SerializedName("has_options") val hasOptions: Boolean = false,
+    @SerializedName("options_data") val optionsData: String? = null,
+    @SerializedName("base_product_name") val baseProductName: String? = null,
+    @SerializedName("related_deals") val relatedDeals: List<DealItem> = emptyList()
 )
 
 /**
@@ -42,4 +45,14 @@ data class DealDetail(
 data class PriceHistoryItem(
     @SerializedName("checked_at") val checkedAt: String,
     @SerializedName("price") val price: String
+)
+
+/**
+ * 옵션 정보 데이터 클래스 (새로 추가)
+ */
+data class ProductOption(
+    @SerializedName("option_name") val optionName: String,
+    @SerializedName("price") val price: String,
+    @SerializedName("ecommerce_link") val ecommerceLink: String?,
+    @SerializedName("full_title") val fullTitle: String
 )

@@ -33,9 +33,12 @@ class Deal(Base):
     category = Column(String(100), default="기타")
     indexed_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     is_closed = Column(Boolean, default=False, nullable=False)
-    deal_type = Column(String(50), default='일반', nullable=False) 
+    deal_type = Column(String(50), default='일반', nullable=False)
     content_html = Column(TEXT, nullable=True)
     group_id = Column(String(32), index=True, nullable=True)
+    has_options = Column(Boolean, default=False, nullable=False)
+    options_data = Column(TEXT, nullable=True)
+    base_product_name = Column(String(500), nullable=True)
 
     __table_args__ = (UniqueConstraint('post_link', 'title', name='_post_link_title_uc'),)
 

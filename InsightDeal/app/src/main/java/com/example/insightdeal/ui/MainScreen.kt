@@ -320,7 +320,7 @@ fun DealCard(deal: DealItem, onClick: () -> Unit) {
                     Spacer(modifier = Modifier.height(6.dp))
 
                     // --- 가격 ---
-                    // ✨ 수정: '정보 없음'일 때 연한 회색 및 취소선으로 표시
+                    // '정보 없음'일 때 연한 회색 및 취소선으로 표시
                     val priceText = if (deal.price == "정보 없음") "가격 정보 없음" else deal.price
                     val finalPriceColor = if (deal.price == "정보 없음") MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else priceTextColor
 
