@@ -251,6 +251,9 @@ fun InfoCard(deal: DealDetail) {
 
 @Composable
 fun PromotionInfoCard(htmlContent: String?) {
+    if (htmlContent.isNullOrBlank()) {
+        return
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()

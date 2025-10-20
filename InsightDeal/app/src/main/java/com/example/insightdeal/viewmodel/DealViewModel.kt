@@ -78,6 +78,7 @@ class DealViewModel : ViewModel() {
                 _uiState.value = currentState.copy(isPaginating = true)
             }
             try {
+                Log.d("DealViewModel", "Calling API: ${ApiClient.BASE_URL}api/deals?page=$currentPage")
                 val newDeals = ApiClient.apiService.getDeals(page = currentPage)
 
                 _uiState.update {
@@ -98,9 +99,21 @@ class DealViewModel : ViewModel() {
                     )
                 }
                 Log.d("DealViewModel", "Deals fetched page $currentPage, count: ${newDeals.size}")
+            } catch (e: com.google.gson.JsonSyntaxException) {
+                // ✅ JSON 파싱 오류 구체적 처리
+                Log.e("DealViewModel", "JSON 파싱 오류 - 서버에서 올바르지 않은 응답을 받았습니다", e)
+                _uiState.value = DealsUiState.Error("서버 응답 오류: JSON이 아닌 데이터를 받았습니다. 서버 상태를 확인해주세요.")
+            } catch (e: retrofit2.HttpException) {
+                // ✅ HTTP 오류 처리
+                Log.e("DealViewModel", "HTTP 오류: ${e.code()}", e)
+                _uiState.value = DealsUiState.Error("서버 연결 오류: ${e.code()}")
+            } catch (e: java.net.ConnectException) {
+                // ✅ 연결 오류 처리
+                Log.e("DealViewModel", "연결 실패", e)
+                _uiState.value = DealsUiState.Error("서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.")
             } catch (e: Exception) {
-                Log.e("DealViewModel", "Error fetching deals", e)
-                _uiState.value = DealsUiState.Error(e.message ?: "알 수 없는 오류")
+                Log.e("DealViewModel", "API 호출 오류", e)
+                _uiState.value = DealsUiState.Error("오류: ${e.message}")
             }
         }
     }

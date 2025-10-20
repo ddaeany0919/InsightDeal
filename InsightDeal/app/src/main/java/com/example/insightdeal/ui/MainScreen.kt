@@ -1,36 +1,39 @@
 package com.example.insightdeal.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.MonetizationOn
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
-import com.example.insightdeal.model.DealItem
-import com.example.insightdeal.network.ApiClient
-import com.example.insightdeal.viewmodel.DealsUiState
+import androidx.compose.ui.*
+import androidx.compose.ui.draw.*
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.layout.*
+import androidx.compose.ui.platform.*
+import androidx.compose.ui.text.*
+import androidx.compose.ui.text.font.*
+import androidx.compose.ui.text.style.*
+import androidx.compose.ui.unit.*
+import coil.compose.*
+import coil.request.*
+import com.example.insightdeal.model.*
+import com.example.insightdeal.network.*
+import com.example.insightdeal.ui.components.SearchDialog
+import com.example.insightdeal.viewmodel.*
+import kotlinx.coroutines.*
+import com.example.insightdeal.ui.search.*
+import com.example.insightdeal.data.BookmarkManager
+
+// ✅ 카테고리 데이터 클래스
+data class CategoryItem(
+    val name: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,101 +41,484 @@ fun MainScreen(
     uiState: DealsUiState,
     onDealClick: (Int) -> Unit,
     onRefresh: () -> Unit,
-    onLoadMore: () -> Unit, // 다음 페이지 로드 요청 함수
+    onLoadMore: () -> Unit,
     onCategorySelect: (String) -> Unit,
-    onCommunityToggle: (String) -> Unit
+    onCommunityToggle: (String) -> Unit,
+    onBookmarkClick: () -> Unit
 ) {
+    var showSearch by remember { mutableStateOf(false) }
     var showFilterDialog by remember { mutableStateOf(false) }
-    val gridState = rememberLazyGridState() // 그리드의 스크롤 상태를 기억
+    var showCategoryMenu by remember { mutableStateOf(false) }
+    var isDarkMode by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+    var currentSearchQuery by remember { mutableStateOf("") }
+    var isSearchMode by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("InsightDeal 🔥", fontWeight = FontWeight.Bold) },
-                actions = {
-                    IconButton(onClick = onRefresh) {
-                        Icon(Icons.Default.Refresh, contentDescription = "새로고침")
-                    }
-                    IconButton(onClick = { showFilterDialog = true }) {
-                        Icon(Icons.Default.FilterList, contentDescription = "필터")
-                    }
+    // ✅ 검색된 딜 필터링
+    val displayDeals = remember(uiState, currentSearchQuery, isSearchMode) {
+        when {
+            uiState is DealsUiState.Success && isSearchMode && currentSearchQuery.isNotBlank() -> {
+                uiState.filteredDeals.filter { deal ->
+                    deal.title.contains(currentSearchQuery, ignoreCase = true) ||
+                            deal.shopName.contains(currentSearchQuery, ignoreCase = true) ||
+                            deal.community.contains(currentSearchQuery, ignoreCase = true)
                 }
-            )
+            }
+            uiState is DealsUiState.Success -> uiState.filteredDeals
+            else -> emptyList()
         }
-    ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues)) {
-            if (uiState is DealsUiState.Success) {
-                CategoryTabs(
-                    categories = listOf("전체", "디지털/가전", "PC/하드웨어", "음식/식품", "의류/패션", "생활/잡화", "모바일/상품권", "패키지/이용권", "적립/이벤트", "기타", "해외핫딜", "알리익스프레스"),
-                    selectedCategory = uiState.selectedCategory,
-                    onCategorySelected = onCategorySelect
-                )
-                if (showFilterDialog) {
-                    FilterDialog(
-                        allAvailableCommunities = uiState.allAvailableCommunities,
-                        selectedCommunities = uiState.selectedCommunities,
-                        onDismiss = { showFilterDialog = false },
-                        onCommunityToggle = onCommunityToggle
+    }
+
+    MaterialTheme(
+        colorScheme = if (isDarkMode) darkColorScheme() else lightColorScheme()
+    ) {
+        Scaffold(
+            topBar = {
+                Box {
+                    CleanTopAppBar(
+                        onSearchClick = { showSearch = true },
+                        onMenuClick = { showMenu = true }
+                    )
+
+                    // 햄버거 메뉴
+                    TopAppBarMenu(
+                        expanded = showMenu,
+                        onDismiss = { showMenu = false },
+                        onRefreshClick = onRefresh,
+                        onFilterClick = { showFilterDialog = true },
+                        onDarkModeToggle = { isDarkMode = !isDarkMode },
+                        isDarkMode = isDarkMode,
+                        onBookmarkClick = onBookmarkClick
                     )
                 }
             }
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .background(MaterialTheme.colorScheme.background)
+            ) {
+                // ✅ 검색 모드가 아닐 때만 카테고리 메뉴 표시
+                if (!isSearchMode) {
+                    CollapsibleCategoryMenu(
+                        categories = listOf(
+                            CategoryItem("전체", Icons.Default.Home),
+                            CategoryItem("디지털/가전", Icons.Default.Computer),
+                            CategoryItem("PC/하드웨어", Icons.Default.Memory),
+                            CategoryItem("음식/식품", Icons.Default.Restaurant),
+                            CategoryItem("의류/패션", Icons.Default.Checkroom),
+                            CategoryItem("생활/잡화", Icons.Default.Home),
+                            CategoryItem("모바일/상품권", Icons.Default.PhoneAndroid),
+                            CategoryItem("패키지/이용권", Icons.Default.CardGiftcard),
+                            CategoryItem("적립/이벤트", Icons.Default.Stars),
+                            CategoryItem("해외핫딜", Icons.Default.Flight),
+                            CategoryItem("알리익스프레스", Icons.Default.ShoppingCart)
+                        ),
+                        selectedCategory = if (uiState is DealsUiState.Success) uiState.selectedCategory else "전체",
+                        isExpanded = showCategoryMenu,
+                        onExpandedChange = { showCategoryMenu = it },
+                        onCategorySelect = onCategorySelect
+                    )
+                } else {
+                    // ✅ 검색 모드일 때 검색 결과 헤더
+                    SearchResultHeader(
+                        searchQuery = currentSearchQuery,
+                        resultCount = displayDeals.size
+                    )
+                }
 
-            Box(modifier = Modifier.fillMaxSize()) {
+                // 메인 콘텐츠
                 when (uiState) {
                     is DealsUiState.Loading -> {
-                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
+                        }
                     }
                     is DealsUiState.Success -> {
-                        if (uiState.filteredDeals.isEmpty() && !uiState.isPaginating) {
-                            Text(
-                                text = "앗, 조건에 맞는 딜을 찾지 못했어요!",
-                                modifier = Modifier.align(Alignment.Center),
-                                textAlign = TextAlign.Center
-                            )
+                        val uniqueDeals = remember(displayDeals) {
+                            displayDeals
+                                .distinctBy { "${it.id}_${it.title}_${it.community}" }
+                                .sortedByDescending { it.id }
+                        }
+
+                        if (uniqueDeals.isEmpty()) {
+                            if (isSearchMode && currentSearchQuery.isNotBlank()) {
+                                SearchEmptyState(searchQuery = currentSearchQuery)
+                            } else {
+                                EmptyStateMessage()
+                            }
                         } else {
-                            LazyVerticalGrid(
-                                columns = GridCells.Adaptive(minSize = 160.dp),
-                                modifier = Modifier.fillMaxSize(),
-                                state = gridState, // 스크롤 상태 연결
-                                contentPadding = PaddingValues(4.dp)
-                            ) {
-                                items(uiState.filteredDeals, key = { it.id }) { deal ->
-                                    DealCard(deal = deal, onClick = { onDealClick(deal.id) })
-                                }
-                                // 다음 페이지 로딩 중일 때, 맨 아래에 로딩 아이콘 표시
-                                if (uiState.isPaginating) {
-                                    item(span = { GridItemSpan(maxLineSpan) }) {
-                                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                                            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                val listState = rememberLazyListState()
+                                val coroutineScope = rememberCoroutineScope()
+
+                                LazyColumn(
+                                    state = listState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    items(uniqueDeals) { deal ->
+                                        ImprovedDealCard(
+                                            deal = deal,
+                                            onClick = { onDealClick(deal.id) }
+                                        )
+                                    }
+
+                                    if (uiState.isPaginating) {
+                                        item {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(16.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                CircularProgressIndicator()
+                                            }
                                         }
                                     }
                                 }
-                            }
 
-                            // 스크롤이 맨 아래 근처에 도달했는지 확인하고 다음 페이지 로드
-                            val isScrolledToEnd = remember {
-                                derivedStateOf {
-                                    val lastVisibleItemIndex = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-                                    val totalItemsCount = gridState.layoutInfo.totalItemsCount
-                                    lastVisibleItemIndex >= totalItemsCount - 5 && totalItemsCount > 0
+                                // ✅ 플로팅 버튼
+                                val showScrollToTop by remember {
+                                    derivedStateOf {
+                                        listState.firstVisibleItemIndex > 3
+                                    }
                                 }
-                            }
 
-                            if (isScrolledToEnd.value && uiState.canLoadMore && !uiState.isPaginating) {
-                                LaunchedEffect(Unit) {
-                                    onLoadMore()
+                                if (showScrollToTop) {
+                                    FloatingActionButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                listState.animateScrollToItem(0, scrollOffset = 0)
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(16.dp)
+                                            .size(56.dp),
+                                        shape = CircleShape,
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    ) {
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowUp,
+                                                contentDescription = "맨 위로",
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                            Text(
+                                                text = "TOP",
+                                                fontSize = 8.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                letterSpacing = 0.5.sp
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // ✅ 무한 스크롤 처리
+                                val isScrolledToEnd = remember {
+                                    derivedStateOf {
+                                        val lastVisibleItemIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                                        val totalItemsCount = listState.layoutInfo.totalItemsCount
+                                        lastVisibleItemIndex >= totalItemsCount - 5 && totalItemsCount > 0
+                                    }
+                                }
+
+                                if (isScrolledToEnd.value && uiState.canLoadMore && !uiState.isPaginating) {
+                                    LaunchedEffect(Unit) {
+                                        onLoadMore()
+                                    }
                                 }
                             }
                         }
                     }
                     is DealsUiState.Error -> {
-                        Text(
-                            text = "오류가 발생했어요: ${uiState.message}",
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .padding(16.dp),
-                            color = MaterialTheme.colorScheme.error,
-                            textAlign = TextAlign.Center
+                        ErrorMessage(message = uiState.message)
+                    }
+                }
+            }
+        }
+
+        // 검색 다이얼로그
+        if (showSearch) {
+            SearchDialog(
+                onDismiss = { showSearch = false },
+                onSearch = { query ->
+                    if (query.isNotBlank()) {
+                        currentSearchQuery = query
+                        isSearchMode = true
+                    }
+                    showSearch = false
+                }
+            )
+        }
+
+        // 필터 다이얼로그
+        if (showFilterDialog && uiState is DealsUiState.Success) {
+            FilterDialog(
+                allAvailableCommunities = uiState.allAvailableCommunities,
+                selectedCommunities = uiState.selectedCommunities,
+                onDismiss = { showFilterDialog = false },
+                onCommunityToggle = onCommunityToggle
+            )
+        }
+    }
+}
+
+// ✅ 깔끔한 상단바
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CleanTopAppBar(
+    onSearchClick: () -> Unit,
+    onMenuClick: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            Text(
+                "InsightDeal",
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                color = MaterialTheme.colorScheme.primary
+            )
+        },
+        actions = {
+            // 검색 버튼
+            IconButton(onClick = onSearchClick) {
+                Icon(
+                    Icons.Default.Search,
+                    contentDescription = "검색",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            // 햄버거 메뉴
+            IconButton(onClick = onMenuClick) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "메뉴",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    )
+}
+
+// ✅ 햄버거 메뉴 (북마크 개수 포함)
+@Composable
+fun TopAppBarMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onRefreshClick: () -> Unit,
+    onFilterClick: () -> Unit,
+    onDarkModeToggle: () -> Unit,
+    isDarkMode: Boolean,
+    onBookmarkClick: () -> Unit
+) {
+    val context = LocalContext.current
+    val bookmarkManager = remember { BookmarkManager.getInstance(context) }
+    val bookmarkCount by remember {
+        derivedStateOf { bookmarkManager.getBookmarkCount() }
+    }
+
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        modifier = Modifier.width(200.dp),
+        offset = DpOffset(x = (-16).dp, y = 2.dp)
+    ) {
+        // 북마크 (개수 표시)
+        DropdownMenuItem(
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Bookmark,
+                            contentDescription = null,
+                            tint = if (bookmarkCount > 0) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text("북마크")
+                    }
+
+                    // 북마크 개수 표시
+                    if (bookmarkCount > 0) {
+                        Badge(
+                            containerColor = Color(0xFFFF9800),
+                            contentColor = Color.White
+                        ) {
+                            Text(
+                                text = if (bookmarkCount > 99) "99+" else bookmarkCount.toString(),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            },
+            onClick = {
+                onBookmarkClick()
+                onDismiss()
+            }
+        )
+
+        HorizontalDivider()
+
+        // 새로고침
+        DropdownMenuItem(
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text("새로고침")
+                }
+            },
+            onClick = {
+                onRefreshClick()
+                onDismiss()
+            }
+        )
+
+        // 필터
+        DropdownMenuItem(
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        Icons.Default.FilterList,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text("필터")
+                }
+            },
+            onClick = {
+                onFilterClick()
+                onDismiss()
+            }
+        )
+
+        HorizontalDivider()
+
+        // 다크모드 토글
+        DropdownMenuItem(
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(if (isDarkMode) "라이트 모드" else "다크 모드")
+                }
+            },
+            onClick = {
+                onDarkModeToggle()
+                onDismiss()
+            }
+        )
+    }
+}
+
+@Composable
+fun CollapsibleCategoryMenu(
+    categories: List<CategoryItem>,
+    selectedCategory: String,
+    isExpanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onCategorySelect: (String) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = if (isExpanded) 8.dp else 4.dp
+    ) {
+        Column {
+            // 현재 선택된 카테고리 표시
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onExpandedChange(!isExpanded) }
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val currentCategory = categories.find { it.name == selectedCategory }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = currentCategory?.icon ?: Icons.Default.Home,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = selectedCategory,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (isExpanded) "접기" else "펼치기",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // 확장 가능한 카테고리 리스트
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = slideInVertically() + expandVertically() + fadeIn(),
+                exit = slideOutVertically() + shrinkVertically() + fadeOut()
+            ) {
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 400.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(categories) { category ->
+                        CategoryMenuItem(
+                            category = category,
+                            isSelected = category.name == selectedCategory,
+                            onClick = {
+                                onCategorySelect(category.name)
+                                onExpandedChange(false)
+                            }
                         )
                     }
                 }
@@ -142,25 +528,315 @@ fun MainScreen(
 }
 
 @Composable
-fun CategoryTabs(
-    categories: List<String>,
-    selectedCategory: String,
-    onCategorySelected: (String) -> Unit
+fun CategoryMenuItem(
+    category: CategoryItem,
+    isSelected: Boolean,
+    onClick: () -> Unit
 ) {
-    ScrollableTabRow(
-        selectedTabIndex = categories.indexOf(selectedCategory),
-        edgePadding = 0.dp
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(8.dp),
+        color = if (isSelected)
+            MaterialTheme.colorScheme.primaryContainer
+        else
+            Color.Transparent
     ) {
-        categories.forEach { category ->
-            Tab(
-                selected = category == selectedCategory,
-                onClick = { onCategorySelected(category) },
-                text = { Text(category) }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = category.icon,
+                contentDescription = null,
+                tint = if (isSelected)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = category.name,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                color = if (isSelected)
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                else
+                    MaterialTheme.colorScheme.onSurface
+            )
+            if (isSelected) {
+                Spacer(modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "선택됨",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ImprovedDealCard(
+    deal: DealItem,
+    onClick: () -> Unit
+) {
+    val context = LocalContext.current
+    val bookmarkManager = remember { BookmarkManager.getInstance(context) }
+    val isBookmarked by remember {
+        derivedStateOf { bookmarkManager.isBookmarked(deal.id) }
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // ✅ 이미지 (컴팩트하게)
+            Card(
+                modifier = Modifier.size(80.dp),
+                shape = RoundedCornerShape(8.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                if (deal.dealType == "이벤트") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFFF3E5F5)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Stars,
+                            contentDescription = "이벤트",
+                            modifier = Modifier.size(24.dp),
+                            tint = Color(0xFF9C27B0)
+                        )
+                    }
+                } else {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(ApiClient.BASE_URL.removeSuffix("/") + deal.imageUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = deal.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
+
+            // ✅ 콘텐츠 영역
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // 상단: 커뮤니티 + 쇼핑몰 + 북마크
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 커뮤니티 + 쇼핑몰
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        // 커뮤니티 태그
+                        Text(
+                            text = deal.community,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .background(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+
+                        // 쇼핑몰 이름
+                        Text(
+                            text = deal.shopName,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // 북마크 버튼
+                    IconButton(
+                        onClick = { bookmarkManager.toggleBookmark(deal) },
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                            contentDescription = if (isBookmarked) "북마크 해제" else "북마크 추가",
+                            tint = if (isBookmarked) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+
+                // 제목
+                Text(
+                    text = deal.title,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // 하단: 가격 + 배송비
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    // 가격
+                    Text(
+                        text = if (deal.price == "정보 없음") "가격 미표시" else deal.price,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = if (deal.price == "정보 없음")
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        else
+                            MaterialTheme.colorScheme.primary
+                    )
+
+                    // 배송비
+                    Text(
+                        text = when {
+                            deal.shippingFee.contains("무료") -> "무료배송"
+                            deal.shippingFee == "정보 없음" -> "배송비 미표시"
+                            else -> deal.shippingFee
+                        },
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = when {
+                            deal.shippingFee.contains("무료") -> Color(0xFF4CAF50)
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier
+                            .background(
+                                when {
+                                    deal.shippingFee.contains("무료") -> Color(0xFF4CAF50).copy(alpha = 0.1f)
+                                    else -> MaterialTheme.colorScheme.surfaceVariant
+                                },
+                                RoundedCornerShape(4.dp)
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+
+        // 종료된 딜 오버레이
+        if (deal.isClosed) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "종료된 딜",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .background(
+                            Color.Black.copy(alpha = 0.7f),
+                            RoundedCornerShape(6.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyStateMessage() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.SearchOff,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "조건에 맞는 딜을 찾지 못했어요",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "다른 카테고리나 필터를 시도해보세요",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
 }
 
+@Composable
+fun ErrorMessage(message: String) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Error,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.error
+            )
+            Text(
+                text = "오류가 발생했어요",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.error
+            )
+            Text(
+                text = message,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilterDialog(
     allAvailableCommunities: Set<String>,
@@ -170,218 +846,112 @@ fun FilterDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("게시물 필터링") },
+        title = {
+            Text(
+                "게시물 필터링",
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Text("선택된 사이트의 게시글만 리스트에 표시됩니다.", style = MaterialTheme.typography.bodySmall)
+            Column(
+                modifier = Modifier.heightIn(max = 400.dp)
+            ) {
+                Text(
+                    "선택된 사이트의 게시글만 표시됩니다.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(modifier = Modifier.height(16.dp))
-
-                allAvailableCommunities.sorted().forEach { community ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onCommunityToggle(community) }
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Switch(
-                            checked = community in selectedCommunities,
-                            onCheckedChange = { onCommunityToggle(community) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(community)
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(allAvailableCommunities.sorted()) { community ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onCommunityToggle(community) }
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Switch(
+                                checked = community in selectedCommunities,
+                                onCheckedChange = { onCommunityToggle(community) }
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = community,
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("닫기")
+                Text("확인")
             }
         }
     )
 }
 
 @Composable
-fun DealCard(deal: DealItem, onClick: () -> Unit) {
-    // 딜 유형('이벤트' 여부)에 따라 카드 스타일을 미리 결정합니다.
-    val isEvent = deal.dealType == "이벤트"
-    val cardBackgroundColor = if (isEvent) Color(0xFFE8F5E9) else MaterialTheme.colorScheme.surface
-    val priceTextColor = if (isEvent) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
-
-    ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(6.dp)
-            .clickable(
-                onClick = onClick,
-                enabled = !deal.isClosed // isClosed가 true이면 클릭 비활성화
-            ),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = cardBackgroundColor)
+fun SearchResultHeader(
+    searchQuery: String,
+    resultCount: Int
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface
     ) {
-        Box {
-            Column {
-                // 이벤트 유형일 경우, 이미지 대신 아이콘을 표시합니다.
-                if (isEvent) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .background(Color(0xFFDCEDC8)), // 이벤트 아이콘 배경색
-                        contentAlignment = Alignment.Center
-                    ) {
-                        // 예시 아이콘 (MonetizationOn), 필요에 따라 다른 아이콘으로 변경 가능
-                        Icon(
-                            imageVector = Icons.Default.MonetizationOn,
-                            contentDescription = "이벤트",
-                            modifier = Modifier.size(64.dp),
-                            tint = priceTextColor
-                        )
-                    }
-                } else {
-                    // 일반 딜일 경우, 이미지를 표시합니다.
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(ApiClient.BASE_URL.removeSuffix("/") + deal.imageUrl)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = deal.title,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-
-                Column(modifier = Modifier.padding(12.dp)) {
-                    // --- 쇼핑몰 이름과 배송비 정보 ---
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = deal.shopName,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-
-                        // 배송비 정보 없음'일 때 연한 회색으로 표시
-                        val shippingFeeText: String
-                        val shippingFeeColor: Color
-
-                        when {
-                            // 1. "무료"가 포함된 경우
-                            deal.shippingFee.contains("무료") -> {
-                                shippingFeeText = "배송비 무료"
-                                shippingFeeColor = Color(0xFF007BFF) // 파란색
-                            }
-                            // 2. "정보 없음"인 경우
-                            deal.shippingFee == "정보 없음" -> {
-                                shippingFeeText = "배송비 정보 없음"
-                                shippingFeeColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f) // 연한 회색
-                            }
-                            // 3. 그 외 (유료 배송비)
-                            else -> {
-                                shippingFeeText = "배송비 ${deal.shippingFee}"
-                                shippingFeeColor = MaterialTheme.colorScheme.outline // 일반 회색
-                            }
-                        }
-
-                        Text(
-                            text = shippingFeeText,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = shippingFeeColor
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // --- 상품명 ---
-                    Text(
-                        text = deal.title,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 20.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.height(40.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // --- 가격 ---
-                    // '정보 없음'일 때 연한 회색 및 취소선으로 표시
-                    val priceText = if (deal.price == "정보 없음") "가격 정보 없음" else deal.price
-                    val finalPriceColor = if (deal.price == "정보 없음") MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else priceTextColor
-
-                    Text(
-                        text = priceText,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 20.sp,
-                        color = finalPriceColor,
-                        maxLines = 1,
-                        textDecoration = if (deal.price == "정보 없음") TextDecoration.LineThrough else TextDecoration.None
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // --- 커뮤니티 정보 ---
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val communityColor = getCommunityColor(deal.community)
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .background(color = communityColor, shape = CircleShape)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = deal.community,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // --- 품절/종료 시 회색 오버레이 및 텍스트 표시 ---
-            if (deal.isClosed) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(Color.Black.copy(alpha = 0.5f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "종료된 딜",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                }
-            }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "'$searchQuery' 검색결과 ${resultCount}개",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
 
 @Composable
-private fun getCommunityColor(community: String): Color {
-    return when (community) {
-        "뽐뿌", "뽐뿌해외", "알리뽐뿌" -> Color(0xFFE53935)
-        "펨코" -> Color(0xFF43A047)
-        "클리앙" -> Color(0xFF007BFF)
-        "퀘이사존" -> Color(0xFFF57C00)
-        "빠삭", "빠삭해외" -> Color(0xFF6A1B9A)
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+fun SearchEmptyState(searchQuery: String) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.SearchOff,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "\"$searchQuery\"에 대한 결과가 없어요",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "다른 검색어를 시도하거나\n필터를 변경해보세요",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp
+            )
+        }
     }
 }

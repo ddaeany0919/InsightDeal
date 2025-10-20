@@ -20,11 +20,11 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.insightdeal.ui.DealDetailScreen
 import com.example.insightdeal.ui.MainScreen
+import com.example.insightdeal.ui.bookmark.BookmarkScreen
 import com.example.insightdeal.ui.theme.InsightDealTheme
 import com.example.insightdeal.viewmodel.DealViewModel
 
 class MainActivity : ComponentActivity() {
-    // ViewModel 선언, activity scope에서 생명주기 연동
     private val dealViewModel: DealViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -78,10 +78,25 @@ fun InsightDealApp(viewModel: DealViewModel) {
                 onCommunityToggle = { community ->
                     Log.d("InsightDealApp", "Community toggled: $community")
                     viewModel.toggleCommunity(community)
+                },
+                onBookmarkClick = {
+                    Log.d("InsightDealApp", "Navigating to bookmark screen")
+                    navController.navigate("bookmark")
                 }
             )
         }
-
+        composable("bookmark") {
+            BookmarkScreen(
+                onDealClick = { dealId ->
+                    Log.d("InsightDealApp", "Navigating to detail from bookmark for dealId: $dealId")
+                    navController.navigate("detail/$dealId")
+                },
+                onBackClick = {
+                    Log.d("InsightDealApp", "Back from bookmark to main")
+                    navController.popBackStack()
+                }
+            )
+        }
         // 상세 화면: 딜 ID를 전달 받아 해당 딜 상세정보 표시
         composable(
             route = "detail/{dealId}",

@@ -17,7 +17,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium_stealth import stealth
 from sqlalchemy.orm import Session
 import easyocr
-
+from pathlib import Path
+import random
 # --- 👇 [추가] WebDriverWait을 위한 import ---
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -27,14 +28,62 @@ from selenium.webdriver.common.by import By
 import models
 import database
 
+# 환경변수 설정
+SELENIUM_TIMEOUT = int(os.getenv("SELENIUM_TIMEOUT", "5"))
+SCRAPER_DELAY = int(os.getenv("SCRAPER_DELAY", "0"))
+MAX_RETRY_COUNT = int(os.getenv("MAX_RETRY_COUNT", "2"))
+HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# User-Agent 로테이션
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+]
+
 # --- 로거 설정 ---
-logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logger.setLevel(logging.INFO)
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter('[%(levelname)s] %(asctime)s - %(message)s', '%Y-%m-%d %H:%M:%S')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+def setup_logger(name: str = "BaseScraper"):
+    """UTF-8 인코딩을 강제하는 로거 설정"""
+    logger = logging.getLogger(name)
+    
+    if logger.handlers:
+        return logger
+    
+    logger.setLevel(getattr(logging, LOG_LEVEL))
+    
+    # 로그 디렉토리 생성
+    log_dir = Path(__file__).parent.parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+    
+    # 포맷터
+    formatter = logging.Formatter(
+        fmt='%(asctime)s | %(levelname)-8s | %(name)s:%(funcName)s:%(lineno)d | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # 파일 핸들러 (UTF-8 인코딩 강제)
+    from logging.handlers import RotatingFileHandler
+    file_handler = RotatingFileHandler(
+        log_dir / f"scraper_{time.strftime('%Y%m%d')}.log",
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5,
+        encoding='utf-8'  # ✅ UTF-8 인코딩 강제 설정
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.DEBUG)
+    
+    # 콘솔 핸들러 (UTF-8 설정)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(logging.INFO)
+    
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    return logger
+
+logger = setup_logger()
 
 # --- 전역 설정 ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -57,6 +106,9 @@ class BaseScraper(ABC):
         self.wait = None  # WebDriverWait 객체를 저장할 변수 추가
         self.cookies = {}
         self.limit = None
+        self.retry_count = 0
+        self.start_time = None
+        self.scraped_count = 0
         self.community_entry = (
             self.db.query(models.Community)
             .filter(models.Community.name == self.community_name)
@@ -69,7 +121,64 @@ class BaseScraper(ABC):
             logger.info("Initializing EasyOCR model... (This may take a moment on first run)")
             BaseScraper.ocr_reader = easyocr.Reader(['ko', 'en'])
             logger.info("EasyOCR model loaded successfully.")
+    def run_with_retry(self, limit=None) -> bool:
+        """재시도 로직이 포함된 실행"""
+        for attempt in range(MAX_RETRY_COUNT):
+            try:
+                self.start_time = time.time()
+                self.scraped_count = 0
+                
+                result = self.run(limit)
+                
+                # 성능 로그
+                elapsed = time.time() - self.start_time
+                rate = self.scraped_count / elapsed if elapsed > 0 else 0
+                
+                logger.info(
+                    f"[{self.community_name}] 스크래핑 완료 - "
+                    f"처리: {self.scraped_count}건, "
+                    f"소요시간: {elapsed:.2f}초, "
+                    f"속도: {rate:.2f}건/초"
+                )
+                
+                return True
+                
+            except Exception as e:
+                self.retry_count = attempt + 1
+                logger.warning(
+                    f"[{self.community_name}] 스크래핑 실패 (시도 {attempt + 1}/{MAX_RETRY_COUNT}): {e}"
+                )
+                
+                if attempt < MAX_RETRY_COUNT - 1:
+                    delay = (2 ** attempt) + random.uniform(0, 1)  # 지수 백오프 + 랜덤
+                    logger.info(f"[{self.community_name}] {delay:.1f}초 후 재시도...")
+                    time.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"[{self.community_name}] 최대 재시도 횟수 초과")
+                    return False
+        
+        return False
 
+    def __enter__(self):
+        """컨텍스트 매니저 지원"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """리소스 정리"""
+        if self.driver:
+            try:
+                self.driver.quit()
+                logger.debug(f"[{self.community_name}] 드라이버 정리 완료")
+            except Exception as e:
+                logger.warning(f"[{self.community_name}] 드라이버 정리 중 오류: {e}")
+        
+        if self.db:
+            try:
+                self.db.close()
+                logger.debug(f"[{self.community_name}] DB 세션 정리 완료")
+            except Exception as e:
+                logger.warning(f"[{self.community_name}] DB 세션 정리 중 오류: {e}")
     @staticmethod
     def _parse_ecommerce_link(raw_link: str) -> str:
         if not raw_link:
@@ -94,106 +203,200 @@ class BaseScraper(ABC):
 
     def run(self, limit=None):
         self.limit = limit
-        logger.info(f"[{self.community_name}] Scraping process started.")
+        self.scraped_count = 0
+        
+        logger.info(f"[{self.community_name}] 스크래핑 프로세스 시작")
+        
         try:
             self._create_selenium_driver()
             deals_data = self.scrape()
-
+            
             if not deals_data:
-                logger.info(f"[{self.community_name}] No new deals found.")
-                return
-
+                logger.info(f"[{self.community_name}] 새로운 딜을 찾지 못했습니다")
+                return False
+            
             deals_data.reverse()
             new_deals_count = 0
+            
+            # ✅ 배치 리스트 선언
+            batch_deals = []
+            batch_histories = []
+            
             for item in deals_data:
+                self.scraped_count += 1
+                
                 deal_obj = item['deal']
-
-                exists = self.db.query(models.Deal).filter(
-                    models.Deal.post_link == deal_obj.post_link,
-                    models.Deal.title == deal_obj.title
+                exists = self.db.query(models.Deal.id).filter(  # ✅ 수정
+                    models.Deal.post_link == deal_obj.post_link
                 ).first()
+
                 if exists:
                     continue
                 
+                # 기존 OCR 로직
                 if deal_obj.shipping_fee == '정보 없음' and deal_obj.deal_type == '일반':
                     original_image_url = item.get('original_image_url')
                     if original_image_url:
                         _, _, ocr_text = self._download_and_get_local_path(
                             original_image_url, -1, perform_ocr=True
                         )
+                        
                         if any(term in ocr_text for term in ("무료배송", "무료 배송")):
-                            logger.info(f"  - OCR found '무료배송' for '{deal_obj.title}'. Updating shipping fee.")
+                            logger.info(f"[OCR] '{deal_obj.title}'에서 '무료배송' 발견. 배송비 업데이트")
                             deal_obj.shipping_fee = "무료"
-
-                self.db.add(deal_obj)
-                self.db.flush()
-
-                new_price_history = models.PriceHistory(deal_id=deal_obj.id, price=deal_obj.price)
-                self.db.add(new_price_history)
+                
+                batch_deals.append(deal_obj)
                 new_deals_count += 1
-
-            self.db.commit()
-            if new_deals_count > 0:
-                logger.info(f"[{self.community_name}] Saved {new_deals_count} new deals to DB.")
+            
+            # ✅ 배치 저장
+            if batch_deals:
+                self.db.add_all(batch_deals)    # ✅ 수정
+                self.db.flush()                 # ✅ 수정
+                
+                for deal in batch_deals:
+                    batch_histories.append(models.PriceHistory(deal_id=deal.id, price=deal.price))
+                
+                self.db.add_all(batch_histories)  # ✅ 수정
+                self.db.commit()                  # ✅ 수정
+                
+                logger.info(f"[{self.community_name}] {new_deals_count}개의 새로운 딜을 DB에 저장했습니다")
             else:
-                logger.info(f"[{self.community_name}] No new deals to save.")
-
+                logger.info(f"[{self.community_name}] 저장할 새로운 딜이 없습니다")
+            
+            return new_deals_count > 0
+        
         except Exception as e:
-            logger.error(f"[{self.community_name}] An error occurred during scraping: {e}", exc_info=True)
-            self.db.rollback()
+            logger.error(f"[{self.community_name}] 스크래핑 중 오류 발생: {e}", exc_info=True)
+            self.db.rollback()  # ✅ 수정
+            return False
         finally:
-            if self.driver:
-                self.driver.quit()
+            pass
 
     def _create_selenium_driver(self):
+        """최적화된 Chrome 드라이버 생성"""
         chrome_options = Options()
-        chrome_options.page_load_strategy = 'eager'
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--window-size=1920,1080")
+        
+        # ✅ 핵심 성능 최적화 (품질 유지)
+        chrome_options.page_load_strategy = 'eager'  # DOM 로드되면 즉시 진행
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--disable-software-rasterizer") 
+        chrome_options.add_argument("--disable-software-rasterizer")
         chrome_options.add_argument("--disable-logging")
         chrome_options.add_argument("--log-level=3")
         chrome_options.add_argument("--silent")
-        chrome_options.add_argument(
-            'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36'
-        )
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+        chrome_options.add_argument("--disable-ipc-flooding-protection")
+        
+        # ✅ 불필요한 기능 비활성화 (속도 향상)
+        chrome_options.add_argument("--disable-plugins")
+        chrome_options.add_argument("--no-first-run")
+        chrome_options.add_argument("--disable-default-apps")
+        chrome_options.add_argument("--disable-background-timer-throttling")
+        chrome_options.add_argument("--disable-renderer-backgrounding")
+        chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+        chrome_options.add_argument("--disable-client-side-phishing-detection")
+        chrome_options.add_argument("--disable-sync")
+        chrome_options.add_argument("--metrics-recording-only")
+        chrome_options.add_argument("--no-default-browser-check")
+        
+        # ✅ 메모리 최적화
+        chrome_options.add_argument("--memory-pressure-off")
+        chrome_options.add_argument("--max_old_space_size=4096")
+        
+        # ✅ 네트워크 최적화  
+        chrome_options.add_argument("--aggressive-cache-discard")
+        chrome_options.add_argument("--disable-background-networking")
+        
+        # 윈도우 크기 설정
+        chrome_options.add_argument("--window-size=1920,1080")
+        
+        # 헤드리스 모드
+        if HEADLESS:
+            chrome_options.add_argument("--headless")
+        
+        # 랜덤 User-Agent
+        user_agent = random.choice(USER_AGENTS)
+        chrome_options.add_argument(f'user-agent={user_agent}')
+        
+        # 자동화 감지 방지
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
-        self.driver = webdriver.Chrome(options=chrome_options)
-        self.driver.set_page_load_timeout(30)
-        self.driver.implicitly_wait(10)
-        self.wait = WebDriverWait(self.driver, 10)
-
-        stealth(self.driver, languages=["ko-KR", "ko"], vendor="Google Inc.", platform="Win32", webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
-        self.driver.get(self.community_url)
-        self.cookies = {c['name']: c['value'] for c in self.driver.get_cookies()}
+        
+        try:
+            self.driver = webdriver.Chrome(options=chrome_options)
+            self.driver.set_page_load_timeout(3)
+            self.driver.implicitly_wait(5)
+            self.wait = WebDriverWait(self.driver, 3)
+            
+            # Stealth 설정
+            stealth(
+                self.driver,
+                languages=["ko-KR", "ko"],
+                vendor="Google Inc.",
+                platform="Win32",
+                webgl_vendor="Intel Inc.",
+                renderer="Intel Iris OpenGL Engine",
+                fix_hairline=True
+            )
+            
+            # 페이지 로드
+            self.driver.get(self.community_url)
+            self.cookies = {c['name']: c['value'] for c in self.driver.get_cookies()}
+            
+            logger.info(f"[{self.community_name}] 드라이버 초기화 완료")
+            
+        except Exception as e:
+            logger.error(f"[{self.community_name}] 드라이버 초기화 실패: {e}")
+            raise
 
     def _download_and_get_local_path(self, image_url, deal_id: int, perform_ocr: bool = True):
+        """최적화된 이미지 다운로드 및 캐싱"""
         placeholder = 'https://placehold.co/400x400/E9E2FD/333?text=Deal'
+        
         if not isinstance(image_url, str) or not image_url or 'placehold.co' in image_url:
             return placeholder, None, ""
+
         try:
             url_hash = hashlib.md5(image_url.encode()).hexdigest()
             match = re.search(r'\.(jpg|jpeg|png|gif|webp)', urlparse(image_url).path, re.IGNORECASE)
             ext = match.group(0) if match else '.jpg'
             filename = f"{url_hash}{ext}"
             save_path = os.path.join(IMAGE_CACHE_DIR, filename)
-            if not os.path.exists(save_path):
-                headers = {
-                    'Referer': f"{urlparse(image_url).scheme}://{urlparse(image_url).netloc}/",
-                    'User-Agent': self.driver.execute_script("return navigator.userAgent;")
-                }
-                resp = requests.get(image_url, headers=headers, cookies=self.cookies, stream=True, timeout=15)
-                resp.raise_for_status()
-                with open(save_path, 'wb') as f:
-                    for chunk in resp.iter_content(chunk_size=8192):
-                        f.write(chunk)
+            
+            # 캐시 확인
+            if os.path.exists(save_path):
+                file_age = time.time() - os.path.getmtime(save_path)
+                if file_age < 7 * 24 * 3600:  # 7일 이내면 캐시 사용
+                    logger.debug(f"[ImageCache] Using cached image: {filename}")
+                    ocr_text = self._ocr_image(save_path) if perform_ocr else ""
+                    return f"/images/{filename}", save_path, ocr_text
+
+            # 새로 다운로드
+            headers = {
+                'Referer': f"{urlparse(image_url).scheme}://{urlparse(image_url).netloc}/",
+                'User-Agent': self.driver.execute_script("return navigator.userAgent;") if self.driver else random.choice(USER_AGENTS)
+            }
+            
+            resp = requests.get(
+                image_url, 
+                headers=headers, 
+                cookies=self.cookies, 
+                stream=True, 
+                timeout=15
+            )
+            resp.raise_for_status()
+            
+            with open(save_path, 'wb') as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            logger.debug(f"[ImageCache] Downloaded new image: {filename}")
             ocr_text = self._ocr_image(save_path) if perform_ocr else ""
+            
             return f"/images/{filename}", save_path, ocr_text
+
         except Exception as e:
             logger.warning(f"[ImageProcessing] Failed for URL: {image_url}, Error: {e}")
             return placeholder, None, ""
@@ -201,13 +404,18 @@ class BaseScraper(ABC):
     @staticmethod
     def _clean_price(price_input):
         price_str = str(price_input).strip()
-        if not price_str or "정보 없음" in price_str or "상이" in price_str:
-            return "가격 상이"
-        is_dollar = ('$' in price_str or '.' in price_str) and '원' not in price_str
+        if not price_str or "정보" in price_str or "없음" in price_str:
+            return "정보 없음"
+
+        is_dollar = ("$" in price_str or "달러" in price_str or "dollar" in price_str.lower()) and "원" not in price_str
+        
         if is_dollar:
             try:
-                num_str = re.sub(r'[^\d.]', '', price_str)
-                return f"${float(num_str):.2f}"
+                num_match = re.search(r'[\d,]+\.?\d*', price_str)
+                if num_match:
+                    num_str = num_match.group().replace(',', '')
+                    dollar_amount = float(num_str)
+                    return f"${dollar_amount:.2f}"
             except (ValueError, TypeError):
                 pass
         digits = re.sub(r'[^0-9]', '', price_str)
@@ -640,7 +848,7 @@ class BaseScraper(ABC):
 
             self.driver.get(decoded_url)
             try:
-                WebDriverWait(self.driver, 5).until(
+                WebDriverWait(self.driver, 2).until(
                     lambda driver: driver.execute_script("return document.readyState") == "complete"
                 )
             except Exception:

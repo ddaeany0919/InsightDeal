@@ -1,0 +1,555 @@
+2025-10-16 00:15:44 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_shoppinglive_251015_1129
+2025-10-16 00:15:45 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_shoppinglive_251015_1129
+2025-10-16 00:15:48 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:15:48 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:15:48 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 2] AI Product: 네이버 추가 적립 이벤트 (251015)
+2025-10-16 00:15:48 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_shoppinglive_251015_1725
+2025-10-16 00:15:48 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_shoppinglive_251015_1725
+2025-10-16 00:15:49 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_shoppinglive_251015_1725
+2025-10-16 00:15:49 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:15:49 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:15:49 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.clien.net/service/board/jirum/19078435?od=T31&po=0&category=0&groupCd=
+2025-10-16 00:15:49 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: 신지모루 악세서리 할인행사입니다...
+2025-10-16 00:15:52 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://www.clien.net/service/board/jirum/19078435?od=T31&po=0&category=0&groupCd=
+2025-10-16 00:15:55 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:15:55 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://edgio.clien.net/F01/15571798/e996e5ca6c817.png?scale=width:740
+2025-10-16 00:15:55 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 신지모루 악세서리 할인행사
+2025-10-16 00:15:55 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://naver.me/5En4wwzC
+2025-10-16 00:15:55 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://naver.me/5En4wwzC
+2025-10-16 00:15:56 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=64&url=https%3A%2F%2Ftalk.naver.com%2Fct%2Fwx5yeyp%3FsharedMktMsg%3D2908010%26resizeTo%3D1904%2C1070nidref%3D
+2025-10-16 00:15:59 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:15:59 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:01 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.clien.net/service/board/jirum/19078311?od=T31&po=0&category=0&groupCd=
+2025-10-16 00:16:01 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: 251015 - 네이버 81원...
+2025-10-16 00:16:03 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://www.clien.net/service/board/jirum/19078311?od=T31&po=0&category=0&groupCd=
+2025-10-16 00:16:09 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 13 deals.
+2025-10-16 00:16:09 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://edgio.clien.net/F94/10149595/8c72b5bd6c678d.gif
+2025-10-16 00:16:09 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 네이버페이 포인트 적립 이벤트 (251015)
+2025-10-16 00:16:09 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_2025101501_2510_1204
+2025-10-16 00:16:09 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_2025101501_2510_1204
+2025-10-16 00:16:09 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_2025101501_2510_1204
+2025-10-16 00:16:09 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:09 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:09 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 2] AI Product: 네이버페이 포인트 적립 이벤트 (251015)
+2025-10-16 00:16:09 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_2025101502_2510_1149
+2025-10-16 00:16:09 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_2025101502_2510_1149
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_2025101502_2510_1149
+2025-10-16 00:16:10 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:10 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:10 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 3] AI Product: 네이버페이 포인트 적립 이벤트 (251015)
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_20251015_2510_3_1044
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_20251015_2510_3_1044
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_20251015_2510_3_1044
+2025-10-16 00:16:10 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: campaign2.naver.com
+2025-10-16 00:16:10 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: campaign2.naver.com
+2025-10-16 00:16:10 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 4] AI Product: 네이버페이 포인트 적립 이벤트 (251001)
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_2025100102_2510_0930
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_2025100102_2510_0930
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_2025100102_2510_0930
+2025-10-16 00:16:10 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:10 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:10 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 5] AI Product: 네이버페이 포인트 뽑기 이벤트 (251015)
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_pointdraw_251015_1900
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_pointdraw_251015_1900
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_pointdraw_251015_1900
+2025-10-16 00:16:10 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:10 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:10 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 6] AI Product: 네이버페이 포인트 뽑기 이벤트 (251015)
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_pointdraw_251015_1977
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_pointdraw_251015_1977
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_pointdraw_251015_1977
+2025-10-16 00:16:10 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:10 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:10 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 7] AI Product: 네이버페이 포인트 뽑기 이벤트 (카드)
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=pointdraw_moneycard_1015
+2025-10-16 00:16:10 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=pointdraw_moneycard_1015
+2025-10-16 00:16:11 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dpointdraw_moneycard_1015
+2025-10-16 00:16:11 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:11 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:11 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 8] AI Product: 네이버페이 포인트 뽑기 이벤트 (혜택)
+2025-10-16 00:16:11 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=pointdraw_benefit_1015
+2025-10-16 00:16:11 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=pointdraw_benefit_1015
+2025-10-16 00:16:12 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dpointdraw_benefit_1015
+2025-10-16 00:16:12 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:12 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:12 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 9] AI Product: 네이버페이 포인트 뽑기 이벤트 (브랜드)
+2025-10-16 00:16:12 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=pointdraw_brand_1015
+2025-10-16 00:16:12 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=pointdraw_brand_1015
+2025-10-16 00:16:12 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dpointdraw_brand_1015
+2025-10-16 00:16:12 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:12 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:12 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 10] AI Product: 네이버페이 광고 링크 1
+2025-10-16 00:16:12 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/939263
+2025-10-16 00:16:12 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/939263
+2025-10-16 00:16:14 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=262144&url=https%3A%2F%2Fpoint.pay.naver.com%2Fbridge%2Feventbenefit%3FadId%3D939263%26fromPage%3DRELOAD_FROM_AUTH
+2025-10-16 00:16:14 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:14 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:14 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 11] AI Product: 네이버페이 광고 링크 2
+2025-10-16 00:16:14 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/880022
+2025-10-16 00:16:14 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/880022
+2025-10-16 00:16:15 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=262144&url=https%3A%2F%2Fpoint.pay.naver.com%2Fbridge%2Feventbenefit%3FadId%3D880022%26fromPage%3DRELOAD_FROM_AUTH
+2025-10-16 00:16:15 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:15 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:15 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 12] AI Product: 네이버페이 광고 링크 3
+2025-10-16 00:16:15 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/730013
+2025-10-16 00:16:15 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/730013
+2025-10-16 00:16:17 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=262144&url=https%3A%2F%2Fpoint.pay.naver.com%2Fbridge%2Feventbenefit%3FadId%3D730013%26fromPage%3DRELOAD_FROM_AUTH
+2025-10-16 00:16:17 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:17 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:17 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 13] AI Product: 네이버페이 보험 무작위 포인트 3회 적립 이벤트
+2025-10-16 00:16:17 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://insurance.pay.naver.com/?inflow=point_category
+2025-10-16 00:16:17 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://insurance.pay.naver.com/?inflow=point_category
+2025-10-16 00:16:18 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://insurance.pay.naver.com/?inflow=point_category
+2025-10-16 00:16:18 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: insurance.pay.naver.com
+2025-10-16 00:16:18 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'pay.naver.com' -> '네이버페이'
+2025-10-16 00:16:18 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.clien.net/service/board/jirum/19078155?od=T31&po=0&category=0&groupCd=
+2025-10-16 00:16:18 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: 251014 - 네이버 10원 추가 - 적립 종료...
+2025-10-16 00:16:19 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://www.clien.net/service/board/jirum/19078155?od=T31&po=0&category=0&groupCd=
+2025-10-16 00:16:22 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:16:22 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://edgio.clien.net/F94/10149595/8c72b5bd6c678d.gif
+2025-10-16 00:16:22 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 네이버 10원 추가 적립 이벤트 (21시 30분까지)
+2025-10-16 00:16:22 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_shoppinglive_251014_1124
+2025-10-16 00:16:22 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_shoppinglive_251014_1124
+2025-10-16 00:16:23 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_shoppinglive_251014_1124
+2025-10-16 00:16:23 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:23 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:23 | INFO     | BaseScraper:run:255 | [클리앙] 13개의 새로운 딜을 DB에 저장했습니다
+2025-10-16 00:16:27 | INFO     | BaseScraper:run:208 | [퀘이사존] 스크래핑 프로세스 시작
+2025-10-16 00:16:30 | INFO     | BaseScraper:_create_selenium_driver:319 | [퀘이사존] 드라이버 초기화 완료
+2025-10-16 00:16:31 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://quasarzone.com/bbs/qb_saleinfo/views/1864840
+2025-10-16 00:16:31 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [기타] 진주햄 천하장사 더블링 콰트로치즈 750g(25gX10개입X3개)...
+2025-10-16 00:16:33 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'div.view-content')
+2025-10-16 00:16:35 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:16:35 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://img2.quasarzone.com/editor/2025/10/16/d569eec6b9ae1b326e42893708a62ea6.jpg
+2025-10-16 00:16:35 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 진주햄 천하장사 더블링 콰트로치즈 750g (25gX10개입X3개)
+2025-10-16 00:16:35 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://img2.quasarzone.com/editor/2025/10/16/d569eec6b9ae1b326e42893708a62ea6.jpg
+2025-10-16 00:16:35 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://img2.quasarzone.com/editor/2025/10/16/d569eec6b9ae1b326e42893708a62ea6.jpg
+2025-10-16 00:16:35 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://img2.quasarzone.com/editor/2025/10/16/d569eec6b9ae1b326e42893708a62ea6.jpg
+2025-10-16 00:16:35 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: img2.quasarzone.com
+2025-10-16 00:16:35 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: img2.quasarzone.com
+2025-10-16 00:16:36 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://quasarzone.com/bbs/qb_saleinfo/views/1864839
+2025-10-16 00:16:36 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [옥션] 덴티스테 오리지널 플러스 화이트 프리미엄 치약 160g 4개+미니치약20g 3개...
+2025-10-16 00:16:38 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'div.view-content')
+2025-10-16 00:16:39 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:16:39 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://img2.quasarzone.com/editor/2025/10/16/2062c3f165d8355543bd64eb95c84d2b.jpeg
+2025-10-16 00:16:39 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 덴티스테 오리지널 플러스 화이트 프리미엄 치약 160g 4개+미니치약20g 3개
+2025-10-16 00:16:39 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://img2.quasarzone.com/editor/2025/10/16/2062c3f165d8355543bd64eb95c84d2b.jpeg
+2025-10-16 00:16:39 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://img2.quasarzone.com/editor/2025/10/16/2062c3f165d8355543bd64eb95c84d2b.jpeg
+2025-10-16 00:16:40 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://img2.quasarzone.com/editor/2025/10/16/2062c3f165d8355543bd64eb95c84d2b.jpeg
+2025-10-16 00:16:40 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: img2.quasarzone.com
+2025-10-16 00:16:40 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: img2.quasarzone.com
+2025-10-16 00:16:40 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://quasarzone.com/bbs/qb_saleinfo/views/1864836
+2025-10-16 00:16:40 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [네이버] 네이버페이 적립/보험 매일 100% 당첨보장/12원 종합 차트 (25.10.16...
+2025-10-16 00:16:44 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'div.view-content')
+2025-10-16 00:16:49 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 19 deals.
+2025-10-16 00:16:49 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://img2.quasarzone.com/editor/2024/03/17/e643e13d94c8885dfdc9b728294de9c5.jpg
+2025-10-16 00:16:49 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 네이버페이 적립/보험 매일 100% 당첨보장/12원 종합 차트
+2025-10-16 00:16:49 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=pointdraw_benefit_1016
+2025-10-16 00:16:49 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=pointdraw_benefit_1016
+2025-10-16 00:16:50 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://campaign2.naver.com/npay/v2/click-point/?eventId=pointdraw_benefit_1016
+2025-10-16 00:16:50 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: campaign2.naver.com
+2025-10-16 00:16:50 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: campaign2.naver.com
+2025-10-16 00:16:51 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 2] AI Product: 네이버페이 보험 클릭 이벤트
+2025-10-16 00:16:51 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=pointdraw_carinsur_1016
+2025-10-16 00:16:51 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=pointdraw_carinsur_1016
+2025-10-16 00:16:52 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dpointdraw_carinsur_1016
+2025-10-16 00:16:52 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:52 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:52 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 3] AI Product: 네이버페이 광고 이벤트 1
+2025-10-16 00:16:52 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/856542
+2025-10-16 00:16:52 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/856542
+2025-10-16 00:16:52 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=262144&url=https%3A%2F%2Fpoint.pay.naver.com%2Fbridge%2Feventbenefit%3FadId%3D856542%26fromPage%3DRELOAD_FROM_AUTH
+2025-10-16 00:16:52 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:52 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:52 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 4] AI Product: 네이버페이 광고 이벤트 2
+2025-10-16 00:16:52 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/884362
+2025-10-16 00:16:52 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/884362
+2025-10-16 00:16:54 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=262144&url=https%3A%2F%2Fpoint.pay.naver.com%2Fbridge%2Feventbenefit%3FadId%3D884362%26fromPage%3DRELOAD_FROM_AUTH
+2025-10-16 00:16:54 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:54 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:54 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 5] AI Product: 네이버페이 적립 이벤트 1
+2025-10-16 00:16:54 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_pointdraw_251016_4521
+2025-10-16 00:16:54 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_pointdraw_251016_4521
+2025-10-16 00:16:54 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_pointdraw_251016_4521
+2025-10-16 00:16:54 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:54 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:54 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 6] AI Product: 네이버페이 적립 이벤트 2
+2025-10-16 00:16:54 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_pointdraw_251016_4577
+2025-10-16 00:16:54 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_pointdraw_251016_4577
+2025-10-16 00:16:54 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_pointdraw_251016_4577
+2025-10-16 00:16:54 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:54 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:54 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 7] AI Product: 네이버페이 적립 이벤트 3
+2025-10-16 00:16:54 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_pointdraw_251016_1254
+2025-10-16 00:16:54 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_pointdraw_251016_1254
+2025-10-16 00:16:55 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_pointdraw_251016_1254
+2025-10-16 00:16:55 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:55 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:55 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 8] AI Product: 네이버페이 광고 이벤트 3
+2025-10-16 00:16:55 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/730013
+2025-10-16 00:16:55 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/730013
+2025-10-16 00:16:56 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=262144&url=https%3A%2F%2Fpoint.pay.naver.com%2Fbridge%2Feventbenefit%3FadId%3D730013%26fromPage%3DRELOAD_FROM_AUTH
+2025-10-16 00:16:56 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:56 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:56 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 9] AI Product: 네이버페이 스크롤 왔다갔다 타이머 작동 10원 적립
+2025-10-16 00:16:56 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://new-m.pay.naver.com/historybenefit/home
+2025-10-16 00:16:56 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://new-m.pay.naver.com/historybenefit/home
+2025-10-16 00:16:57 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?url=http%3A%2F%2Fpay.naver.com%2Fhome
+2025-10-16 00:16:57 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:57 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:57 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 10] AI Product: 네이버페이 보험 매일 100% 당첨보장
+2025-10-16 00:16:57 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://insurance.pay.naver.com/?inflow=point_category
+2025-10-16 00:16:57 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://insurance.pay.naver.com/?inflow=point_category
+2025-10-16 00:16:58 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://insurance.pay.naver.com/?inflow=point_category
+2025-10-16 00:16:58 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: insurance.pay.naver.com
+2025-10-16 00:16:58 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'pay.naver.com' -> '네이버페이'
+2025-10-16 00:16:58 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 11] AI Product: 네이버페이 빠른적립
+2025-10-16 00:16:58 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://new-m.pay.naver.com/pcpay/eventbenefit?category=quickreward
+2025-10-16 00:16:58 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://new-m.pay.naver.com/pcpay/eventbenefit?category=quickreward
+2025-10-16 00:16:58 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=262144&url=http%3A%2F%2Fpoint.pay.naver.com%2Fpc%2Fmain%3Fcategory%3Dquickreward
+2025-10-16 00:16:58 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:58 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:58 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 12] AI Product: 웰컴저축은행 12원 선착순 (10시)
+2025-10-16 00:16:58 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/230108
+2025-10-16 00:16:58 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/230108
+2025-10-16 00:16:58 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://ofw.adison.co/u/naverpay/ads/230108
+2025-10-16 00:16:58 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: ofw.adison.co
+2025-10-16 00:16:58 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: ofw.adison.co
+2025-10-16 00:16:58 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 13] AI Product: 가장 빠른 혜택 1원 선착순 (10시)
+2025-10-16 00:16:58 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/67823
+2025-10-16 00:16:58 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/67823
+2025-10-16 00:16:59 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=262144&url=https%3A%2F%2Fpoint.pay.naver.com%2Fbridge%2Feventbenefit%3FadId%3D67823%26fromPage%3DRELOAD_FROM_AUTH
+2025-10-16 00:16:59 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:16:59 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:16:59 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 14] AI Product: 지금껏 이런 혜택 1원 선착순 (10시)
+2025-10-16 00:16:59 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/645744
+2025-10-16 00:16:59 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/645744
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=262144&url=https%3A%2F%2Fpoint.pay.naver.com%2Fbridge%2Feventbenefit%3FadId%3D645744%26fromPage%3DRELOAD_FROM_AUTH
+2025-10-16 00:17:01 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:17:01 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:17:01 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 15] AI Product: 네이버페이 구독적립 (스마트폰 시크릿 모드)
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://new-m.pay.naver.com/pcpay/eventbenefit?category=quickreward
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://new-m.pay.naver.com/pcpay/eventbenefit?category=quickreward
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=262144&url=http%3A%2F%2Fpoint.pay.naver.com%2Fpc%2Fmain%3Fcategory%3Dquickreward
+2025-10-16 00:17:01 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:17:01 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:17:01 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 16] AI Product: 신신제약 유튜브 구독 180원 적립 (16시?)
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/857991
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/857991
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://ofw.adison.co/u/naverpay/ads/857991
+2025-10-16 00:17:01 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: ofw.adison.co
+2025-10-16 00:17:01 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: ofw.adison.co
+2025-10-16 00:17:01 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 17] AI Product: KT 인스타 팔로우 120원 적립 (자정?)
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/857579
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/857579
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://ofw.adison.co/u/naverpay/ads/857579
+2025-10-16 00:17:01 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: ofw.adison.co
+2025-10-16 00:17:01 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: ofw.adison.co
+2025-10-16 00:17:01 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 18] AI Product: 우리WON뱅킹 앱 접속 180원 적립 (오전 10시?)
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/824465
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/824465
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://ofw.adison.co/u/naverpay/ads/824465
+2025-10-16 00:17:01 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: ofw.adison.co
+2025-10-16 00:17:01 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: ofw.adison.co
+2025-10-16 00:17:01 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 19] AI Product: 삼성SDS 유튜브 구독 180원 적립 (18시?)
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ofw.adison.co/u/naverpay/ads/869998
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ofw.adison.co/u/naverpay/ads/869998
+2025-10-16 00:17:01 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://ofw.adison.co/u/naverpay/ads/869998
+2025-10-16 00:17:01 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: ofw.adison.co
+2025-10-16 00:17:01 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: ofw.adison.co
+2025-10-16 00:17:01 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://quasarzone.com/bbs/qb_saleinfo/views/1864835
+2025-10-16 00:17:01 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [기타] Perplexity Pro 학생 or 페이팔 12개월 무료...
+2025-10-16 00:17:03 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'div.view-content')
+2025-10-16 00:17:05 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 2 deals.
+2025-10-16 00:17:05 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://img2.quasarzone.com/editor/2025/10/15/6917de7ed2ec495c35176a69dfe08060.png
+2025-10-16 00:17:05 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: Perplexity Pro 학생 12개월 무료 프로모션
+2025-10-16 00:17:05 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://pplx.ai/univ-kor-comet
+2025-10-16 00:17:05 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://pplx.ai/univ-kor-comet
+2025-10-16 00:17:08 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://www.perplexity.ai/grow/comet/students?wpsrc=dub_co&wpcn=univ-kor-comet&wpcl=bSC4QA74okhGD9nk&via=univ-kor-comet&dub_id=bSC4QA74okhGD9nk
+2025-10-16 00:17:08 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: www.perplexity.ai
+2025-10-16 00:17:08 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: www.perplexity.ai
+2025-10-16 00:17:09 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 2] AI Product: Perplexity Pro 페이팔 계정 1년 무료 프로모션
+2025-10-16 00:17:09 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://www.perplexity.ai/join/p/paypal-
+2025-10-16 00:17:09 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://www.perplexity.ai/join/p/paypal-
+2025-10-16 00:17:10 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://www.perplexity.ai/join/p/paypal-
+2025-10-16 00:17:10 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: www.perplexity.ai
+2025-10-16 00:17:10 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: www.perplexity.ai
+2025-10-16 00:17:10 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://quasarzone.com/bbs/qb_saleinfo/views/1864831
+2025-10-16 00:17:10 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [쿠팡] MATAVIZ 어플연동 스마트 물걸레 로봇청소기+물탱크 SD-1...
+2025-10-16 00:17:13 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'div.view-content')
+2025-10-16 00:17:14 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:17:14 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://img2.quasarzone.com/editor/2025/10/15/df768e3ad1e4c0ba3995583555c09507.jpg
+2025-10-16 00:17:14 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: MATAVIZ 어플연동 스마트 물걸레 로봇청소기+물탱크 SD-1
+2025-10-16 00:17:14 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://img2.quasarzone.com/editor/2025/10/15/df768e3ad1e4c0ba3995583555c09507.jpg
+2025-10-16 00:17:14 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://img2.quasarzone.com/editor/2025/10/15/df768e3ad1e4c0ba3995583555c09507.jpg
+2025-10-16 00:17:15 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://img2.quasarzone.com/editor/2025/10/15/df768e3ad1e4c0ba3995583555c09507.jpg
+2025-10-16 00:17:15 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: img2.quasarzone.com
+2025-10-16 00:17:15 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: img2.quasarzone.com
+2025-10-16 00:17:17 | INFO     | BaseScraper:run:255 | [퀘이사존] 24개의 새로운 딜을 DB에 저장했습니다
+2025-10-16 00:17:21 | INFO     | BaseScraper:run:208 | [펨코] 스크래핑 프로세스 시작
+2025-10-16 00:17:22 | INFO     | BaseScraper:_create_selenium_driver:319 | [펨코] 드라이버 초기화 완료
+2025-10-16 00:17:25 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.fmkorea.com/9034369943
+2025-10-16 00:17:25 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: 알렉스의 로마식 포카치아 피자 4종 8팩...
+2025-10-16 00:17:26 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://www.fmkorea.com/9034369943
+2025-10-16 00:17:29 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:17:29 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://image.fmkorea.com/logos/fmkorealogo_h1.png
+2025-10-16 00:17:29 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 알렉스의 로마식 포카치아 피자 4종 8팩
+2025-10-16 00:17:29 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://smartstore.naver.com/megabiz/products/12544543558
+2025-10-16 00:17:29 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://smartstore.naver.com/megabiz/products/12544543558
+2025-10-16 00:17:29 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://smartstore.naver.com/megabiz/products/12544543558
+2025-10-16 00:17:29 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: smartstore.naver.com
+2025-10-16 00:17:29 | INFO     | BaseScraper:_infer_shop_name_from_link:561 |  - Matched exact domain 'smartstore.naver.com' -> '네이버'
+2025-10-16 00:17:30 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.fmkorea.com/9034366344
+2025-10-16 00:17:30 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: 펩시 제로슈거 라임향 355ml 48캔...
+2025-10-16 00:17:31 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://www.fmkorea.com/9034366344
+2025-10-16 00:17:33 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:17:33 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://image.fmkorea.com/logos/fmkorealogo_h1.png
+2025-10-16 00:17:33 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 펩시 제로슈거 라임향 355ml 48캔
+2025-10-16 00:17:33 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://link.fmkorea.org/link.php?url=https%3A%2F%2Fwww.lotteon.com%2Fp%2Fproduct%2FLO2533511735&lnu=680297967&mykey=MTc0MzI3NzAyOTI=&target_srl=9034366344&h=h
+2025-10-16 00:17:33 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://link.fmkorea.org/link.php?url=https://www.lotteon.com/p/product/LO2533511735&lnu=680297967&mykey=MTc0MzI3NzAyOTI=&target_srl=9034366344&h=h
+2025-10-16 00:17:38 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://www.lotteon.com/p/product/LO2533511735?mall_no=1&ch_no=101629&ch_dtl_no=1055029&ch_mem_no=29342357hoypiG68efbb0d61
+2025-10-16 00:17:38 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: www.lotteon.com
+2025-10-16 00:17:38 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'lotteon.com' -> '롯데ON'
+2025-10-16 00:17:38 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.fmkorea.com/9034367082
+2025-10-16 00:17:38 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: 와사비새우깡4봉+꿀꽈배기4봉+포테토칩4봉...
+2025-10-16 00:17:39 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://www.fmkorea.com/9034367082
+2025-10-16 00:17:42 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:17:42 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://image.fmkorea.com/logos/fmkorealogo_h1.png
+2025-10-16 00:17:42 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 와사비새우깡4봉+꿀꽈배기4봉+포테토칩4봉
+2025-10-16 00:17:42 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://link.fmkorea.org/link.php?url=https%3A%2F%2Fwww.lotteon.com%2Fp%2Fproduct%2FLO2560936735&amp;lnu=3243326132&amp;mykey=MTI4ODYyNzQ4OTY=&amp;target_srl=9034367082&amp;h=h
+2025-10-16 00:17:42 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://link.fmkorea.org/link.php?url=https://www.lotteon.com/p/product/LO2560936735&amp;lnu=3243326132&amp;mykey=MTI4ODYyNzQ4OTY=&amp;target_srl=9034367082&amp;h=h
+2025-10-16 00:17:42 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://link.fmkorea.org/link.php?url=https://www.lotteon.com/p/product/LO2560936735&amp;lnu=3243326132&amp;mykey=MTI4ODYyNzQ4OTY=&amp;target_srl=9034367082&amp;h=h
+2025-10-16 00:17:42 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: link.fmkorea.org
+2025-10-16 00:17:42 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: link.fmkorea.org
+2025-10-16 00:17:42 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.fmkorea.com/9034364858
+2025-10-16 00:17:42 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: 질레트 프로쉴드 옐로우 면도날 16입 + 다이소 상품권 5천원 + 미니젤...
+2025-10-16 00:17:44 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://www.fmkorea.com/9034364858
+2025-10-16 00:17:46 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:17:46 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://image.fmkorea.com/logos/fmkorealogo_h1.png
+2025-10-16 00:17:46 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 질레트 프로쉴드 옐로우 면도날 16입 + 다이소 상품권 5천원 + 미니젤
+2025-10-16 00:17:46 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://link.fmkorea.org/link.php?url=https%3A%2F%2Fohou.se%2Fproductions%2F2940065%2Fselling&lnu=274362453&mykey=MTU4Mzc3ODU4MDQ=&target_srl=9034364858&h=h
+2025-10-16 00:17:46 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://link.fmkorea.org/link.php?url=https://ohou.se/productions/2940065/selling&lnu=274362453&mykey=MTU4Mzc3ODU4MDQ=&target_srl=9034364858&h=h
+2025-10-16 00:17:54 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://ohou.se/productions/2940065/selling?airbridge_referrer=airbridge%3Dtrue%26client_id%3D15b9ee03-1225-45a6-8134-d597968a59ce%26event_uuid%3D6b607d59-ae3a-4238-83e3-2b2dee9a02c6%26referrer_timestamp%3D1760541466129%26channel%3Daffiliate%26campaign%3Dbrand_affiliate%26ad_group%3D26087961%26ad_creative%3D33557%26content%3Dproduction_2940065%26term%3D20251016%26sub_id_2%3Downedmedia%26sub_id_3%3Dinorganic%26u_id%3D7918892902%26subParam%3D7918892902&utm_source=affiliate&utm_campaign=brand_affiliate&utm_term=20251016&utm_content=production_2940065&fallback_desktop=https%3A%2F%2Fohou.se%2Fproductions%2F2940065%2Fselling&deeplink_url=ohouseapp%3A%2F%2Fohou.se%2Fproductions%2F2940065%2Fselling&ad_creative=33557&ad_group=26087961&campaign=brand_affiliate&content=production_2940065&sub_id_2=ownedmedia&sub_id_3=inorganic&term=20251016&u_id=7918892902&subParam=7918892902
+2025-10-16 00:17:54 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: ohou.se
+2025-10-16 00:17:54 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: ohou.se
+2025-10-16 00:17:54 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.fmkorea.com/9034352626
+2025-10-16 00:17:54 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: 오리온 초코파이 말차쇼콜라 12P 408g x 4개[2]...
+2025-10-16 00:17:56 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://www.fmkorea.com/9034352626
+2025-10-16 00:17:59 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:17:59 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://image.fmkorea.com/logos/fmkorealogo_h1.png
+2025-10-16 00:17:59 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 오리온 초코파이 말차쇼콜라 12P 408g x 4개
+2025-10-16 00:17:59 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://m.gmarket.co.kr/vi/product/4449166492
+2025-10-16 00:17:59 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://m.gmarket.co.kr/vi/product/4449166492
+2025-10-16 00:18:02 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://item.gmarket.co.kr/Item?goodscode=4449166492
+2025-10-16 00:18:02 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: item.gmarket.co.kr
+2025-10-16 00:18:02 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'gmarket.co.kr' -> 'G마켓'
+2025-10-16 00:18:03 | INFO     | BaseScraper:run:255 | [펨코] 5개의 새로운 딜을 DB에 저장했습니다
+2025-10-16 00:18:06 | WARNING  | InsightDeal:<module>:121 | ½ǆЇѠ½ºũ·¡ƛ: ['AlippomppuScraper', 'RuliwebScraper', 'PpomppuScraper', 'PpomppuOverseasScraper', 'BbasakDomesticScraper', 'BbasakOverseasScraper', 'ClienScraper', 'QuasarzoneScraper', 'FmkoreaScraper']
+2025-10-16 00:34:55 | INFO     | InsightDeal:set_sqlite_pragma:38 | Database connection established
+2025-10-16 00:34:55 | INFO     | BaseScraper:__init__:121 | Initializing EasyOCR model... (This may take a moment on first run)
+2025-10-16 00:34:57 | INFO     | BaseScraper:__init__:123 | EasyOCR model loaded successfully.
+2025-10-16 00:34:57 | INFO     | BaseScraper:run:208 | [뽐뿌] 스크래핑 프로세스 시작
+2025-10-16 00:35:00 | INFO     | BaseScraper:_create_selenium_driver:319 | [뽐뿌] 드라이버 초기화 완료
+2025-10-16 00:35:00 | INFO     | BaseScraper:_process_detail_pages:669 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656582
+2025-10-16 00:35:00 | INFO     | BaseScraper:_process_detail_pages:672 | Processing deal: [GS샵]센소다인 치약 4개 (10,900원/무료)...
+2025-10-16 00:35:01 | INFO     | BaseScraper:_process_detail_pages:683 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:35:01 | ERROR    | BaseScraper:_process_detail_pages:770 | Error processing https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656582: type object 'BaseScraper' has no attribute '_clean_price'
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 698, in _process_detail_pages
+    price_from_list = deal_info.get('list_price') or self._extract_price_from_title(full_title)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 426, in _extract_price_from_title
+    price = BaseScraper._clean_price(part)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'BaseScraper' has no attribute '_clean_price'
+2025-10-16 00:35:01 | INFO     | BaseScraper:_process_detail_pages:669 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656773
+2025-10-16 00:35:01 | INFO     | BaseScraper:_process_detail_pages:672 | Processing deal: [네이버]오뚜기 말리 리치 주스 36개 (9,900원 / 무배)...
+2025-10-16 00:35:01 | INFO     | BaseScraper:_process_detail_pages:683 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:35:01 | ERROR    | BaseScraper:_process_detail_pages:770 | Error processing https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656773: type object 'BaseScraper' has no attribute '_clean_price'
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 698, in _process_detail_pages
+    price_from_list = deal_info.get('list_price') or self._extract_price_from_title(full_title)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 426, in _extract_price_from_title
+    price = BaseScraper._clean_price(part)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'BaseScraper' has no attribute '_clean_price'
+2025-10-16 00:35:01 | INFO     | BaseScraper:_process_detail_pages:669 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656772
+2025-10-16 00:35:01 | INFO     | BaseScraper:_process_detail_pages:672 | Processing deal: [옥션]앤드지 25년 정장슈트 (80,560원/무료)...
+2025-10-16 00:35:02 | INFO     | BaseScraper:_process_detail_pages:683 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:35:02 | ERROR    | BaseScraper:_process_detail_pages:770 | Error processing https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656772: type object 'BaseScraper' has no attribute '_clean_price'
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 698, in _process_detail_pages
+    price_from_list = deal_info.get('list_price') or self._extract_price_from_title(full_title)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 426, in _extract_price_from_title
+    price = BaseScraper._clean_price(part)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'BaseScraper' has no attribute '_clean_price'
+2025-10-16 00:35:02 | INFO     | BaseScraper:run:215 | [뽐뿌] 새로운 딜을 찾지 못했습니다
+2025-10-16 00:35:02 | INFO     | BaseScraper:run:208 | [뽐뿌해외] 스크래핑 프로세스 시작
+2025-10-16 00:35:06 | INFO     | BaseScraper:_create_selenium_driver:319 | [뽐뿌해외] 드라이버 초기화 완료
+2025-10-16 00:35:13 | INFO     | BaseScraper:_process_detail_pages:669 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=23&no=72188
+2025-10-16 00:35:13 | INFO     | BaseScraper:_process_detail_pages:672 | Processing deal: 최저가!! 크리스탈 생수 무라벨 2L 12병 먹는샘물 6개입 2팩(3,640원/무료)...
+2025-10-16 00:35:15 | INFO     | BaseScraper:_process_detail_pages:683 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:35:15 | ERROR    | BaseScraper:_process_detail_pages:770 | Error processing https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=23&no=72188: type object 'BaseScraper' has no attribute '_clean_price'
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 698, in _process_detail_pages
+    price_from_list = deal_info.get('list_price') or self._extract_price_from_title(full_title)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 426, in _extract_price_from_title
+    price = BaseScraper._clean_price(part)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'BaseScraper' has no attribute '_clean_price'
+2025-10-16 00:35:15 | INFO     | BaseScraper:_process_detail_pages:669 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126714
+2025-10-16 00:35:15 | INFO     | BaseScraper:_process_detail_pages:672 | Processing deal: [Amazon]Silicon Power DDR5 64GB (2x32GB) Storm RGB...
+2025-10-16 00:35:15 | INFO     | BaseScraper:_process_detail_pages:683 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:35:15 | ERROR    | BaseScraper:_process_detail_pages:770 | Error processing https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126714: type object 'BaseScraper' has no attribute '_clean_price'
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 698, in _process_detail_pages
+    price_from_list = deal_info.get('list_price') or self._extract_price_from_title(full_title)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 426, in _extract_price_from_title
+    price = BaseScraper._clean_price(part)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'BaseScraper' has no attribute '_clean_price'
+2025-10-16 00:35:15 | INFO     | BaseScraper:_process_detail_pages:669 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126713
+2025-10-16 00:35:15 | INFO     | BaseScraper:_process_detail_pages:672 | Processing deal: [brytesoft] 윈도우11프로 (8달러/이메일)...
+2025-10-16 00:35:16 | INFO     | BaseScraper:_process_detail_pages:683 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:35:16 | ERROR    | BaseScraper:_process_detail_pages:770 | Error processing https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126713: type object 'BaseScraper' has no attribute '_clean_price'
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 698, in _process_detail_pages
+    price_from_list = deal_info.get('list_price') or self._extract_price_from_title(full_title)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 426, in _extract_price_from_title
+    price = BaseScraper._clean_price(part)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'BaseScraper' has no attribute '_clean_price'
+2025-10-16 00:35:16 | INFO     | BaseScraper:run:215 | [뽐뿌해외] 새로운 딜을 찾지 못했습니다
+2025-10-16 00:37:02 | INFO     | InsightDeal:execution_tracker:32 | [START] PpomppuOverseasScraper ŗ½ºƮ ½Àۺ 2025-10-16 00:37:02.706359
+2025-10-16 00:37:02 | INFO     | InsightDeal:set_sqlite_pragma:38 | Database connection established
+2025-10-16 00:37:02 | INFO     | BaseScraper:__init__:121 | Initializing EasyOCR model... (This may take a moment on first run)
+2025-10-16 00:37:04 | INFO     | BaseScraper:__init__:123 | EasyOCR model loaded successfully.
+2025-10-16 00:37:04 | INFO     | BaseScraper:run:208 | [뽐뿌해외] 스크래핑 프로세스 시작
+2025-10-16 00:37:07 | INFO     | BaseScraper:_create_selenium_driver:319 | [뽐뿌해외] 드라이버 초기화 완료
+2025-10-16 00:37:07 | INFO     | BaseScraper:_process_detail_pages:669 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=23&no=72190
+2025-10-16 00:37:07 | INFO     | BaseScraper:_process_detail_pages:672 | Processing deal: [에디파이어 특가] ES20 ($29.38), MR3 ($50.63), QR30 ($59....
+2025-10-16 00:37:07 | INFO     | BaseScraper:_process_detail_pages:683 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:37:07 | ERROR    | BaseScraper:_process_detail_pages:770 | Error processing https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=23&no=72190: type object 'BaseScraper' has no attribute '_clean_price'
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 698, in _process_detail_pages
+    price_from_list = deal_info.get('list_price') or self._extract_price_from_title(full_title)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 426, in _extract_price_from_title
+    price = BaseScraper._clean_price(part)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'BaseScraper' has no attribute '_clean_price'
+2025-10-16 00:37:07 | INFO     | BaseScraper:_process_detail_pages:669 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126714
+2025-10-16 00:37:07 | INFO     | BaseScraper:_process_detail_pages:672 | Processing deal: [Amazon]Silicon Power DDR5 64GB (2x32GB) Storm RGB...
+2025-10-16 00:37:08 | INFO     | BaseScraper:_process_detail_pages:683 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:37:08 | ERROR    | BaseScraper:_process_detail_pages:770 | Error processing https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126714: type object 'BaseScraper' has no attribute '_clean_price'
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 698, in _process_detail_pages
+    price_from_list = deal_info.get('list_price') or self._extract_price_from_title(full_title)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 426, in _extract_price_from_title
+    price = BaseScraper._clean_price(part)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'BaseScraper' has no attribute '_clean_price'
+2025-10-16 00:37:08 | INFO     | BaseScraper:_process_detail_pages:669 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126713
+2025-10-16 00:37:08 | INFO     | BaseScraper:_process_detail_pages:672 | Processing deal: [brytesoft] 윈도우11프로 (8달러/이메일)...
+2025-10-16 00:37:08 | INFO     | BaseScraper:_process_detail_pages:683 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:37:08 | ERROR    | BaseScraper:_process_detail_pages:770 | Error processing https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126713: type object 'BaseScraper' has no attribute '_clean_price'
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 698, in _process_detail_pages
+    price_from_list = deal_info.get('list_price') or self._extract_price_from_title(full_title)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 426, in _extract_price_from_title
+    price = BaseScraper._clean_price(part)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'BaseScraper' has no attribute '_clean_price'
+2025-10-16 00:37:08 | INFO     | BaseScraper:run:215 | [뽐뿌해외] 새로운 딜을 찾지 못했습니다
+2025-10-16 00:37:08 | WARNING  | InsightDeal:run_test:54 | [FAILED] PpomppuOverseasScraper - ½Ǉ࠽ǆЍ
+2025-10-16 00:37:11 | INFO     | InsightDeal:execution_tracker:39 | [FAILED] PpomppuOverseasScraper ŗ½ºƮ ¿Ϸᠭ ¼ҿ佃°£: 0:00:08.316991
+2025-10-16 00:38:26 | INFO     | InsightDeal:execution_tracker:32 | [START] PpomppuOverseasScraper ŗ½ºƮ ½Àۺ 2025-10-16 00:38:26.933785
+2025-10-16 00:38:26 | INFO     | InsightDeal:set_sqlite_pragma:38 | Database connection established
+2025-10-16 00:38:26 | INFO     | BaseScraper:__init__:121 | Initializing EasyOCR model... (This may take a moment on first run)
+2025-10-16 00:38:29 | INFO     | BaseScraper:__init__:123 | EasyOCR model loaded successfully.
+2025-10-16 00:38:29 | INFO     | BaseScraper:run:208 | [뽐뿌해외] 스크래핑 프로세스 시작
+2025-10-16 00:38:31 | INFO     | BaseScraper:_create_selenium_driver:319 | [뽐뿌해외] 드라이버 초기화 완료
+2025-10-16 00:38:31 | INFO     | BaseScraper:_process_detail_pages:669 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=23&no=72190
+2025-10-16 00:38:31 | INFO     | BaseScraper:_process_detail_pages:672 | Processing deal: [에디파이어 특가] ES20 ($29.38), MR3 ($50.63), QR30 ($59....
+2025-10-16 00:38:31 | INFO     | BaseScraper:_process_detail_pages:683 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:38:34 | INFO     | BaseScraper:_process_detail_pages:709 |   [AI Multi-Deal Analysis] Found 6 deals.
+2025-10-16 00:38:34 | INFO     | BaseScraper:_process_detail_pages:725 |   [Image Debug] Post Representative Image: https://cdn3.ppomppu.co.kr/zboard/data/_thumb/ppomppu8/0/small_72190.jpg?t=20251016
+2025-10-16 00:38:34 | INFO     | BaseScraper:_process_detail_pages:732 |     [Deal 1] AI Product: Edifier ES20 블루투스 스피커
+2025-10-16 00:38:34 | INFO     | BaseScraper:_resolve_redirect:808 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c2vuDWh9
+2025-10-16 00:38:34 | INFO     | BaseScraper:_resolve_redirect:810 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c2vuDWh9
+2025-10-16 00:38:34 | INFO     | BaseScraper:_resolve_redirect:814 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c2vuDWh9
+2025-10-16 00:38:34 | WARNING  | BaseScraper:_resolve_redirect:817 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c2vuDWh9
+2025-10-16 00:38:34 | INFO     | BaseScraper:_infer_shop_name_from_link:512 |  - Inferring shop name from domain: 
+2025-10-16 00:38:34 | INFO     | BaseScraper:_infer_shop_name_from_link:575 |  - No matching shop found for domain: 
+2025-10-16 00:38:37 | INFO     | BaseScraper:_process_detail_pages:732 |     [Deal 2] AI Product: Edifier ES60 블루투스 스피커
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:808 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3ET9Erv
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:810 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3ET9Erv
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:814 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3ET9Erv
+2025-10-16 00:38:37 | WARNING  | BaseScraper:_resolve_redirect:817 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3ET9Erv
+2025-10-16 00:38:37 | INFO     | BaseScraper:_infer_shop_name_from_link:512 |  - Inferring shop name from domain: 
+2025-10-16 00:38:37 | INFO     | BaseScraper:_infer_shop_name_from_link:575 |  - No matching shop found for domain: 
+2025-10-16 00:38:37 | INFO     | BaseScraper:_process_detail_pages:732 |     [Deal 3] AI Product: Edifier MR3 2.0 데스크탑 스피커
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:808 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3k7MRfz
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:810 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3k7MRfz
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:814 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3k7MRfz
+2025-10-16 00:38:37 | WARNING  | BaseScraper:_resolve_redirect:817 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3k7MRfz
+2025-10-16 00:38:37 | INFO     | BaseScraper:_infer_shop_name_from_link:512 |  - Inferring shop name from domain: 
+2025-10-16 00:38:37 | INFO     | BaseScraper:_infer_shop_name_from_link:575 |  - No matching shop found for domain: 
+2025-10-16 00:38:37 | INFO     | BaseScraper:_process_detail_pages:732 |     [Deal 4] AI Product: Edifier MR4 2.0 스피커
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:808 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c2z1XJUR
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:810 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c2z1XJUR
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:814 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c2z1XJUR
+2025-10-16 00:38:37 | WARNING  | BaseScraper:_resolve_redirect:817 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c2z1XJUR
+2025-10-16 00:38:37 | INFO     | BaseScraper:_infer_shop_name_from_link:512 |  - Inferring shop name from domain: 
+2025-10-16 00:38:37 | INFO     | BaseScraper:_infer_shop_name_from_link:575 |  - No matching shop found for domain: 
+2025-10-16 00:38:37 | INFO     | BaseScraper:_process_detail_pages:732 |     [Deal 5] AI Product: Edifier QR30 데스크탑 스피커
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:808 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c4L1uHuJ
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:810 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c4L1uHuJ
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:814 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c4L1uHuJ
+2025-10-16 00:38:37 | WARNING  | BaseScraper:_resolve_redirect:817 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c4L1uHuJ
+2025-10-16 00:38:37 | INFO     | BaseScraper:_infer_shop_name_from_link:512 |  - Inferring shop name from domain: 
+2025-10-16 00:38:37 | INFO     | BaseScraper:_infer_shop_name_from_link:575 |  - No matching shop found for domain: 
+2025-10-16 00:38:37 | INFO     | BaseScraper:_process_detail_pages:732 |     [Deal 6] AI Product: Edifier M60 데스크탑 스피커
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:808 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3gNkVfd
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:810 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3gNkVfd
+2025-10-16 00:38:37 | INFO     | BaseScraper:_resolve_redirect:814 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3gNkVfd
+2025-10-16 00:38:37 | WARNING  | BaseScraper:_resolve_redirect:817 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3gNkVfd
+2025-10-16 00:38:37 | INFO     | BaseScraper:_infer_shop_name_from_link:512 |  - Inferring shop name from domain: 
+2025-10-16 00:38:37 | INFO     | BaseScraper:_infer_shop_name_from_link:575 |  - No matching shop found for domain: 
+2025-10-16 00:38:37 | INFO     | BaseScraper:_process_detail_pages:669 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126714
+2025-10-16 00:38:37 | INFO     | BaseScraper:_process_detail_pages:672 | Processing deal: [Amazon]Silicon Power DDR5 64GB (2x32GB) Storm RGB...
+2025-10-16 00:38:38 | INFO     | BaseScraper:_process_detail_pages:683 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:38:40 | INFO     | BaseScraper:_process_detail_pages:709 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:38:40 | INFO     | BaseScraper:_process_detail_pages:725 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1015/900w_20251015182853_wRjlIGbSrv.jpg
+2025-10-16 00:38:40 | INFO     | BaseScraper:_process_detail_pages:732 |     [Deal 1] AI Product: Silicon Power DDR5 64GB (2x32GB) Storm RGB 6000MT/s (흰색/검정색)
+2025-10-16 00:38:40 | INFO     | BaseScraper:_resolve_redirect:790 |    - No ecommerce_link provided by AI.
+2025-10-16 00:38:40 | INFO     | BaseScraper:_process_detail_pages:669 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126713
+2025-10-16 00:38:40 | INFO     | BaseScraper:_process_detail_pages:672 | Processing deal: [brytesoft] 윈도우11프로 (8달러/이메일)...
+2025-10-16 00:38:41 | INFO     | BaseScraper:_process_detail_pages:683 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:38:43 | INFO     | BaseScraper:_process_detail_pages:709 |   [AI Multi-Deal Analysis] Found 2 deals.
+2025-10-16 00:38:43 | INFO     | BaseScraper:_process_detail_pages:725 |   [Image Debug] Post Representative Image: None
+2025-10-16 00:38:43 | INFO     | BaseScraper:_process_detail_pages:732 |     [Deal 1] AI Product: Windows 11 Pro Lifetime Activation Key (Digital Download)
+2025-10-16 00:38:43 | INFO     | BaseScraper:_resolve_redirect:808 |    - [Redirect] 1. AI raw link: https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:38:43 | INFO     | BaseScraper:_resolve_redirect:814 |    - [Redirect] 2. Decoded link: https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false
+2025-10-16 00:38:53 | WARNING  | BaseScraper:_resolve_redirect:826 |    - [Redirect] Page load timeout for https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false. Proceeding anyway.
+2025-10-16 00:38:53 | INFO     | BaseScraper:_resolve_redirect:829 |    - [Redirect] 3. Final resolved URL: https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:38:53 | INFO     | BaseScraper:_infer_shop_name_from_link:512 |  - Inferring shop name from domain: slickdeals.net
+2025-10-16 00:38:53 | INFO     | BaseScraper:_infer_shop_name_from_link:575 |  - No matching shop found for domain: slickdeals.net
+2025-10-16 00:38:53 | INFO     | BaseScraper:_process_detail_pages:732 |     [Deal 2] AI Product: Windows 11 Pro + Microsoft Office 2024 Pro Plus (Lifetime, 1 PC, Digital Download)
+2025-10-16 00:38:53 | INFO     | BaseScraper:_resolve_redirect:808 |    - [Redirect] 1. AI raw link: https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:38:53 | INFO     | BaseScraper:_resolve_redirect:814 |    - [Redirect] 2. Decoded link: https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false
+2025-10-16 00:39:01 | WARNING  | BaseScraper:_resolve_redirect:826 |    - [Redirect] Page load timeout for https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false. Proceeding anyway.
+2025-10-16 00:39:01 | INFO     | BaseScraper:_resolve_redirect:829 |    - [Redirect] 3. Final resolved URL: https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:39:01 | INFO     | BaseScraper:_infer_shop_name_from_link:512 |  - Inferring shop name from domain: slickdeals.net
+2025-10-16 00:39:01 | INFO     | BaseScraper:_infer_shop_name_from_link:575 |  - No matching shop found for domain: slickdeals.net
+2025-10-16 00:39:01 | INFO     | BaseScraper:run:255 | [뽐뿌해외] 9개의 새로운 딜을 DB에 저장했습니다
+2025-10-16 00:39:01 | WARNING  | InsightDeal:run_test:54 | [FAILED] PpomppuOverseasScraper - ½Ǉ࠽ǆЍ
+2025-10-16 00:39:03 | INFO     | InsightDeal:execution_tracker:39 | [FAILED] PpomppuOverseasScraper ŗ½ºƮ ¿Ϸᠭ ¼ҿ佃°£: 0:00:36.915468

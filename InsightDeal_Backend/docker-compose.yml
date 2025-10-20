@@ -1,7 +1,7 @@
-version: '3.8'
 services:
   db:
     image: postgres:14
+    container_name: db-1
     restart: always
     environment:
       POSTGRES_USER: insightdeal
@@ -9,14 +9,30 @@ services:
       POSTGRES_DB: insightdeal
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - insightdeal-network
 
   app:
     build: .
+    container_name: app-1
     depends_on:
-      - db
+      - db  # ✅ 단순한 의존성만
     environment:
-      DATABASE_URL: postgresql://insightdeal:password@db:5432/insightdeal
+      - DATABASE_URL=postgresql://insightdeal:password@db:5432/insightdeal
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     ports:
       - "8000:8000"
     volumes:
       - ./image_cache:/app/image_cache
+    networks:
+      - insightdeal-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  insightdeal-network:
+    driver: bridge

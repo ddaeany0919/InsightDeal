@@ -1,11 +1,31 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
-psycopg2-binary
-selenium
-selenium-stealth
-beautifulsoup4
-requests
-google-generativeai
-pytesseract
-pillow
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Database
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+
+# Environment
+python-dotenv==1.0.0
+
+# HTTP & Web Scraping
+requests==2.31.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
+
+# Selenium
+selenium==4.15.2
+selenium-stealth==1.0.6
+
+# OCR & Image Processing
+easyocr==1.7.0
+pillow==10.1.0
+
+# AI
+google-generativeai==0.3.1
+
+# Utilities
+chardet==5.2.0
+
+# Testing (optional)
+pytest==7.4.3

@@ -1,0 +1,797 @@
+2025-10-16 00:06:50 | INFO     | InsightDeal:set_sqlite_pragma:38 | Database connection established
+2025-10-16 00:06:50 | INFO     | BaseScraper:__init__:121 | Initializing EasyOCR model... (This may take a moment on first run)
+2025-10-16 00:06:52 | INFO     | BaseScraper:__init__:123 | EasyOCR model loaded successfully.
+2025-10-16 00:09:53 | INFO     | InsightDeal:set_sqlite_pragma:38 | Database connection established
+2025-10-16 00:09:53 | INFO     | BaseScraper:__init__:121 | Initializing EasyOCR model... (This may take a moment on first run)
+2025-10-16 00:09:55 | INFO     | BaseScraper:__init__:123 | EasyOCR model loaded successfully.
+2025-10-16 00:09:55 | INFO     | BaseScraper:run:208 | [알리뽐뿌] 스크래핑 프로세스 시작
+2025-10-16 00:09:58 | INFO     | BaseScraper:_create_selenium_driver:319 | [알리뽐뿌] 드라이버 초기화 완료
+2025-10-16 00:09:58 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=13&no=72103
+2025-10-16 00:09:58 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [알리익스프레스] 10월 브랜드 특가전 정보 안내 (뽐뿌 전용 할인코드)...
+2025-10-16 00:09:59 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:10:01 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:10:01 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1014/20251014163731_YqZx09dWBg.png
+2025-10-16 00:10:01 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 알리익스프레스 10월 브랜드 특가전 (최대 50% 할인, PPOM04 코드)
+2025-10-16 00:10:01 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://www.aliexpress.com/ssr/300002809/BrandDayMainVenue?disableNav=YES&pha_manifest=ssr&_immersiveMode=true&businessCode=guide
+2025-10-16 00:10:01 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://www.aliexpress.com/ssr/300002809/BrandDayMainVenue?disableNav=YES&pha_manifest=ssr&_immersiveMode=true&businessCode=guide
+2025-10-16 00:10:06 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://www.aliexpress.com/ssr/300002809/BrandDayMainVenue?disableNav=YES&pha_manifest=ssr&_immersiveMode=true&businessCode=guide
+2025-10-16 00:10:06 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: www.aliexpress.com
+2025-10-16 00:10:06 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'aliexpress.com' -> '알리'
+2025-10-16 00:10:06 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=13&no=72234
+2025-10-16 00:10:06 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: ZSUS 10.5inch 모니터 $31.35/Crucial P3 1TB $46.4...
+2025-10-16 00:10:07 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:10:10 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 4 deals.
+2025-10-16 00:10:10 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1016/20251016000026_uj5Hz4tJUg.png
+2025-10-16 00:10:10 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: ZSUS 10.5 인치 휴대용 모니터
+2025-10-16 00:10:10 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3e1InWJ
+2025-10-16 00:10:10 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3e1InWJ
+2025-10-16 00:10:10 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3e1InWJ
+2025-10-16 00:10:10 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3e1InWJ
+2025-10-16 00:10:10 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:10:10 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:10:11 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 2] AI Product: 레노버 샤오신 pad pro12.7 2025, 8 128 GB
+2025-10-16 00:10:11 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3nwYKFh
+2025-10-16 00:10:11 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3nwYKFh
+2025-10-16 00:10:11 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3nwYKFh
+2025-10-16 00:10:11 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3nwYKFh
+2025-10-16 00:10:11 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:10:11 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:10:11 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 3] AI Product: Crucial P3 Plus 1TB PCIe Gen4 3D NAND NVMe M.2 SSD
+2025-10-16 00:10:11 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3d6XlEB
+2025-10-16 00:10:11 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3d6XlEB
+2025-10-16 00:10:11 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3d6XlEB
+2025-10-16 00:10:11 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3d6XlEB
+2025-10-16 00:10:11 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:10:11 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:10:11 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 4] AI Product: ZEUSLAP 16인치 1200P 모니터
+2025-10-16 00:10:11 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://s.ppomppu.co.kr?idno=ppomppu8_72234&target=aHR0cHM6Ly93d3cucHBvbXBwdS5jby5rci96Ym9hcmQvdmlldy5waHA/aWQ9cHBvbXBwdTgmbm89NzIxMTg=&encode=on
+2025-10-16 00:10:11 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&no=72118
+2025-10-16 00:10:17 | WARNING  | BaseScraper:_resolve_redirect:821 |    - [Redirect] Page load timeout for https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&no=72118. Proceeding anyway.
+2025-10-16 00:10:17 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&no=72118
+2025-10-16 00:10:17 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: www.ppomppu.co.kr
+2025-10-16 00:10:17 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: www.ppomppu.co.kr
+2025-10-16 00:10:17 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=13&no=72233
+2025-10-16 00:10:17 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [관세내] 샤오신패드 2025 12.7인치 ($138.83)/ JONR S20 PRO무선청...
+2025-10-16 00:10:17 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:10:20 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 4 deals.
+2025-10-16 00:10:20 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1014/900w_20251014200749_xxQjgebko7.jpg
+2025-10-16 00:10:20 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 레노버 샤오신 pad pro12.7 2025 (CN version)
+2025-10-16 00:10:20 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c4mZMc3p
+2025-10-16 00:10:20 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c4mZMc3p
+2025-10-16 00:10:20 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c4mZMc3p
+2025-10-16 00:10:20 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c4mZMc3p
+2025-10-16 00:10:20 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:10:20 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:10:20 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 2] AI Product: JONR S20 PRO 무선 진공물걸레 청소기
+2025-10-16 00:10:20 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3QxnKBv
+2025-10-16 00:10:20 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3QxnKBv
+2025-10-16 00:10:20 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3QxnKBv
+2025-10-16 00:10:20 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3QxnKBv
+2025-10-16 00:10:20 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:10:20 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:10:20 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 3] AI Product: JONR ED11 무선 물걸레청소기
+2025-10-16 00:10:20 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3lYQZDD
+2025-10-16 00:10:20 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3lYQZDD
+2025-10-16 00:10:20 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3lYQZDD
+2025-10-16 00:10:20 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3lYQZDD
+2025-10-16 00:10:20 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:10:20 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:10:20 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 4] AI Product: JONR ED12 무선 물걸레청소기
+2025-10-16 00:10:20 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3lYQZDD
+2025-10-16 00:10:20 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3lYQZDD
+2025-10-16 00:10:20 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3lYQZDD
+2025-10-16 00:10:20 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3lYQZDD
+2025-10-16 00:10:20 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:10:20 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:10:20 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=13&no=72232
+2025-10-16 00:10:20 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [청소기] IMOU RV1 Pro 로봇청소기($86), JONR 무선 물걸레청소기 ED11...
+2025-10-16 00:10:21 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:10:23 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 4 deals.
+2025-10-16 00:10:23 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/0920/20250920172613_OWAhO5Mzb3.jpg
+2025-10-16 00:10:23 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: IMOU RV1 Pro 로봇청소기
+2025-10-16 00:10:23 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3RyYrJ9
+2025-10-16 00:10:23 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3RyYrJ9
+2025-10-16 00:10:23 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3RyYrJ9
+2025-10-16 00:10:23 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3RyYrJ9
+2025-10-16 00:10:23 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:10:23 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:10:24 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 2] AI Product: [한국버전 국내발송]Dreame D9 Max Gen2
+2025-10-16 00:10:24 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c31U6yt9
+2025-10-16 00:10:24 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c31U6yt9
+2025-10-16 00:10:24 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c31U6yt9
+2025-10-16 00:10:24 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c31U6yt9
+2025-10-16 00:10:24 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:10:24 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:10:24 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 3] AI Product: JONR ED12/ED11 무선 물걸레청소기 / 건식 습식 양용 (옵션 ED11/ED12)
+2025-10-16 00:10:24 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c40rdEsx
+2025-10-16 00:10:24 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c40rdEsx
+2025-10-16 00:10:24 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c40rdEsx
+2025-10-16 00:10:24 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c40rdEsx
+2025-10-16 00:10:24 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:10:24 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:10:24 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 4] AI Product: JONR S20 PRO무선 진공물걸레 청소기 풀리레이플랫 디자인 브러시 하향압축 3.2KG초경량
+2025-10-16 00:10:24 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3jMiVhv
+2025-10-16 00:10:24 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3jMiVhv
+2025-10-16 00:10:24 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3jMiVhv
+2025-10-16 00:10:24 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3jMiVhv
+2025-10-16 00:10:24 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:10:24 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:10:24 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=13&no=72231
+2025-10-16 00:10:24 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: AULA F108 Pro 기계식 키보드($33.98)/무료...
+2025-10-16 00:10:25 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:10:26 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:10:26 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1015/900w_20251015235534_DEj2OhEblG.jpg
+2025-10-16 00:10:26 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: AULA F108 Pro 기계식 키보드 블랙&그레이색상
+2025-10-16 00:10:26 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3ByEGxH
+2025-10-16 00:10:26 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3ByEGxH
+2025-10-16 00:10:26 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3ByEGxH
+2025-10-16 00:10:26 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3ByEGxH
+2025-10-16 00:10:26 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:10:26 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:10:46 | INFO     | BaseScraper:run:255 | [알리뽐뿌] 14개의 새로운 딜을 DB에 저장했습니다
+2025-10-16 00:10:49 | INFO     | BaseScraper:run:208 | [루리웹] 스크래핑 프로세스 시작
+2025-10-16 00:10:53 | INFO     | BaseScraper:_create_selenium_driver:319 | [루리웹] 드라이버 초기화 완료
+2025-10-16 00:10:53 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbs.ruliweb.com/market/board/1020/read/98603
+2025-10-16 00:10:53 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [그린맨게이밍]데스티니 2: 2025년 확장팩 번들 / 48,500...
+2025-10-16 00:10:54 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: '.view_content article')
+2025-10-16 00:10:56 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:10:56 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://i3.ruliweb.com/img/25/10/15/199e7f60ffc49dfff.png
+2025-10-16 00:10:56 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 데스티니 2: 2025년 확장팩 번들 (예언의 해 에디션 포함)
+2025-10-16 00:10:56 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://i3.ruliweb.com/img/25/10/15/199e7f60ffc49dfff.png
+2025-10-16 00:10:56 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://i3.ruliweb.com/img/25/10/15/199e7f60ffc49dfff.png
+2025-10-16 00:10:56 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://i3.ruliweb.com/img/25/10/15/199e7f60ffc49dfff.png
+2025-10-16 00:10:56 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: i3.ruliweb.com
+2025-10-16 00:10:56 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: i3.ruliweb.com
+2025-10-16 00:10:57 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbs.ruliweb.com/market/board/1020/read/98602
+2025-10-16 00:10:57 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [쿠팡]게임서 t3 lite 유선 게임패드(10,970원 로켓직구)...
+2025-10-16 00:10:58 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: '.view_content article')
+2025-10-16 00:11:00 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:11:00 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://i2.ruliweb.com/img/25/10/15/199e7a71cfb4cd7b.jpg
+2025-10-16 00:11:00 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 게임서 t3 lite 유선 게임패드
+2025-10-16 00:11:00 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://i2.ruliweb.com/img/25/10/15/199e7a71cfb4cd7b.jpg
+2025-10-16 00:11:00 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://i2.ruliweb.com/img/25/10/15/199e7a71cfb4cd7b.jpg
+2025-10-16 00:11:00 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://i2.ruliweb.com/img/25/10/15/199e7a71cfb4cd7b.jpg
+2025-10-16 00:11:00 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: i2.ruliweb.com
+2025-10-16 00:11:00 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: i2.ruliweb.com
+2025-10-16 00:11:01 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbs.ruliweb.com/market/board/1020/read/98601
+2025-10-16 00:11:01 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [네이버쇼핑]PS5 듀얼센스 고스트 오브 요테이 골드 에디션 / 99,......
+2025-10-16 00:11:02 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: '.view_content article')
+2025-10-16 00:11:04 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:11:04 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://i3.ruliweb.com/img/25/10/15/199e7a89fccf78d.jpg
+2025-10-16 00:11:04 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: PS5 듀얼센스 고스트 오브 요테이 골드 에디션
+2025-10-16 00:11:04 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://brand.naver.com/playshop/products/12343295042?site_preference=device&NaPm=ct%3Dmgrwwt05%7Cci%3Dshopn%7Ctr%3Dco_myr%7Chk%3D8be88f4a9d72a5fb4a43cd69ee2c06413394d3aa%7Ctrx%3D
+2025-10-16 00:11:04 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://brand.naver.com/playshop/products/12343295042?site_preference=device&NaPm=ct=mgrwwt05|ci=shopn|tr=co_myr|hk=8be88f4a9d72a5fb4a43cd69ee2c06413394d3aa|trx=
+2025-10-16 00:11:05 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://brand.naver.com/playshop/products/12343295042?site_preference=device
+2025-10-16 00:11:05 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: brand.naver.com
+2025-10-16 00:11:05 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: brand.naver.com
+2025-10-16 00:11:06 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbs.ruliweb.com/market/board/1020/read/98600
+2025-10-16 00:11:06 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: (종료)[네이버페이] 네이버 여행 상품 클릭적립 10원...
+2025-10-16 00:11:08 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: '.view_content article')
+2025-10-16 00:11:09 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:11:09 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: None
+2025-10-16 00:11:09 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 네이버 여행 상품 클릭적립
+2025-10-16 00:11:09 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_shoppinglive_251015_1129
+2025-10-16 00:11:09 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_shoppinglive_251015_1129
+2025-10-16 00:11:10 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_shoppinglive_251015_1129
+2025-10-16 00:11:10 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:11:10 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:11:10 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbs.ruliweb.com/market/board/1020/read/98599
+2025-10-16 00:11:10 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [네이버페이](종료)클릭적립 10원...
+2025-10-16 00:11:12 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: '.view_content article')
+2025-10-16 00:11:14 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:11:14 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: None
+2025-10-16 00:11:14 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 네이버페이 클릭적립
+2025-10-16 00:11:14 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_shoppinglive_251015_1725
+2025-10-16 00:11:14 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_shoppinglive_251015_1725
+2025-10-16 00:11:15 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://nid.naver.com/nidlogin.login?svctype=0&url=https%3A%2F%2Fcampaign2.naver.com%2Fnpay%2Fv2%2Fclick-point%2F%3FeventId%3Dcr_shoppinglive_251015_1725
+2025-10-16 00:11:15 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: nid.naver.com
+2025-10-16 00:11:15 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: nid.naver.com
+2025-10-16 00:11:20 | INFO     | BaseScraper:run:242 | [OCR] 'PS5 듀얼센스 고스트 오브 요테이 골드 에디션'에서 '무료배송' 발견. 배송비 업데이트
+2025-10-16 00:11:25 | INFO     | BaseScraper:run:255 | [루리웹] 5개의 새로운 딜을 DB에 저장했습니다
+2025-10-16 00:11:28 | INFO     | BaseScraper:run:208 | [뽐뿌] 스크래핑 프로세스 시작
+2025-10-16 00:11:31 | INFO     | BaseScraper:_create_selenium_driver:319 | [뽐뿌] 드라이버 초기화 완료
+2025-10-16 00:11:31 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656521
+2025-10-16 00:11:31 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [G마켓]빙그레 투게더 바닐라, 엑설런트, 끌레도르바 10+10+10골라담기, 투게더/요맘...
+2025-10-16 00:11:32 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:11:35 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 8 deals.
+2025-10-16 00:11:35 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1015/900w_20251015004748_MmXnNh3Dq8.jpg
+2025-10-16 00:11:35 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 빙그레 엑설런트 오리지널 6박스
+2025-10-16 00:11:35 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://m.gmarket.co.kr/vi/product/1927340279
+2025-10-16 00:11:35 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://m.gmarket.co.kr/vi/product/1927340279
+2025-10-16 00:11:43 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://item.gmarket.co.kr/Item?goodscode=1927340279
+2025-10-16 00:11:43 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: item.gmarket.co.kr
+2025-10-16 00:11:43 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'gmarket.co.kr' -> 'G마켓'
+2025-10-16 00:11:44 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 2] AI Product: 빙그레 투게더 바닐라 900ml 6통
+2025-10-16 00:11:44 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://m.gmarket.co.kr/vi/product/4492059491
+2025-10-16 00:11:44 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://m.gmarket.co.kr/vi/product/4492059491
+2025-10-16 00:11:46 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://item.gmarket.co.kr/Item?goodscode=4492059491
+2025-10-16 00:11:46 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: item.gmarket.co.kr
+2025-10-16 00:11:46 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'gmarket.co.kr' -> 'G마켓'
+2025-10-16 00:11:46 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 3] AI Product: 끌레도르바 10+10+10 골라담기
+2025-10-16 00:11:46 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://m.gmarket.co.kr/vi/product/4526321372
+2025-10-16 00:11:46 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://m.gmarket.co.kr/vi/product/4526321372
+2025-10-16 00:11:49 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://item.gmarket.co.kr/Item?goodscode=4526321372
+2025-10-16 00:11:49 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: item.gmarket.co.kr
+2025-10-16 00:11:49 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'gmarket.co.kr' -> 'G마켓'
+2025-10-16 00:11:49 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 4] AI Product: 끌레도르바 24개 골라담기
+2025-10-16 00:11:49 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://m.gmarket.co.kr/vi/product/2003518585
+2025-10-16 00:11:49 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://m.gmarket.co.kr/vi/product/2003518585
+2025-10-16 00:11:51 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://item.gmarket.co.kr/Item?goodscode=2003518585
+2025-10-16 00:11:51 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: item.gmarket.co.kr
+2025-10-16 00:11:51 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'gmarket.co.kr' -> 'G마켓'
+2025-10-16 00:11:51 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 5] AI Product: 붕어싸만코 20개+끌레도르바 10개 골라담기
+2025-10-16 00:11:51 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://m.gmarket.co.kr/vi/product/2004395265
+2025-10-16 00:11:51 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://m.gmarket.co.kr/vi/product/2004395265
+2025-10-16 00:11:53 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://item.gmarket.co.kr/Item?goodscode=2004395265
+2025-10-16 00:11:53 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: item.gmarket.co.kr
+2025-10-16 00:11:53 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'gmarket.co.kr' -> 'G마켓'
+2025-10-16 00:11:53 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 6] AI Product: 투게더/요맘때 홈컵 2+3 골라담기
+2025-10-16 00:11:53 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://m.gmarket.co.kr/vi/product/2381117407
+2025-10-16 00:11:53 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://m.gmarket.co.kr/vi/product/2381117407
+2025-10-16 00:11:56 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://item.gmarket.co.kr/Item?goodscode=2381117407
+2025-10-16 00:11:56 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: item.gmarket.co.kr
+2025-10-16 00:11:56 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'gmarket.co.kr' -> 'G마켓'
+2025-10-16 00:11:56 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 7] AI Product: 메로나20개+비비빅20개 등 40개 골라담기
+2025-10-16 00:11:56 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://m.gmarket.co.kr/vi/product/2002909945
+2025-10-16 00:11:56 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://m.gmarket.co.kr/vi/product/2002909945
+2025-10-16 00:11:58 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://item.gmarket.co.kr/Item?goodscode=2002909945
+2025-10-16 00:11:58 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: item.gmarket.co.kr
+2025-10-16 00:11:58 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'gmarket.co.kr' -> 'G마켓'
+2025-10-16 00:11:58 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 8] AI Product: 따옴바 40개 골라담기
+2025-10-16 00:11:58 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://m.gmarket.co.kr/vi/product/2159721315
+2025-10-16 00:11:58 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://m.gmarket.co.kr/vi/product/2159721315
+2025-10-16 00:12:01 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://item.gmarket.co.kr/Item?goodscode=2159721315
+2025-10-16 00:12:01 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: item.gmarket.co.kr
+2025-10-16 00:12:01 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'gmarket.co.kr' -> 'G마켓'
+2025-10-16 00:12:01 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656766
+2025-10-16 00:12:01 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [지마켓]서래푸드 호두 1/4태 1kg 24년산 (유클 12,240원/무료)...
+2025-10-16 00:12:02 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:12:03 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:12:03 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1016/900w_20251016000322_9NNASv7OsH.jpg
+2025-10-16 00:12:03 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 서래푸드 호두 1/4태 1kg 24년산
+2025-10-16 00:12:03 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656766
+2025-10-16 00:12:03 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656766
+2025-10-16 00:12:05 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656766
+2025-10-16 00:12:05 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: www.ppomppu.co.kr
+2025-10-16 00:12:05 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: www.ppomppu.co.kr
+2025-10-16 00:12:06 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656765
+2025-10-16 00:12:06 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [옥션]국내산 포기김치 5kg (18,770원/무배)...
+2025-10-16 00:12:07 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:12:08 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:12:08 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1016/900w_20251016000243_p8Cuf1M5YE.jpeg
+2025-10-16 00:12:08 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 국내산 포기김치 5kg
+2025-10-16 00:12:08 | INFO     | BaseScraper:_resolve_redirect:785 |    - No ecommerce_link provided by AI.
+2025-10-16 00:12:09 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656764
+2025-10-16 00:12:09 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [옥션]프로월드컵 손목/발목 보호대 (13,600원/무료)...
+2025-10-16 00:12:10 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:12:11 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 2 deals.
+2025-10-16 00:12:11 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1016/900w_20251016000824_Aqqju1SS6e.jpg
+2025-10-16 00:12:11 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 프로월드컵 손목/발목 보호대
+2025-10-16 00:12:11 | INFO     | BaseScraper:_resolve_redirect:785 |    - No ecommerce_link provided by AI.
+2025-10-16 00:12:12 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 2] AI Product: 프로월드컵 무릎보호대
+2025-10-16 00:12:12 | INFO     | BaseScraper:_resolve_redirect:785 |    - No ecommerce_link provided by AI.
+2025-10-16 00:12:12 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&page=1&divpage=105&no=656763
+2025-10-16 00:12:12 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [롯데온]농심 생생 우동 봉지 243g 16봉 (24,500원/무료)...
+2025-10-16 00:12:13 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:12:15 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:12:15 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1016/900w_20251016000744_tbfGnFxJsC.jpg
+2025-10-16 00:12:15 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 농심 생생 우동 봉지 243g 16봉
+2025-10-16 00:12:15 | INFO     | BaseScraper:_resolve_redirect:785 |    - No ecommerce_link provided by AI.
+2025-10-16 00:13:10 | INFO     | BaseScraper:run:255 | [뽐뿌] 13개의 새로운 딜을 DB에 저장했습니다
+2025-10-16 00:13:14 | INFO     | BaseScraper:run:208 | [뽐뿌해외] 스크래핑 프로세스 시작
+2025-10-16 00:13:17 | INFO     | BaseScraper:_create_selenium_driver:319 | [뽐뿌해외] 드라이버 초기화 완료
+2025-10-16 00:13:17 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=23&no=72190
+2025-10-16 00:13:17 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [에디파이어 특가] ES20 ($29.38), MR3 ($50.63), QR30 ($59....
+2025-10-16 00:13:19 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:13:22 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 6 deals.
+2025-10-16 00:13:22 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data/_thumb/ppomppu8/0/small_72190.jpg?t=20251016
+2025-10-16 00:13:22 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: Edifier ES20 블루투스 스피커
+2025-10-16 00:13:22 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c2vuDWh9
+2025-10-16 00:13:22 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c2vuDWh9
+2025-10-16 00:13:22 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c2vuDWh9
+2025-10-16 00:13:22 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c2vuDWh9
+2025-10-16 00:13:22 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:13:22 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:13:28 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 2] AI Product: Edifier ES60 블루투스 스피커
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3ET9Erv
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3ET9Erv
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3ET9Erv
+2025-10-16 00:13:28 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3ET9Erv
+2025-10-16 00:13:28 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:13:28 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:13:28 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 3] AI Product: Edifier MR3 2.0 데스크탑 스피커
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3k7MRfz
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3k7MRfz
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3k7MRfz
+2025-10-16 00:13:28 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3k7MRfz
+2025-10-16 00:13:28 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:13:28 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:13:28 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 4] AI Product: Edifier MR4 2.0 스피커
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c2z1XJUR
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c2z1XJUR
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c2z1XJUR
+2025-10-16 00:13:28 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c2z1XJUR
+2025-10-16 00:13:28 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:13:28 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:13:28 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 5] AI Product: Edifier QR30 데스크탑 스피커
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c4L1uHuJ
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c4L1uHuJ
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c4L1uHuJ
+2025-10-16 00:13:28 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c4L1uHuJ
+2025-10-16 00:13:28 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:13:28 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:13:28 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 6] AI Product: Edifier M60 데스크탑 스피커
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: http:s.click.aliexpress.com/e/_c3gNkVfd
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:805 |    - [Redirect] 1.1. Fixed URL: https.click.aliexpress.com/e/_c3gNkVfd
+2025-10-16 00:13:28 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https.click.aliexpress.com/e/_c3gNkVfd
+2025-10-16 00:13:28 | WARNING  | BaseScraper:_resolve_redirect:812 |    - [Redirect] 3. Invalid URL after decoding. Returning as-is: https.click.aliexpress.com/e/_c3gNkVfd
+2025-10-16 00:13:28 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: 
+2025-10-16 00:13:28 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: 
+2025-10-16 00:13:28 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126714
+2025-10-16 00:13:28 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [Amazon]Silicon Power DDR5 64GB (2x32GB) Storm RGB...
+2025-10-16 00:13:30 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:13:32 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:13:32 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1015/900w_20251015182853_wRjlIGbSrv.jpg
+2025-10-16 00:13:32 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: Silicon Power DDR5 64GB (2x32GB) Storm RGB 6000MT/s (흰색/검정색)
+2025-10-16 00:13:32 | INFO     | BaseScraper:_resolve_redirect:785 |    - No ecommerce_link provided by AI.
+2025-10-16 00:13:34 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126713
+2025-10-16 00:13:34 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [brytesoft] 윈도우11프로 (8달러/이메일)...
+2025-10-16 00:13:35 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:13:37 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 2 deals.
+2025-10-16 00:13:37 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: None
+2025-10-16 00:13:37 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: Windows 11 Pro Lifetime Activation Key (Digital Download)
+2025-10-16 00:13:37 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:13:37 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false
+2025-10-16 00:13:47 | WARNING  | BaseScraper:_resolve_redirect:821 |    - [Redirect] Page load timeout for https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false. Proceeding anyway.
+2025-10-16 00:13:47 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:13:47 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: slickdeals.net
+2025-10-16 00:13:47 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: slickdeals.net
+2025-10-16 00:13:47 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 2] AI Product: Windows 11 Pro + Microsoft Office 2024 Pro Plus (Lifetime, 1 PC, Digital Download)
+2025-10-16 00:13:47 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:13:47 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false
+2025-10-16 00:13:55 | WARNING  | BaseScraper:_resolve_redirect:821 |    - [Redirect] Page load timeout for https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false. Proceeding anyway.
+2025-10-16 00:13:55 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:13:55 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: slickdeals.net
+2025-10-16 00:13:55 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: slickdeals.net
+2025-10-16 00:13:55 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126712
+2025-10-16 00:13:55 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [indiegogo] 오프라인 도메인, 샤프 도메인 ($1/무료)...
+2025-10-16 00:13:56 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:13:57 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:13:57 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1013/20251013205102_qfbSr4eEMi.png
+2025-10-16 00:13:57 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 샤프 도메인 (30일 소유권)
+2025-10-16 00:13:57 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://shafdomain.com/
+2025-10-16 00:13:57 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://shafdomain.com/
+2025-10-16 00:14:02 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://shafdomain.com/
+2025-10-16 00:14:02 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: shafdomain.com
+2025-10-16 00:14:02 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: shafdomain.com
+2025-10-16 00:14:02 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126710
+2025-10-16 00:14:02 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [Patagonia] Men's Boulder Fork Rain Jacket ($113.9...
+2025-10-16 00:14:03 | INFO     | BaseScraper:_process_detail_pages:678 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:14:05 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:14:05 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1012/900w_20251012205930_wA2xdqKJp7.jpg
+2025-10-16 00:14:05 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: Patagonia Men's Boulder Fork Rain Jacket (Wetland Blue)
+2025-10-16 00:14:05 | INFO     | BaseScraper:_resolve_redirect:785 |    - No ecommerce_link provided by AI.
+2025-10-16 00:14:06 | INFO     | BaseScraper:run:255 | [뽐뿌해외] 11개의 새로운 딜을 DB에 저장했습니다
+2025-10-16 00:14:09 | INFO     | BaseScraper:run:208 | [빠삭국내] 스크래핑 프로세스 시작
+2025-10-16 00:14:12 | INFO     | BaseScraper:_create_selenium_driver:319 | [빠삭국내] 드라이버 초기화 완료
+2025-10-16 00:14:12 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbasak.com/bbs/board.php?bo_table=bbasak1&wr_id=111618
+2025-10-16 00:14:12 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: 토스) 한일 의료 전기요 특가 32,900원...
+2025-10-16 00:14:13 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://bbasak.com/bbs/board.php?bo_table=bbasak1&wr_id=111618
+2025-10-16 00:14:15 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:14:15 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://bbasak.com/data_new/file/bbasak1/2510/2365070599_oavEFAkr_IMG_8655_t.jpeg
+2025-10-16 00:14:15 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 한일 의료 전기요 특가
+2025-10-16 00:14:15 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://service.toss.im/shopping/c/213697471
+2025-10-16 00:14:15 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://service.toss.im/shopping/c/213697471
+2025-10-16 00:14:16 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://service.toss.im/shopping-discovery/c/213697471
+2025-10-16 00:14:16 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: service.toss.im
+2025-10-16 00:14:16 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'toss.im' -> '토스'
+2025-10-16 00:14:17 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbasak.com/bbs/board.php?bo_table=bbasak1&wr_id=111617
+2025-10-16 00:14:17 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [네이버] 손질완료 반건조 박대 (무배/15900원)...
+2025-10-16 00:14:19 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://bbasak.com/bbs/board.php?bo_table=bbasak1&wr_id=111617
+2025-10-16 00:14:21 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:14:21 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://bbasak.com/data_new/file/bbasak1/2510/3740126438_lcTFqp1j_ED9994EBA9B4_ECBAA1ECB298_2025-10-15_212348_b.png
+2025-10-16 00:14:21 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 손질완료 반건조 박대
+2025-10-16 00:14:21 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://smartstore.naver.com/toto2838/products/11962176672
+2025-10-16 00:14:21 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://smartstore.naver.com/toto2838/products/11962176672
+2025-10-16 00:14:21 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://smartstore.naver.com/toto2838/products/11962176672
+2025-10-16 00:14:21 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: smartstore.naver.com
+2025-10-16 00:14:21 | INFO     | BaseScraper:_infer_shop_name_from_link:561 |  - Matched exact domain 'smartstore.naver.com' -> '네이버'
+2025-10-16 00:14:22 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbasak.com/bbs/board.php?bo_table=bbasak1&wr_id=111616
+2025-10-16 00:14:22 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [카카오] 어촌시래기 감자탕 (무배/18800원)...
+2025-10-16 00:14:23 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://bbasak.com/bbs/board.php?bo_table=bbasak1&wr_id=111616
+2025-10-16 00:14:27 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:14:27 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://bbasak.com/data_new/file/bbasak1/2510/3740126438_w0M1fODB_ED9994EBA9B4_ECBAA1ECB298_2025-10-15_170610_b.png
+2025-10-16 00:14:27 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 어촌시래기 감자탕
+2025-10-16 00:14:27 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://store.kakao.com/hotte/products/189982149
+2025-10-16 00:14:27 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://store.kakao.com/hotte/products/189982149
+2025-10-16 00:14:28 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://store.kakao.com/hotte/products/189982149
+2025-10-16 00:14:28 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: store.kakao.com
+2025-10-16 00:14:28 | INFO     | BaseScraper:_infer_shop_name_from_link:570 |  - No matching shop found for domain: store.kakao.com
+2025-10-16 00:14:33 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbasak.com/bbs/board.php?bo_table=bbasak1&wr_id=111615
+2025-10-16 00:14:33 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [지마켓] 나이키 코르테즈 스니커즈 외 다양 78,890원 무료배송...
+2025-10-16 00:14:34 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://bbasak.com/bbs/board.php?bo_table=bbasak1&wr_id=111615
+2025-10-16 00:14:37 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:14:37 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://bbasak.com/data_new/file/bbasak1/2510/2109148426_zHWvwaBQ_KakaoTalk_20251015_143055557_t.jpg
+2025-10-16 00:14:37 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 나이키 코르테즈 스니커즈 외 다양
+2025-10-16 00:14:37 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://item.gmarket.co.kr/Item?goodscode=4070054686
+2025-10-16 00:14:37 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://item.gmarket.co.kr/Item?goodscode=4070054686
+2025-10-16 00:14:40 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://item.gmarket.co.kr/Item?goodscode=4070054686
+2025-10-16 00:14:40 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: item.gmarket.co.kr
+2025-10-16 00:14:40 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'gmarket.co.kr' -> 'G마켓'
+2025-10-16 00:14:41 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbasak.com/bbs/board.php?bo_table=bbasak1&wr_id=111614
+2025-10-16 00:14:41 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [지마켓] 따뜻 포근한 긴팔 잠옷세트 (6,440원/무료)...
+2025-10-16 00:14:42 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://bbasak.com/bbs/board.php?bo_table=bbasak1&wr_id=111614
+2025-10-16 00:14:45 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:14:45 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://bbasak.com/data_new/file/bbasak1/2510/2042008980_DlNuXBVG_KakaoTalk_20251015_164337513_b.png
+2025-10-16 00:14:45 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 따뜻 포근한 긴팔 잠옷세트
+2025-10-16 00:14:45 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://item.gmarket.co.kr/Item?goodscode=2898043757
+2025-10-16 00:14:45 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://item.gmarket.co.kr/Item?goodscode=2898043757
+2025-10-16 00:14:48 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://item.gmarket.co.kr/Item?goodscode=2898043757
+2025-10-16 00:14:48 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: item.gmarket.co.kr
+2025-10-16 00:14:48 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'gmarket.co.kr' -> 'G마켓'
+2025-10-16 00:14:49 | INFO     | BaseScraper:run:255 | [빠삭국내] 5개의 새로운 딜을 DB에 저장했습니다
+2025-10-16 00:14:53 | INFO     | BaseScraper:run:208 | [빠삭해외] 스크래핑 프로세스 시작
+2025-10-16 00:14:55 | INFO     | BaseScraper:_create_selenium_driver:319 | [빠삭해외] 드라이버 초기화 완료
+2025-10-16 00:14:55 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbasak.com/bbs/board.php?bo_table=bbasak2&wr_id=28623
+2025-10-16 00:14:55 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [위시] 일본 이치란 하카타 돈코츠 라멘 5개입 2팩 ($20.20/포함)...
+2025-10-16 00:14:57 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://bbasak.com/bbs/board.php?bo_table=bbasak2&wr_id=28623
+2025-10-16 00:14:59 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:14:59 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://bbasak.com/data_new/file/bbasak2/2510/2049140953_NYFIXJu1_000_t.PNG
+2025-10-16 00:14:59 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 일본 이치란 하카타 돈코츠 라멘 5개입 2팩
+2025-10-16 00:14:59 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://www.wish.com/product/68d3985dc29bb5620f5a295f
+2025-10-16 00:14:59 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://www.wish.com/product/68d3985dc29bb5620f5a295f
+2025-10-16 00:15:01 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://www.wish.com/product/68d3985dc29bb5620f5a295f
+2025-10-16 00:15:01 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: www.wish.com
+2025-10-16 00:15:01 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'wish.com' -> 'Wish'
+2025-10-16 00:15:02 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbasak.com/bbs/board.php?bo_table=bbasak2&wr_id=28622
+2025-10-16 00:15:02 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [알리익스프레스] 레노버 샤오신패드 2025 글로벌롬 태블릿PC(87.93달러/무료배송)...
+2025-10-16 00:15:03 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://bbasak.com/bbs/board.php?bo_table=bbasak2&wr_id=28622
+2025-10-16 00:15:05 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:15:05 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://bbasak.com/data_new/file/bbasak2/2510/3546901971_ITVKF98x_20251001_153627_b.png
+2025-10-16 00:15:05 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 레노버 샤오신패드 2025 글로벌롬 태블릿PC
+2025-10-16 00:15:05 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ko.aliexpress.com/item/1005009835878480.html
+2025-10-16 00:15:05 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ko.aliexpress.com/item/1005009835878480.html
+2025-10-16 00:15:09 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://ko.aliexpress.com/item/1005009835878480.html
+2025-10-16 00:15:09 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: ko.aliexpress.com
+2025-10-16 00:15:09 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'aliexpress.com' -> '알리'
+2025-10-16 00:15:10 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbasak.com/bbs/board.php?bo_table=bbasak2&wr_id=28621
+2025-10-16 00:15:10 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [알리익스프레스] 제우스랩 P16F 포터블 모니터(113.74달러/무료배송)...
+2025-10-16 00:15:11 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://bbasak.com/bbs/board.php?bo_table=bbasak2&wr_id=28621
+2025-10-16 00:15:15 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:15:15 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://bbasak.com/data_new/file/bbasak2/2510/3546901971_mrJBniwD_20251001_132808_b.png
+2025-10-16 00:15:15 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 제우스랩 P16F 포터블 모니터
+2025-10-16 00:15:15 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ko.aliexpress.com/item/1005009699890615.html
+2025-10-16 00:15:15 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ko.aliexpress.com/item/1005009699890615.html
+2025-10-16 00:15:18 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://ko.aliexpress.com/item/1005009699890615.html
+2025-10-16 00:15:18 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: ko.aliexpress.com
+2025-10-16 00:15:18 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'aliexpress.com' -> '알리'
+2025-10-16 00:15:18 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbasak.com/bbs/board.php?bo_table=bbasak2&wr_id=28620
+2025-10-16 00:15:18 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [알리익스프레스] CHATREEY AN3P 미니PC (180.81달러/무료배송)...
+2025-10-16 00:15:19 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://bbasak.com/bbs/board.php?bo_table=bbasak2&wr_id=28620
+2025-10-16 00:15:22 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:15:22 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://bbasak.com/data_new/file/bbasak2/2510/3546901971_Ta0ZC9mQ_20251001_103647_b.png
+2025-10-16 00:15:22 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: CHATREEY AN3P 미니PC
+2025-10-16 00:15:22 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ko.aliexpress.com/item/1005006395269424.html
+2025-10-16 00:15:22 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ko.aliexpress.com/item/1005006395269424.html
+2025-10-16 00:15:24 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://ko.aliexpress.com/item/1005006395269424.html
+2025-10-16 00:15:24 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: ko.aliexpress.com
+2025-10-16 00:15:24 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'aliexpress.com' -> '알리'
+2025-10-16 00:15:25 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://bbasak.com/bbs/board.php?bo_table=bbasak2&wr_id=28619
+2025-10-16 00:15:25 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: [알리익스프레스] 에디파이어 G2000 Pro 데스크탑 2.0채널 PC 스피커(85.98달...
+2025-10-16 00:15:26 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://bbasak.com/bbs/board.php?bo_table=bbasak2&wr_id=28619
+2025-10-16 00:15:29 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:15:29 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://bbasak.com/data_new/file/bbasak2/2510/3546901971_Uwx2KseC_20251001_075403_b.png
+2025-10-16 00:15:29 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 에디파이어 G2000 Pro 데스크탑 2.0채널 PC 스피커
+2025-10-16 00:15:29 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://ko.aliexpress.com/item/1005009013261392.html
+2025-10-16 00:15:29 | INFO     | BaseScraper:_resolve_redirect:809 |    - [Redirect] 2. Decoded link: https://ko.aliexpress.com/item/1005009013261392.html
+2025-10-16 00:15:31 | INFO     | BaseScraper:_resolve_redirect:824 |    - [Redirect] 3. Final resolved URL: https://ko.aliexpress.com/item/1005009013261392.html
+2025-10-16 00:15:31 | INFO     | BaseScraper:_infer_shop_name_from_link:507 |  - Inferring shop name from domain: ko.aliexpress.com
+2025-10-16 00:15:31 | INFO     | BaseScraper:_infer_shop_name_from_link:567 |  - Matched subdomain 'aliexpress.com' -> '알리'
+2025-10-16 00:15:32 | INFO     | BaseScraper:run:255 | [빠삭해외] 5개의 새로운 딜을 DB에 저장했습니다
+2025-10-16 00:15:36 | INFO     | BaseScraper:run:208 | [클리앙] 스크래핑 프로세스 시작
+2025-10-16 00:15:39 | INFO     | BaseScraper:_create_selenium_driver:319 | [클리앙] 드라이버 초기화 완료
+2025-10-16 00:15:39 | INFO     | BaseScraper:_process_detail_pages:664 | Processing post_link: https://www.clien.net/service/board/jirum/19078836?od=T31&po=0&category=0&groupCd=
+2025-10-16 00:15:39 | INFO     | BaseScraper:_process_detail_pages:667 | Processing deal: 251015 - 네이버 추가 20원...
+2025-10-16 00:15:40 | WARNING  | BaseScraper:_process_detail_pages:682 | 지정된 콘텐츠 선택자를 찾지 못했습니다. body 전체를 사용합니다: https://www.clien.net/service/board/jirum/19078836?od=T31&po=0&category=0&groupCd=
+2025-10-16 00:15:44 | INFO     | BaseScraper:_process_detail_pages:704 |   [AI Multi-Deal Analysis] Found 2 deals.
+2025-10-16 00:15:44 | INFO     | BaseScraper:_process_detail_pages:720 |   [Image Debug] Post Representative Image: https://edgio.clien.net/F94/10149595/8c72b5bd6c678d.gif
+2025-10-16 00:15:44 | INFO     | BaseScraper:_process_detail_pages:727 |     [Deal 1] AI Product: 네이버 추가 적립 이벤트 (251015)
+2025-10-16 00:15:44 | INFO     | BaseScraper:_resolve_redirect:803 |    - [Redirect] 1. AI raw link: https://campaign2.naver.com/npay/v2/click-point/?eventId=cr_shoppinglive_251015_1129
+2025-10-16 00:54:37 | INFO     | InsightDeal:execution_tracker:32 | [START] PpomppuOverseasScraper �׽�Ʈ ����: 2025-10-16 00:54:37.022835
+2025-10-16 00:54:37 | INFO     | InsightDeal:set_sqlite_pragma:38 | Database connection established
+2025-10-16 00:54:37 | INFO     | BaseScraper:__init__:121 | Initializing EasyOCR model... (This may take a moment on first run)
+2025-10-16 00:54:52 | INFO     | InsightDeal:execution_tracker:32 | [START] PpomppuOverseasScraper �׽�Ʈ ����: 2025-10-16 00:54:52.529005
+2025-10-16 00:54:52 | INFO     | InsightDeal:set_sqlite_pragma:38 | Database connection established
+2025-10-16 00:54:52 | INFO     | BaseScraper:__init__:121 | Initializing EasyOCR model... (This may take a moment on first run)
+2025-10-16 00:54:54 | INFO     | BaseScraper:__init__:123 | EasyOCR model loaded successfully.
+2025-10-16 00:54:54 | INFO     | BaseScraper:run:208 | [뽐뿌해외] 스크래핑 프로세스 시작
+2025-10-16 00:54:56 | INFO     | BaseScraper:_create_selenium_driver:353 | [뽐뿌해외] 드라이버 초기화 완료
+2025-10-16 00:54:56 | INFO     | BaseScraper:_process_detail_pages:703 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=23&no=72183
+2025-10-16 00:54:56 | INFO     | BaseScraper:_process_detail_pages:706 | Processing deal: 제주삼다수 그린 무라벨 생수 2L 18병 (13,992원/무료배송) 구매방법 필독!...
+2025-10-16 00:54:57 | INFO     | BaseScraper:_process_detail_pages:717 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:54:59 | INFO     | BaseScraper:_process_detail_pages:743 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:54:59 | INFO     | BaseScraper:_process_detail_pages:759 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data/_thumb/ppomppu8/3/small_72183.jpg?t=20251016
+2025-10-16 00:54:59 | INFO     | BaseScraper:_process_detail_pages:766 |     [Deal 1] AI Product: 제주삼다수 그린 무라벨 생수 2L 18병
+2025-10-16 00:54:59 | INFO     | BaseScraper:_resolve_redirect:842 |    - [Redirect] 1. AI raw link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=23&no=72183
+2025-10-16 00:54:59 | INFO     | BaseScraper:_resolve_redirect:848 |    - [Redirect] 2. Decoded link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=23&no=72183
+2025-10-16 00:55:02 | WARNING  | BaseScraper:_resolve_redirect:860 |    - [Redirect] Page load timeout for https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=23&no=72183. Proceeding anyway.
+2025-10-16 00:55:02 | INFO     | BaseScraper:_resolve_redirect:863 |    - [Redirect] 3. Final resolved URL: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=23&no=72183
+2025-10-16 00:55:02 | INFO     | BaseScraper:_infer_shop_name_from_link:546 |  - Inferring shop name from domain: www.ppomppu.co.kr
+2025-10-16 00:55:02 | INFO     | BaseScraper:_infer_shop_name_from_link:609 |  - No matching shop found for domain: www.ppomppu.co.kr
+2025-10-16 00:55:03 | INFO     | BaseScraper:_process_detail_pages:703 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126714
+2025-10-16 00:55:03 | INFO     | BaseScraper:_process_detail_pages:706 | Processing deal: [Amazon]Silicon Power DDR5 64GB (2x32GB) Storm RGB...
+2025-10-16 00:55:03 | INFO     | BaseScraper:_process_detail_pages:717 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:55:05 | INFO     | BaseScraper:_process_detail_pages:743 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:55:05 | INFO     | BaseScraper:_process_detail_pages:759 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1015/900w_20251015182853_wRjlIGbSrv.jpg
+2025-10-16 00:55:05 | INFO     | BaseScraper:_process_detail_pages:766 |     [Deal 1] AI Product: Silicon Power DDR5 64GB (2x32GB) Storm RGB 6000MT/s (흰색/검정색)
+2025-10-16 00:55:05 | INFO     | BaseScraper:_resolve_redirect:824 |    - No ecommerce_link provided by AI.
+2025-10-16 00:55:05 | INFO     | BaseScraper:_process_detail_pages:703 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126713
+2025-10-16 00:55:05 | INFO     | BaseScraper:_process_detail_pages:706 | Processing deal: [brytesoft] 윈도우11프로 (8달러/이메일)...
+2025-10-16 00:55:05 | INFO     | BaseScraper:_process_detail_pages:717 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:55:07 | INFO     | BaseScraper:_process_detail_pages:743 |   [AI Multi-Deal Analysis] Found 2 deals.
+2025-10-16 00:55:07 | INFO     | BaseScraper:_process_detail_pages:759 |   [Image Debug] Post Representative Image: None
+2025-10-16 00:55:07 | INFO     | BaseScraper:_process_detail_pages:766 |     [Deal 1] AI Product: Windows 11 Pro Lifetime Activation Key (Digital Download)
+2025-10-16 00:55:07 | INFO     | BaseScraper:_resolve_redirect:842 |    - [Redirect] 1. AI raw link: https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:55:07 | INFO     | BaseScraper:_resolve_redirect:848 |    - [Redirect] 2. Decoded link: https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false
+2025-10-16 00:55:10 | ERROR    | BaseScraper:_resolve_redirect:867 |    - [Redirect] 3. Failed to resolve redirect for https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse: Message: timeout: Timed out receiving message from renderer: -0.002
+  (Session info: chrome=141.0.7390.66)
+Stacktrace:
+	GetHandleVerifier [0x0x7ff7172be9e5+80021]
+	GetHandleVerifier [0x0x7ff7172bea40+80112]
+	(No symbol) [0x0x7ff71704060f]
+	(No symbol) [0x0x7ff71702d82f]
+	(No symbol) [0x0x7ff71702d51d]
+	(No symbol) [0x0x7ff71702b08c]
+	(No symbol) [0x0x7ff71702bb0b]
+	(No symbol) [0x0x7ff71703ab0e]
+	(No symbol) [0x0x7ff717051161]
+	(No symbol) [0x0x7ff7170583aa]
+	(No symbol) [0x0x7ff71702c2be]
+	(No symbol) [0x0x7ff717050e51]
+	(No symbol) [0x0x7ff7170e9566]
+	(No symbol) [0x0x7ff7170c1003]
+	(No symbol) [0x0x7ff7170895d1]
+	(No symbol) [0x0x7ff71708a3f3]
+	GetHandleVerifier [0x0x7ff71757dd8d+2960445]
+	GetHandleVerifier [0x0x7ff71757804a+2936570]
+	GetHandleVerifier [0x0x7ff717598a87+3070263]
+	GetHandleVerifier [0x0x7ff7172d84ce+185214]
+	GetHandleVerifier [0x0x7ff7172dff1f+216527]
+	GetHandleVerifier [0x0x7ff7172c7c24+117460]
+	GetHandleVerifier [0x0x7ff7172c7ddf+117903]
+	GetHandleVerifier [0x0x7ff7172adcb8+11112]
+	BaseThreadInitThunk [0x0x7ff85be8e8d7+23]
+	RtlUserThreadStart [0x0x7ff85d628d9c+44]
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 854, in _resolve_redirect
+    self.driver.get(decoded_url)
+  File "C:\Users\kth00\AppData\Local\Programs\Python\Python311\Lib\site-packages\selenium\webdriver\remote\webdriver.py", line 483, in get
+    self.execute(Command.GET, {"url": url})
+  File "C:\Users\kth00\AppData\Local\Programs\Python\Python311\Lib\site-packages\selenium\webdriver\remote\webdriver.py", line 458, in execute
+    self.error_handler.check_response(response)
+  File "C:\Users\kth00\AppData\Local\Programs\Python\Python311\Lib\site-packages\selenium\webdriver\remote\errorhandler.py", line 232, in check_response
+    raise exception_class(message, screen, stacktrace)
+selenium.common.exceptions.TimeoutException: Message: timeout: Timed out receiving message from renderer: -0.002
+  (Session info: chrome=141.0.7390.66)
+Stacktrace:
+	GetHandleVerifier [0x0x7ff7172be9e5+80021]
+	GetHandleVerifier [0x0x7ff7172bea40+80112]
+	(No symbol) [0x0x7ff71704060f]
+	(No symbol) [0x0x7ff71702d82f]
+	(No symbol) [0x0x7ff71702d51d]
+	(No symbol) [0x0x7ff71702b08c]
+	(No symbol) [0x0x7ff71702bb0b]
+	(No symbol) [0x0x7ff71703ab0e]
+	(No symbol) [0x0x7ff717051161]
+	(No symbol) [0x0x7ff7170583aa]
+	(No symbol) [0x0x7ff71702c2be]
+	(No symbol) [0x0x7ff717050e51]
+	(No symbol) [0x0x7ff7170e9566]
+	(No symbol) [0x0x7ff7170c1003]
+	(No symbol) [0x0x7ff7170895d1]
+	(No symbol) [0x0x7ff71708a3f3]
+	GetHandleVerifier [0x0x7ff71757dd8d+2960445]
+	GetHandleVerifier [0x0x7ff71757804a+2936570]
+	GetHandleVerifier [0x0x7ff717598a87+3070263]
+	GetHandleVerifier [0x0x7ff7172d84ce+185214]
+	GetHandleVerifier [0x0x7ff7172dff1f+216527]
+	GetHandleVerifier [0x0x7ff7172c7c24+117460]
+	GetHandleVerifier [0x0x7ff7172c7ddf+117903]
+	GetHandleVerifier [0x0x7ff7172adcb8+11112]
+	BaseThreadInitThunk [0x0x7ff85be8e8d7+23]
+	RtlUserThreadStart [0x0x7ff85d628d9c+44]
+
+2025-10-16 00:55:10 | WARNING  | BaseScraper:_resolve_redirect:870 |    - [Redirect] Error occurred. Returning current URL: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126713
+2025-10-16 00:55:10 | INFO     | BaseScraper:_infer_shop_name_from_link:546 |  - Inferring shop name from domain: www.ppomppu.co.kr
+2025-10-16 00:55:10 | INFO     | BaseScraper:_infer_shop_name_from_link:609 |  - No matching shop found for domain: www.ppomppu.co.kr
+2025-10-16 00:55:10 | INFO     | BaseScraper:_process_detail_pages:766 |     [Deal 2] AI Product: Windows 11 Pro + Microsoft Office 2024 Pro Plus (Lifetime, 1 PC, Digital Download)
+2025-10-16 00:55:10 | INFO     | BaseScraper:_resolve_redirect:842 |    - [Redirect] 1. AI raw link: https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:55:10 | INFO     | BaseScraper:_resolve_redirect:848 |    - [Redirect] 2. Decoded link: https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false
+2025-10-16 00:55:14 | ERROR    | BaseScraper:_resolve_redirect:867 |    - [Redirect] 3. Failed to resolve redirect for https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse: Message: timeout: Timed out receiving message from renderer: 0.581
+  (Session info: chrome=141.0.7390.66)
+Stacktrace:
+	GetHandleVerifier [0x0x7ff7172be9e5+80021]
+	GetHandleVerifier [0x0x7ff7172bea40+80112]
+	(No symbol) [0x0x7ff71704060f]
+	(No symbol) [0x0x7ff71702d82f]
+	(No symbol) [0x0x7ff71702d51d]
+	(No symbol) [0x0x7ff71702b08c]
+	(No symbol) [0x0x7ff71702bb0b]
+	(No symbol) [0x0x7ff71703ab0e]
+	(No symbol) [0x0x7ff717051161]
+	(No symbol) [0x0x7ff7170583aa]
+	(No symbol) [0x0x7ff71702c2be]
+	(No symbol) [0x0x7ff717050e51]
+	(No symbol) [0x0x7ff7170e99f6]
+	(No symbol) [0x0x7ff7170c1003]
+	(No symbol) [0x0x7ff7170895d1]
+	(No symbol) [0x0x7ff71708a3f3]
+	GetHandleVerifier [0x0x7ff71757dd8d+2960445]
+	GetHandleVerifier [0x0x7ff71757804a+2936570]
+	GetHandleVerifier [0x0x7ff717598a87+3070263]
+	GetHandleVerifier [0x0x7ff7172d84ce+185214]
+	GetHandleVerifier [0x0x7ff7172dff1f+216527]
+	GetHandleVerifier [0x0x7ff7172c7c24+117460]
+	GetHandleVerifier [0x0x7ff7172c7ddf+117903]
+	GetHandleVerifier [0x0x7ff7172adcb8+11112]
+	BaseThreadInitThunk [0x0x7ff85be8e8d7+23]
+	RtlUserThreadStart [0x0x7ff85d628d9c+44]
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 854, in _resolve_redirect
+    self.driver.get(decoded_url)
+  File "C:\Users\kth00\AppData\Local\Programs\Python\Python311\Lib\site-packages\selenium\webdriver\remote\webdriver.py", line 483, in get
+    self.execute(Command.GET, {"url": url})
+  File "C:\Users\kth00\AppData\Local\Programs\Python\Python311\Lib\site-packages\selenium\webdriver\remote\webdriver.py", line 458, in execute
+    self.error_handler.check_response(response)
+  File "C:\Users\kth00\AppData\Local\Programs\Python\Python311\Lib\site-packages\selenium\webdriver\remote\errorhandler.py", line 232, in check_response
+    raise exception_class(message, screen, stacktrace)
+selenium.common.exceptions.TimeoutException: Message: timeout: Timed out receiving message from renderer: 0.581
+  (Session info: chrome=141.0.7390.66)
+Stacktrace:
+	GetHandleVerifier [0x0x7ff7172be9e5+80021]
+	GetHandleVerifier [0x0x7ff7172bea40+80112]
+	(No symbol) [0x0x7ff71704060f]
+	(No symbol) [0x0x7ff71702d82f]
+	(No symbol) [0x0x7ff71702d51d]
+	(No symbol) [0x0x7ff71702b08c]
+	(No symbol) [0x0x7ff71702bb0b]
+	(No symbol) [0x0x7ff71703ab0e]
+	(No symbol) [0x0x7ff717051161]
+	(No symbol) [0x0x7ff7170583aa]
+	(No symbol) [0x0x7ff71702c2be]
+	(No symbol) [0x0x7ff717050e51]
+	(No symbol) [0x0x7ff7170e99f6]
+	(No symbol) [0x0x7ff7170c1003]
+	(No symbol) [0x0x7ff7170895d1]
+	(No symbol) [0x0x7ff71708a3f3]
+	GetHandleVerifier [0x0x7ff71757dd8d+2960445]
+	GetHandleVerifier [0x0x7ff71757804a+2936570]
+	GetHandleVerifier [0x0x7ff717598a87+3070263]
+	GetHandleVerifier [0x0x7ff7172d84ce+185214]
+	GetHandleVerifier [0x0x7ff7172dff1f+216527]
+	GetHandleVerifier [0x0x7ff7172c7c24+117460]
+	GetHandleVerifier [0x0x7ff7172c7ddf+117903]
+	GetHandleVerifier [0x0x7ff7172adcb8+11112]
+	BaseThreadInitThunk [0x0x7ff85be8e8d7+23]
+	RtlUserThreadStart [0x0x7ff85d628d9c+44]
+
+2025-10-16 00:55:14 | WARNING  | BaseScraper:_resolve_redirect:870 |    - [Redirect] Error occurred. Returning current URL: https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false
+2025-10-16 00:55:14 | INFO     | BaseScraper:_infer_shop_name_from_link:546 |  - Inferring shop name from domain: slickdeals.net
+2025-10-16 00:55:14 | INFO     | BaseScraper:_infer_shop_name_from_link:609 |  - No matching shop found for domain: slickdeals.net
+2025-10-16 00:55:14 | ERROR    | BaseScraper:run:273 | [뽐뿌해외] 스크래핑 중 오류 발생: 'PpomppuOverseasScraper' object has no attribute 'db_session'
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 229, in run
+    exists = self.db_session.query(models.Deal.id).filter(
+             ^^^^^^^^^^^^^^^
+AttributeError: 'PpomppuOverseasScraper' object has no attribute 'db_session'
+2025-10-16 00:55:16 | INFO     | InsightDeal:execution_tracker:39 | [FAILED] PpomppuOverseasScraper �׽�Ʈ �Ϸ� - �ҿ�ð�: 0:00:23.863676
+2025-10-16 00:55:16 | ERROR    | InsightDeal:run_test:59 | [ERROR] PpomppuOverseasScraper �׽�Ʈ �� ����: 'PpomppuOverseasScraper' object has no attribute 'db_session'
+2025-10-16 00:57:20 | INFO     | InsightDeal:execution_tracker:32 | [START] PpomppuOverseasScraper �׽�Ʈ ����: 2025-10-16 00:57:20.060817
+2025-10-16 00:57:20 | INFO     | InsightDeal:set_sqlite_pragma:38 | Database connection established
+2025-10-16 00:57:20 | INFO     | BaseScraper:__init__:121 | Initializing EasyOCR model... (This may take a moment on first run)
+2025-10-16 00:57:22 | INFO     | BaseScraper:__init__:123 | EasyOCR model loaded successfully.
+2025-10-16 00:57:22 | INFO     | BaseScraper:run:208 | [뽐뿌해외] 스크래핑 프로세스 시작
+2025-10-16 00:57:24 | INFO     | BaseScraper:_create_selenium_driver:348 | [뽐뿌해외] 드라이버 초기화 완료
+2025-10-16 00:57:24 | INFO     | BaseScraper:_process_detail_pages:698 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&page=1&divpage=23&no=72179
+2025-10-16 00:57:24 | INFO     | BaseScraper:_process_detail_pages:701 | Processing deal: 제우스랩 Z22P Pro 스타일러스펜 터치 포터블 모니터(199달러/무료배송)...
+2025-10-16 00:57:25 | INFO     | BaseScraper:_process_detail_pages:712 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:57:27 | INFO     | BaseScraper:_process_detail_pages:738 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:57:27 | INFO     | BaseScraper:_process_detail_pages:754 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data/_thumb/ppomppu8/9/small_72179.jpg?t=20251016
+2025-10-16 00:57:27 | INFO     | BaseScraper:_process_detail_pages:761 |     [Deal 1] AI Product: 제우스랩 Z22P Pro 스타일러스펜 터치 포터블 모니터
+2025-10-16 00:57:27 | INFO     | BaseScraper:_resolve_redirect:819 |    - No ecommerce_link provided by AI.
+2025-10-16 00:57:29 | INFO     | BaseScraper:_process_detail_pages:698 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126714
+2025-10-16 00:57:29 | INFO     | BaseScraper:_process_detail_pages:701 | Processing deal: [Amazon]Silicon Power DDR5 64GB (2x32GB) Storm RGB...
+2025-10-16 00:57:31 | INFO     | BaseScraper:_process_detail_pages:712 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:57:32 | INFO     | BaseScraper:_process_detail_pages:738 |   [AI Multi-Deal Analysis] Found 1 deals.
+2025-10-16 00:57:32 | INFO     | BaseScraper:_process_detail_pages:754 |   [Image Debug] Post Representative Image: https://cdn2.ppomppu.co.kr/zboard/data3/2025/1015/900w_20251015182853_wRjlIGbSrv.jpg
+2025-10-16 00:57:32 | INFO     | BaseScraper:_process_detail_pages:761 |     [Deal 1] AI Product: Silicon Power DDR5 64GB (2x32GB) Storm RGB 6000MT/s (흰색/검정색)
+2025-10-16 00:57:32 | INFO     | BaseScraper:_resolve_redirect:819 |    - No ecommerce_link provided by AI.
+2025-10-16 00:57:32 | INFO     | BaseScraper:_process_detail_pages:698 | Processing post_link: https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&page=1&divpage=23&no=126713
+2025-10-16 00:57:32 | INFO     | BaseScraper:_process_detail_pages:701 | Processing deal: [brytesoft] 윈도우11프로 (8달러/이메일)...
+2025-10-16 00:57:33 | INFO     | BaseScraper:_process_detail_pages:712 | 콘텐츠 요소를 찾았습니다 (selector: 'td.board-contents')
+2025-10-16 00:57:35 | INFO     | BaseScraper:_process_detail_pages:738 |   [AI Multi-Deal Analysis] Found 2 deals.
+2025-10-16 00:57:35 | INFO     | BaseScraper:_process_detail_pages:754 |   [Image Debug] Post Representative Image: None
+2025-10-16 00:57:35 | INFO     | BaseScraper:_process_detail_pages:761 |     [Deal 1] AI Product: Windows 11 Pro Lifetime Activation Key (Digital Download)
+2025-10-16 00:57:35 | INFO     | BaseScraper:_resolve_redirect:837 |    - [Redirect] 1. AI raw link: https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:57:35 | INFO     | BaseScraper:_resolve_redirect:843 |    - [Redirect] 2. Decoded link: https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false
+2025-10-16 00:57:38 | ERROR    | BaseScraper:_resolve_redirect:862 |    - [Redirect] 3. Failed to resolve redirect for https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse: Message: timeout: Timed out receiving message from renderer: 0.301
+  (Session info: chrome=141.0.7390.66)
+Stacktrace:
+	GetHandleVerifier [0x0x7ff7172be9e5+80021]
+	GetHandleVerifier [0x0x7ff7172bea40+80112]
+	(No symbol) [0x0x7ff71704060f]
+	(No symbol) [0x0x7ff71702d82f]
+	(No symbol) [0x0x7ff71702d51d]
+	(No symbol) [0x0x7ff71702b08c]
+	(No symbol) [0x0x7ff71702bb0b]
+	(No symbol) [0x0x7ff71703ab0e]
+	(No symbol) [0x0x7ff717051161]
+	(No symbol) [0x0x7ff7170583aa]
+	(No symbol) [0x0x7ff71702c2be]
+	(No symbol) [0x0x7ff717050e51]
+	(No symbol) [0x0x7ff7170e99f6]
+	(No symbol) [0x0x7ff7170c1003]
+	(No symbol) [0x0x7ff7170895d1]
+	(No symbol) [0x0x7ff71708a3f3]
+	GetHandleVerifier [0x0x7ff71757dd8d+2960445]
+	GetHandleVerifier [0x0x7ff71757804a+2936570]
+	GetHandleVerifier [0x0x7ff717598a87+3070263]
+	GetHandleVerifier [0x0x7ff7172d84ce+185214]
+	GetHandleVerifier [0x0x7ff7172dff1f+216527]
+	GetHandleVerifier [0x0x7ff7172c7c24+117460]
+	GetHandleVerifier [0x0x7ff7172c7ddf+117903]
+	GetHandleVerifier [0x0x7ff7172adcb8+11112]
+	BaseThreadInitThunk [0x0x7ff85be8e8d7+23]
+	RtlUserThreadStart [0x0x7ff85d628d9c+44]
+Traceback (most recent call last):
+  File "d:\Project\InsightDeal\InsightDeal_Backend\scrapers\base.py", line 849, in _resolve_redirect
+    self.driver.get(decoded_url)
+  File "C:\Users\kth00\AppData\Local\Programs\Python\Python311\Lib\site-packages\selenium\webdriver\remote\webdriver.py", line 483, in get
+    self.execute(Command.GET, {"url": url})
+  File "C:\Users\kth00\AppData\Local\Programs\Python\Python311\Lib\site-packages\selenium\webdriver\remote\webdriver.py", line 458, in execute
+    self.error_handler.check_response(response)
+  File "C:\Users\kth00\AppData\Local\Programs\Python\Python311\Lib\site-packages\selenium\webdriver\remote\errorhandler.py", line 232, in check_response
+    raise exception_class(message, screen, stacktrace)
+selenium.common.exceptions.TimeoutException: Message: timeout: Timed out receiving message from renderer: 0.301
+  (Session info: chrome=141.0.7390.66)
+Stacktrace:
+	GetHandleVerifier [0x0x7ff7172be9e5+80021]
+	GetHandleVerifier [0x0x7ff7172bea40+80112]
+	(No symbol) [0x0x7ff71704060f]
+	(No symbol) [0x0x7ff71702d82f]
+	(No symbol) [0x0x7ff71702d51d]
+	(No symbol) [0x0x7ff71702b08c]
+	(No symbol) [0x0x7ff71702bb0b]
+	(No symbol) [0x0x7ff71703ab0e]
+	(No symbol) [0x0x7ff717051161]
+	(No symbol) [0x0x7ff7170583aa]
+	(No symbol) [0x0x7ff71702c2be]
+	(No symbol) [0x0x7ff717050e51]
+	(No symbol) [0x0x7ff7170e99f6]
+	(No symbol) [0x0x7ff7170c1003]
+	(No symbol) [0x0x7ff7170895d1]
+	(No symbol) [0x0x7ff71708a3f3]
+	GetHandleVerifier [0x0x7ff71757dd8d+2960445]
+	GetHandleVerifier [0x0x7ff71757804a+2936570]
+	GetHandleVerifier [0x0x7ff717598a87+3070263]
+	GetHandleVerifier [0x0x7ff7172d84ce+185214]
+	GetHandleVerifier [0x0x7ff7172dff1f+216527]
+	GetHandleVerifier [0x0x7ff7172c7c24+117460]
+	GetHandleVerifier [0x0x7ff7172c7ddf+117903]
+	GetHandleVerifier [0x0x7ff7172adcb8+11112]
+	BaseThreadInitThunk [0x0x7ff85be8e8d7+23]
+	RtlUserThreadStart [0x0x7ff85d628d9c+44]
+
+2025-10-16 00:57:38 | WARNING  | BaseScraper:_resolve_redirect:865 |    - [Redirect] Error occurred. Returning current URL: https://slickdeals.net/f/18621322-windows-11-pro-lifetime-activation-key-digital-download-instant-delivery-8?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false
+2025-10-16 00:57:38 | INFO     | BaseScraper:_infer_shop_name_from_link:541 |  - Inferring shop name from domain: slickdeals.net
+2025-10-16 00:57:38 | INFO     | BaseScraper:_infer_shop_name_from_link:604 |  - No matching shop found for domain: slickdeals.net
+2025-10-16 00:57:38 | INFO     | BaseScraper:_process_detail_pages:761 |     [Deal 2] AI Product: Windows 11 Pro + Microsoft Office 2024 Pro Plus (Lifetime, 1 PC, Digital Download)
+2025-10-16 00:57:38 | INFO     | BaseScraper:_resolve_redirect:837 |    - [Redirect] 1. AI raw link: https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:57:38 | INFO     | BaseScraper:_resolve_redirect:843 |    - [Redirect] 2. Decoded link: https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false
+2025-10-16 00:57:43 | WARNING  | BaseScraper:_resolve_redirect:855 |    - [Redirect] Page load timeout for https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread:Expired:False|Search:Type:normal|Search:Sort:relevance|Search:HideExpired:false. Proceeding anyway.
+2025-10-16 00:57:43 | INFO     | BaseScraper:_resolve_redirect:858 |    - [Redirect] 3. Final resolved URL: https://slickdeals.net/f/18689380-bundle-deal-windows-11-pro-microsoft-office-2024-pro-plus-lifetime-1-pc-digital-download-16-99?src=SDSearchv3&attrsrc=Thread%3AExpired%3AFalse%7CSearch%3AType%3Anormal%7CSearch%3ASort%3Arelevance%7CSearch%3AHideExpired%3Afalse
+2025-10-16 00:57:43 | INFO     | BaseScraper:_infer_shop_name_from_link:541 |  - Inferring shop name from domain: slickdeals.net
+2025-10-16 00:57:43 | INFO     | BaseScraper:_infer_shop_name_from_link:604 |  - No matching shop found for domain: slickdeals.net
+2025-10-16 00:57:43 | INFO     | BaseScraper:run:262 | [뽐뿌해외] 4개의 새로운 딜을 DB에 저장했습니다
+2025-10-16 00:57:43 | INFO     | InsightDeal:run_test:52 | [SUCCESS] PpomppuOverseasScraper - 3�� �ѵ��� ���� �Ϸ�
+2025-10-16 00:57:45 | INFO     | InsightDeal:execution_tracker:39 | [SUCCESS] PpomppuOverseasScraper �׽�Ʈ �Ϸ� - �ҿ�ð�: 0:00:25.326290

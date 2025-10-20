@@ -288,8 +288,13 @@ def parse_content_with_ai(content_html: str, post_link: str, original_title: str
         parsed_json = json.loads(json_str)
         if parsed_json.get('deals'):
             for deal in parsed_json['deals']:
+                price = deal.get("price", "")
+                if price and "원" in price:
+                    if ("달러" in original_title or "$" in original_title) and re.match(r'^\d+원$', price):
+                        number = re.search(r'\d+', price).group()
+                        deal["price"] = f"${number}"
+                        print(f"  [Currency Fix] {price} → ${number}")
                 if not deal.get('ecommerce_link') and available_links:
-                    # AI가 링크를 못 찾았으면 추출한 링크 중 첫 번째 사용
                     deal['ecommerce_link'] = available_links[0]
                     print(f"  [AI Fallback] Added missing ecommerce_link: {available_links[0]}") 
         print(f"  [AI Multi-Deal Analysis] Found {len(parsed_json.get('deals', []))} deals.")
