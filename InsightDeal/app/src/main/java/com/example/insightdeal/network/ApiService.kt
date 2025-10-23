@@ -2,8 +2,10 @@ package com.example.insightdeal.network
 
 import com.example.insightdeal.model.DealDetail
 import com.example.insightdeal.model.DealItem
+import com.example.insightdeal.model.EnhancedDealInfo
 import com.example.insightdeal.model.PriceHistoryItem
 import okhttp3.OkHttpClient
+import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
@@ -53,6 +55,14 @@ interface ApiService {
      */
     @GET("api/deals/{dealId}/history")
     suspend fun getPriceHistory(@Path("dealId") dealId: Int): List<PriceHistoryItem>
+
+    /**
+     * ✅ 특정 딜의 향상된 정보 조회 (게시 시간, 상세 이미지, AI 분석)
+     * @param dealId 상품 ID
+     * @return 향상된 딜 정보 (Response wrapper 사용)
+     */
+    @GET("api/deals/{dealId}/enhanced-info")
+    suspend fun getEnhancedDealInfo(@Path("dealId") dealId: Int): Response<EnhancedDealInfo>
 }
 
 /**

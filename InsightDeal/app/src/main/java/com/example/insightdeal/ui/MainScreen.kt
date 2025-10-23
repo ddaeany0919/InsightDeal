@@ -8,6 +8,10 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -35,7 +39,7 @@ data class CategoryItem(
     val icon: androidx.compose.ui.graphics.vector.ImageVector
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
 fun MainScreen(
     uiState: DealsUiState,
@@ -53,6 +57,12 @@ fun MainScreen(
     var showMenu by remember { mutableStateOf(false) }
     var currentSearchQuery by remember { mutableStateOf("") }
     var isSearchMode by remember { mutableStateOf(false) }
+
+    // ✅ Pull-to-Refresh 상태 추가
+    val pullRefreshState = rememberPullRefreshState(
+        refreshing = uiState is DealsUiState.Loading,
+        onRefresh = onRefresh
+    )
 
     // ✅ 검색된 딜 필터링
     val displayDeals = remember(uiState, currentSearchQuery, isSearchMode) {
@@ -93,158 +103,173 @@ fun MainScreen(
                 }
             }
         ) { paddingValues ->
-            Column(
+            // ✅ Box로 감싸고 pullRefresh 추가
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
                     .background(MaterialTheme.colorScheme.background)
+                    .pullRefresh(pullRefreshState)
             ) {
-                // ✅ 검색 모드가 아닐 때만 카테고리 메뉴 표시
-                if (!isSearchMode) {
-                    CollapsibleCategoryMenu(
-                        categories = listOf(
-                            CategoryItem("전체", Icons.Default.Home),
-                            CategoryItem("디지털/가전", Icons.Default.Computer),
-                            CategoryItem("PC/하드웨어", Icons.Default.Memory),
-                            CategoryItem("음식/식품", Icons.Default.Restaurant),
-                            CategoryItem("의류/패션", Icons.Default.Checkroom),
-                            CategoryItem("생활/잡화", Icons.Default.Home),
-                            CategoryItem("모바일/상품권", Icons.Default.PhoneAndroid),
-                            CategoryItem("패키지/이용권", Icons.Default.CardGiftcard),
-                            CategoryItem("적립/이벤트", Icons.Default.Stars),
-                            CategoryItem("해외핫딜", Icons.Default.Flight),
-                            CategoryItem("알리익스프레스", Icons.Default.ShoppingCart)
-                        ),
-                        selectedCategory = if (uiState is DealsUiState.Success) uiState.selectedCategory else "전체",
-                        isExpanded = showCategoryMenu,
-                        onExpandedChange = { showCategoryMenu = it },
-                        onCategorySelect = onCategorySelect
-                    )
-                } else {
-                    // ✅ 검색 모드일 때 검색 결과 헤더
-                    SearchResultHeader(
-                        searchQuery = currentSearchQuery,
-                        resultCount = displayDeals.size
-                    )
-                }
-
-                // 메인 콘텐츠
-                when (uiState) {
-                    is DealsUiState.Loading -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator()
-                        }
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    // ✅ 검색 모드가 아닐 때만 카테고리 메뉴 표시
+                    if (!isSearchMode) {
+                        CollapsibleCategoryMenu(
+                            categories = listOf(
+                                CategoryItem("전체", Icons.Default.Home),
+                                CategoryItem("디지털/가전", Icons.Default.Computer),
+                                CategoryItem("PC/하드웨어", Icons.Default.Memory),
+                                CategoryItem("음식/식품", Icons.Default.Restaurant),
+                                CategoryItem("의류/패션", Icons.Default.Checkroom),
+                                CategoryItem("생활/잡화", Icons.Default.Home),
+                                CategoryItem("모바일/상품권", Icons.Default.PhoneAndroid),
+                                CategoryItem("패키지/이용권", Icons.Default.CardGiftcard),
+                                CategoryItem("적립/이벤트", Icons.Default.Stars),
+                                CategoryItem("해외핫딜", Icons.Default.Flight),
+                                CategoryItem("알리익스프레스", Icons.Default.ShoppingCart)
+                            ),
+                            selectedCategory = if (uiState is DealsUiState.Success) uiState.selectedCategory else "전체",
+                            isExpanded = showCategoryMenu,
+                            onExpandedChange = { showCategoryMenu = it },
+                            onCategorySelect = onCategorySelect
+                        )
+                    } else {
+                        // ✅ 검색 모드일 때 검색 결과 헤더
+                        SearchResultHeader(
+                            searchQuery = currentSearchQuery,
+                            resultCount = displayDeals.size
+                        )
                     }
-                    is DealsUiState.Success -> {
-                        val uniqueDeals = remember(displayDeals) {
-                            displayDeals
-                                .distinctBy { "${it.id}_${it.title}_${it.community}" }
-                                .sortedByDescending { it.id }
-                        }
 
-                        if (uniqueDeals.isEmpty()) {
-                            if (isSearchMode && currentSearchQuery.isNotBlank()) {
-                                SearchEmptyState(searchQuery = currentSearchQuery)
+                    // 메인 콘텐츠
+                    when (uiState) {
+                        is DealsUiState.Loading -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                        is DealsUiState.Success -> {
+                            val uniqueDeals = remember(displayDeals) {
+                                displayDeals
+                                    .distinctBy { "${it.id}_${it.title}_${it.community}" }
+                                    .sortedByDescending { it.id }
+                            }
+
+                            if (uniqueDeals.isEmpty()) {
+                                if (isSearchMode && currentSearchQuery.isNotBlank()) {
+                                    SearchEmptyState(searchQuery = currentSearchQuery)
+                                } else {
+                                    EmptyStateMessage()
+                                }
                             } else {
-                                EmptyStateMessage()
-                            }
-                        } else {
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                val listState = rememberLazyListState()
-                                val coroutineScope = rememberCoroutineScope()
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    val listState = rememberLazyListState()
+                                    val coroutineScope = rememberCoroutineScope()
 
-                                LazyColumn(
-                                    state = listState,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    items(uniqueDeals) { deal ->
-                                        ImprovedDealCard(
-                                            deal = deal,
-                                            onClick = { onDealClick(deal.id) }
-                                        )
-                                    }
-
-                                    if (uiState.isPaginating) {
-                                        item {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(16.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                CircularProgressIndicator()
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ✅ 플로팅 버튼
-                                val showScrollToTop by remember {
-                                    derivedStateOf {
-                                        listState.firstVisibleItemIndex > 3
-                                    }
-                                }
-
-                                if (showScrollToTop) {
-                                    FloatingActionButton(
-                                        onClick = {
-                                            coroutineScope.launch {
-                                                listState.animateScrollToItem(0, scrollOffset = 0)
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .align(Alignment.BottomEnd)
-                                            .padding(16.dp)
-                                            .size(56.dp),
-                                        shape = CircleShape,
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    LazyColumn(
+                                        state = listState,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.KeyboardArrowUp,
-                                                contentDescription = "맨 위로",
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                            Text(
-                                                text = "TOP",
-                                                fontSize = 8.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                letterSpacing = 0.5.sp
+                                        items(uniqueDeals) { deal ->
+                                            ImprovedDealCard(
+                                                deal = deal,
+                                                onClick = { onDealClick(deal.id) }
                                             )
                                         }
-                                    }
-                                }
 
-                                // ✅ 무한 스크롤 처리
-                                val isScrolledToEnd = remember {
-                                    derivedStateOf {
-                                        val lastVisibleItemIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-                                        val totalItemsCount = listState.layoutInfo.totalItemsCount
-                                        lastVisibleItemIndex >= totalItemsCount - 5 && totalItemsCount > 0
+                                        if (uiState.isPaginating) {
+                                            item {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(16.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    CircularProgressIndicator()
+                                                }
+                                            }
+                                        }
                                     }
-                                }
 
-                                if (isScrolledToEnd.value && uiState.canLoadMore && !uiState.isPaginating) {
-                                    LaunchedEffect(Unit) {
-                                        onLoadMore()
+                                    // ✅ 플로팅 버튼
+                                    val showScrollToTop by remember {
+                                        derivedStateOf {
+                                            listState.firstVisibleItemIndex > 3
+                                        }
+                                    }
+
+                                    if (showScrollToTop) {
+                                        FloatingActionButton(
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    listState.animateScrollToItem(0, scrollOffset = 0)
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .padding(16.dp)
+                                                .size(56.dp),
+                                            shape = CircleShape,
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary
+                                        ) {
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.KeyboardArrowUp,
+                                                    contentDescription = "맨 위로",
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                                Text(
+                                                    text = "TOP",
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    letterSpacing = 0.5.sp
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // ✅ 무한 스크롤 처리
+                                    val isScrolledToEnd = remember {
+                                        derivedStateOf {
+                                            val lastVisibleItemIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                                            val totalItemsCount = listState.layoutInfo.totalItemsCount
+                                            lastVisibleItemIndex >= totalItemsCount - 5 && totalItemsCount > 0
+                                        }
+                                    }
+
+                                    if (isScrolledToEnd.value && uiState.canLoadMore && !uiState.isPaginating) {
+                                        LaunchedEffect(Unit) {
+                                            onLoadMore()
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                    is DealsUiState.Error -> {
-                        ErrorMessage(message = uiState.message)
+                        is DealsUiState.Error -> {
+                            ErrorMessage(message = uiState.message)
+                        }
                     }
                 }
+
+                // ✅ Pull-to-Refresh 인디케이터
+                PullRefreshIndicator(
+                    refreshing = uiState is DealsUiState.Loading,
+                    state = pullRefreshState,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                    backgroundColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary
+                )
             }
         }
 
@@ -587,8 +612,12 @@ fun ImprovedDealCard(
 ) {
     val context = LocalContext.current
     val bookmarkManager = remember { BookmarkManager.getInstance(context) }
-    val isBookmarked by remember {
-        derivedStateOf { bookmarkManager.isBookmarked(deal.id) }
+
+    // ✅ 북마크 실시간 업데이트
+    var isBookmarked by remember { mutableStateOf(bookmarkManager.isBookmarked(deal.id)) }
+
+    LaunchedEffect(deal.id) {
+        isBookmarked = bookmarkManager.isBookmarked(deal.id)
     }
 
     Card(
@@ -679,9 +708,12 @@ fun ImprovedDealCard(
                         )
                     }
 
-                    // 북마크 버튼
+                    // ✅ 북마크 버튼 (실시간 업데이트)
                     IconButton(
-                        onClick = { bookmarkManager.toggleBookmark(deal) },
+                        onClick = {
+                            bookmarkManager.toggleBookmark(deal)
+                            isBookmarked = bookmarkManager.isBookmarked(deal.id) // 즉시 상태 업데이트
+                        },
                         modifier = Modifier.size(20.dp)
                     ) {
                         Icon(

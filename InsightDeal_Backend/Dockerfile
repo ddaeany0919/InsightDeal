@@ -23,4 +23,4 @@ python seed_db.py\n\
 python start_server.py' > /app/entrypoint.sh && \
 chmod +x /app/entrypoint.sh
 
-CMD ["/app/entrypoint.sh"]
+CMD ["python", "start_server.py", "--reload"]

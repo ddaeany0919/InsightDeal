@@ -64,6 +64,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 // 차트 라이브러리 Vico
     implementation("com.patrykandpatrick.vico:compose-m3:1.14.0")
+    implementation("androidx.compose.material:material:1.5.4")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

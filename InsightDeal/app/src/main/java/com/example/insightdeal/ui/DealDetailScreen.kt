@@ -48,7 +48,9 @@ import com.patrykandpatrick.vico.core.entry.ChartEntryModelProducer
 import com.patrykandpatrick.vico.core.entry.entryOf
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-
+import com.example.insightdeal.model.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DealDetailScreen(
@@ -60,7 +62,34 @@ fun DealDetailScreen(
     val context = LocalContext.current
     val bookmarkManager = remember { BookmarkManager.getInstance(context) }
     var isDarkMode by remember { mutableStateOf(false) }
+    var enhancedInfo by remember { mutableStateOf<EnhancedDealInfo?>(null) }
+    var enhancedLoading by remember { mutableStateOf(false) }
+    var enhancedError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
+    fun loadEnhanced(dealId: Int) {
+        Log.d("DealDetail", "🚀 enhanced-info load start: $dealId")
+        enhancedLoading = true
+        enhancedError = null
+        scope.launch {
+            try {
+                val res = ApiClient.apiService.getEnhancedDealInfo(dealId)
+                Log.d("DealDetail", "📡 enhanced-info resp: code=${res.code()}, ok=${res.isSuccessful}")
+                if (res.isSuccessful) {
+                    Log.d("DealDetail", "📡 API Response: ${res.body()}")
+                    enhancedInfo = res.body()
+                    Log.d("DealDetail", "✅ enhanced loaded: images=${enhancedInfo?.productDetail?.images?.size ?: 0}, content=${enhancedInfo?.productDetail?.content?.length ?: 0}")
+                } else {
+                    enhancedError = "서버 오류: ${res.code()}"
+                }
+            } catch (e: Exception) {
+                Log.e("DealDetail", "❌ enhanced load error", e)
+                enhancedError = e.message ?: "네트워크 오류"
+            } finally {
+                enhancedLoading = false
+            }
+        }
+    }
     MaterialTheme(
         colorScheme = if (isDarkMode) darkColorScheme() else lightColorScheme()
     ) {
@@ -93,6 +122,9 @@ fun DealDetailScreen(
                     }
                     is DealDetailState.Success -> {
                         val deal = detailState.dealDetail
+                        LaunchedEffect(deal.id) {
+                            loadEnhanced(deal.id)
+                        }
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -105,7 +137,29 @@ fun DealDetailScreen(
                                 deal = deal,
                                 bookmarkManager = bookmarkManager
                             )
+                            // 1) 게시 시간 카드
+                            enhancedInfo?.postedTime?.let { PostTimeCard(it) }
 
+                            // 2) 상품 이미지 갤러리
+                            enhancedInfo?.productDetail?.images?.takeIf { it.isNotEmpty() }?.let {
+                                ProductImagesCard(it)
+                            }
+
+                            // 3) AI 분석 카드
+                            enhancedInfo?.productDetail?.aiAnalysis?.let { AiAnalysisCard(it) }
+
+                            // 4) 상세 본문 카드
+                            enhancedInfo?.productDetail?.content?.takeIf { it.isNotBlank() }?.let {
+                                ProductContentCard(it)
+                            }
+
+                            // 로딩/에러 상태
+                            if (enhancedLoading) EnhancedInfoLoadingCard()
+                            enhancedError?.let {
+                                EnhancedInfoErrorCard(it) {
+                                    loadEnhanced(deal.id)
+                                }
+                            }
                             // 관련 딜 카드
                             if (!deal.relatedDeals.isNullOrEmpty()) {
                                 ImprovedRelatedDealsCard(
@@ -140,6 +194,309 @@ fun DealDetailScreen(
         }
     }
 }
+@Composable
+fun PostTimeCard(timeInfo: PostedTimeInfo) {
+    Log.d("PostTimeCard", "🕰️ timeAgo=${timeInfo.timeAgo}")
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Schedule,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "게시 시간",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    timeInfo.formattedTime ?: timeInfo.indexedAt ?: "시간 정보 없음",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            timeInfo.timeAgo?.let { ago ->
+                Text(
+                    ago,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                            RoundedCornerShape(6.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ProductImagesCard(images: List<ProductImage>) {
+    Log.d("ProductImages", "📷 count=${images.size}")
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.PhotoLibrary,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "상품 사진",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    "${images.size}개",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(images) { img ->
+                    Card(
+                        modifier = Modifier.size(120.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(img.url)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = img.alt,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AiAnalysisCard(ai: AiAnalysisInfo) {
+    Log.d("AiAnalysis", "🤖 conf=${ai.analysisConfidence}")
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = Color(0xFFFF6B35)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "AI 상품 분석",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    "${ai.analysisConfidence.toInt()}%",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            ) {
+                Text(
+                    ai.productSummary,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+            if (ai.keyFeatures.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "주요 특징",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                ai.keyFeatures.forEach { feature ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(feature, fontSize = 13.sp)
+                    }
+                }
+            }
+            if (ai.recommended) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF4CAF50).copy(alpha = 0.1f)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.ThumbUp,
+                            contentDescription = null,
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "AI 추천 상품",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF4CAF50)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ProductContentCard(content: String) {
+    Log.d("ProductContent", "📝 len=${content.length}")
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Article,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.tertiary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "상품 상세정보",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            ) {
+                Text(
+                    content,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EnhancedInfoLoadingCard() {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text("상세 정보를 불러오는 중...", fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+fun EnhancedInfoErrorCard(error: String, onRetry: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.ErrorOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "상세 정보 로드 실패",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(error, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onRetry,
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("재시도")
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -150,11 +507,11 @@ fun DealDetailTopBar(
     dealDetail: DealDetail?
 ) {
     var showMenu by remember { mutableStateOf(false) }
-
+    val context = LocalContext.current
     TopAppBar(
         title = {
             Text(
-                "딜 상세정보",
+                "상세정보",
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 color = MaterialTheme.colorScheme.onSurface
@@ -224,7 +581,6 @@ fun DealDetailTopBar(
                         onClick = {
                             dealDetail?.let { deal ->
                                 val shareText = "${deal.title}\n${deal.price}\n${deal.ecommerceLink ?: deal.postLink}"
-                                val context = LocalContext.current
                                 val shareIntent = Intent().apply {
                                     action = Intent.ACTION_SEND
                                     putExtra(Intent.EXTRA_TEXT, shareText)
@@ -250,28 +606,28 @@ fun ImprovedInfoCard(
     bookmarkManager: BookmarkManager
 ) {
     val context = LocalContext.current
-    
-    // DealDetail을 DealItem으로 변환
-    val dealItem = remember(deal) {
-        DealItem(
-            id = deal.id,
-            title = deal.title,
-            community = deal.community,
-            shopName = deal.shopName,
-            price = deal.price,
-            shippingFee = deal.shippingFee,
-            imageUrl = deal.imageUrl ?: "",
-            category = deal.category ?: "기타",
-            isClosed = deal.isClosed ?: false,
-            dealType = deal.dealType ?: "일반",
-            ecommerceLink = deal.ecommerceLink ?: ""
-        )
-    }
-    
-    val isBookmarked by remember {
-        derivedStateOf { bookmarkManager.isBookmarked(deal.id) }
-    }
 
+    // DealDetail의 실제 프로퍼티 이름에 맞게 수정
+    val dealItem = DealItem(
+        id = deal.id,
+        title = deal.title,
+        community = deal.community,
+        shopName = deal.shopName,
+        price = deal.price,
+        shippingFee = deal.shippingFee,
+        imageUrl = "",
+        category = deal.category ?: "기타",
+        isClosed = false,
+        dealType = "일반",
+        ecommerceLink = deal.ecommerceLink ?: ""
+    )
+
+    var isBookmarked by remember {
+        mutableStateOf(bookmarkManager.isBookmarked(deal.id))
+    }
+    LaunchedEffect(deal.id) {
+        isBookmarked = bookmarkManager.isBookmarked(deal.id)
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -336,7 +692,10 @@ fun ImprovedInfoCard(
 
                 // 북마크 버튼
                 IconButton(
-                    onClick = { bookmarkManager.toggleBookmark(dealItem) }
+                    onClick = {
+                        bookmarkManager.toggleBookmark(dealItem)
+                        isBookmarked = bookmarkManager.isBookmarked(deal.id)
+                    }
                 ) {
                     Icon(
                         imageVector = if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
@@ -400,7 +759,7 @@ fun ImprovedInfoCard(
 
             // 하단 정보
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
