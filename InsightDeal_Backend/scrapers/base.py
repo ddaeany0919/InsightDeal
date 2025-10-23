@@ -10,7 +10,6 @@ import ai_parser
 import base64
 from abc import ABC, abstractmethod
 from urllib.parse import urlparse, urljoin, unquote, parse_qs
-
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -19,6 +18,8 @@ from sqlalchemy.orm import Session
 import easyocr
 from pathlib import Path
 import random
+from datetime import datetime
+
 # --- 👇 [추가] WebDriverWait을 위한 import ---
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -109,11 +110,13 @@ class BaseScraper(ABC):
         self.retry_count = 0
         self.start_time = None
         self.scraped_count = 0
+        
         self.community_entry = (
             self.db.query(models.Community)
             .filter(models.Community.name == self.community_name)
             .first()
         )
+        
         if not self.community_entry:
             raise ValueError(f"'{self.community_name}' 커뮤니티를 DB에서 찾을 수 없습니다.")
 
@@ -121,6 +124,141 @@ class BaseScraper(ABC):
             logger.info("Initializing EasyOCR model... (This may take a moment on first run)")
             BaseScraper.ocr_reader = easyocr.Reader(['ko', 'en'])
             logger.info("EasyOCR model loaded successfully.")
+
+    # ✅ 새로 추가된 공통 메서드들 - 게시글 상세 정보 추출용
+    def extract_post_content_and_images(self, soup, content_selectors, base_url, site_config=None):
+        """범용 게시글 내용 및 이미지 추출 메서드"""
+        logger.info(f"[{self.community_name}] 게시글 상세 정보 추출 시작...")
+        
+        # 1. 게시글 본문 영역 찾기
+        content_area = None
+        for selector in content_selectors:
+            content_area = soup.select_one(selector)
+            if content_area:
+                logger.debug(f"[{self.community_name}] 본문 영역 발견: {selector}")
+                break
+        
+        if not content_area:
+            content_area = soup
+            logger.warning(f"[{self.community_name}] 본문 영역을 찾지 못함, 전체 문서 사용")
+        
+        # 2. 게시 시간 추출 (사이트별)
+        posted_time = self.parse_posted_time(soup, site_config)
+        
+        # 3. 이미지 추출
+        images = self.extract_images_from_content(content_area, base_url, site_config)
+        
+        # 4. 텍스트 추출
+        content_text = self.extract_text_from_content(content_area, site_config)
+        
+        result = {
+            "images": images,
+            "content": content_text,
+            "posted_time": posted_time,
+            "crawled_at": datetime.now().isoformat(),
+            "source_url": soup.get('data-url', '')
+        }
+        
+        logger.info(f"[{self.community_name}] 추출 완료 - 이미지: {len(images)}개, 텍스트: {len(content_text)}자")
+        return result
+
+    def parse_posted_time(self, soup, site_config=None):
+        """사이트별 게시 시간 파싱"""
+        if not site_config:
+            return None
+            
+        time_patterns = site_config.get('time_patterns', [])
+        time_selectors = site_config.get('time_selectors', [])
+        
+        # 셀렉터로 찾기
+        for selector in time_selectors:
+            try:
+                time_elements = soup.select(selector)
+                for time_element in time_elements:
+                    if time_element:
+                        time_text = time_element.get_text().strip()
+                        for pattern in time_patterns:
+                            match = re.search(pattern, time_text)
+                            if match:
+                                logger.debug(f"[{self.community_name}] 게시시간 발견: {match.group(1)}")
+                                return match.group(1)
+            except Exception as e:
+                logger.debug(f"[{self.community_name}] 시간 파싱 오류 ({selector}): {e}")
+                continue
+        
+        return None
+
+    def extract_images_from_content(self, content_area, base_url, site_config=None):
+        """게시글에서 이미지 추출 및 필터링"""
+        images = []
+        found_images = set()
+        
+        # 사이트별 제외 키워드
+        exclude_keywords = ['icon', 'emoticon', 'smile', '1x1', 'pixel', 'spacer', 'logo', 'avatar', 'button']
+        if site_config and 'exclude_image_keywords' in site_config:
+            exclude_keywords.extend(site_config['exclude_image_keywords'])
+        
+        for img in content_area.find_all('img'):
+            img_src = img.get('src') or img.get('data-src') or img.get('data-original')
+            if img_src:
+                # URL 정규화
+                if img_src.startswith('//'):
+                    img_url = 'https:' + img_src
+                elif img_src.startswith('/'):
+                    img_url = base_url + img_src
+                elif img_src.startswith('http'):
+                    img_url = img_src
+                else:
+                    img_url = base_url + '/' + img_src
+                
+                # 이미지 필터링
+                img_lower = img_url.lower()
+                if not any(keyword in img_lower for keyword in exclude_keywords):
+                    if any(ext in img_lower for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']):
+                        if len(img_url) > 20:
+                            found_images.add(img_url)
+        
+        # 최대 10개 이미지
+        image_list = list(found_images)[:10]
+        images = [{
+            "url": img_url,
+            "alt": f"상품 이미지 {i+1}",
+            "description": "게시글 첨부 이미지"
+        } for i, img_url in enumerate(image_list)]
+        
+        logger.debug(f"[{self.community_name}] 이미지 추출 완료: {len(images)}개")
+        return images
+
+    def extract_text_from_content(self, content_area, site_config=None):
+        """게시글에서 텍스트 추출"""
+        text_parts = []
+        
+        # 사이트별 텍스트 셀렉터
+        text_selectors = ['p', 'div', 'span', 'td', 'th']
+        if site_config and 'text_selectors' in site_config:
+            text_selectors = site_config['text_selectors']
+        
+        for element in content_area.find_all(text_selectors, recursive=True):
+            if element.name in ['script', 'style', 'noscript']:
+                continue
+                
+            text = element.get_text(strip=True)
+            if text and len(text) > 2:
+                cleaned_text = text.replace('&nbsp;', '').replace('​', '').replace('\\xa0', '').strip()
+                if cleaned_text and len(cleaned_text) > 2:
+                    if cleaned_text not in text_parts:
+                        text_parts.append(cleaned_text)
+        
+        content_text = ' '.join(text_parts)
+        content_text = re.sub(r'\\s+', ' ', content_text.strip())
+        
+        if len(content_text) > 500:
+            content_text = content_text[:500] + "..."
+        
+        logger.debug(f"[{self.community_name}] 텍스트 추출 완료: {len(content_text)}자")
+        return content_text
+
+    # 기존 메서드들은 모두 그대로 유지...
     def run_with_retry(self, limit=None) -> bool:
         """재시도 로직이 포함된 실행"""
         for attempt in range(MAX_RETRY_COUNT):
@@ -179,6 +317,7 @@ class BaseScraper(ABC):
                 logger.debug(f"[{self.community_name}] DB 세션 정리 완료")
             except Exception as e:
                 logger.warning(f"[{self.community_name}] DB 세션 정리 중 오류: {e}")
+
     @staticmethod
     def _parse_ecommerce_link(raw_link: str) -> str:
         if not raw_link:
