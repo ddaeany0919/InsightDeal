@@ -2,10 +2,12 @@ package com.ddaeany0919.insightdeal
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ddaeany0919.insightdeal.models.DealItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.ddaeany0919.insightdeal.models.SortOption
 
 /**
  * 🔍 고급 검색 ViewModel
@@ -224,15 +226,4 @@ data class SearchFilters(
         return priceRanges.isNotEmpty() || discountRates.isNotEmpty() ||
                categories.isNotEmpty() || sites.isNotEmpty()
     }
-}
-
-/**
- * 📊 정렬 옵션
- */
-enum class SortOption {
-    LATEST,     // 최신순
-    POPULAR,    // 인기순
-    DISCOUNT,   // 할인율순
-    PRICE_LOW,  // 가격 낮은순
-    PRICE_HIGH  // 가격 높은순
 }
