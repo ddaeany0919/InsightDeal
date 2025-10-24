@@ -1,8 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
-    id 'kotlin-kapt'
-    id 'com.google.gms.google-services' // Firebase
+    id 'com.google.gms.google-services'
 }
 
 android {
@@ -26,11 +25,10 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            buildConfigField "String", "BASE_URL", '"http://your-server.com:8000/"'
+            buildConfigField "String", "BASE_URL", '"https://api.insightdeal.com/"'
         }
         debug {
-            buildConfigField "String", "BASE_URL", '"http://10.0.2.2:8000/"' // Android 에뮬레이터
-            // buildConfigField "String", "BASE_URL", '"http://192.168.1.100:8000/"' // 실제 기기
+            buildConfigField "String", "BASE_URL", '"http://10.0.2.2:8000/"'
         }
     }
     compileOptions {
@@ -60,59 +58,34 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     implementation 'androidx.activity:activity-compose:1.8.2'
     
-    // ✅ Jetpack Compose BOM (버전 관리)
+    // ✅ Jetpack Compose BOM
     implementation platform('androidx.compose:compose-bom:2024.02.00')
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.ui:ui-graphics'
     implementation 'androidx.compose.ui:ui-tooling-preview'
     implementation 'androidx.compose.material3:material3'
-    implementation 'androidx.compose.material:material-icons-extended' // 추가 아이콘
+    implementation 'androidx.compose.material:material-icons-extended'
     
     // ✅ Navigation Compose
     implementation 'androidx.navigation:navigation-compose:2.7.6'
     
     // ✅ ViewModel 및 Compose 통합
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
-    implementation 'androidx.compose.runtime:runtime-livedata'
     
-    // ✅ Firebase BOM (버전 관리)
+    // ✅ Firebase BOM
     implementation platform('com.google.firebase:firebase-bom:32.7.1')
-    implementation 'com.google.firebase:firebase-messaging-ktx' // FCM
-    implementation 'com.google.firebase:firebase-analytics-ktx' // 분석
+    implementation 'com.google.firebase:firebase-messaging-ktx'
+    implementation 'com.google.firebase:firebase-analytics-ktx'
     
-    // 📈 MPAndroidChart (가격 그래프)
-    implementation 'com.github.PhilJay:MPAndroidChart:v3.1.0'
-    
-    // 🖼️ Coil (이미지 로딩)
-    implementation 'io.coil-kt:coil-compose:2.5.0'
-    
-    // 🌐 Retrofit (네트워크 통신)
+    // 🌐 Retrofit
     implementation 'com.squareup.retrofit2:retrofit:2.9.0'
     implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
     implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
     
-    // 💬 Gson (JSON 파싱)
+    // 💬 Gson
     implementation 'com.google.code.gson:gson:2.10.1'
     
-    // 🧠 Coroutines (비동기 처리)
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-    
-    // 🔄 SwipeRefresh
-    implementation 'com.google.accompanist:accompanist-swiperefresh:0.32.0'
-    
-    // 📱 Pager (HorizontalPager)
-    implementation 'com.google.accompanist:accompanist-pager:0.32.0'
-    implementation 'com.google.accompanist:accompanist-pager-indicators:0.32.0'
-    
-    // ⏰ Work Manager (백그라운드 작업)
-    implementation 'androidx.work:work-runtime-ktx:2.9.0'
-    
-    // 💳 Room Database (로컬 DB - 선택사항)
-    // implementation 'androidx.room:room-runtime:2.6.1'
-    // implementation 'androidx.room:room-ktx:2.6.1'
-    // kapt 'androidx.room:room-compiler:2.6.1'
-    
-    // 🔧 디버깅 도구
+    // 🔧 디버깅
     debugImplementation 'androidx.compose.ui:ui-tooling'
     debugImplementation 'androidx.compose.ui:ui-test-manifest'
     
@@ -122,9 +95,4 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
     androidTestImplementation platform('androidx.compose:compose-bom:2024.02.00')
     androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
-}
-
-// 📊 MPAndroidChart 리포지터리 추가
-repositories {
-    maven { url 'https://jitpack.io' }
 }
