@@ -12,7 +12,7 @@ import kotlin.math.*
 
 /**
  * 🤖 AI 개인화 추천 엔진
- * * 사용자의 행동 패턴을 분석하여 맞춤형 핫딜을 추천하는 머신러닝 시스템
+ * 사용자의 행동 패턴을 분석하여 맞춤형 핫딜을 추천하는 머신러닝 시스템
  */
 class PersonalizationEngine private constructor(private val context: Context) {
 
@@ -115,7 +115,7 @@ class PersonalizationEngine private constructor(private val context: Context) {
         val timeScore = getTimePreference(deal, profile) * 0.05
         score += timeScore
 
-        // 6️⃣ 사이트 선호도 (5% 가중치) - 우선순위 반영
+        // 6️⃣ 사이트 선호도 (5% 가중치)
         val siteScore = getSitePreference(deal, profile)
         score += siteScore
 
@@ -174,9 +174,7 @@ class PersonalizationEngine private constructor(private val context: Context) {
     /**
      * 딥러닝 카테고리 분류기 (간소화 버전)
      */
-    // ✅ [수정] content 파라미터 제거
     private fun extractCategory(title: String): String {
-        // ✅ [수정] title만 분석
         val text = title.lowercase()
 
         return when {
@@ -277,7 +275,7 @@ class PersonalizationEngine private constructor(private val context: Context) {
      */
     private fun extractKeywords(text: String): Set<String> {
         val normalized = Normalizer.normalize(text, Normalizer.Form.NFD)
-            .replace(Regex("[^\\p{ASCII}한글]"), "")
+            .replace(Regex("[^\\p{ASCII}한글]"), " ")
             .lowercase()
 
         // 의미 있는 단어만 추출 (2글자 이상, 불용어 제외)
@@ -292,8 +290,6 @@ class PersonalizationEngine private constructor(private val context: Context) {
      * 유사 사용자 기반 협업 필터링
      */
     fun findSimilarUserRecommendations(deals: List<DealItem>): List<DealItem> {
-        // 실제 서비스에서는 서버에서 처리
-        // 현재는 카테고리 기반 간단 구현
         val profile = _userProfile.value
 
         val topCategories = profile.categoryInterests
@@ -325,14 +321,12 @@ class PersonalizationEngine private constructor(private val context: Context) {
     /**
      * 추천 피드백 처리
      */
-    fun provideFeedback(dealId: Long, isPositive: Boolean) { // ✅ [수정] DealItem ID가 Long이므로 Int -> Long
+    fun provideFeedback(dealId: Int, isPositive: Boolean) {
         // 추천 정확도 개선을 위한 피드백 학습
         val profile = _userProfile.value
         val feedbackWeight = if (isPositive) 2.0 else -1.0
 
         // 피드백을 다음 추천에 반영
-        // (실제 구현에서는 더 복잡한 강화학습 알고리즘 사용)
-
         Log.d(TAG, "👍👎 사용자 피드백: $dealId = ${if (isPositive) "좋음" else "싫음"}")
     }
 
@@ -347,7 +341,12 @@ class PersonalizationEngine private constructor(private val context: Context) {
     private fun loadUserProfile(): UserProfile {
         val json = prefs.getString(KEY_USER_PROFILE, null)
         return if (json != null) {
-            UserProfile.fromJson(json)
+            try {
+                UserProfile.fromJson(json)
+            } catch (e: Exception) {
+                Log.w(TAG, "프로필 로드 실패, 기본값 사용: ${e.message}")
+                UserProfile.createDefault()
+            }
         } else {
             UserProfile.createDefault()
         }
@@ -433,7 +432,7 @@ data class UserProfile(
 
 data class UserInteraction(
     val type: InteractionType,
-    val dealId: Long, // ✅ [수정] DealItem ID가 Long이므로 Int -> Long
+    val dealId: Int,
     val title: String,
     val category: String,
     val brand: String,
