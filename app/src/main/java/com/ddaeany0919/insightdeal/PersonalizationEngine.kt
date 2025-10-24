@@ -325,7 +325,7 @@ class PersonalizationEngine private constructor(private val context: Context) {
     /**
      * 추천 피드백 처리
      */
-    fun provideFeedback(dealId: Long, isPositive: Boolean) { // ✅ [수정] DealItem ID가 Long이므로 Int -> Long
+    fun provideFeedback(dealId: Int, isPositive: Boolean) {
         // 추천 정확도 개선을 위한 피드백 학습
         val profile = _userProfile.value
         val feedbackWeight = if (isPositive) 2.0 else -1.0
@@ -433,7 +433,7 @@ data class UserProfile(
 
 data class UserInteraction(
     val type: InteractionType,
-    val dealId: Long, // ✅ [수정] DealItem ID가 Long이므로 Int -> Long
+    val dealId: Int, //
     val title: String,
     val category: String,
     val brand: String,

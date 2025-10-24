@@ -501,7 +501,7 @@ class BookmarkManager private constructor(private val context: Context) {
 
 data class BookmarkItem(
     val id: String,
-    val dealId: Long,
+    val dealId: Int,
     val title: String,
     val originalPrice: Int,
     val currentPrice: Int,

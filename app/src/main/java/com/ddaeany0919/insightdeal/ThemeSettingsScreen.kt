@@ -20,7 +20,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ddaeany0919.insightdeal.theme.*
 import java.util.*
 
 /**
@@ -32,17 +31,17 @@ fun ThemeSettingsScreen(
     onBackClick: () -> Unit
 ) {
     val context = LocalContext.current
-    var currentTheme by remember { mutableStateOf(loadThemeMode(context)) }
+    val themeManager = remember { ThemeManager.getInstance(context) }
+
+    val currentTheme by themeManager.themeMode.collectAsState()
+    val currentColorScheme by themeManager.colorScheme.collectAsState()
+    val amoledMode by themeManager.amoledMode.collectAsState()
     var showThemePreview by remember { mutableStateOf(false) }
-    
+
     // 현재 시간 기반 자동 다크모드 상태
     val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     val isNightTime = hour >= 19 || hour < 7
-    
-    LaunchedEffect(currentTheme) {
-        saveThemeMode(context, currentTheme)
-    }
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -65,7 +64,7 @@ fun ThemeSettingsScreen(
                             if (showThemePreview) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                             contentDescription = "미리보기",
                             tint = if (showThemePreview) MaterialTheme.colorScheme.primary
-                                  else MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
@@ -84,29 +83,33 @@ fun ThemeSettingsScreen(
                 ThemeModeSection(
                     currentTheme = currentTheme,
                     onThemeChange = { newTheme ->
-                        currentTheme = newTheme
+                        themeManager.setThemeMode(newTheme)
                     },
-                    isNightTime = isNightTime
-                )
-            }
-            
-            // 🎨 컬러 테마 선택
-            item {
-                ColorThemeSection(
-                    currentTheme = currentTheme,
-                    onThemeChange = { newTheme ->
-                        currentTheme = newTheme
+                    isNightTime = isNightTime,
+                    amoledMode = amoledMode,
+                    onAmoledToggle = { enabled ->
+                        themeManager.setAmoledMode(enabled)
                     }
                 )
             }
-            
+
+            // 🎨 컬러 테마 선택
+            item {
+                ColorThemeSection(
+                    currentColorScheme = currentColorScheme,
+                    onColorSchemeChange = { newScheme ->
+                        themeManager.setColorScheme(newScheme)
+                    }
+                )
+            }
+
             // 🔍 테마 미리보기 (토글시 표시)
             if (showThemePreview) {
                 item {
                     ThemePreviewSection(currentTheme = currentTheme)
                 }
             }
-            
+
             // ℹ️ 설명 섹션
             item {
                 ThemeInfoSection(isNightTime = isNightTime)
@@ -119,7 +122,9 @@ fun ThemeSettingsScreen(
 private fun ThemeModeSection(
     currentTheme: ThemeMode,
     onThemeChange: (ThemeMode) -> Unit,
-    isNightTime: Boolean
+    isNightTime: Boolean,
+    amoledMode: Boolean,
+    onAmoledToggle: (Boolean) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -134,19 +139,30 @@ private fun ThemeModeSection(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
-            
-            // AUTO 모드
+
+            // AUTO 모드 (시간 자동)
             ThemeOptionItem(
                 title = "⏰ 자동 전환",
                 subtitle = if (isNightTime) "현재 다크모드 (저녁 19시~오전 7시)"
-                          else "현재 라이트모드 (오전 7시~저녁 19시)",
+                else "현재 라이트모드 (오전 7시~저녁 19시)",
                 icon = Icons.Default.Schedule,
-                isSelected = currentTheme == ThemeMode.AUTO,
-                onClick = { onThemeChange(ThemeMode.AUTO) }
+                isSelected = currentTheme == ThemeMode.AUTO_TIME,
+                onClick = { onThemeChange(ThemeMode.AUTO_TIME) }
             )
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
+
+            // SYSTEM 모드
+            ThemeOptionItem(
+                title = "📱 시스템 따라가기",
+                subtitle = "기기 다크모드 설정에 따라 자동 변경",
+                icon = Icons.Default.PhoneAndroid,
+                isSelected = currentTheme == ThemeMode.SYSTEM,
+                onClick = { onThemeChange(ThemeMode.SYSTEM) }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // LIGHT 모드
             ThemeOptionItem(
                 title = "☀️ 라이트 모드",
@@ -155,9 +171,9 @@ private fun ThemeModeSection(
                 isSelected = currentTheme == ThemeMode.LIGHT,
                 onClick = { onThemeChange(ThemeMode.LIGHT) }
             )
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             // DARK 모드
             ThemeOptionItem(
                 title = "🌙 다크 모드",
@@ -166,25 +182,66 @@ private fun ThemeModeSection(
                 isSelected = currentTheme == ThemeMode.DARK,
                 onClick = { onThemeChange(ThemeMode.DARK) }
             )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // AMOLED 모드
-            ThemeOptionItem(
-                title = "⚫ AMOLED 블랙",
-                subtitle = "완전 검정 배경 (배터리 절약)",
-                icon = Icons.Default.PhoneAndroid,
-                isSelected = currentTheme == ThemeMode.AMOLED,
-                onClick = { onThemeChange(ThemeMode.AMOLED) }
-            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // AMOLED 토글
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onAmoledToggle(!amoledMode) }
+                    .background(
+                        if (amoledMode) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        else Color.Transparent
+                    )
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Brightness2,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = if (amoledMode) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "⚫ AMOLED 블랙",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (amoledMode) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Text(
+                        text = "완전 검정 배경 (배터리 절약)",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Switch(
+                    checked = amoledMode,
+                    onCheckedChange = onAmoledToggle,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun ColorThemeSection(
-    currentTheme: ThemeMode,
-    onThemeChange: (ThemeMode) -> Unit
+    currentColorScheme: AppColorScheme,
+    onColorSchemeChange: (AppColorScheme) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -199,7 +256,7 @@ private fun ColorThemeSection(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -208,34 +265,49 @@ private fun ColorThemeSection(
                 ColorThemeButton(
                     color = Color(0xFFFF9800),
                     name = "오렌지",
-                    isSelected = currentTheme == ThemeMode.ORANGE,
-                    onClick = { onThemeChange(ThemeMode.ORANGE) }
+                    isSelected = currentColorScheme == AppColorScheme.ORANGE_CLASSIC,
+                    onClick = { onColorSchemeChange(AppColorScheme.ORANGE_CLASSIC) }
                 )
-                
+
                 // 블루
                 ColorThemeButton(
                     color = Color(0xFF2196F3),
                     name = "블루",
-                    isSelected = currentTheme == ThemeMode.BLUE,
-                    onClick = { onThemeChange(ThemeMode.BLUE) }
+                    isSelected = currentColorScheme == AppColorScheme.BLUE_MODERN,
+                    onClick = { onColorSchemeChange(AppColorScheme.BLUE_MODERN) }
                 )
-                
+
                 // 그린
                 ColorThemeButton(
                     color = Color(0xFF4CAF50),
                     name = "그린",
-                    isSelected = currentTheme == ThemeMode.GREEN,
-                    onClick = { onThemeChange(ThemeMode.GREEN) }
+                    isSelected = currentColorScheme == AppColorScheme.GREEN_NATURAL,
+                    onClick = { onColorSchemeChange(AppColorScheme.GREEN_NATURAL) }
                 )
-                
+
                 // 퍼플
                 ColorThemeButton(
                     color = Color(0xFF9C27B0),
                     name = "퍼플",
-                    isSelected = currentTheme == ThemeMode.PURPLE,
-                    onClick = { onThemeChange(ThemeMode.PURPLE) }
+                    isSelected = currentColorScheme == AppColorScheme.PURPLE_LUXURY,
+                    onClick = { onColorSchemeChange(AppColorScheme.PURPLE_LUXURY) }
                 )
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "선택한 테마: ${currentColorScheme.displayName}",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Text(
+                text = currentColorScheme.description,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
     }
 }
@@ -265,11 +337,11 @@ private fun ThemeOptionItem(
             contentDescription = null,
             modifier = Modifier.size(24.dp),
             tint = if (isSelected) MaterialTheme.colorScheme.primary
-                  else MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurfaceVariant
         )
-        
+
         Spacer(modifier = Modifier.width(12.dp))
-        
+
         Column(
             modifier = Modifier.weight(1f)
         ) {
@@ -278,16 +350,16 @@ private fun ThemeOptionItem(
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium,
                 color = if (isSelected) MaterialTheme.colorScheme.primary
-                       else MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurface
             )
-            
+
             Text(
                 text = subtitle,
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        
+
         RadioButton(
             selected = isSelected,
             onClick = onClick,
@@ -333,15 +405,15 @@ private fun ColorThemeButton(
                 )
             }
         }
-        
+
         Spacer(modifier = Modifier.height(8.dp))
-        
+
         Text(
             text = name,
             fontSize = 12.sp,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
             color = if (isSelected) MaterialTheme.colorScheme.primary
-                   else MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -363,7 +435,7 @@ private fun ThemePreviewSection(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
-            
+
             // 미리보기 카드
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -386,7 +458,7 @@ private fun ThemePreviewSection(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        
+
                         Surface(
                             shape = RoundedCornerShape(16.dp),
                             color = MaterialTheme.colorScheme.primary
@@ -399,17 +471,17 @@ private fun ThemePreviewSection(
                             )
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     Text(
                         text = "1,299,000원 → 909,300원",
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -419,7 +491,7 @@ private fun ThemePreviewSection(
                         ) {
                             Text("구매하기")
                         }
-                        
+
                         OutlinedButton(
                             onClick = { },
                             modifier = Modifier.weight(1f)
@@ -456,23 +528,24 @@ private fun ThemeInfoSection(
                     modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
-                
+
                 Spacer(modifier = Modifier.width(8.dp))
-                
+
                 Text(
                     text = "💡 테마 정보",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             Text(
                 text = "• ⏰ 자동 전환: 저녁 19시부터 다음날 오전 7시까지 다크모드\n" +
-                      "• 🔋 AMOLED 블랙: 완전 검정 배경으로 배터리 절약\n" +
-                      "• 🎨 컬러 테마: 4가지 개성있는 컬러 선택 가능\n" +
-                      "• 📱 현재 시간: ${if (isNightTime) "밤 (다크모드 적용 시간)" else "낮 (라이트모드 적용 시간)"}",
+                        "• 📱 시스템 따라가기: 기기 설정에 따라 자동 변경\n" +
+                        "• 🔋 AMOLED 블랙: 완전 검정 배경으로 배터리 절약\n" +
+                        "• 🎨 컬러 테마: 4가지 개성있는 컬러 선택 가능\n" +
+                        "• 📱 현재 시간: ${if (isNightTime) "밤 (다크모드 적용 시간)" else "낮 (라이트모드 적용 시간)"}",
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 20.sp
