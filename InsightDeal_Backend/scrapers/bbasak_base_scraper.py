@@ -1,91 +1,107 @@
 import re
-from urllib.parse import urljoin, urlparse, urlunparse
+import logging
+from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from .base import BaseScraper
+from datetime import datetime
+
+# 로거 설정
+logger = logging.getLogger(__name__)
 
 class BbasakBaseScraper(BaseScraper):
-    """
-    빠삭 커뮤니티 전용 스크래퍼
-    BaseScraper의 공통 처리 함수를 최대한 활용합니다.
-    """
+    def __init__(self, db_session, community_name, community_url):
+        """빠삭 베이스 스크래퍼 초기화"""
+        super().__init__(
+            db_session,
+            community_name=community_name,
+            community_url=community_url
+        )
 
     def scrape(self):
-        """
-        빠삭 목록 페이지에서 딜 정보를 수집하고,
-        상세 분석은 BaseScraper의 공통 처리 함수에 위임합니다.
-        """
-        # 1. 목록 페이지 로딩 및 기본 정보 수집
+        """빠삭 목록 페이지에서 딜 정보를 수집"""
+        logger.info(f"[{self.community_name}] 빠삭 목록 스크래핑 시작...")
+        
         WebDriverWait(self.driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "form[name='fboardlist']"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div.board-list"))
         )
 
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-        post_rows = soup.select("form[name='fboardlist'] table tr:has(a.bigSizeLink)")
-        
+        post_rows = soup.select('div.board-item')
+
         if self.limit:
             post_rows = post_rows[:self.limit]
 
         temp_deals_info = []
         for row in post_rows:
-            title_element = row.select_one('td.tit a')
+            title_element = row.select_one('a.title-link')
             if not title_element:
                 continue
-                
-            href = title_element.get('href')
-            if not href or href.strip().startswith('javascript:'):
-                continue
 
-            # 링크 처리: href가 이미 전체 URL인지 확인
-            if href.startswith('http'):
-                desktop_link = href
-            else:
-                desktop_link = urljoin(self.base_url, href)
-                
-            # 빠삭은 모바일 페이지(bbasak.com)가 크롤링에 더 안정적이므로 모바일 링크를 사용
-            parsed_url = urlparse(desktop_link)
-            mobile_url_parts = (
-                'https', 
-                'bbasak.com', 
-                parsed_url.path,
-                parsed_url.params, 
-                parsed_url.query, 
-                parsed_url.fragment
-            )
-            mobile_link = urlunparse(mobile_url_parts)
-            
-            full_title = title_element.get_text(strip=True)
+            post_link = urljoin(self.base_url, title_element['href'])
+            full_title_text = title_element.get_text(strip=True)
 
-            # 이미지 URL 추출 및 원본 변환
-            image_tag = row.select_one('td:nth-of-type(4) img')
-            original_image_url = None
-            if image_tag:
-                raw_src = image_tag.get('src')
-                if raw_src:
-                    full_src = urljoin(self.base_url, raw_src)
-                    # 썸네일을 원본 이미지로 변환
-                    original_image_url = full_src.replace('_t.png', '_b.png') if full_src.endswith('_t.png') else full_src
-
-            # 제목에서 메타데이터 추출
-            shop_name_match = re.search(r'^\[(.*?)\]', full_title)
-            list_shop_name = self._clean_shop_name(
-                shop_name_match.group(1).strip() if shop_name_match else '정보 없음'
-            )
-
-            # 괄호 안의 가격/배송비 정보 추출
-            list_price = self._extract_price_from_title(full_title)
-            list_shipping_fee = self._extract_shipping_from_title(full_title)
+            # 빠삭 목록에서 이미지 수집
+            image_tag = row.select_one('img.thumbnail')
+            original_image_url = urljoin(self.base_url, image_tag['src']) if image_tag else None
 
             temp_deals_info.append({
-                'post_link': mobile_link,  # 모바일 링크를 메인으로 사용
-                'full_title': full_title,
-                'original_image_url': original_image_url, # 목록에서 가져온 고품질 이미지
-                'list_shop_name': list_shop_name,         # 목록에서 가져온 쇼핑몰 이름
-                'list_price': list_price,                 # 목록에서 가져온 가격
-                'list_shipping_fee': list_shipping_fee    # 목록에서 가져온 배송비
+                'post_link': post_link,
+                'full_title': full_title_text,
+                'original_image_url': original_image_url
             })
 
-        # 2. 수집된 기본 정보를 바탕으로 ★공통 상세 페이지 처리 함수 호출★
+        logger.info(f"Found {len(temp_deals_info)} potential deals from the list page.")
         return self._process_detail_pages(temp_deals_info)
+
+    # ✅ 새로 추가된 메서드: 빠삭 전용 게시글 상세 정보 추출
+    def get_post_details(self, post_url):
+        """빠삭 전용 게시글 상세 정보 추출"""
+        logger.info(f"[{self.community_name}] 게시글 상세 추출 시작: {post_url[:50]}...")
+        
+        try:
+            # Selenium으로 페이지 로드
+            if not self.driver:
+                self._create_selenium_driver()
+                
+            self.driver.get(post_url)
+            self.wait.until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
+            
+            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            soup['data-url'] = post_url  # URL 정보 추가
+            
+            # ✅ 빠삭 전용 최적화 설정
+            site_config = {
+                "content_selectors": ['.content', '.post_content', '.article_content', '.board-content'],
+                "time_selectors": ['.date', '.timestamp', '.post-date', '.view-date'],
+                "time_patterns": [
+                    r'(\\d{4}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2})',   # 2024-10-23 21:10
+                    r'(\\d{4}\\.\\d{2}\\.\\d{2}\\s+\\d{2}:\\d{2})', # 2024.10.23 21:10
+                    r'(\\d{2}/\\d{2}/\\d{4}\\s+\\d{2}:\\d{2})'      # 23/10/2024 21:10
+                ],
+                "exclude_image_keywords": ['icon_', 'btn_', 'button_', 'logo_', 'bbasak_'],
+                "text_selectors": ['p', 'div']  # 빠삭은 p, div 태그 사용
+            }
+            
+            # base.py의 공통 메서드 활용
+            result = self.extract_post_content_and_images(
+                soup, 
+                site_config["content_selectors"],
+                self.base_url,
+                site_config
+            )
+            
+            logger.info(f"[{self.community_name}] 추출 완료! 이미지: {len(result['images'])}개, 텍스트: {len(result['content'])}자")
+            return result
+            
+        except Exception as e:
+            logger.error(f"[{self.community_name}] 추출 실패: {e}")
+            return {
+                "images": [],
+                "content": "게시글 정보를 불러올 수 없습니다.",
+                "posted_time": None,
+                "error": str(e),
+                "crawled_at": datetime.now().isoformat()
+            }
