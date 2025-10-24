@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1081779935009",
+    "project_id": "insightdeal-54955",
+    "storage_bucket": "insightdeal-54955.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1081779935009:android:f5bf946651705531c59060",
+        "android_client_info": {
+          "package_name": "com.ddaeany0919.insightdeal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCjHJLrS-g1tdiGCdrZFbavHF5FcZaQlaU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
