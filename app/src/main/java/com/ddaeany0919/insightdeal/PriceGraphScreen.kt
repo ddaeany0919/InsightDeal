@@ -27,9 +27,7 @@ import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
-import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import java.text.NumberFormat
-import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -149,13 +147,13 @@ fun PriceGraphScreen(
     // 에러 메시지 처리
     errorMessage?.let { message ->
         LaunchedEffect(message) {
-            // 스낵바나 토스트로 에러 표시
+            viewModel.clearError()
         }
     }
 }
 
 @Composable
-private fun ProductInfoCard(product: ProductData) {
+private fun ProductInfoCard(product: PriceChartViewModel.ProductData) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -218,7 +216,7 @@ private fun ProductInfoCard(product: ProductData) {
                     Icon(
                         imageVector = if (isIncrease) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
                         contentDescription = null,
-                        size = 16.dp,
+                        modifier = Modifier.size(16.dp),
                         tint = if (isIncrease) Color.Red else Color.Blue
                     )
                     
@@ -264,7 +262,7 @@ private fun PeriodSelector(
 
 @Composable
 private fun PriceChart(
-    priceHistory: List<PriceHistoryData>,
+    priceHistory: List<PriceChartViewModel.PriceHistoryData>,
     targetPrice: Int
 ) {
     Card(
@@ -344,7 +342,7 @@ private fun PriceChart(
 }
 
 @Composable
-private fun PriceStatisticsCard(statistics: PriceStatistics) {
+private fun PriceStatisticsCard(statistics: PriceChartViewModel.PriceStatistics) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -370,6 +368,30 @@ private fun PriceStatisticsCard(statistics: PriceStatistics) {
                 StatisticItem("최고", "${NumberFormat.getInstance().format(statistics.highest)}원")
                 StatisticItem("평균", "${NumberFormat.getInstance().format(statistics.average)}원")
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 변동성 표시
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "가격 변동성: ",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "${String.format("%.1f", statistics.volatility)}%",
+                    fontSize = 14.sp,
+                    color = when {
+                        statistics.volatility > 20 -> Color.Red
+                        statistics.volatility > 10 -> MaterialTheme.colorScheme.tertiary
+                        else -> Color.Green
+                    },
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -384,6 +406,7 @@ private fun StatisticItem(label: String, value: String) {
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        
         Text(
             text = value,
             fontSize = 14.sp,
@@ -407,26 +430,34 @@ private fun BuyingAdviceCard(advice: String) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            Text(
-                text = "🎯 구매 타이밍 조언",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(bottom = 8.dp)
-            )
+            ) {
+                Text(
+                    text = "🎯",
+                    fontSize = 18.sp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "구매 타이밍 조언",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             
             Text(
                 text = advice,
                 fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                lineHeight = 20.sp
+                lineHeight = 20.sp,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
             )
         }
     }
 }
 
 @Composable
-private fun PriceHistoryItem(historyItem: PriceHistoryData) {
+private fun PriceHistoryItem(historyItem: PriceChartViewModel.PriceHistoryData) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -436,21 +467,55 @@ private fun PriceHistoryItem(historyItem: PriceHistoryData) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = historyItem.date,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            
+            Column {
+                Text(
+                    text = formatDate(historyItem.date),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = formatTime(historyItem.date),
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             Text(
                 text = "${NumberFormat.getInstance().format(historyItem.price)}원",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium
             )
         }
+    }
+}
+
+// 유틸리티 함수들
+private fun formatDate(dateString: String): String {
+    return try {
+        val parts = dateString.split("T")[0].split("-")
+        if (parts.size == 3) {
+            "${parts[1]}월 ${parts[2]}일"
+        } else {
+            dateString
+        }
+    } catch (e: Exception) {
+        dateString
+    }
+}
+
+private fun formatTime(dateString: String): String {
+    return try {
+        val timePart = dateString.split("T").getOrNull(1)?.split(":")
+        if (timePart != null && timePart.size >= 2) {
+            "${timePart[0]}:${timePart[1]}"
+        } else {
+            ""
+        }
+    } catch (e: Exception) {
+        ""
     }
 }
