@@ -27,6 +27,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import java.text.NumberFormat
+import com.ddaeany0919.insightdeal.models.DealItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -579,14 +582,12 @@ private fun SearchResultItem(
                 Spacer(modifier = Modifier.height(4.dp))
                 
                 // 가격 정보
-                deal.price?.let { price ->
-                    Text(
-                        text = "${NumberFormat.getInstance().format(price)}원",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+                Text(
+                    text = "${NumberFormat.getInstance().format(deal.price)}원",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
                 
                 // 할인율 (있는 경우)
                 deal.discountRate?.let { discount ->
@@ -599,6 +600,27 @@ private fun SearchResultItem(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun InlineScoreBadge(score: Int) {
+    Surface(
+        modifier = Modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = when {
+            score >= 90 -> Color(0xFFFF6B6B)
+            score >= 70 -> Color(0xFFFFB347)
+            else -> Color(0xFF95A5A6)
+        }
+    ) {
+        Text(
+            text = "🔥 $score",
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
     }
 }
 
