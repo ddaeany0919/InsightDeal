@@ -3,6 +3,7 @@ package com.ddaeany0919.insightdeal
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import com.ddaeany0919.insightdeal.models.DealItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

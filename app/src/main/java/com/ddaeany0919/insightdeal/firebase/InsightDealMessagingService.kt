@@ -94,9 +94,9 @@ class InsightDealMessagingService : FirebaseMessagingService() {
         val discountRate = data["discount_rate"]
         
         val body = if (discountRate != null) {
-            "$${site}에서 $discountRate% 할인 핫딜을 발견했습니다!"
+            "${site}에서 $discountRate% 할인 핫딜을 발견했습니다!"
         } else {
-            "$${site}에서 새로운 핫딜을 발견했습니다!"
+            "${site}에서 새로운 핫딜을 발견했습니다!"
         }
         
         sendNotification(

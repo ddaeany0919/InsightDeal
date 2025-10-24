@@ -44,7 +44,10 @@ data class DealItem(
     
     @SerializedName("like_count")
     val likeCount: Int = 0,
-    
+
+    @SerializedName("dislike_count")
+    val dislikeCount: Int = 0,
+
     @SerializedName("tags")
     val tags: List<String> = emptyList()
 ) {
@@ -68,7 +71,7 @@ data class DealItem(
      * ⭐ 인기도 점수 (조회수, 댓글수, 좋아요 기반)
      */
     val popularityScore: Int
-        get() = viewCount + (commentCount * 5) + (likeCount * 10)
+        get() = viewCount + (commentCount * 5) + (likeCount * 10) - (dislikeCount * 5)
 }
 
 /**

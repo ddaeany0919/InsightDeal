@@ -1,19 +1,19 @@
 package com.ddaeany0919.insightdeal
 
 import android.util.Log
+import com.ddaeany0919.insightdeal.models.DealItem
 import kotlin.math.*
 
 /**
  * 🧠 AI 기반 꿀딜 품질 분석기
- * 
- * 댓글 감정 분석 + 커뮤니티 반응 + 사이트 신뢰도를 종합하여
+ * * 댓글 감정 분석 + 커뮤니티 반응 + 사이트 신뢰도를 종합하여
  * 0~100점 꿀딜 지수를 계산하는 머신러닝 시스템
  */
 class DealQualityAnalyzer {
-    
+
     companion object {
         private const val TAG = "DealQualityAnalyzer"
-        
+
         // 🟢 긍정 키워드 (가중치)
         private val POSITIVE_KEYWORDS = mapOf(
             "대박" to 20,
@@ -35,7 +35,7 @@ class DealQualityAnalyzer {
             "good" to 8,
             "짱" to 10
         )
-        
+
         // 🔴 부정 키워드 (가중치)
         private val NEGATIVE_KEYWORDS = mapOf(
             "사기" to -25,
@@ -56,14 +56,14 @@ class DealQualityAnalyzer {
             "사지마" to -20,
             "비추" to -12
         )
-        
+
         // ⚪ 중립 키워드 (정보성)
         private val NEUTRAL_KEYWORDS = setOf(
             "정보", "후기", "리뷰", "궁금", "문의", "질문",
             "어떤", "어디", "언제", "얼마", "몇개", "크기",
             "배송", "택배", "수령", "도착", "주문", "결제"
         )
-        
+
         // 🏆 사이트별 신뢰도 (0~100)
         private val SITE_CREDIBILITY = mapOf(
             "ppomppu" to 85,    // 뽐뿌 (1순위)
@@ -74,37 +74,38 @@ class DealQualityAnalyzer {
             "quasarzone" to 70  // 퀘이사존 (3순위)
         )
     }
-    
+
     /**
      * 🎯 메인 꿀딜 지수 계산 (0~100점)
      */
     fun calculateHotDealScore(deal: DealItem): HotDealScore {
         try {
             Log.d(TAG, "🔍 꿀딜 분석 시작: ${deal.title.take(30)}...")
-            
+
             // 1️⃣ 댓글 감정 분석 (40% 가중치)
-            val sentimentScore = analyzeSentiment(deal.content, deal.commentCount ?: 0)
-            
+            // ✅ [수정] deal.content 대신 deal.title을 분석합니다.
+            val sentimentScore = analyzeSentiment(deal.title, deal.commentCount ?: 0)
+
             // 2️⃣ 커뮤니티 반응 분석 (30% 가중치)
             val communityScore = analyzeCommunityReaction(deal)
-            
+
             // 3️⃣ 사이트 신뢰도 (20% 가중치)
             val siteScore = getSiteCredibility(deal.siteName)
-            
+
             // 4️⃣ 시간 신선도 (10% 가중치)
             val freshnessScore = calculateFreshnessScore(deal.createdAt)
-            
+
             // 🧮 최종 점수 계산
-            val finalScore = (sentimentScore * 0.4 + 
-                            communityScore * 0.3 + 
-                            siteScore * 0.2 + 
-                            freshnessScore * 0.1)
-                            .coerceIn(0.0, 100.0)
-            
+            val finalScore = (sentimentScore * 0.4 +
+                    communityScore * 0.3 +
+                    siteScore * 0.2 +
+                    freshnessScore * 0.1)
+                .coerceIn(0.0, 100.0)
+
             val scoreInt = finalScore.toInt()
-            
-            Log.d(TAG, "📊 꿀딜 점수 계산 완료: $scoreInt점 (감정:${sentimentScore.toInt()}, 커뮤니티:${communityScore.toInt()}, 사이트:$siteScore, 신선도:${freshnessScore.toInt()})")
-            
+
+            Log.d(TAG, "📊 꿀딜 점수 계산 완료: ${scoreInt}점 (감정:${sentimentScore.toInt()}, 커뮤니티:${communityScore.toInt()}, 사이트:$siteScore, 신선도:${freshnessScore.toInt()})")
+
             return HotDealScore(
                 score = scoreInt,
                 badge = getBadgeForScore(scoreInt),
@@ -116,7 +117,7 @@ class DealQualityAnalyzer {
                     freshness = freshnessScore.toInt()
                 )
             )
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "❌ 꿀딜 분석 오류: ${e.message}")
             return HotDealScore(
@@ -127,17 +128,18 @@ class DealQualityAnalyzer {
             )
         }
     }
-    
+
     /**
      * 💬 댓글 감정 분석
      */
-    private fun analyzeSentiment(content: String, commentCount: Int): Double {
-        if (content.isEmpty()) return 50.0
-        
-        val text = content.lowercase()
+    // ✅ [수정] 파라미터 이름을 content에서 text로 변경 (필수는 아니지만 명확성을 위해)
+    private fun analyzeSentiment(textToAnalyze: String, commentCount: Int): Double {
+        if (textToAnalyze.isEmpty()) return 50.0
+
+        val text = textToAnalyze.lowercase()
         var sentimentScore = 50.0
         var keywordMatches = 0
-        
+
         // 긍정 키워드 점수
         POSITIVE_KEYWORDS.forEach { (keyword, weight) ->
             val matches = countKeywordOccurrences(text, keyword)
@@ -146,7 +148,7 @@ class DealQualityAnalyzer {
                 keywordMatches += matches
             }
         }
-        
+
         // 부정 키워드 점수
         NEGATIVE_KEYWORDS.forEach { (keyword, weight) ->
             val matches = countKeywordOccurrences(text, keyword)
@@ -155,7 +157,7 @@ class DealQualityAnalyzer {
                 keywordMatches += matches
             }
         }
-        
+
         // 댓글 수 보정 (많을수록 신뢰도 증가)
         val commentBonus = when {
             commentCount >= 50 -> 10.0
@@ -163,19 +165,19 @@ class DealQualityAnalyzer {
             commentCount >= 10 -> 2.0
             else -> 0.0
         }
-        
+
         sentimentScore += commentBonus
-        
+
         Log.d(TAG, "💬 감정분석: ${sentimentScore.toInt()}점 (키워드:$keywordMatches, 댓글:$commentCount)")
         return sentimentScore.coerceIn(0.0, 100.0)
     }
-    
+
     /**
      * 👥 커뮤니티 반응 분석
      */
     private fun analyzeCommunityReaction(deal: DealItem): Double {
         var communityScore = 50.0
-        
+
         // 조회수 보정
         val viewCount = deal.viewCount ?: 0
         val viewBonus = when {
@@ -186,7 +188,7 @@ class DealQualityAnalyzer {
             else -> 0.0
         }
         communityScore += viewBonus
-        
+
         // 댓글/조회수 비율 (참여도)
         val commentCount = deal.commentCount ?: 0
         if (viewCount > 0) {
@@ -199,7 +201,7 @@ class DealQualityAnalyzer {
             }
             communityScore += participationBonus
         }
-        
+
         // 추천/반대 비율 (좋아요/싫어요)
         val likeCount = deal.likeCount ?: 0
         val dislikeCount = deal.dislikeCount ?: 0
@@ -214,11 +216,11 @@ class DealQualityAnalyzer {
             }
             communityScore += voteBonus
         }
-        
+
         Log.d(TAG, "👥 커뮤니티: ${communityScore.toInt()}점 (조회:$viewCount, 댓글:$commentCount, 좋아요:$likeCount)")
         return communityScore.coerceIn(0.0, 100.0)
     }
-    
+
     /**
      * 🏆 사이트 신뢰도
      */
@@ -226,17 +228,17 @@ class DealQualityAnalyzer {
         val site = siteName?.lowercase() ?: return 50
         return SITE_CREDIBILITY[site] ?: 50
     }
-    
+
     /**
      * ⏰ 시간 신선도 계산
      */
     private fun calculateFreshnessScore(createdAt: String?): Double {
         if (createdAt.isNullOrEmpty()) return 50.0
-        
+
         // 현재 시간과의 차이 계산 (간소화 버전)
         // 실제로는 ISO 8601 파싱 필요
         val hoursAgo = extractHoursFromCreatedAt(createdAt)
-        
+
         return when {
             hoursAgo <= 1 -> 100.0   // 1시간 이내
             hoursAgo <= 6 -> 85.0    // 6시간 이내
@@ -245,14 +247,14 @@ class DealQualityAnalyzer {
             else -> 30.0             // 오래됨
         }
     }
-    
+
     /**
      * 🔍 키워드 발생 횟수 계산
      */
     private fun countKeywordOccurrences(text: String, keyword: String): Int {
         return Regex(keyword).findAll(text).count()
     }
-    
+
     /**
      * ⏱️ 생성 시간에서 시간 추출 (간소화 버전)
      */
@@ -272,7 +274,7 @@ class DealQualityAnalyzer {
             else -> 24 // 기본 하루
         }
     }
-    
+
     /**
      * 🏅 점수에 따른 배지 결정
      */
@@ -285,7 +287,7 @@ class DealQualityAnalyzer {
             else -> DealBadge.AVOID
         }
     }
-    
+
     /**
      * 💬 점수에 따른 추천 텍스트
      */
@@ -298,62 +300,64 @@ class DealQualityAnalyzer {
             else -> "❌ 이 딜은 피하시는 게 좋겠어요"
         }
     }
-    
+
     /**
      * 🚫 가짜 핫딜 감지
      */
     fun detectFakeDeal(deal: DealItem): Boolean {
         val title = deal.title.lowercase()
-        val content = deal.content.lowercase()
-        
+        // ✅ [수정] deal.content가 없으므로 해당 라인을 삭제합니다.
+        // val content = deal.content.lowercase()
+
         // 클릭베이트 패턴 감지
         val clickbaitPatterns = listOf(
             "절대", "무조건", "100%", "확실한", "보장",
             "기회", "놓치면", "마지막", "한정", "특별",
             "!!!", "???", "대박!!!", "헐..."
         )
-        
+
+        // ✅ [수정] content 검사 로직을 제거하고 title만 검사합니다.
         val clickbaitCount = clickbaitPatterns.count { pattern ->
-            title.contains(pattern) || content.contains(pattern)
+            title.contains(pattern) // || content.contains(pattern)
         }
-        
+
         // 의심스러운 패턴이 3개 이상이면 가짜 딜 의심
         return clickbaitCount >= 3
     }
-    
+
     /**
      * 📈 실시간 품질 트렌드 분석
      */
     fun analyzeTrendPattern(recentScores: List<Int>): TrendPattern {
         if (recentScores.size < 3) return TrendPattern.STABLE
-        
+
         val recent3 = recentScores.takeLast(3)
         val slope = calculateSlope(recent3)
-        
+
         return when {
             slope > 5 -> TrendPattern.IMPROVING
             slope < -5 -> TrendPattern.DECLINING
             else -> TrendPattern.STABLE
         }
     }
-    
+
     private fun calculateSlope(scores: List<Int>): Double {
         if (scores.size < 2) return 0.0
-        
+
         val n = scores.size
         val xMean = (n - 1) / 2.0
         val yMean = scores.average()
-        
+
         var numerator = 0.0
         var denominator = 0.0
-        
+
         scores.forEachIndexed { i, score ->
             val xDiff = i - xMean
             val yDiff = score - yMean
             numerator += xDiff * yDiff
             denominator += xDiff * xDiff
         }
-        
+
         return if (denominator != 0.0) numerator / denominator else 0.0
     }
 }
