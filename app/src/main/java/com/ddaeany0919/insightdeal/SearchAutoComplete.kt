@@ -167,7 +167,7 @@ class SearchAutoComplete private constructor(private val context: Context) {
         val chosungMap = mapOf(
             'ㄱ' to "가-깋", 'ㄴ' to "나-닣", 'ㄷ' to "다-딯", 'ㄹ' to "라-맇",
             'ㅁ' to "마-밓", 'ㅂ' to "바-빟", 'ㅅ' to "사-싷", 'ㅇ' to "아-잏",
-            'ㅈ' to "자-짛", 'ㅊ' to "차-칳", 'ㅋ' to "카-킿", 'ㅌ' to "타-틟",
+            'ㅈ' to "자-짛", 'ㅊ' to "차-칳", 'ㅋ' to "카-킿", 'ㅌ' to "타-팋",
             'ㅍ' to "파-핗", 'ㅎ' to "하-힣"
         )
         
