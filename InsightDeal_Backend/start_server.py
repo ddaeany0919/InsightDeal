@@ -47,142 +47,128 @@ if not os.path.exists(IMAGE_CACHE_DIR):
 
 app.mount("/images", StaticFiles(directory=IMAGE_CACHE_DIR), name="images")
 
-# --- 상품 정보 확장 유틸 함수들 ---
+# --- ✨ 새로운 통합 스크래퍼 라우팅 시스템 ---
+def smart_crawl_post_details(post_url: str, deal_title: str):
+    """도메인별로 최적화된 스크래퍼를 자동 라우팅하는 스마트 크롤링 함수"""
+    print(f"🎯 [Smart Crawler] Starting smart crawl for: {post_url[:50]}...")
+    
+    try:
+        # DB 세션 생성
+        db_session = database.SessionLocal()
+        
+        # 1. 도메인 감지 및 적절한 스크래퍼 선택
+        if 'ppomppu.co.kr' in post_url:
+            if 'ppomppu4' in post_url:  # 알리뽐뿌
+                print("🔍 [Smart Crawler] Routing to: 알리뽐뿌 스크래퍼")
+                from scrapers.alippomppu_scraper import AlippomppuScraper
+                with AlippomppuScraper(db_session) as scraper:
+                    return scraper.get_post_details(post_url)
+            elif 'ppomppu3' in post_url:  # 해외뽐뿌
+                print("🔍 [Smart Crawler] Routing to: 해외뽐뿌 스크래퍼")
+                from scrapers.ppomppu_overseas_scraper import PpomppuOverseasScraper
+                with PpomppuOverseasScraper(db_session) as scraper:
+                    return scraper.get_post_details(post_url)
+            else:  # 일반뽐뿌
+                print("🔍 [Smart Crawler] Routing to: 뽐뿌 스크래퍼")
+                from scrapers.ppomppu_scraper import PpomppuScraper
+                with PpomppuScraper(db_session) as scraper:
+                    return scraper.get_post_details(post_url)
+                    
+        elif 'ruliweb.com' in post_url:
+            print("🔍 [Smart Crawler] Routing to: 루리웹 스크래퍼")
+            from scrapers.ruliweb_scraper import RuliwebScraper
+            with RuliwebScraper(db_session) as scraper:
+                return scraper.get_post_details(post_url)
+                
+        elif 'clien.net' in post_url:
+            print("🔍 [Smart Crawler] Routing to: 클리앙 스크래퍼")
+            from scrapers.clien_scraper import ClienScraper
+            with ClienScraper(db_session) as scraper:
+                return scraper.get_post_details(post_url)
+                
+        elif 'quasarzone.com' in post_url:
+            print("🔍 [Smart Crawler] Routing to: 퀘이사존 스크래퍼")
+            from scrapers.quasarzone_scraper import QuasarzoneScraper
+            with QuasarzoneScraper(db_session) as scraper:
+                return scraper.get_post_details(post_url)
+                
+        elif 'fmkorea.com' in post_url:
+            print("🔍 [Smart Crawler] Routing to: 펨코 스크래퍼")
+            from scrapers.fmkorea_scraper import FmkoreaScraper
+            with FmkoreaScraper(db_session) as scraper:
+                return scraper.get_post_details(post_url)
+                
+        elif 'bbasak.com' in post_url:
+            print("🔍 [Smart Crawler] Routing to: 빠삭 스크래퍼")
+            from scrapers.bbasak_base_scraper import BbasakBaseScraper
+            with BbasakBaseScraper(db_session, "빠삭", post_url) as scraper:
+                return scraper.get_post_details(post_url)
+                
+        else:
+            print("⚠️ [Smart Crawler] Unknown site, falling back to generic crawler")
+            return fallback_crawl_post_details(post_url, deal_title)
+            
+    except Exception as e:
+        print(f"❌ [Smart Crawler] Smart crawling failed: {e}")
+        print(f"🔍 [Smart Crawler] Traceback: {traceback.format_exc()}")
+        # 스마트 크롤러 실패 시 기존 방식으로 대체
+        return fallback_crawl_post_details(post_url, deal_title)
+    finally:
+        if 'db_session' in locals():
+            db_session.close()
 
-def crawl_post_details(post_url: str, deal_title: str):
-    """원본 게시물에서 상세 이미지와 정보를 추출"""
-    print(f"🔍 [Post Crawler] Starting crawl for: {post_url[:50]}...")
+def fallback_crawl_post_details(post_url: str, deal_title: str):
+    """기존 방식의 범용 크롤러 (스마트 크롤러 실패 시 대체용)"""
+    print(f"🔄 [Fallback Crawler] Using fallback method for: {post_url[:50]}...")
     
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
         }
         
-        print(f"🌐 [Post Crawler] Requesting URL with headers: {post_url}")
         response = requests.get(post_url, headers=headers, timeout=15)
         response.raise_for_status()
-        print(f"✅ [Post Crawler] Successfully fetched content. Status: {response.status_code}, Size: {len(response.content)} bytes")
-        
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # 이미지 추출 (기존보다 더 많이)
+        # 범용 이미지 추출
         images = []
-        print(f"📷 [Image Extractor] Starting image extraction...")
+        for img in soup.find_all('img'):
+            img_src = img.get('src')
+            if img_src and 'http' in img_src and len(img_src) > 20:
+                if not any(keyword in img_src.lower() for keyword in ['icon', 'logo', 'emoticon']):
+                    images.append({
+                        "url": img_src,
+                        "alt": f"이미지 {len(images)+1}",
+                        "description": "게시글 이미지"
+                    })
+                    if len(images) >= 5:  # 최대 5개
+                        break
         
-        # 다양한 img 태그 선택자 시도
-        img_selectors = [
-            'img[src*="http"]',
-            'img[data-src*="http"]', 
-            'img[data-original*="http"]',
-            '.content img, .post-content img, .article-content img',
-            '#content img, #post img, #article img'
-        ]
-        
-        found_images = set()  # 중복 제거를 위한 set
-        
-        for selector in img_selectors:
-            try:
-                imgs = soup.select(selector)
-                print(f"🔍 [Image Extractor] Selector '{selector}' found {len(imgs)} images")
-                
-                for img in imgs:
-                    img_url = img.get('src') or img.get('data-src') or img.get('data-original')
-                    if img_url and img_url.startswith('http'):
-                        # 이미지 URL 정제
-                        if 'gif' not in img_url.lower() and len(img_url) > 20:  # gif 및 너무 짧은 URL 제외
-                            found_images.add(img_url)
-                            print(f"📷 [Image Extractor] Added image: {img_url[:60]}...")
-                            
-            except Exception as img_error:
-                print(f"⚠️ [Image Extractor] Error with selector '{selector}': {img_error}")
-        
-        # 최대 10개 이미지로 제한
-        image_list = list(found_images)[:10]
-        images = [{
-            "url": img_url,
-            "alt": f"상품 이미지 {i+1}",
-            "description": "상세 이미지"
-        } for i, img_url in enumerate(image_list)]
-        
-        print(f"📷 [Image Extractor] Total images extracted: {len(images)}")
-        
-        # 본문 내용 추출
-        print(f"📝 [Content Extractor] Starting content extraction...")
-        content_text = ""
-        
-        # 다양한 컨텐츠 선택자 시도
-        content_selectors = [
-            '.content, .post-content, .article-content',
-            '#content, #post, #article',
-            '.post-body, .entry-content',
-            'div[class*="content"], div[class*="post"]'
-        ]
-        
-        for selector in content_selectors:
-            try:
-                content_elements = soup.select(selector)
-                print(f"🔍 [Content Extractor] Selector '{selector}' found {len(content_elements)} elements")
-                
-                for element in content_elements:
-                    text = element.get_text(separator='\n', strip=True)
-                    if len(text) > 50:  # 의미 있는 내용만
-                        content_text += text + "\n\n"
-                        print(f"📝 [Content Extractor] Added content block: {len(text)} characters")
-                        
-                if content_text:
-                    break  # 첫 번째로 성공한 선택자 사용
-                    
-            except Exception as content_error:
-                print(f"⚠️ [Content Extractor] Error with selector '{selector}': {content_error}")
-        
-        # 컨텐츠가 없으면 대체 방법 시도
-        if not content_text.strip():
-            print(f"🔄 [Content Extractor] No content found, trying fallback method...")
-            # 전체 body에서 추출
-            body_text = soup.body.get_text(separator='\n', strip=True) if soup.body else soup.get_text(separator='\n', strip=True)
-            # 상품과 관련된 부분만 추출
-            lines = body_text.split('\n')
-            relevant_lines = []
-            for line in lines:
-                if any(keyword in line for keyword in ['상품', '가격', '할인', '배솥', deal_title[:10]]):
-                    relevant_lines.append(line)
-            content_text = '\n'.join(relevant_lines[:20])  # 최대 20줄
-        
-        # 컨텐츠 길이 제한
-        if len(content_text) > 2000:
-            content_text = content_text[:2000] + "..."
-        
-        print(f"📝 [Content Extractor] Final content length: {len(content_text)} characters")
+        # 범용 텍스트 추출
+        content_text = soup.get_text(separator=' ', strip=True)
+        if len(content_text) > 500:
+            content_text = content_text[:500] + "..."
         
         result = {
             "images": images,
-            "content": content_text.strip(),
+            "content": content_text,
+            "posted_time": None,
             "crawled_at": datetime.now().isoformat(),
-            "source_url": post_url
+            "source_url": post_url,
+            "method": "fallback"
         }
         
-        print(f"✅ [Post Crawler] Successfully completed crawling. Images: {len(images)}, Content: {len(content_text)} chars")
+        print(f"✅ [Fallback Crawler] Success! Images: {len(images)}, Content: {len(content_text)} chars")
         return result
         
-    except requests.RequestException as req_error:
-        print(f"❌ [Post Crawler] Request failed for {post_url}: {req_error}")
-        return {
-            "images": [],
-            "content": "콘텐츠를 불러올 수 없습니다.",
-            "error": f"Request error: {str(req_error)}",
-            "crawled_at": datetime.now().isoformat()
-        }
     except Exception as e:
-        print(f"❌ [Post Crawler] Unexpected error for {post_url}: {e}")
-        print(f"🔍 [Post Crawler] Traceback: {traceback.format_exc()}")
+        print(f"❌ [Fallback Crawler] Fallback also failed: {e}")
         return {
             "images": [],
-            "content": "콘텐츠 추출 중 오류가 발생했습니다.",
+            "content": "게시글을 불러올 수 없습니다.",
+            "posted_time": None,
             "error": str(e),
             "crawled_at": datetime.now().isoformat()
         }
@@ -192,15 +178,9 @@ def analyze_product_with_ai(deal_title: str, content: str, images: list):
     print(f"🤖 [AI Analyzer] Starting AI analysis for: {deal_title[:30]}...")
     
     try:
-        # 간단한 AI 분석 예시 (실제로는 OpenAI/Claude API 사용)
-        # 여기서는 반환만 함
         analysis_result = {
             "productSummary": deal_title,
-            "keyFeatures": [
-                "고품질 상품",
-                "합리적 가격",
-                "빠른 배송"
-            ],
+            "keyFeatures": ["고품질 상품", "합리적 가격", "빠른 배송"],
             "recommended": True,
             "analysisConfidence": 85.0,
             "analyzedAt": datetime.now().isoformat()
@@ -224,7 +204,7 @@ def analyze_product_with_ai(deal_title: str, content: str, images: list):
 
 @app.get("/")
 def read_root():
-    return {"message": "InsightDeal API Server is running!", "version": "2.2"}
+    return {"message": "InsightDeal API Server is running!", "version": "3.0 - Smart Routing"}
 
 @app.get("/api/deals")
 def get_deals_list(page: int = 1, page_size: int = 20, community_id: int = None):
@@ -234,15 +214,12 @@ def get_deals_list(page: int = 1, page_size: int = 20, community_id: int = None)
         print(f"📊 [Deals List] Request - Page: {page}, Size: {page_size}, Community: {community_id}")
         offset = (page - 1) * page_size
         
-        # 기본 쿼리 구성
         query = db.query(models.Deal)
         
-        # 커뮤니티 필터링 (옵션)
         if community_id:
             query = query.filter(models.Deal.source_community_id == community_id)
             print(f"🔍 [Deals List] Filtering by community ID: {community_id}")
         
-        # 관계 데이터 미리 로드 및 정렬
         deals_from_db = (query
                         .options(joinedload(models.Deal.community))
                         .order_by(models.Deal.indexed_at.desc())
@@ -255,11 +232,9 @@ def get_deals_list(page: int = 1, page_size: int = 20, community_id: int = None)
         results = []
         for deal in deals_from_db:
             try:
-                # 커뮤니티 정보 안전하게 조회
                 if hasattr(deal, 'community') and deal.community:
                     community_name = deal.community.name
                 else:
-                    # 관계가 없을 경우 직접 조회
                     community = db.query(models.Community).filter(
                         models.Community.id == deal.source_community_id
                     ).first()
@@ -327,7 +302,6 @@ def get_deal_detail(deal_id: int):
             print(f"❌ [Deal Detail] Deal not found: {deal_id}")
             raise HTTPException(status_code=404, detail="Deal not found")
         
-        # 커뮤니티 정보 가져오기
         community = db.query(models.Community).filter(
             models.Community.id == deal.source_community_id
         ).first()
@@ -358,15 +332,14 @@ def get_deal_detail(deal_id: int):
     finally:
         db.close()
 
-# ✅ NEW: 상품 정보 확장 API 
+# ✅ NEW: 상품 정보 확장 API (스마트 라우팅 적용)
 @app.get("/api/deals/{deal_id}/enhanced-info")
 def get_enhanced_deal_info(deal_id: int):
-    """딜의 향상된 정보 (상세 이미지, AI 분석)"""
+    """딜의 향상된 정보 (사이트별 최적화된 스크래퍼 사용)"""
     db: Session = database.SessionLocal()
     try:
         print(f"🚀 [Enhanced Info] Starting enhanced info fetch for deal: {deal_id}")
         
-        # 기본 딜 정보 조회
         deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
         if not deal:
             print(f"❌ [Enhanced Info] Deal not found: {deal_id}")
@@ -376,19 +349,18 @@ def get_enhanced_deal_info(deal_id: int):
         
         # 1. 게시 시간 정보
         posted_time_info = {
-            "indexedAt": deal.indexed_at.isoformat() if deal.indexed_at else None,  # indexed_at → indexedAt
-            "formattedTime": None,         # formatted_time → formattedTime
-            "timeAgo": None               # time_ago → timeAgo
+            "indexedAt": deal.indexed_at.isoformat() if deal.indexed_at else None,
+            "formattedTime": None,
+            "timeAgo": None
         }
         
         if deal.indexed_at:
             try:
-                from datetime import timezone, timedelta
+                from datetime import timezone
                 now = datetime.now(timezone.utc)
                 indexed_time = deal.indexed_at.replace(tzinfo=timezone.utc) if deal.indexed_at.tzinfo is None else deal.indexed_at
                 time_diff = now - indexed_time
                 
-                # 시간 포맷팅
                 if time_diff.days > 0:
                     posted_time_info["timeAgo"] = f"{time_diff.days}일 전"
                 elif time_diff.seconds > 3600:
@@ -404,13 +376,12 @@ def get_enhanced_deal_info(deal_id: int):
             except Exception as time_error:
                 print(f"⚠️ [Enhanced Info] Time calculation error: {time_error}")
         
-        # 2. 원본 게시물 크롤링으로 상세 정보 추출
+        # 2. ✨ 스마트 라우팅으로 원본 게시물 크롤링
         product_detail = None
         if deal.post_link:
-            print(f"🔍 [Enhanced Info] Starting post crawling for: {deal.post_link}")
-            product_detail = crawl_post_details(deal.post_link, deal.title)
+            print(f"🎯 [Enhanced Info] Using smart routing for: {deal.post_link}")
+            product_detail = smart_crawl_post_details(deal.post_link, deal.title)
             
-            # 3. AI 분석 (옵션)
             if product_detail and product_detail.get('content'):
                 print(f"🤖 [Enhanced Info] Starting AI analysis...")
                 ai_analysis = analyze_product_with_ai(
@@ -422,25 +393,24 @@ def get_enhanced_deal_info(deal_id: int):
         else:
             print(f"⚠️ [Enhanced Info] No post link available for crawling")
         
-        # 최종 결과 조합
         result = {
-            "dealId": deal_id,                    # deal_id → dealId
-            "postedTime": posted_time_info,       # posted_time → postedTime
-            "productDetail": product_detail,      # product_detail → productDetail  
-            "enhancedAt": datetime.now().isoformat()  # enhanced_at → enhancedAt
+            "dealId": deal_id,
+            "postedTime": posted_time_info,
+            "productDetail": product_detail,
+            "enhancedAt": datetime.now().isoformat()
         }
         
-        print(f"✅ [Enhanced Info] Successfully completed enhanced info fetch")
+        print(f"✅ [Enhanced Info] Successfully completed enhanced info fetch with smart routing")
         print(f"📈 [Enhanced Info] Result summary:")
-        print(f"  - Posted time: {posted_time_info.get('time_ago', 'Unknown')}")
+        print(f"  - Posted time: {posted_time_info.get('timeAgo', 'Unknown')}")
         print(f"  - Images found: {len(product_detail.get('images', [])) if product_detail else 0}")
         print(f"  - Content length: {len(product_detail.get('content', '')) if product_detail else 0} chars")
-        print(f"  - AI analysis: {'Yes' if product_detail and product_detail.get('ai_analysis') else 'No'}")
+        print(f"  - Site detected: {product_detail.get('detected_site', 'N/A') if product_detail else 'N/A'}")
         
         return result
         
     except HTTPException:
-        raise  # HTTPException은 그대로 전달
+        raise
     except Exception as e:
         print(f"❌ [Enhanced Info] Enhanced info 조회 실패: {e}")
         print(f"🔍 [Enhanced Info] Traceback: {traceback.format_exc()}")
@@ -486,6 +456,7 @@ if __name__ == "__main__":
     print("🚀 InsightDeal API 서버를 시작합니다...")
     print(f"📍 데이터베이스: {os.getenv('DATABASE_URL', 'Not configured')}")
     print(f"🌐 API 문서: http://localhost:8000/docs")
+    print(f"🎯 스마트 라우팅 시스템 활성화 - 6개 사이트 지원")
     
     uvicorn.run(
         "start_server:app",
