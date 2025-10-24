@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    
-    <!-- 🌐 네트워크 및 인터넷 권한 -->
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     
-    <!-- 🔔 FCM 푸시 알림 권한 (Android 13+) -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Firebase Cloud Messaging 권한 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     
-    <!-- 📱 앱 상세 설정 -->
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -22,62 +22,38 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
         
-        <!-- 🏠 메인 액티비티 -->
+        <!-- Main Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:label="@string/app_name"
             android:theme="@style/Theme.InsightDeal">
-            
-            <!-- 🚀 앱 시작 인텐트 -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            
-            <!-- 🔗 딥 링크 지원 (FCM 푸시 알림에서 오는 링크) -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https"
-                      android:host="insightdeal.com" />
-            </intent-filter>
         </activity>
         
-        <!-- 🔥 Firebase Cloud Messaging Service -->
+        <!-- Firebase Cloud Messaging Service -->
         <service
-            android:name=".FCMService"
+            android:name=".firebase.InsightDealMessagingService"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
         
-        <!-- 🔔 FCM 기본 설정 -->
+        <!-- Firebase default notification channel -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_notification" />
-        
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
-            android:resource="@color/primary_orange" />
-        
+            android:resource="@color/notification_color" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="insightdeal_deals" />
-        
-        <!-- ⏰ Work Manager 백그라운드 작업 -->
-        <provider
-            android:name="androidx.startup.InitializationProvider"
-            android:authorities="${applicationId}.androidx-startup"
-            android:exported="false"
-            tools:node="merge">
-            <meta-data
-                android:name="androidx.work.WorkManagerInitializer"
-                android:value="androidx.startup" />
-        </provider>
-        
+            android:value="@string/default_notification_channel_id" />
+            
     </application>
-    
+
 </manifest>

@@ -1,23 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 🎨 InsightDeal 브랜드 컬러 -->
+    <!-- Primary Colors -->
     <color name="primary_orange">#FF6B35</color>
-    <color name="primary_orange_light">#FFE5DB</color>
-    <color name="primary_orange_dark">#E55A2B</color>
+    <color name="primary_blue">#2196F3</color>
+    <color name="primary_green">#4CAF50</color>
+    <color name="primary_purple">#9C27B0</color>
     
-    <!-- 💰 가격 관련 컬러 -->
-    <color name="price_increase">#F44336</color>  <!-- 상승 -->
-    <color name="price_decrease">#2196F3</color>  <!-- 하락 -->
-    <color name="price_target">#4CAF50</color>   <!-- 목표달성 -->
-    <color name="price_best">#FF9800</color>     <!-- 최저가 -->
+    <!-- Notification Colors -->
+    <color name="notification_color">#FF6B35</color>
     
-    <!-- 🎨 기본 컬러 -->
+    <!-- Theme Colors -->
+    <color name="seed">@color/primary_orange</color>
+    
+    <!-- Material Design Colors -->
+    <color name="light_primary">#FF6B35</color>
+    <color name="light_onPrimary">#FFFFFF</color>
+    <color name="light_primaryContainer">#FFE5DB</color>
+    <color name="light_onPrimaryContainer">#5D1A00</color>
+    
+    <color name="dark_primary">#FFB59D</color>
+    <color name="dark_onPrimary">#5D1A00</color>
+    <color name="dark_primaryContainer">#7F2C00</color>
+    <color name="dark_onPrimaryContainer">#FFE5DB</color>
+    
+    <!-- System Colors -->
     <color name="white">#FFFFFF</color>
     <color name="black">#000000</color>
-    <color name="light_gray">#F5F5F5</color>
-    <color name="dark_gray">#333333</color>
-    <color name="neutral_gray">#9E9E9E</color>
-    
-    <!-- 🔔 FCM 알림 컬러 -->
-    <color name="notification_color">@color/primary_orange</color>
+    <color name="transparent">#00000000</color>
 </resources>

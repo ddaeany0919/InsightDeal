@@ -1,57 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 🎨 InsightDeal 메인 테마 -->
+    
+    <!-- Base Theme -->
     <style name="Theme.InsightDeal" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- 🎨 브랜드 컬러 -->
-        <item name="colorPrimary">@color/primary_orange</item>
-        <item name="colorPrimaryVariant">@color/primary_orange_dark</item>
-        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorPrimary">@color/light_primary</item>
+        <item name="colorOnPrimary">@color/light_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/light_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/light_onPrimaryContainer</item>
         
-        <!-- 🎯 세컨더리 컬러 -->
-        <item name="colorSecondary">@color/price_decrease</item>
-        <item name="colorOnSecondary">@color/white</item>
-        
-        <!-- 🏠 배경 컬러 -->
-        <item name="android:colorBackground">@color/white</item>
-        <item name="colorOnBackground">@color/dark_gray</item>
-        <item name="colorSurface">@color/white</item>
-        <item name="colorOnSurface">@color/dark_gray</item>
-        
-        <!-- ❌ 에러 컬러 -->
-        <item name="colorError">@color/price_increase</item>
-        <item name="colorOnError">@color/white</item>
-        
-        <!-- 📱 시스템 UI -->
-        <item name="android:statusBarColor">@color/primary_orange</item>
-        <item name="android:navigationBarColor">@color/white</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <!-- Status Bar -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightNavigationBar">true</item>
-        
-        <!-- 🏠 액티비티 설정 -->
-        <item name="android:windowBackground">@color/white</item>
-        <item name="android:windowAnimationStyle">@android:style/Animation.Activity</item>
     </style>
     
-    <!-- 🌙 다크 모드 테마 (추후 지원) -->
+    <!-- Dark Theme -->
     <style name="Theme.InsightDeal.Dark" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/primary_orange</item>
-        <item name="colorPrimaryVariant">@color/primary_orange_light</item>
-        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorPrimary">@color/dark_primary</item>
+        <item name="colorOnPrimary">@color/dark_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/dark_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/dark_onPrimaryContainer</item>
         
-        <item name="android:colorBackground">#121212</item>
-        <item name="colorOnBackground">@color/white</item>
-        <item name="colorSurface">#1E1E1E</item>
-        <item name="colorOnSurface">@color/white</item>
-        
-        <item name="android:statusBarColor">@color/primary_orange</item>
-        <item name="android:navigationBarColor">#121212</item>
-    </style>
-    
-    <!-- 🔔 알림 채널 스타일 -->
-    <style name="NotificationStyle">
-        <item name="android:colorAccent">@color/primary_orange</item>
-        <item name="android:textColorPrimary">@color/dark_gray</item>
-        <item name="android:textColorSecondary">@color/neutral_gray</item>
+        <!-- Status Bar -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
     
 </resources>
