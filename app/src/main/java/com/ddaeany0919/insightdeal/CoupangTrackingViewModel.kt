@@ -3,6 +3,8 @@ package com.ddaeany0919.insightdeal
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ddaeany0919.insightdeal.network.ApiClient
+import com.ddaeany0919.insightdeal.network.ApiProduct
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +18,7 @@ class CoupangTrackingViewModel : ViewModel() {
         private const val TAG = "CoupangTrackingVM"
     }
 
-    private val apiService = ApiService.create()
+    private val apiService = ApiClient.create()
 
     // UI 상태
     private val _products = MutableStateFlow<List<ProductData>>(emptyList())
@@ -33,19 +35,14 @@ class CoupangTrackingViewModel : ViewModel() {
     }
 
     fun loadProducts() {
-        """사용자가 추가한 쿠팡 상품 목록 로드"""
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 _isLoading.value = true
                 _errorMessage.value = null
-
                 Log.d(TAG, "🔄 Loading user products...")
-
-                val response = apiService.getUserProducts("anonymous") // 추후 실제 user_id
-
+                val response = apiService.getUserProducts("anonymous")
                 if (response.isSuccessful) {
-                    val productList = response.body()?.map { apiProduct ->
-                        // ✅ ProductData 클래스가 정의되어 이제 정상적으로 작동합니다.
+                    val productList: List<ProductData> = response.body()?.map { apiProduct ->
                         ProductData(
                             id = apiProduct.id,
                             title = apiProduct.title,
@@ -59,16 +56,13 @@ class CoupangTrackingViewModel : ViewModel() {
                             discountRate = calculateDiscountRate(apiProduct)
                         )
                     } ?: emptyList()
-
                     _products.value = productList
                     Log.d(TAG, "✅ Loaded ${productList.size} products")
-
                 } else {
                     val error = "상품 목록을 불러오는데 실패했습니다: ${response.code()}"
                     _errorMessage.value = error
                     Log.e(TAG, "❌ Load products failed: ${response.code()}")
                 }
-
             } catch (e: HttpException) {
                 val error = "네트워크 오류: ${e.code()}"
                 _errorMessage.value = error
@@ -84,39 +78,29 @@ class CoupangTrackingViewModel : ViewModel() {
     }
 
     fun addProduct(url: String, targetPrice: Int) {
-        """새 쿠팡 상품 추가"""
         if (!url.contains("coupang.com")) {
             _errorMessage.value = "올바른 쿠팡 URL이 아닙니다"
             return
         }
-
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 _isLoading.value = true
                 _errorMessage.value = null
-
                 Log.d(TAG, "🛒 Adding new product: ${url.take(50)}...")
-
                 val request = mapOf(
                     "url" to url,
                     "target_price" to targetPrice,
-                    "user_id" to "anonymous" // 추후 실제 user_id
+                    "user_id" to "anonymous"
                 )
-
                 val response = apiService.addProduct(request)
-
                 if (response.isSuccessful) {
                     Log.d(TAG, "✅ Product added successfully")
-
-                    // 목록 새로고침
                     loadProducts()
-
                 } else {
                     val error = "상품 추가에 실패했습니다: ${response.code()}"
                     _errorMessage.value = error
                     Log.e(TAG, "❌ Add product failed: ${response.code()}")
                 }
-
             } catch (e: HttpException) {
                 val error = "네트워크 오류: ${e.code()}"
                 _errorMessage.value = error
