@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 📱 앱 기본 정보 -->
+    <string name="app_name">InsightDeal</string>
+    <string name="app_description">커뮤니티 핫딜 + 쿠팡 가격 추적 통합 앱</string>
+    
+    <!-- 🏠 네비게이션 메뉴 -->
+    <string name="nav_deals">핫딜</string>
+    <string name="nav_tracking">가격추적</string>
+    <string name="nav_search">검색</string>
+    <string name="nav_settings">설정</string>
+    
+    <!-- 🛒 쿠팡 추적 화면 -->
+    <string name="coupang_tracking_title">가격 추적</string>
+    <string name="add_product">상품 추가</string>
+    <string name="add_first_product">첫 상품 추가하기</string>
+    <string name="no_products_tracking">추적 중인 상품이 없습니다</string>
+    <string name="add_coupang_product_guide">쿠팡 상품을 추가하고\n가격 변동을 추적해보세요!</string>
+    
+    <!-- 📊 가격 그래프 화면 -->
+    <string name="price_analysis">가격 분석</string>
+    <string name="price_summary">가격 분석</string>
+    <string name="current_price">현재</string>
+    <string name="lowest_price">최저</string>
+    <string name="highest_price">최고</string>
+    <string name="average_price">평균</string>
+    <string name="target_price">목표 가격</string>
+    
+    <string name="period_7days">7일</string>
+    <string name="period_30days">30일</string>
+    <string name="period_all">전체</string>
+    
+    <!-- 🎯 구매 타이밍 -->
+    <string name="good_timing">지금이 구매 타이밍!</string>
+    <string name="wait_timing">좀 더 기다려보까요?</string>
+    <string name="target_achieved">목표가격 또는 최저가에 도달했습니다</string>
+    <string name="price_drop_alert">좋은 가격으로 떨어질 때까지 알림을 드릴게요</string>
+    
+    <!-- 🔔 알림 설정 -->
+    <string name="alert_settings">알림 설정</string>
+    <string name="edit_target_price">목표 가격 설정</string>
+    <string name="save">저장</string>
+    <string name="cancel">취소</string>
+    <string name="edit">수정</string>
+    
+    <!-- 📲 상품 추가 다이얼로그 -->
+    <string name="add_coupang_product">쿠팡 상품 추가</string>
+    <string name="coupang_url_label">쿠팡 상품 URL</string>
+    <string name="coupang_url_placeholder">https://www.coupang.com/vp/products/...</string>
+    <string name="target_price_label">목표 가격</string>
+    <string name="target_price_placeholder">50000</string>
+    <string name="won">원</string>
+    <string name="invalid_coupang_url">올바른 쿠팡 URL을 입력해주세요</string>
+    
+    <!-- ⚠️ 에러 메시지 -->
+    <string name="network_error">네트워크 오류가 발생했습니다</string>
+    <string name="loading_product_info">상품 정보 가져오는 중...</string>
+    <string name="loading_price_data">가격 데이터를 수집 중입니다...</string>
+    
+    <!-- 🔔 FCM 알림 메시지 -->
+    <string name="fcm_channel_name">InsightDeal 알림</string>
+    <string name="fcm_channel_description">핫딜 및 가격 변동 알림</string>
+    <string name="price_drop_notification">가격 하락 알림</string>
+    <string name="target_price_achieved">목표 가격 달성!</string>
+    
+    <!-- 🏷️ 상품 정보 -->
+    <string name="discount_rate">할인율</string>
+    <string name="lowest_price_ever">역대 최저</string>
+    <string name="price_change">가격 변동</string>
+    <string name="products_tracking_count">개 상품 추적 중</string>
+</resources>
