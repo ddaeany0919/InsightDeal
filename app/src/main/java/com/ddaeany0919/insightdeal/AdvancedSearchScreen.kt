@@ -631,7 +631,7 @@ private fun SearchEmptyState(query: String) {
             .fillMaxSize()
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalAlignment = Alignment.CenterVertically
+        verticalArrangement = Arrangement.Center
     ) {
         Icon(
             Icons.Default.SearchOff,
