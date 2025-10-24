@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace 'com.yourpackage.insightdeal'
+    namespace 'com.ddaeany0919.insightdeal'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.yourpackage.insightdeal"
+        applicationId "com.ddaeany0919.insightdeal"
         minSdk 24
         targetSdk 34
         versionCode 1
@@ -29,7 +29,7 @@ android {
             buildConfigField "String", "BASE_URL", '"http://your-server.com:8000/"'
         }
         debug {
-            buildConfigField "String", "BASE_URL", '"http://10.0.2.2:8000/"' // Android 에벼레이터
+            buildConfigField "String", "BASE_URL", '"http://10.0.2.2:8000/"' // Android 에뮬레이터
             // buildConfigField "String", "BASE_URL", '"http://192.168.1.100:8000/"' // 실제 기기
         }
     }
@@ -83,7 +83,7 @@ dependencies {
     // 📈 MPAndroidChart (가격 그래프)
     implementation 'com.github.PhilJay:MPAndroidChart:v3.1.0'
     
-    // 🇬἟a Coil (이미지 로딩)
+    // 🖼️ Coil (이미지 로딩)
     implementation 'io.coil-kt:coil-compose:2.5.0'
     
     // 🌐 Retrofit (네트워크 통신)
@@ -107,7 +107,7 @@ dependencies {
     // ⏰ Work Manager (백그라운드 작업)
     implementation 'androidx.work:work-runtime-ktx:2.9.0'
     
-    // 💳 Room Database (로칼 DB - 선택사항)
+    // 💳 Room Database (로컬 DB - 선택사항)
     // implementation 'androidx.room:room-runtime:2.6.1'
     // implementation 'androidx.room:room-ktx:2.6.1'
     // kapt 'androidx.room:room-compiler:2.6.1'
