@@ -1,5 +1,7 @@
 package com.ddaeany0919.insightdeal
 
+import com.ddaeany0919.insightdeal.models.DealItem
+import com.ddaeany0919.insightdeal.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Response
@@ -129,7 +131,9 @@ interface ApiService {
 
 // 📋 API 응답 데이터 모델들
 
-// 기존 모델 (DealItem, DealDetail 등은 기존 파일에서 유지)
+/**
+ * 쿠팡 상품 API 모델
+ */
 data class ApiProduct(
     val id: Int,
     val title: String,
@@ -145,10 +149,53 @@ data class ApiProduct(
     val last_checked: String?
 )
 
+/**
+ * 가격 히스토리 API 모델
+ */
 data class ApiPriceHistory(
     val price: Int,
     val original_price: Int?,
     val discount_rate: Int?,
     val tracked_at: String,
     val is_available: Boolean
+)
+
+/**
+ * 딜 상세 정보 모델
+ */
+data class DealDetail(
+    val id: Int,
+    val title: String,
+    val description: String?,
+    val price: Int,
+    val originalPrice: Int?,
+    val discountRate: Int?,
+    val imageUrl: String?,
+    val url: String,
+    val siteName: String,
+    val createdAt: String,
+    val viewCount: Int,
+    val likeCount: Int,
+    val commentCount: Int
+)
+
+/**
+ * 가격 히스토리 항목 모델
+ */
+data class PriceHistoryItem(
+    val price: Int,
+    val originalPrice: Int?,
+    val discountRate: Int?,
+    val recordedAt: String
+)
+
+/**
+ * 향상된 딜 정보 모델
+ */
+data class EnhancedDealInfo(
+    val qualityScore: Int,
+    val priceRank: String,
+    val similarDeals: List<DealItem>,
+    val priceAlert: String?,
+    val recommendation: String?
 )
