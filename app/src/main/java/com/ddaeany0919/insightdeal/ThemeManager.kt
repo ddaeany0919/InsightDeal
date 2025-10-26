@@ -2,6 +2,7 @@ package com.ddaeany0919.insightdeal
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.os.Build
 import android.util.Log
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -97,11 +98,18 @@ class ThemeManager private constructor(private val context: Context) {
     }
     
     /**
-     * 🖤 AMOLED 테마인지 확인
+     * 🖤 AMOLED 테마인지 확인 (수정됨 - systemInDarkTheme 매개변수 추가)
      */
-    fun shouldUseAmoledTheme(): Boolean {
+    fun shouldUseAmoledTheme(systemInDarkTheme: Boolean = false): Boolean {
         return _themeMode.value == ThemeMode.AMOLED || 
-               (_amoledMode.value && shouldUseDarkTheme(isSystemInDarkTheme()))
+               (_amoledMode.value && shouldUseDarkTheme(systemInDarkTheme))
+    }
+    
+    /**
+     * 🌃 시스템 다크모드 확인 (로컬 사용)
+     */
+    private fun isSystemInDarkThemeLocal(): Boolean {
+        return (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     }
     
     private fun isNightTime(): Boolean {
@@ -115,7 +123,7 @@ class ThemeManager private constructor(private val context: Context) {
     fun getCurrentColorScheme(darkTheme: Boolean): ColorScheme {
         val baseScheme = _colorScheme.value
         val isDark = darkTheme
-        val isAmoled = shouldUseAmoledTheme()
+        val isAmoled = shouldUseAmoledTheme(darkTheme)
         
         return when {
             isAmoled -> createAmoledColorScheme(baseScheme)
