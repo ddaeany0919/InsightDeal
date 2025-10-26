@@ -187,7 +187,7 @@ private fun ProductInfoCard(product: PriceChartViewModel.ProductData) {
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                
+
                 Text(
                     text = product.title,
                     fontSize = 14.sp,
@@ -209,6 +209,7 @@ private fun ProductInfoCard(product: PriceChartViewModel.ProductData) {
                         color = MaterialTheme.colorScheme.primary
                     )
 
+                    // ✅ originalPrice 사용하여 할인율 표시
                     if (product.originalPrice > product.currentPrice) {
                         Surface(
                             shape = RoundedCornerShape(4.dp),
@@ -224,6 +225,7 @@ private fun ProductInfoCard(product: PriceChartViewModel.ProductData) {
                     }
                 }
 
+                // ✅ 원가 표시
                 if (product.originalPrice > product.currentPrice) {
                     Text(
                         text = "${NumberFormat.getNumberInstance().format(product.originalPrice)}원",
@@ -239,7 +241,7 @@ private fun ProductInfoCard(product: PriceChartViewModel.ProductData) {
 
 @Composable
 private fun PeriodSelector(
-    periods: List<String>,
+    periods: List<String>,  // ✅ 제네릭 타입 추가
     selectedPeriod: String,
     onPeriodSelected: (String) -> Unit
 ) {
@@ -278,7 +280,7 @@ private fun PeriodSelector(
 
 @Composable
 private fun PriceChart(
-    priceHistory: List<PriceChartViewModel.PriceHistoryData>,
+    priceHistory: List<PriceChartViewModel.PriceHistoryData>,  // ✅ 제네릭 타입 추가
     targetPrice: Int
 ) {
     Card(
@@ -372,7 +374,7 @@ private fun PriceStatisticsCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 최고가
+                // ✅ maxPrice 사용
                 StatisticItem(
                     label = "최고가",
                     value = "${NumberFormat.getNumberInstance().format(statistics.maxPrice)}원",
@@ -381,7 +383,7 @@ private fun PriceStatisticsCard(
                     modifier = Modifier.weight(1f)
                 )
 
-                // 최저가
+                // ✅ minPrice 사용
                 StatisticItem(
                     label = "최저가",
                     value = "${NumberFormat.getNumberInstance().format(statistics.minPrice)}원",
@@ -397,7 +399,7 @@ private fun PriceStatisticsCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 평균가
+                // ✅ averagePrice 사용
                 StatisticItem(
                     label = "평균가",
                     value = "${NumberFormat.getNumberInstance().format(statistics.averagePrice)}원",
@@ -456,7 +458,7 @@ private fun StatisticItem(
 
 @Composable
 private fun BuyingAdviceCard(
-    advice: PriceChartViewModel.BuyingAdvice
+    advice: PriceChartViewModel.BuyingAdvice  // ✅ BuyingAdvice 객체 사용
 ) {
     Card(
         modifier = Modifier
@@ -493,6 +495,7 @@ private fun BuyingAdviceCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // ✅ timing 사용
             Text(
                 text = advice.timing,
                 fontSize = 18.sp,
@@ -500,6 +503,7 @@ private fun BuyingAdviceCard(
                 color = MaterialTheme.colorScheme.primary
             )
 
+            // ✅ reason 사용
             Text(
                 text = advice.reason,
                 fontSize = 14.sp,
@@ -507,6 +511,7 @@ private fun BuyingAdviceCard(
                 modifier = Modifier.padding(top = 4.dp)
             )
 
+            // ✅ savings 사용
             if (advice.savings > 0) {
                 Text(
                     text = "💰 예상 절약: ${NumberFormat.getNumberInstance().format(advice.savings)}원",
@@ -540,6 +545,7 @@ private fun PriceHistoryItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
+                // ✅ siteName 사용
                 Text(
                     text = historyItem.siteName,
                     fontSize = 12.sp,
@@ -561,7 +567,7 @@ private fun PriceHistoryItem(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            // 가격 변동 표시
+            // ✅ priceChange 사용땜 가격 변동 표시
             if (historyItem.priceChange != 0) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically
