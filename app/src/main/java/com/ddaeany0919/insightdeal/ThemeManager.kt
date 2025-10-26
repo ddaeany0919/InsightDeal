@@ -18,7 +18,7 @@ import java.util.*
 /**
  * 🎨 지능형 테마 관리자
  * 
- * 다크모드, AMOLED 모드, 4가지 컴러 테마를 통합 관리
+ * 다크모드, AMOLED 모드, 4가지 컬러 테마를 통합 관리
  */
 class ThemeManager private constructor(private val context: Context) {
     
@@ -53,7 +53,7 @@ class ThemeManager private constructor(private val context: Context) {
     val amoledMode: StateFlow<Boolean> = _amoledMode.asStateFlow()
     
     init {
-        Log.d(TAG, "🎨 테마 관리자 초기화: ${_themeMode.value.name}, ${_colorScheme.value.name}")
+        Log.d(TAG, "🎨 테마 관리자 초기화: ${_themeMode.value.name}, ${_colorScheme.value.name}, AMOLED: ${_amoledMode.value}")
     }
     
     /**
@@ -66,12 +66,12 @@ class ThemeManager private constructor(private val context: Context) {
     }
     
     /**
-     * 🎨 컴러 스킴 변경
+     * 🎨 컬러 스킴 변경
      */
     fun setColorScheme(scheme: AppColorScheme) {
         _colorScheme.value = scheme
         saveColorScheme(scheme)
-        Log.d(TAG, "🎨 컴러 스킴 변경: ${scheme.name}")
+        Log.d(TAG, "🎨 컬러 스킴 변경: ${scheme.name}")
     }
     
     /**
@@ -90,9 +90,18 @@ class ThemeManager private constructor(private val context: Context) {
         return when (_themeMode.value) {
             ThemeMode.LIGHT -> false
             ThemeMode.DARK -> true
+            ThemeMode.AMOLED -> true // AMOLED는 항상 다크
             ThemeMode.SYSTEM -> systemInDarkTheme
             ThemeMode.AUTO_TIME -> isNightTime()
         }
+    }
+    
+    /**
+     * 🖤 AMOLED 테마인지 확인
+     */
+    fun shouldUseAmoledTheme(): Boolean {
+        return _themeMode.value == ThemeMode.AMOLED || 
+               (_amoledMode.value && shouldUseDarkTheme(isSystemInDarkTheme()))
     }
     
     private fun isNightTime(): Boolean {
@@ -101,123 +110,162 @@ class ThemeManager private constructor(private val context: Context) {
     }
     
     /**
-     * 🎨 현재 컴러 스킴 가져오기
+     * 🎨 현재 컬러 스킴 가져오기
      */
     fun getCurrentColorScheme(darkTheme: Boolean): ColorScheme {
         val baseScheme = _colorScheme.value
-        val isDark = darkTheme || _amoledMode.value
+        val isDark = darkTheme
+        val isAmoled = shouldUseAmoledTheme()
         
-        return if (isDark) {
-            if (_amoledMode.value) {
-                createAmoledColorScheme(baseScheme)
-            } else {
-                createDarkColorScheme(baseScheme)
-            }
-        } else {
-            createLightColorScheme(baseScheme)
+        return when {
+            isAmoled -> createAmoledColorScheme(baseScheme)
+            isDark -> createDarkColorScheme(baseScheme)
+            else -> createLightColorScheme(baseScheme)
         }
     }
     
     /**
-     * 🌅 라이트 컴러 스킴 생성
+     * 🌅 라이트 컬러 스킴 생성 (리소스 기반)
      */
     private fun createLightColorScheme(scheme: AppColorScheme): ColorScheme {
         return when (scheme) {
             AppColorScheme.ORANGE_CLASSIC -> lightColorScheme(
-                primary = Color(0xFFFF6B35),
-                onPrimary = Color.White,
-                primaryContainer = Color(0xFFFFE4DB),
-                onPrimaryContainer = Color(0xFF331100),
-                secondary = Color(0xFFFF8A50),
-                surface = Color(0xFFFFFBFF),
-                background = Color(0xFFFFFBFF)
+                primary = Color(0xFFFF6B35), // light_orange_primary
+                onPrimary = Color(0xFFFFFFFF), // light_orange_onPrimary
+                primaryContainer = Color(0xFFFFE5DB), // light_orange_primaryContainer
+                onPrimaryContainer = Color(0xFF5D1A00), // light_orange_onPrimaryContainer
+                surface = Color(0xFFFFFBFF), // light_orange_surface
+                onSurface = Color(0xFF201A17), // light_orange_onSurface
+                background = Color(0xFFFFFBFF), // light_orange_background
+                onBackground = Color(0xFF201A17) // light_orange_onBackground
             )
             AppColorScheme.BLUE_MODERN -> lightColorScheme(
-                primary = Color(0xFF2196F3),
-                onPrimary = Color.White,
-                primaryContainer = Color(0xFFE3F2FD),
-                onPrimaryContainer = Color(0xFF0D47A1),
-                secondary = Color(0xFF42A5F5),
-                surface = Color(0xFFFFFBFF),
-                background = Color(0xFFFFFBFF)
+                primary = Color(0xFF2196F3), // light_blue_primary
+                onPrimary = Color(0xFFFFFFFF), // light_blue_onPrimary
+                primaryContainer = Color(0xFFD1E4FF), // light_blue_primaryContainer
+                onPrimaryContainer = Color(0xFF001D36), // light_blue_onPrimaryContainer
+                surface = Color(0xFFF8FEFF), // light_blue_surface
+                onSurface = Color(0xFF191C20), // light_blue_onSurface
+                background = Color(0xFFF8FEFF), // light_blue_background
+                onBackground = Color(0xFF191C20) // light_blue_onBackground
             )
             AppColorScheme.GREEN_NATURAL -> lightColorScheme(
-                primary = Color(0xFF4CAF50),
-                onPrimary = Color.White,
-                primaryContainer = Color(0xFFE8F5E8),
-                onPrimaryContainer = Color(0xFF1B5E20),
-                secondary = Color(0xFF66BB6A),
-                surface = Color(0xFFFFFBFF),
-                background = Color(0xFFFFFBFF)
+                primary = Color(0xFF4CAF50), // light_green_primary
+                onPrimary = Color(0xFFFFFFFF), // light_green_onPrimary
+                primaryContainer = Color(0xFFA8F5A8), // light_green_primaryContainer
+                onPrimaryContainer = Color(0xFF002204), // light_green_onPrimaryContainer
+                surface = Color(0xFFF6FFF6), // light_green_surface
+                onSurface = Color(0xFF181D18), // light_green_onSurface
+                background = Color(0xFFF6FFF6), // light_green_background
+                onBackground = Color(0xFF181D18) // light_green_onBackground
             )
             AppColorScheme.PURPLE_LUXURY -> lightColorScheme(
-                primary = Color(0xFF9C27B0),
-                onPrimary = Color.White,
-                primaryContainer = Color(0xFFF3E5F5),
-                onPrimaryContainer = Color(0xFF4A148C),
-                secondary = Color(0xFFBA68C8),
-                surface = Color(0xFFFFFBFF),
-                background = Color(0xFFFFFBFF)
+                primary = Color(0xFF9C27B0), // light_purple_primary
+                onPrimary = Color(0xFFFFFFFF), // light_purple_onPrimary
+                primaryContainer = Color(0xFFF3DAFF), // light_purple_primaryContainer
+                onPrimaryContainer = Color(0xFF36003C), // light_purple_onPrimaryContainer
+                surface = Color(0xFFFEF7FF), // light_purple_surface
+                onSurface = Color(0xFF1D1A20), // light_purple_onSurface
+                background = Color(0xFFFEF7FF), // light_purple_background
+                onBackground = Color(0xFF1D1A20) // light_purple_onBackground
             )
         }
     }
     
     /**
-     * 🌑 다크 컴러 스킴 생성
+     * 🌑 다크 컬러 스킴 생성 (리소스 기반)
      */
     private fun createDarkColorScheme(scheme: AppColorScheme): ColorScheme {
         return when (scheme) {
             AppColorScheme.ORANGE_CLASSIC -> darkColorScheme(
-                primary = Color(0xFFFF8A50),
-                onPrimary = Color(0xFF331100),
-                primaryContainer = Color(0xFF663300),
-                onPrimaryContainer = Color(0xFFFFE4DB),
-                secondary = Color(0xFFFFAB91),
-                surface = Color(0xFF1C1B1F),
-                background = Color(0xFF1C1B1F)
+                primary = Color(0xFFFFB59D), // dark_orange_primary
+                onPrimary = Color(0xFF5D1A00), // dark_orange_onPrimary
+                primaryContainer = Color(0xFF7F2C00), // dark_orange_primaryContainer
+                onPrimaryContainer = Color(0xFFFFE5DB), // dark_orange_onPrimaryContainer
+                surface = Color(0xFF1A1110), // dark_orange_surface
+                onSurface = Color(0xFFF0E0DC), // dark_orange_onSurface
+                background = Color(0xFF1A1110), // dark_orange_background
+                onBackground = Color(0xFFF0E0DC) // dark_orange_onBackground
             )
             AppColorScheme.BLUE_MODERN -> darkColorScheme(
-                primary = Color(0xFF64B5F6),
-                onPrimary = Color(0xFF0D47A1),
-                primaryContainer = Color(0xFF1976D2),
-                onPrimaryContainer = Color(0xFFE3F2FD),
-                secondary = Color(0xFF90CAF9),
-                surface = Color(0xFF1C1B1F),
-                background = Color(0xFF1C1B1F)
+                primary = Color(0xFF9CCAFF), // dark_blue_primary
+                onPrimary = Color(0xFF003258), // dark_blue_onPrimary
+                primaryContainer = Color(0xFF00497D), // dark_blue_primaryContainer
+                onPrimaryContainer = Color(0xFFD1E4FF), // dark_blue_onPrimaryContainer
+                surface = Color(0xFF10131A), // dark_blue_surface
+                onSurface = Color(0xFFE1E2E8), // dark_blue_onSurface
+                background = Color(0xFF10131A), // dark_blue_background
+                onBackground = Color(0xFFE1E2E8) // dark_blue_onBackground
             )
             AppColorScheme.GREEN_NATURAL -> darkColorScheme(
-                primary = Color(0xFF81C784),
-                onPrimary = Color(0xFF1B5E20),
-                primaryContainer = Color(0xFF388E3C),
-                onPrimaryContainer = Color(0xFFE8F5E8),
-                secondary = Color(0xFFA5D6A7),
-                surface = Color(0xFF1C1B1F),
-                background = Color(0xFF1C1B1F)
+                primary = Color(0xFF8BD88B), // dark_green_primary
+                onPrimary = Color(0xFF00390A), // dark_green_onPrimary
+                primaryContainer = Color(0xFF005314), // dark_green_primaryContainer
+                onPrimaryContainer = Color(0xFFA8F5A8), // dark_green_onPrimaryContainer
+                surface = Color(0xFF0F140F), // dark_green_surface
+                onSurface = Color(0xFFE0E4E0), // dark_green_onSurface
+                background = Color(0xFF0F140F), // dark_green_background
+                onBackground = Color(0xFFE0E4E0) // dark_green_onBackground
             )
             AppColorScheme.PURPLE_LUXURY -> darkColorScheme(
-                primary = Color(0xFFCE93D8),
-                onPrimary = Color(0xFF4A148C),
-                primaryContainer = Color(0xFF7B1FA2),
-                onPrimaryContainer = Color(0xFFF3E5F5),
-                secondary = Color(0xFFE1BEE7),
-                surface = Color(0xFF1C1B1F),
-                background = Color(0xFF1C1B1F)
+                primary = Color(0xFFD6BBFF), // dark_purple_primary
+                onPrimary = Color(0xFF4F1A5B), // dark_purple_onPrimary
+                primaryContainer = Color(0xFF673174), // dark_purple_primaryContainer
+                onPrimaryContainer = Color(0xFFF3DAFF), // dark_purple_onPrimaryContainer
+                surface = Color(0xFF141218), // dark_purple_surface
+                onSurface = Color(0xFFE5E1E6), // dark_purple_onSurface
+                background = Color(0xFF141218), // dark_purple_background
+                onBackground = Color(0xFFE5E1E6) // dark_purple_onBackground
             )
         }
     }
     
     /**
-     * 🖤 AMOLED 완전 검은색 스킴 생성
+     * 🖤 AMOLED 완전 검은색 스킴 생성 (리소스 기반)
      */
     private fun createAmoledColorScheme(scheme: AppColorScheme): ColorScheme {
-        val darkScheme = createDarkColorScheme(scheme)
-        
-        return darkScheme.copy(
-            surface = Color.Black,         // 완전 검은색
-            background = Color.Black,      // 완전 검은색
-            surfaceVariant = Color(0xFF1A1A1A),
-            surfaceContainer = Color(0xFF0D0D0D)
-        )
+        return when (scheme) {
+            AppColorScheme.ORANGE_CLASSIC -> darkColorScheme(
+                primary = Color(0xFFFFB59D), // amoled_orange_primary
+                onPrimary = Color(0xFF5D1A00), // amoled_orange_onPrimary
+                primaryContainer = Color(0xFF7F2C00), // amoled_orange_primaryContainer
+                onPrimaryContainer = Color(0xFFFFE5DB), // amoled_orange_onPrimaryContainer
+                surface = Color(0xFF000000), // amoled_orange_surface
+                onSurface = Color(0xFFF0E0DC), // amoled_orange_onSurface
+                background = Color(0xFF000000), // amoled_orange_background
+                onBackground = Color(0xFFF0E0DC) // amoled_orange_onBackground
+            )
+            AppColorScheme.BLUE_MODERN -> darkColorScheme(
+                primary = Color(0xFF9CCAFF), // amoled_blue_primary
+                onPrimary = Color(0xFF003258), // amoled_blue_onPrimary
+                primaryContainer = Color(0xFF00497D), // amoled_blue_primaryContainer
+                onPrimaryContainer = Color(0xFFD1E4FF), // amoled_blue_onPrimaryContainer
+                surface = Color(0xFF000000), // amoled_blue_surface
+                onSurface = Color(0xFFE1E2E8), // amoled_blue_onSurface
+                background = Color(0xFF000000), // amoled_blue_background
+                onBackground = Color(0xFFE1E2E8) // amoled_blue_onBackground
+            )
+            AppColorScheme.GREEN_NATURAL -> darkColorScheme(
+                primary = Color(0xFF8BD88B), // amoled_green_primary
+                onPrimary = Color(0xFF00390A), // amoled_green_onPrimary
+                primaryContainer = Color(0xFF005314), // amoled_green_primaryContainer
+                onPrimaryContainer = Color(0xFFA8F5A8), // amoled_green_onPrimaryContainer
+                surface = Color(0xFF000000), // amoled_green_surface
+                onSurface = Color(0xFFE0E4E0), // amoled_green_onSurface
+                background = Color(0xFF000000), // amoled_green_background
+                onBackground = Color(0xFFE0E4E0) // amoled_green_onBackground
+            )
+            AppColorScheme.PURPLE_LUXURY -> darkColorScheme(
+                primary = Color(0xFFD6BBFF), // amoled_purple_primary
+                onPrimary = Color(0xFF4F1A5B), // amoled_purple_onPrimary
+                primaryContainer = Color(0xFF673174), // amoled_purple_primaryContainer
+                onPrimaryContainer = Color(0xFFF3DAFF), // amoled_purple_onPrimaryContainer
+                surface = Color(0xFF000000), // amoled_purple_surface
+                onSurface = Color(0xFFE5E1E6), // amoled_purple_onSurface
+                background = Color(0xFF000000), // amoled_purple_background
+                onBackground = Color(0xFFE5E1E6) // amoled_purple_onBackground
+            )
+        }
     }
     
     // 저장/로드 메소드
@@ -257,17 +305,18 @@ class ThemeManager private constructor(private val context: Context) {
 }
 
 /**
- * 🌙 테마 모드 옵션
+ * 🌙 테마 모드 옵션 (AMOLED 추가)
  */
-enum class ThemeMode(val displayName: String) {
-    LIGHT("라이트 모드"),
-    DARK("다크 모드"),
-    SYSTEM("시스템 따라가기"),
-    AUTO_TIME("시간 자동 전환")
+enum class ThemeMode(val displayName: String, val description: String) {
+    LIGHT("라이트 모드", "밝은 배경으로 낮에 최적화"),
+    DARK("다크 모드", "어두운 배경으로 눈의 피로 감소"),
+    AMOLED("AMOLED 블랙", "완전한 검은색으로 배터리 절약"),
+    SYSTEM("시스템 따라가기", "시스템 설정에 맞춰 자동 전환"),
+    AUTO_TIME("시간 자동 전환", "오후 7시~오전 7시 자동 다크모드")
 }
 
 /**
- * 🎨 컴러 스킴 옵션
+ * 🎨 컬러 스킴 옵션
  */
 enum class AppColorScheme(
     val displayName: String,
