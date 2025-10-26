@@ -1,4 +1,20 @@
-"__pycache__/" 
-"*.pyc" 
-"logs/" 
-".idea/" 
+# 빌드 파일들
+**/build/
+**/.gradle/
+**/intermediates/
+**/*.apk
+**/*.aab
+**/*.jar
+**/*.dex
+**/*.so
+
+# Android Studio
+*.iml
+.idea/
+local.properties
+.DS_Store
+
+# 캐시 및 임시 파일
+.externalNativeBuild/
+.cxx/
+/captures/
