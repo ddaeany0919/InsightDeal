@@ -18,3 +18,12 @@ local.properties
 .externalNativeBuild/
 .cxx/
 /captures/
+
+# IDE 워크스페이스 파일들
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/gradle.xml
+.idea/misc.xml
+.idea/modules.xml
+.idea/vcs.xml
+.idea/deploymentTargetDropDown.xml
