@@ -8,6 +8,8 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.ddaeany0919.insightdeal.network.ApiClient  // ✅ ApiClient import 추가
+import com.ddaeany0919.insightdeal.network.FCMTokenRequest  // ✅ FCMTokenRequest import 추가
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
@@ -43,17 +45,19 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         // 서버에 새 토큰 등록
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val apiService = ApiService.create()
-                val request = mapOf(
-                    "fcm_token" to token,
-                    "user_id" to "anonymous", // 추후 실제 user_id로 변경
-                    "device_type" to "android",
-                    "app_version" to BuildConfig.VERSION_NAME
+                val apiService = ApiClient.create()  // ✅ ApiClient 사용
+                
+                // ✅ FCMTokenRequest DTO 사용 (Map 대신)
+                val request = FCMTokenRequest(
+                    token = token,
+                    deviceId = getDeviceId(),
+                    platform = "android"
                 )
                 
-                val response = apiService.registerFCMToken(request)
+                val response = apiService.registerFCMToken(request)  // ✅ 타입 일치
                 if (response.isSuccessful) {
                     Log.d(TAG, "✅ FCM Token 서버 등록 성공")
+                    saveTokenToPrefs(token)
                 } else {
                     Log.e(TAG, "❌ FCM Token 서버 등록 실패: ${response.code()}")
                 }
@@ -99,7 +103,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
     
     private fun handleNewHotdealNotification(data: Map<String, String>) {
         val title = data["title"] ?: "새로운 핫딜"
-        val siteName = data["site_name"] ?: "뽐뿌"
+        val siteName = data["site_name"] ?: "뽐뽐"
         val price = data["price"]?.let { formatPrice(it.toIntOrNull() ?: 0) } ?: ""
         val discountRate = data["discount_rate"] ?: ""
         
@@ -114,7 +118,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
             title = title,
             body = body,
             data = data,
-            icon = R.drawable.ic_hotdeal,
+            icon = R.drawable.ic_notification,
             priority = NotificationCompat.PRIORITY_HIGH
         )
     }
@@ -136,7 +140,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
             title = title,
             body = body,
             data = data,
-            icon = R.drawable.ic_price_drop,
+            icon = R.drawable.ic_notification,
             priority = NotificationCompat.PRIORITY_MAX
         )
     }
@@ -156,7 +160,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
             title = title,
             body = body,
             data = data,
-            icon = R.drawable.ic_target_achieved,
+            icon = R.drawable.ic_notification,
             priority = NotificationCompat.PRIORITY_MAX,
             autoCancel = false // 중요한 알림이므로 자동 삭제 안 함
         )
@@ -177,7 +181,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
             title = title,
             body = body,
             data = data,
-            icon = R.drawable.ic_lowest_price,
+            icon = R.drawable.ic_notification,
             priority = NotificationCompat.PRIORITY_MAX
         )
     }
@@ -208,7 +212,6 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
             .setContentTitle(title)
             .setContentText(body)
             .setSmallIcon(icon)
-            .setColor(getColor(R.color.primary_orange)) // 브랜드 컬러
             .setContentIntent(pendingIntent)
             .setAutoCancel(autoCancel)
             .setPriority(priority)
@@ -220,7 +223,6 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
                 
                 // 중요한 알림의 경우 LED, 진동 설정
                 if (priority == NotificationCompat.PRIORITY_MAX) {
-                    setLights(getColor(R.color.primary_orange), 1000, 1000)
                     setVibrate(longArrayOf(0, 500, 200, 500))
                 }
             }
@@ -265,25 +267,9 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
                 )
                 actions.add(
                     NotificationCompat.Action.Builder(
-                        R.drawable.ic_open,
+                        R.drawable.ic_notification,
                         "바로가기",
                         viewPendingIntent
-                    ).build()
-                )
-                
-                // "관심상품 추가" 액션
-                val addToWishlistIntent = Intent(this, MainActivity::class.java)
-                addToWishlistIntent.putExtra("action", "add_to_wishlist")
-                addToWishlistIntent.putExtra("product_url", data["product_url"])
-                val wishlistPendingIntent = PendingIntent.getActivity(
-                    this, 2, addToWishlistIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                actions.add(
-                    NotificationCompat.Action.Builder(
-                        R.drawable.ic_favorite,
-                        "관심상품",
-                        wishlistPendingIntent
                     ).build()
                 )
             }
@@ -298,7 +284,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
                 )
                 actions.add(
                     NotificationCompat.Action.Builder(
-                        R.drawable.ic_shopping_cart,
+                        R.drawable.ic_notification,
                         "구매하기",
                         buyPendingIntent
                     ).build()
@@ -312,7 +298,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
                 )
                 actions.add(
                     NotificationCompat.Action.Builder(
-                        R.drawable.ic_chart,
+                        R.drawable.ic_notification,
                         "그래프",
                         graphPendingIntent
                     ).build()
@@ -329,7 +315,6 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
             val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, importance).apply {
                 description = CHANNEL_DESCRIPTION
                 enableLights(true)
-                lightColor = getColor(R.color.primary_orange)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 500, 200, 500)
                 setShowBadge(true)
@@ -345,6 +330,23 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
     
     private fun formatPrice(price: Int): String {
         return "${NumberFormat.getInstance().format(price)}원"
+    }
+    
+    private fun getDeviceId(): String {
+        // 간단한 디바이스 ID 생성 (실제로는 더 복잡한 로직 필요)
+        return android.provider.Settings.Secure.getString(
+            contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID
+        ) ?: "unknown_device"
+    }
+    
+    private fun saveTokenToPrefs(token: String) {
+        val prefs = getSharedPreferences("insightdeal_prefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("fcm_token", token)
+            .putLong("token_saved_at", System.currentTimeMillis())
+            .apply()
+        Log.d(TAG, "💾 FCM Token 로컬 저장 완료")
     }
 }
 
