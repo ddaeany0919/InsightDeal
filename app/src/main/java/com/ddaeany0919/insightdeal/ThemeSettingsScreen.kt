@@ -328,7 +328,7 @@ private fun ColorThemeSection(
                     modifier = Modifier.padding(12.dp)
                 ) {
                     Text(
-                        text = "선택한 테맄: ${currentColorScheme.displayName}",
+                        text = "선택한 테마: ${currentColorScheme.displayName}",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.primary
