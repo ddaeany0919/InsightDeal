@@ -29,12 +29,8 @@ fun DynamicThemeProvider(
     val useDarkTheme = themeManager.shouldUseDarkTheme(systemInDarkTheme)
     
     // 🎆 동적 컴러 스킴 애니메이션
-    // 🎆 동적 컴러 스킴 애니메이션
     val dynamicColorScheme = createAnimatedColorScheme(
-        baseScheme = themeManager.getCurrentColorScheme(
-            darkTheme = useDarkTheme,
-            systemInDarkTheme = systemInDarkTheme
-        )
+        baseScheme = themeManager.getCurrentColorScheme(useDarkTheme)
     )
     
     MaterialTheme(
