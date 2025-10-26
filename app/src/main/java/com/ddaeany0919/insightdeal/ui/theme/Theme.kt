@@ -132,6 +132,7 @@ fun InsightDealTheme(
     val useDarkTheme = when (themeMode) {
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
+        ThemeMode.AMOLED -> true
         ThemeMode.SYSTEM -> darkTheme
         ThemeMode.AUTO_TIME -> {
             val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
