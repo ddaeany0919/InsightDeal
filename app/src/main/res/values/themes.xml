@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     
-    <!-- Base Theme -->
+    <!-- Base Light Theme - Orange -->
     <style name="Theme.InsightDeal" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/light_primary</item>
-        <item name="colorOnPrimary">@color/light_onPrimary</item>
-        <item name="colorPrimaryContainer">@color/light_primaryContainer</item>
-        <item name="colorOnPrimaryContainer">@color/light_onPrimaryContainer</item>
+        <item name="colorPrimary">@color/light_orange_primary</item>
+        <item name="colorOnPrimary">@color/light_orange_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/light_orange_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/light_orange_onPrimaryContainer</item>
+        <item name="colorSurface">@color/light_orange_surface</item>
+        <item name="colorOnSurface">@color/light_orange_onSurface</item>
+        <item name="android:colorBackground">@color/light_orange_background</item>
+        <item name="colorOnBackground">@color/light_orange_onBackground</item>
         
         <!-- Status Bar -->
         <item name="android:statusBarColor">@android:color/transparent</item>
@@ -15,17 +19,186 @@
         <item name="android:windowLightNavigationBar">true</item>
     </style>
     
-    <!-- Dark Theme -->
+    <!-- Dark Theme - Orange -->
     <style name="Theme.InsightDeal.Dark" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/dark_primary</item>
-        <item name="colorOnPrimary">@color/dark_onPrimary</item>
-        <item name="colorPrimaryContainer">@color/dark_primaryContainer</item>
-        <item name="colorOnPrimaryContainer">@color/dark_onPrimaryContainer</item>
+        <item name="colorPrimary">@color/dark_orange_primary</item>
+        <item name="colorOnPrimary">@color/dark_orange_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/dark_orange_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/dark_orange_onPrimaryContainer</item>
+        <item name="colorSurface">@color/dark_orange_surface</item>
+        <item name="colorOnSurface">@color/dark_orange_onSurface</item>
+        <item name="android:colorBackground">@color/dark_orange_background</item>
+        <item name="colorOnBackground">@color/dark_orange_onBackground</item>
         
         <!-- Status Bar -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    
+    <!-- AMOLED Theme - Orange -->
+    <style name="Theme.InsightDeal.Amoled" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/amoled_orange_primary</item>
+        <item name="colorOnPrimary">@color/amoled_orange_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/amoled_orange_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/amoled_orange_onPrimaryContainer</item>
+        <item name="colorSurface">@color/amoled_orange_surface</item>
+        <item name="colorOnSurface">@color/amoled_orange_onSurface</item>
+        <item name="android:colorBackground">@color/amoled_orange_background</item>
+        <item name="colorOnBackground">@color/amoled_orange_onBackground</item>
+        
+        <!-- Status Bar -->
+        <item name="android:statusBarColor">@color/black</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/black</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    
+    <!-- Blue Color Themes -->
+    <style name="Theme.InsightDeal.Blue" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/light_blue_primary</item>
+        <item name="colorOnPrimary">@color/light_blue_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/light_blue_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/light_blue_onPrimaryContainer</item>
+        <item name="colorSurface">@color/light_blue_surface</item>
+        <item name="colorOnSurface">@color/light_blue_onSurface</item>
+        <item name="android:colorBackground">@color/light_blue_background</item>
+        <item name="colorOnBackground">@color/light_blue_onBackground</item>
+        
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+    
+    <style name="Theme.InsightDeal.Blue.Dark" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/dark_blue_primary</item>
+        <item name="colorOnPrimary">@color/dark_blue_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/dark_blue_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/dark_blue_onPrimaryContainer</item>
+        <item name="colorSurface">@color/dark_blue_surface</item>
+        <item name="colorOnSurface">@color/dark_blue_onSurface</item>
+        <item name="android:colorBackground">@color/dark_blue_background</item>
+        <item name="colorOnBackground">@color/dark_blue_onBackground</item>
+        
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    
+    <style name="Theme.InsightDeal.Blue.Amoled" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/amoled_blue_primary</item>
+        <item name="colorOnPrimary">@color/amoled_blue_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/amoled_blue_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/amoled_blue_onPrimaryContainer</item>
+        <item name="colorSurface">@color/amoled_blue_surface</item>
+        <item name="colorOnSurface">@color/amoled_blue_onSurface</item>
+        <item name="android:colorBackground">@color/amoled_blue_background</item>
+        <item name="colorOnBackground">@color/amoled_blue_onBackground</item>
+        
+        <item name="android:statusBarColor">@color/black</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/black</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    
+    <!-- Green Color Themes -->
+    <style name="Theme.InsightDeal.Green" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/light_green_primary</item>
+        <item name="colorOnPrimary">@color/light_green_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/light_green_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/light_green_onPrimaryContainer</item>
+        <item name="colorSurface">@color/light_green_surface</item>
+        <item name="colorOnSurface">@color/light_green_onSurface</item>
+        <item name="android:colorBackground">@color/light_green_background</item>
+        <item name="colorOnBackground">@color/light_green_onBackground</item>
+        
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+    
+    <style name="Theme.InsightDeal.Green.Dark" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/dark_green_primary</item>
+        <item name="colorOnPrimary">@color/dark_green_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/dark_green_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/dark_green_onPrimaryContainer</item>
+        <item name="colorSurface">@color/dark_green_surface</item>
+        <item name="colorOnSurface">@color/dark_green_onSurface</item>
+        <item name="android:colorBackground">@color/dark_green_background</item>
+        <item name="colorOnBackground">@color/dark_green_onBackground</item>
+        
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    
+    <style name="Theme.InsightDeal.Green.Amoled" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/amoled_green_primary</item>
+        <item name="colorOnPrimary">@color/amoled_green_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/amoled_green_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/amoled_green_onPrimaryContainer</item>
+        <item name="colorSurface">@color/amoled_green_surface</item>
+        <item name="colorOnSurface">@color/amoled_green_onSurface</item>
+        <item name="android:colorBackground">@color/amoled_green_background</item>
+        <item name="colorOnBackground">@color/amoled_green_onBackground</item>
+        
+        <item name="android:statusBarColor">@color/black</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/black</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    
+    <!-- Purple Color Themes -->
+    <style name="Theme.InsightDeal.Purple" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/light_purple_primary</item>
+        <item name="colorOnPrimary">@color/light_purple_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/light_purple_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/light_purple_onPrimaryContainer</item>
+        <item name="colorSurface">@color/light_purple_surface</item>
+        <item name="colorOnSurface">@color/light_purple_onSurface</item>
+        <item name="android:colorBackground">@color/light_purple_background</item>
+        <item name="colorOnBackground">@color/light_purple_onBackground</item>
+        
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+    
+    <style name="Theme.InsightDeal.Purple.Dark" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/dark_purple_primary</item>
+        <item name="colorOnPrimary">@color/dark_purple_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/dark_purple_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/dark_purple_onPrimaryContainer</item>
+        <item name="colorSurface">@color/dark_purple_surface</item>
+        <item name="colorOnSurface">@color/dark_purple_onSurface</item>
+        <item name="android:colorBackground">@color/dark_purple_background</item>
+        <item name="colorOnBackground">@color/dark_purple_onBackground</item>
+        
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    
+    <style name="Theme.InsightDeal.Purple.Amoled" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/amoled_purple_primary</item>
+        <item name="colorOnPrimary">@color/amoled_purple_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/amoled_purple_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/amoled_purple_onPrimaryContainer</item>
+        <item name="colorSurface">@color/amoled_purple_surface</item>
+        <item name="colorOnSurface">@color/amoled_purple_onSurface</item>
+        <item name="android:colorBackground">@color/amoled_purple_background</item>
+        <item name="colorOnBackground">@color/amoled_purple_onBackground</item>
+        
+        <item name="android:statusBarColor">@color/black</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/black</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>
     
