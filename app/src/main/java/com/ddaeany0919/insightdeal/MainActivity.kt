@@ -11,26 +11,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.ddaeany0919.insightdeal.ui.theme.InsightDealTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            // ✅ Theme.kt의 InsightDealTheme 사용 (매개변수 전달)
-            val context = LocalContext.current
-            val themeManager = ThemeManager.getInstance(context)
-            val currentTheme by themeManager.themeMode.collectAsState()
-            val colorScheme by themeManager.colorScheme.collectAsState()
-            val amoledMode by themeManager.amoledMode.collectAsState()
-
-            InsightDealTheme(
-                darkTheme = false,                  // ✅ 기본값 사용
-                dynamicColor = false,               // ✅ 기본값 사용
-                themeMode = currentTheme,           // ✅ ThemeManager에서 구독
-                colorScheme = colorScheme,          // ✅ ThemeManager에서 구독
-                amoledMode = amoledMode             // ✅ ThemeManager에서 구독
-            ) {
+            // ✅ 새로운 InsightDealTheme 사용 (컬러 스킴 지원)
+            InsightDealTheme {
                 InsightDealApp()
             }
         }
