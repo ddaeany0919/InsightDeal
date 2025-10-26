@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#000000</color>
+    <color name="dark_onPrimary">#5D1A00</color>
+    <color name="dark_onPrimaryContainer">#FFE5DB</color>
+    <color name="dark_primary">#FFB59D</color>
+    <color name="dark_primaryContainer">#7F2C00</color>
+    <color name="light_onPrimary">#FFFFFF</color>
+    <color name="light_onPrimaryContainer">#5D1A00</color>
+    <color name="light_primary">#FF6B35</color>
+    <color name="light_primaryContainer">#FFE5DB</color>
+    <color name="notification_color">#FF6B35</color>
+    <color name="primary_blue">#2196F3</color>
+    <color name="primary_green">#4CAF50</color>
+    <color name="primary_orange">#FF6B35</color>
+    <color name="primary_purple">#9C27B0</color>
+    <color name="seed">@color/primary_orange</color>
+    <color name="transparent">#00000000</color>
+    <color name="white">#FFFFFF</color>
+    <string name="app_name">InsightDeal</string>
+    <string name="btn_back">뒤로</string>
+    <string name="btn_retry">다시 시도</string>
+    <string name="btn_search">검색</string>
+    <string name="btn_settings">설정</string>
+    <string name="default_notification_channel_id">insightdeal_notifications</string>
+    <string name="default_notification_channel_name">InsightDeal 알림</string>
+    <string name="error_network">네트워크 연결을 확인해주세요</string>
+    <string name="error_server">서버 오류가 발생했습니다</string>
+    <string name="gcm_defaultSenderId" translatable="false">1081779935009</string>
+    <string name="google_api_key" translatable="false">AIzaSyCjHJLrS-g1tdiGCdrZFbavHF5FcZaQlaU</string>
+    <string name="google_app_id" translatable="false">1:1081779935009:android:f5bf946651705531c59060</string>
+    <string name="google_crash_reporting_api_key" translatable="false">AIzaSyCjHJLrS-g1tdiGCdrZFbavHF5FcZaQlaU</string>
+    <string name="google_storage_bucket" translatable="false">insightdeal-54955.firebasestorage.app</string>
+    <string name="loading">로딩 중...</string>
+    <string name="project_id" translatable="false">insightdeal-54955</string>
+    <string name="search_hint">핫딜 검색 (갤럭시, 아이폰, 노트북...)"</string>
+    <string name="search_no_results">검색 결과가 없습니다</string>
+    <string name="theme_amoled">AMOLED 블랙</string>
+    <string name="theme_auto">자동 전환</string>
+    <string name="theme_blue">블루</string>
+    <string name="theme_dark">다크 모드</string>
+    <string name="theme_green">그린</string>
+    <string name="theme_light">라이트 모드</string>
+    <string name="theme_orange">오렌지</string>
+    <string name="theme_purple">퍼플</string>
+    <style name="Theme.InsightDeal" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/light_primary</item>
+        <item name="colorOnPrimary">@color/light_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/light_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/light_onPrimaryContainer</item>
+        
+        
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+    <style name="Theme.InsightDeal.Dark" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/dark_primary</item>
+        <item name="colorOnPrimary">@color/dark_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/dark_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/dark_onPrimaryContainer</item>
+        
+        
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
