@@ -11,8 +11,9 @@ from apscheduler.triggers.cron import CronTrigger
 # 프로젝트 루트 디렉토리를 Python path에 추가
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from core.notifications import notification_service
-from database.models import get_db_session
+from backend.core.notifications import notification_service
+from backend.database.session import get_db_session, create_db_session
+from backend.database.models import Deal, Product, PriceHistory
 
 logging.basicConfig(
     level=logging.INFO,
@@ -118,7 +119,7 @@ class PriceCollectionScheduler:
             active_products = await self._get_active_tracked_products()
             
             if not active_products:
-                logger.info("📝 No active products to track")
+                logger.info("📋 No active products to track")
                 return
             
             collected_count = 0
@@ -215,33 +216,37 @@ class PriceCollectionScheduler:
         
         try:
             # 커뮤니티 스크래퍼 호출 (기존 scrapers 모듈 활용)
-            from scrapers.ppomppu_scraper import PpomppuScraper
-            from scrapers.ruliweb_scraper import RuliwebScraper
+            from backend.scrapers.ppomppu_scraper import PpomppuScraper
+            from backend.scrapers.ruliweb_scraper import RuliwebScraper
+            
+            # DB 세션 생성
+            db_session = create_db_session()
             
             scrapers = [
-                PpomppuScraper(),
-                RuliwebScraper()
+                PpomppuScraper(db_session),
+                RuliwebScraper(db_session)
             ]
             
             total_new_deals = 0
             
             for scraper in scrapers:
                 try:
-                    new_deals = await scraper.scrape_recent_deals(limit=20)
-                    
-                    if new_deals:
-                        # DB에 저장
-                        saved_deals = await self._save_new_deals(new_deals)
-                        total_new_deals += len(saved_deals)
+                    # 기존 scrape 메서드 활용 (비동기 대신 동기 호출)
+                    with scraper:
+                        new_deals = scraper.run(limit=20)
                         
-                        # 알림 발송 (구독자들에게)
-                        await self._notify_new_deals(saved_deals)
-                        
+                        if new_deals:
+                            total_new_deals += 1
+                            logger.info(f"✅ {scraper.community_name}: Found new deals")
+                            
                 except Exception as e:
                     logger.error(f"❌ Scraper {scraper.__class__.__name__} failed: {e}")
             
+            # DB 세션 정리
+            db_session.close()
+            
             if total_new_deals > 0:
-                logger.info(f"✅ Found {total_new_deals} new deals")
+                logger.info(f"✅ Scraping completed: {total_new_deals} scrapers successful")
                 
         except Exception as e:
             logger.error(f"❌ Deal scraping failed: {e}")
@@ -253,14 +258,21 @@ class PriceCollectionScheduler:
         try:
             cutoff_date = datetime.now() - timedelta(days=90)
             
-            # 오래된 가격 히스토리 삭제
-            deleted_prices = await self._cleanup_old_price_history(cutoff_date)
-            
-            # 오래된 스크래핑 로그 삭제
-            deleted_logs = await self._cleanup_old_scrape_logs(cutoff_date)
-            
+            # DB 세션을 사용하여 정리 작업
+            with create_db_session() as session:
+                # 오래된 가격 히스토리 삭제
+                deleted_prices = session.query(PriceHistory).filter(
+                    PriceHistory.checked_at < cutoff_date
+                ).count()
+                
+                session.query(PriceHistory).filter(
+                    PriceHistory.checked_at < cutoff_date
+                ).delete(synchronize_session=False)
+                
+                session.commit()
+                
             logger.info(
-                f"✅ Cleanup completed: {deleted_prices} price records, {deleted_logs} log records deleted"
+                f"✅ Cleanup completed: {deleted_prices} price records deleted"
             )
             
         except Exception as e:
@@ -307,26 +319,6 @@ class PriceCollectionScheduler:
         """알림 발송 완료 표시"""
         # TODO: 알림 발송 기록 업데이트
         pass
-    
-    async def _save_new_deals(self, deals: List[Dict]) -> List[Dict]:
-        """새 딜 데이터 저장"""
-        # TODO: 새 딜 DB 저장 (중복 제거)
-        return deals
-    
-    async def _notify_new_deals(self, deals: List[Dict]):
-        """새 딜 알림 발송"""
-        # TODO: 구독자들에게 새 딜 알림 발송
-        pass
-    
-    async def _cleanup_old_price_history(self, cutoff_date: datetime) -> int:
-        """오래된 가격 히스토리 삭제"""
-        # TODO: 90일 이상 된 가격 데이터 삭제
-        return 0
-    
-    async def _cleanup_old_scrape_logs(self, cutoff_date: datetime) -> int:
-        """오래된 스크래핑 로그 삭제"""
-        # TODO: 오래된 로그 데이터 삭제
-        return 0
 
 async def main():
     """스케줄러 메인 실행 함수"""
