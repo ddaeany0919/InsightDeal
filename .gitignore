@@ -40,3 +40,9 @@ keys/
 __pycache__/
 *.pyc
 *.log*.json  
+*.json  
+*.json  
+*.json  
+*.json 
+.env 
+__pycache__/ 
