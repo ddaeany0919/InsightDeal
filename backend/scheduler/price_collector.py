@@ -92,7 +92,7 @@ class PriceCollectionScheduler:
             name='Price Alert Notifications'
         )
         
-        # 4. 새 딜 스크래핑 - 10분마다
+        # 4. 새 딜 스크래핑 - 10분마다 (확장된 커뮤니티 커버리지)
         self.scheduler.add_job(
             self.scrape_new_deals,
             trigger=IntervalTrigger(minutes=10),
@@ -211,20 +211,28 @@ class PriceCollectionScheduler:
             logger.error(f"❌ Price alert check failed: {e}")
     
     async def scrape_new_deals(self):
-        """새로운 딜 스크래핑"""
-        logger.info("🔍 Scraping new deals...")
+        """새로운 딜 스크래핑 - 확장된 커뮤니티 커버리지"""
+        logger.info("🔍 Scraping new deals from all communities...")
         
         try:
-            # 커뮤니티 스크래퍼 호출 (기존 scrapers 모듈 활용)
+            # 확장된 커뮤니티 스크래퍼 호출
             from backend.scrapers.ppomppu_scraper import PpomppuScraper
             from backend.scrapers.ruliweb_scraper import RuliwebScraper
+            from backend.scrapers.clien_scraper import ClienScraper
+            from backend.scrapers.quasarzone_scraper import QuasarzoneScraper
+            from backend.scrapers.alippomppu_scraper import AlippomppuScraper
+            from backend.scrapers.fmkorea_scraper import FmkoreaScraper
             
             # DB 세션 생성
             db_session = create_db_session()
             
             scrapers = [
                 PpomppuScraper(db_session),
-                RuliwebScraper(db_session)
+                RuliwebScraper(db_session),
+                ClienScraper(db_session),
+                QuasarzoneScraper(db_session),
+                AlippomppuScraper(db_session),
+                FmkoreaScraper(db_session)
             ]
             
             total_new_deals = 0
@@ -246,7 +254,9 @@ class PriceCollectionScheduler:
             db_session.close()
             
             if total_new_deals > 0:
-                logger.info(f"✅ Scraping completed: {total_new_deals} scrapers successful")
+                logger.info(f"✅ Scraping completed: {total_new_deals}/6 scrapers successful")
+            else:
+                logger.info("📋 No new deals found from any community")
                 
         except Exception as e:
             logger.error(f"❌ Deal scraping failed: {e}")
@@ -278,7 +288,7 @@ class PriceCollectionScheduler:
         except Exception as e:
             logger.error(f"❌ Database cleanup failed: {e}")
     
-    # Helper methods (실제 DB 연동은 구현 필요)
+    # Helper methods
     
     async def _get_active_tracked_products(self) -> List[Dict]:
         """활성 추적 상품 목록 조회"""
@@ -327,7 +337,7 @@ async def main():
     try:
         await scheduler.start()
         
-        logger.info("⏰ Scheduler is running... Press Ctrl+C to stop")
+        logger.info("⏰ Enhanced scheduler with 6 communities running... Press Ctrl+C to stop")
         
         # 무한 대기 (Ctrl+C로 종료)
         while True:
@@ -339,7 +349,7 @@ async def main():
         logger.error(f"❌ Scheduler crashed: {e}")
     finally:
         await scheduler.stop()
-        logger.info("👋 Scheduler shut down gracefully")
+        logger.info("👋 Enhanced scheduler shut down gracefully")
 
 if __name__ == "__main__":
     asyncio.run(main())
