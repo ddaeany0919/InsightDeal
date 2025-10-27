@@ -39,4 +39,4 @@ secrets/
 keys/
 __pycache__/
 *.pyc
-*.log
+*.log*.json  
