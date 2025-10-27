@@ -16,19 +16,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import kotlinx.coroutines.delay
 import java.text.DecimalFormat
 
 /**
  * 🏠 InsightDeal 메인 홈화면
  * 
- * 핫딜 정보 최우선 리스트 + 선택적 그리드 뷰
- * 알리익스프레스 스타일 디자인 + 한국 핫딜 특화 UX
+ * 사용자 중심 설계: "매일 쓰고 싶은 앱"
+ * - 쉬운 발견: 커뮤니티 딜 피드
+ * - 간편한 추적: 원클릭 "추적 추가"
+ * - 똑똑한 비교: 쿠팡 vs 커뮤니티 가격
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,12 +46,12 @@ fun HomeScreen(
     var isSearchActive by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
     
-    // 임시 데이터 (추후 ViewModel로 교체)
+    // 🎯 사용자 중심 임시 데이터
     val sampleDeals = remember {
         listOf(
             DealItem(
                 id = 1,
-                title = "삼성 갤럭시 버즈3 Pro 노이즈캔슬링 무선이어폰",
+                title = "🔥 삼성 갤럭시 버즈3 Pro 노이즈캔슬링 무선이어폰",
                 originalPrice = 350000,
                 currentPrice = 198000,
                 discountRate = 43,
@@ -59,11 +63,12 @@ fun HomeScreen(
                 hasCoupon = true,
                 isOverseas = false,
                 isHot = true,
-                coupangPrice = 220000
+                coupangPrice = 220000,
+                savingAmount = 22000
             ),
             DealItem(
                 id = 2,
-                title = "애플 에어팟 프로 2세대 USB-C",
+                title = "애플 에어팟 프로 2세대 USB-C 정품 무료배송",
                 originalPrice = 359000,
                 currentPrice = 299000,
                 discountRate = 17,
@@ -71,11 +76,29 @@ fun HomeScreen(
                 postedMinutesAgo = 15,
                 imageUrl = "",
                 purchaseUrl = "https://...",
-                hasFreeship = false,
+                hasFreeship = true,
                 hasCoupon = false,
+                isOverseas = false,
+                isHot = true,
+                coupangPrice = 329000,
+                savingAmount = 30000
+            ),
+            DealItem(
+                id = 3,
+                title = "다이슨 V15 무선청소기 + 침구브러시 세트",
+                originalPrice = 890000,
+                currentPrice = 649000,
+                discountRate = 27,
+                community = "루리웹",
+                postedMinutesAgo = 32,
+                imageUrl = "",
+                purchaseUrl = "https://...",
+                hasFreeship = false,
+                hasCoupon = true,
                 isOverseas = true,
                 isHot = false,
-                coupangPrice = 329000
+                coupangPrice = 719000,
+                savingAmount = 70000
             )
         )
     }
@@ -105,6 +128,10 @@ fun HomeScreen(
             },
             onBookmarkClick = { deal ->
                 // TODO: 북마크 토글
+            },
+            onTrackClick = { deal ->
+                // 🎯 핵심 기능: 추적 추가
+                // TODO: 위시리스트에 추가
             }
         )
     }
@@ -155,10 +182,25 @@ private fun TopSearchAndFilterBar(
                 modifier = Modifier.weight(1f)
             ) {
                 // 검색 제안
-                Text(
-                    "최근 검색: 갤럭시, 에어팟, 다이슨",
-                    modifier = Modifier.padding(16.dp)
-                )
+                Column {
+                    Text(
+                        "🔥 인기 검색어",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 8.dp)
+                    )
+                    listOf("갤럭시", "에어팟", "다이슨", "아이패드", "닌텐도").forEach { keyword ->
+                        ListItem(
+                            headlineContent = { Text(keyword) },
+                            leadingContent = {
+                                Icon(Icons.Default.Search, contentDescription = null)
+                            },
+                            modifier = Modifier.clickable {
+                                onSearchQueryChange(keyword)
+                                onSearchActiveChange(false)
+                            }
+                        )
+                    }
+                }
             }
             
             Spacer(modifier = Modifier.width(12.dp))
@@ -222,14 +264,15 @@ private fun CategoryChipRow(
 }
 
 /**
- * 📱 딜 피드 (리스트/그리드 전환 가능)
+ * 📱 딜 피드 (리스트/그리드 전환)
  */
 @Composable
 private fun DealFeed(
     deals: List<DealItem>,
     isGridView: Boolean,
     onDealClick: (DealItem) -> Unit,
-    onBookmarkClick: (DealItem) -> Unit
+    onBookmarkClick: (DealItem) -> Unit,
+    onTrackClick: (DealItem) -> Unit
 ) {
     AnimatedContent(
         targetState = isGridView,
@@ -240,7 +283,7 @@ private fun DealFeed(
         label = "view_transition"
     ) { isGrid ->
         if (isGrid) {
-            // 🏪 그리드 뷰
+            // 🏪 그리드 뷰 (시각적)
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 contentPadding = PaddingValues(16.dp),
@@ -251,12 +294,13 @@ private fun DealFeed(
                     DealGridCard(
                         deal = deal,
                         onClick = { onDealClick(deal) },
-                        onBookmarkClick = { onBookmarkClick(deal) }
+                        onBookmarkClick = { onBookmarkClick(deal) },
+                        onTrackClick = { onTrackClick(deal) }
                     )
                 }
             }
         } else {
-            // 📋 리스트 뷰 (기본)
+            // 📋 리스트 뷰 (정보 중심) - 메인!
             LazyColumn(
                 contentPadding = PaddingValues(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(1.dp)
@@ -265,7 +309,8 @@ private fun DealFeed(
                     DealListCard(
                         deal = deal,
                         onClick = { onDealClick(deal) },
-                        onBookmarkClick = { onBookmarkClick(deal) }
+                        onBookmarkClick = { onBookmarkClick(deal) },
+                        onTrackClick = { onTrackClick(deal) }
                     )
                 }
             }
@@ -274,14 +319,17 @@ private fun DealFeed(
 }
 
 /**
- * 📋 리스트 카드 (정보 최우선)
+ * 📋 리스트 카드 (사용자가 가장 많이 쓸 뷰)
  */
 @Composable
 private fun DealListCard(
     deal: DealItem,
     onClick: () -> Unit,
-    onBookmarkClick: () -> Unit
+    onBookmarkClick: () -> Unit,
+    onTrackClick: () -> Unit
 ) {
+    var showTrackingSnackbar by remember { mutableStateOf(false) }
+    
     Card(
         onClick = onClick,
         modifier = Modifier
@@ -326,7 +374,7 @@ private fun DealListCard(
                 
                 Spacer(modifier = Modifier.height(6.dp))
                 
-                // 가격 정보
+                // 💰 가격 정보 (사용자 최우선 관심사)
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -370,44 +418,48 @@ private fun DealListCard(
                 
                 Spacer(modifier = Modifier.height(6.dp))
                 
-                // 쿠팡 가격 비교
-                deal.coupangPrice?.let { coupangPrice ->
-                    val saving = coupangPrice - deal.currentPrice
+                // 🛒 쿠팡 가격 비교 (핵심 차별화!)
+                deal.savingAmount?.let { saving ->
                     if (saving > 0) {
-                        Text(
-                            text = "🛒 쿠팡 대비 ${formatPrice(saving)} 절약",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Color(0xFF00C853),
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TrendingDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFF00C853)
+                            )
+                            
+                            Spacer(modifier = Modifier.width(4.dp))
+                            
+                            Text(
+                                text = "쿠팡 대비 ${formatPrice(saving)} 절약!",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color(0xFF00C853),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
                 
                 Spacer(modifier = Modifier.height(6.dp))
                 
-                // 배지들
+                // 🏷️ 배지들 (사용자에게 중요한 정보)
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (deal.hasFreeship) {
-                        item {
-                            BadgeChip("🚚무료배송", Color(0xFF1976D2))
-                        }
+                        item { BadgeChip("🚚무료배송", Color(0xFF1976D2)) }
                     }
                     if (deal.hasCoupon) {
-                        item {
-                            BadgeChip("🎟️쿠폰", Color(0xFFFF9800))
-                        }
+                        item { BadgeChip("🎟️쿠폰", Color(0xFFFF9800)) }
                     }
                     if (deal.isOverseas) {
-                        item {
-                            BadgeChip("🌏해외", Color(0xFF9C27B0))
-                        }
+                        item { BadgeChip("🌏해외", Color(0xFF9C27B0)) }
                     }
                     if (deal.isHot) {
-                        item {
-                            BadgeChip("🔥인기", Color(0xFFFF5722))
-                        }
+                        item { BadgeChip("🔥인기", Color(0xFFFF5722)) }
                     }
                 }
                 
@@ -434,20 +486,37 @@ private fun DealListCard(
             
             Spacer(modifier = Modifier.width(12.dp))
             
-            // 🎯 액션 버튼들
+            // 🎯 액션 버튼들 (사용자 중심!)
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // 북마크
-                IconButton(
-                    onClick = onBookmarkClick,
-                    modifier = Modifier.size(40.dp)
+                // 🎯 추적 추가 (핵심 기능!)
+                OutlinedButton(
+                    onClick = {
+                        onTrackClick(deal)
+                        showTrackingSnackbar = true
+                    },
+                    modifier = Modifier.width(80.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
                 ) {
-                    Icon(
-                        imageVector = if (deal.isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                        contentDescription = "북마크",
-                        tint = if (deal.isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            "추적",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp
+                        )
+                    }
                 }
                 
                 // 구매하기
@@ -458,13 +527,43 @@ private fun DealListCard(
                         containerColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
-                    Text(
-                        "구매",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ShoppingCart,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            "구매",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+                
+                // 북마크
+                IconButton(
+                    onClick = onBookmarkClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = if (deal.isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                        contentDescription = "북마크",
+                        tint = if (deal.isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
+        }
+    }
+    
+    // 📢 추적 추가 스낵바
+    if (showTrackingSnackbar) {
+        LaunchedEffect(Unit) {
+            delay(2000)
+            showTrackingSnackbar = false
         }
     }
 }
@@ -476,13 +575,14 @@ private fun DealListCard(
 private fun DealGridCard(
     deal: DealItem,
     onClick: () -> Unit,
-    onBookmarkClick: () -> Unit
+    onBookmarkClick: () -> Unit,
+    onTrackClick: () -> Unit
 ) {
     Card(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .height(280.dp),
+            .height(300.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
@@ -491,7 +591,7 @@ private fun DealGridCard(
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            // 상품 이미지 + 북마크
+            // 상품 이미지 + 배지
             Box {
                 AsyncImage(
                     model = deal.imageUrl.ifEmpty { "https://via.placeholder.com/200x140" },
@@ -533,7 +633,8 @@ private fun DealGridCard(
                     Icon(
                         imageVector = if (deal.isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                         contentDescription = "북마크",
-                        tint = Color.White
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -564,7 +665,41 @@ private fun DealGridCard(
                     color = MaterialTheme.colorScheme.primary
                 )
                 
+                // 절약 정보
+                deal.savingAmount?.let { saving ->
+                    if (saving > 0) {
+                        Text(
+                            text = "${formatPrice(saving)} 절약",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF00C853),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                
                 Spacer(modifier = Modifier.weight(1f))
+                
+                // 하단 액션
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onTrackClick,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("추적", fontSize = 12.sp)
+                    }
+                    
+                    Button(
+                        onClick = onClick,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("구매", fontSize = 12.sp)
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(4.dp))
                 
                 // 메타 정보
                 Text(
@@ -610,6 +745,7 @@ private fun FilterBottomSheet(
     var showOnlyFreeship by remember { mutableStateOf(false) }
     var showOnlyHot by remember { mutableStateOf(false) }
     var excludeOverseas by remember { mutableStateOf(false) }
+    var showOnlySaving by remember { mutableStateOf(false) }
     
     ModalBottomSheet(
         onDismissRequest = onDismiss
@@ -647,6 +783,13 @@ private fun FilterBottomSheet(
                 subtitle = "국내 배송 상품만 표시",
                 checked = excludeOverseas,
                 onCheckedChange = { excludeOverseas = it }
+            )
+            
+            FilterOption(
+                title = "쿠팡보다 싸다",
+                subtitle = "쿠팡 가격보다 저렴한 딜만",
+                checked = showOnlySaving,
+                onCheckedChange = { showOnlySaving = it }
             )
             
             Spacer(modifier = Modifier.height(24.dp))
@@ -720,7 +863,7 @@ private fun formatPrice(price: Int): String {
 }
 
 /**
- * 📦 딜 아이템 데이터 클래스
+ * 📦 딜 아이템 데이터 클래스 (사용자 중심)
  */
 data class DealItem(
     val id: Int,
@@ -737,5 +880,6 @@ data class DealItem(
     val isOverseas: Boolean,
     val isHot: Boolean,
     val coupangPrice: Int? = null,
+    val savingAmount: Int? = null, // 쿠팡 대비 절약 금액
     val isBookmarked: Boolean = false
 )
