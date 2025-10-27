@@ -13,7 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 @Composable
-private fun DealCardActions(
+fun DealCardActions(
     isBookmarked: Boolean,
     onTrackClick: () -> Unit,
     onBookmarkClick: () -> Unit
@@ -42,11 +42,11 @@ private fun DealCardActions(
 }
 
 @Composable
-private fun CommunityBadgeStrongApplied(community: String) {
+fun CommunityBadgeStrongApplied(community: String) {
     CommunityBadgeStrong(community)
 }
 
 @Composable
-private fun SavingTextStrongApplied(amount: Int) {
+fun SavingTextStrongApplied(amount: Int) {
     SavingTextStrong("${String.format("%,d원", amount)} 절약")
 }

@@ -10,8 +10,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-
+import com.ddaeany0919.insightdeal.models.ApiDeal
+import com.ddaeany0919.insightdeal.ui.formatPrice
+import com.ddaeany0919.insightdeal.ui.formatRelativeTime
 /**
  * EnhancedHomeScreen의 DealCard를 접근성/대비 강화 버전으로 대체
  */

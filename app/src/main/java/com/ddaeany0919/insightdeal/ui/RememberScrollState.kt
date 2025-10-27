@@ -16,7 +16,7 @@ fun rememberSavedLazyListState(
     initialFirstVisibleItemIndex: Int = 0,
     initialFirstVisibleItemScrollOffset: Int = 0
 ): LazyListState {
-    val saver: Saver<LazyListState, List<Int>> = listSaver(
+    val saver: Saver<LazyListState, Any> = listSaver(
         save = { listOf(it.firstVisibleItemIndex, it.firstVisibleItemScrollOffset) },
         restore = { values ->
             LazyListState(
