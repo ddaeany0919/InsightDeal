@@ -11,9 +11,10 @@ from apscheduler.triggers.cron import CronTrigger
 # 프로젝트 루트 디렉토리를 Python path에 추가
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from backend.core.notifications import notification_service
-from backend.database.session import get_db_session, create_db_session
-from backend.database.models import Deal, Product, PriceHistory
+# ✅ 수정된 import 경로 (backend. 제거)
+from core.notifications import notification_service
+from database.session import get_db_session, create_db_session
+from database.models import Deal, Product, PriceHistory
 
 logging.basicConfig(
     level=logging.INFO,
@@ -215,13 +216,13 @@ class PriceCollectionScheduler:
         logger.info("🔍 Scraping new deals from all communities...")
         
         try:
-            # 확장된 커뮤니티 스크래퍼 호출
-            from backend.scrapers.ppomppu_scraper import PpomppuScraper
-            from backend.scrapers.ruliweb_scraper import RuliwebScraper
-            from backend.scrapers.clien_scraper import ClienScraper
-            from backend.scrapers.quasarzone_scraper import QuasarzoneScraper
-            from backend.scrapers.alippomppu_scraper import AlippomppuScraper
-            from backend.scrapers.fmkorea_scraper import FmkoreaScraper
+            # ✅ 수정된 스크래퍼 import 경로 (backend. 제거)
+            from scrapers.ppomppu_scraper import PpomppuScraper
+            from scrapers.ruliweb_scraper import RuliwebScraper
+            from scrapers.clien_scraper import ClienScraper
+            from scrapers.quasarzone_scraper import QuasarzoneScraper
+            from scrapers.alippomppu_scraper import AlippomppuScraper
+            from scrapers.fmkorea_scraper import FmkoreaScraper
             
             # DB 세션 생성
             db_session = create_db_session()

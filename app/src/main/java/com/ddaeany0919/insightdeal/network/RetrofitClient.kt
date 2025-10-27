@@ -13,8 +13,8 @@ import java.util.concurrent.TimeUnit
 object RetrofitClient {
     
     // 개발 환경에서는 localhost, 프로덕션에서는 실제 서버 URL
-    private const val BASE_URL = "http://10.0.2.2:8000/api/" // Android 에뮬레이터용
-    // private const val BASE_URL = "http://localhost:8000/api/" // 실제 디바이스용
+    //private const val BASE_URL = "http://10.0.2.2:8000/api/" // Android 에뮬레이터용
+    private const val BASE_URL = "http://localhost:8000/api/" // 실제 디바이스용
     // private const val BASE_URL = "https://api.insightdeal.com/" // 프로덕션용
     
     /**

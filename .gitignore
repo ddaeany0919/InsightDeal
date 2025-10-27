@@ -24,3 +24,19 @@ local.properties
 
 # IDE
 .idea/
+# 민감한 정보
+*.json
+.env
+.env.local
+.env.production
+
+# Firebase 관련
+*firebase*.json
+*service-account*.json
+
+# 기타 민감한 파일
+secrets/
+keys/
+__pycache__/
+*.pyc
+*.log

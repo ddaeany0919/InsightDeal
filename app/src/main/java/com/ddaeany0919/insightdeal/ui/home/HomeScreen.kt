@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.ui.home
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -13,15 +13,14 @@ import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.*
 import androidx.compose.ui.text.style.*
 import androidx.compose.ui.unit.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.ddaeany0919.insightdeal.models.DealItem
+import com.ddaeany0919.insightdeal.HomeViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,9 +28,10 @@ fun HomeScreen(navController: NavController) {
     val viewModel: HomeViewModel = viewModel()
     val deals by viewModel.deals.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ✅ 상단바 (타이밍 앱 스타일)
+        // 상단바
         TopAppBar(
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -70,7 +70,7 @@ fun HomeScreen(navController: NavController) {
             }
         )
 
-        // ✅ 카테고리 탭
+        // 카테고리 탭
         LazyRow(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -92,17 +92,37 @@ fun HomeScreen(navController: NavController) {
             }
         }
 
-        // ✅ 딜 피드
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(deals) { deal ->
-                DealCardComposable(
-                    deal = deal,
-                    onClick = { navController.navigate("price_graph/${deal.id}") }
+        // 로딩 상태 또는 딜 피드
+        if (isLoading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        } else if (deals.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "실제 핫딜 준비 중",
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(deals) { deal ->
+                    DealCardComposable(
+                        deal = deal,
+                        onClick = { navController.navigate("price_graph/${deal.id}") }
+                    )
+                }
             }
         }
     }
