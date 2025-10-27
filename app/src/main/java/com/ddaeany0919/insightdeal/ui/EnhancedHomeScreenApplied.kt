@@ -20,7 +20,6 @@ fun EnhancedHomeScreen_Applied(
     onTrackClick: (ApiDeal) -> Unit
 ) {
     // 1) 1분 주기 틱으로 상대시간 자동 갱신
-    val tick by rememberMinuteTicker()
 
     // 2) 스크롤 위치 저장/복원
     val listState = rememberSavedLazyListState(key = "home_feed")

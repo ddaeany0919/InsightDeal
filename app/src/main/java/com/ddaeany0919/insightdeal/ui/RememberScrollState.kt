@@ -6,10 +6,6 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 
-/**
- * 💾 리스트 스크롤 위치 저장/복원 유틸
- * 사용자 재진입 시 잔상 없이 동일 위치로 표시
- */
 @Composable
 fun rememberSavedLazyListState(
     key: String,
@@ -25,6 +21,7 @@ fun rememberSavedLazyListState(
             )
         }
     )
+
     return rememberSaveable(key, saver = saver) {
         LazyListState(
             firstVisibleItemIndex = initialFirstVisibleItemIndex,
