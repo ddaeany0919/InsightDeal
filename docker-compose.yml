@@ -29,11 +29,12 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://insightdeal:password@postgres:5432/insightdeal
-      - GOOGLE_API_KEY=AIzaSyD3Yhu_eHIDGmg7S8q7lYrPXYrDOoXCJZw
-      - FIREBASE_PROJECT_ID=insightdeal-54955
-      - FIREBASE_SERVICE_ACCOUNT_PATH=firebase-service-account.json
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIREBASE_SERVICE_ACCOUNT_PATH=${FIREBASE_SERVICE_ACCOUNT_PATH}
       - FIREBASE_CREDENTIALS=${FIREBASE_CREDENTIALS}
-      - FCM_SERVER_KEY=your_fcm_server_key_here
+      - FCM_SERVER_KEY=${FCM_SERVER_KEY}
+      - PYTHONPATH=/app
     ports:
       - "8000:8000"
     volumes:
@@ -58,12 +59,13 @@ services:
       postgres:
         condition: service_healthy
       backend:
-        condition: service_healthy  # backend가 healthy 상태일 때만 시작
+        condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://insightdeal:password@postgres:5432/insightdeal
-      - GOOGLE_API_KEY=AIzaSyD3Yhu_eHIDGmg7S8q7lYrPXYrDOoXCJZw
-      - FIREBASE_PROJECT_ID=insightdeal-54955
-      - FIREBASE_SERVICE_ACCOUNT_PATH=firebase-service-account.json
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIREBASE_SERVICE_ACCOUNT_PATH=${FIREBASE_SERVICE_ACCOUNT_PATH}
+      - FIREBASE_CREDENTIALS=${FIREBASE_CREDENTIALS}
       - PYTHONPATH=/app
     volumes:
       - ./backend:/app
