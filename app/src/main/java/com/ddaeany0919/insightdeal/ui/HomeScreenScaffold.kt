@@ -18,8 +18,8 @@ import com.ddaeany0919.insightdeal.models.ApiDeal
 fun HomeScreenScaffold(
     viewModel: HomeViewModel = viewModel()
 ) {
+    // 가정: HomeViewModel.popularDeals는 Flow<Resource<List<ApiDeal>>>
     val dealsState by viewModel.popularDeals.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     // 첫 로딩 트리거
     LaunchedEffect(Unit) { viewModel.loadInitialFeed() }
@@ -29,12 +29,12 @@ fun HomeScreenScaffold(
             LoadingFeed()
         }
         is Resource.Success -> {
-            val deals = (dealsState as Resource.Success<List<ApiDeal>>).data
+            val deals = (dealsState as Resource.Success<List<ApiDeal>>).data ?: emptyList()
             DealFeedFromApi(deals)
         }
         is Resource.Error -> {
             ErrorState(
-                message = (dealsState as Resource.Error<List<ApiDeal>>).message,
+                message = (dealsState as Resource.Error<List<ApiDeal>>).message ?: "알 수 없는 오류 발생",
                 onRetry = { viewModel.refreshFeed() }
             )
         }

@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.ddaeany0919.insightdeal.network.ApiClient
 import com.ddaeany0919.insightdeal.network.FCMTokenRequest
+import com.ddaeany0919.insightdeal.network.RetrofitClient
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
@@ -45,7 +46,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         // 서버에 새 토큰 등록
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val apiService = ApiClient.create()
+                val apiService = RetrofitClient.apiService
 
                 // ✅ FCMTokenRequest DTO 사용 (Map 대신)
                 val request = FCMTokenRequest(
@@ -194,7 +195,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         priority: Int = NotificationCompat.PRIORITY_DEFAULT,
         autoCancel: Boolean = true
     ) {
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
         // 딥링크 인텐트 생성
         val intent = createDeepLinkIntent(data)
@@ -252,7 +253,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
             }
 
             val notificationManager: NotificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
 
             Log.d(TAG, "📱 알림 채널 생성 완료")
@@ -272,7 +273,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     private fun saveTokenToPrefs(token: String) {
-        val prefs = getSharedPreferences("insightdeal_prefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("insightdeal_prefs", MODE_PRIVATE)
         prefs.edit()
             .putString("fcm_token", token)
             .putLong("token_saved_at", System.currentTimeMillis())

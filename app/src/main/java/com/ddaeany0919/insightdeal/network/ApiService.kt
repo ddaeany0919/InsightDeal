@@ -139,32 +139,36 @@ interface ApiService {
  * 🏗️ API 클라이언트 팩토리
  */
 object ApiClient {
+    private const val BASE_URL = "http://10.0.2.2:8000/"
 
-    private const val BASE_URL_DEBUG = "http://10.0.2.2:8000/"
-    private const val BASE_URL_RELEASE = "https://api.insightdeal.com/"
-
-    // 🌐 HTTP 로깅 인터셉터
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY // 개발 중에는 항상 활성화
+        level = HttpLoggingInterceptor.Level.BODY
     }
 
-    // 🔗 OkHttpClient 빌더
-    private val okHttpClient = OkHttpClient.Builder()
+    private val httpClient = OkHttpClient.Builder()
+        .addInterceptor(loggingInterceptor)
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .addInterceptor(loggingInterceptor)
         .build()
 
-    // 🚀 Retrofit 인스턴스 생성
-    private val retrofit: Retrofit = Retrofit.Builder()
-        .baseUrl(BASE_URL_DEBUG) // 개발 중에는 디버그 URL 사용
-        .client(okHttpClient)
+    private val retrofit = Retrofit.Builder()
+        .baseUrl(BASE_URL)
+        .client(httpClient)
         .addConverterFactory(GsonConverterFactory.create())
         .build()
 
+    // ✅ 다양한 API 서비스 제공
+    val apiService: ApiService by lazy { retrofit.create(ApiService::class.java) }
+    val dealsApiService: DealsApiService by lazy { retrofit.create(DealsApiService::class.java) }
+
+    // ✅ create() 함수 추가 (제네릭 버전)
+    fun <T> create(serviceClass: Class<T>): T {
+        return retrofit.create(serviceClass)
+    }
+
+    // ✅ create() 함수 (ApiService 전용)
     fun create(): ApiService {
-        return retrofit.create(ApiService::class.java)
+        return apiService
     }
 }
 

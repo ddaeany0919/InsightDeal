@@ -27,7 +27,7 @@ fun RefreshToastManager(
     isRefreshing: Boolean,
     refreshSuccess: Boolean?,
     newItemsCount: Int = 0,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit = {}
 ) {
     var showToast by remember { mutableStateOf(false) }
     var toastMessage by remember { mutableStateOf("") }

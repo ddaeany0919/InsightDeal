@@ -50,8 +50,7 @@ fun HomeScreen(
     // 🎯 실데이터 연결을 위한 상태
     var isLoading by remember { mutableStateOf(true) }
     var deals by remember { mutableStateOf<List<DealItem>>(emptyList()) }
-    var isError by remember { mutableStateOf(false) }
-    
+
     // 임시: 로딩 시뮬레이션
     LaunchedEffect(Unit) {
         delay(1500) // API 로딩 시뮬레이션
@@ -89,7 +88,6 @@ fun HomeScreen(
                 SampleDealsOnboarding(
                     onDismiss = { hasSeenOnboarding = true },
                     onStartTracking = {
-                        // 위시리스트로 이동
                         navController.navigate("watchlist")
                     },
                     modifier = Modifier.fillMaxSize()
@@ -117,7 +115,7 @@ fun HomeScreen(
                     onBookmarkClick = { deal ->
                         // TODO: 북마크 토글
                     },
-                    onTrackClick = { deal ->
+                    onTrackClick = {
                         // 🎯 핵심 기능: 추적 추가
                         navController.navigate("watchlist")
                     }
@@ -133,7 +131,37 @@ fun HomeScreen(
         )
     }
 }
+@Composable
+fun SampleDealsOnboarding(
+    onDismiss: () -> Unit,
+    onStartTracking: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // TODO: 온보딩 UI 구현
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "🎯 InsightDeal에 오신 걸 환영합니다!",
+                style = MaterialTheme.typography.headlineMedium
+            )
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(onClick = onStartTracking) {
+                Text("시작하기")
+            }
+
+            TextButton(onClick = onDismiss) {
+                Text("건너뛰기")
+            }
+        }
+    }
+}
 /**
  * ⏳ 로딩 스켈레톤 UI
  */
@@ -690,7 +718,7 @@ private fun DealListCard(
                 // 🎯 추적 추가 (핵심 기능!)
                 OutlinedButton(
                     onClick = {
-                        onTrackClick(deal)
+                        onTrackClick()
                         showTrackingSnackbar = true
                     },
                     modifier = Modifier.width(80.dp),
