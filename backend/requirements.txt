@@ -3,7 +3,7 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 
 # Database
-sqlalchemy==2.0.23
+sqlalchemy==1.4.53
 psycopg2-binary==2.9.9
 asyncpg==0.29.0
 
@@ -13,6 +13,7 @@ python-dotenv==1.0.0
 # HTTP & Web Scraping
 requests==2.31.0
 httpx==0.25.2
+aiohttp==3.9.1
 beautifulsoup4==4.12.2
 lxml==4.9.3
 
@@ -47,3 +48,13 @@ chardet==5.2.0
 # Development & Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
+
+# 🔧 호환되는 버전으로 수정된 추가 라이브러리들
+# 데이터베이스 비동기 지원 (SQLAlchemy 1.4와 호환)
+databases==0.8.0
+
+# 캐싱 (선택사항)
+redis==5.0.1
+
+# Pydantic v1 (FastAPI 0.104.1과 호환)
+pydantic==1.10.13
