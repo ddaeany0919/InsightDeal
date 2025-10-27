@@ -45,62 +45,20 @@ fun HomeScreen(
     var isGridView by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
+    var hasSeenOnboarding by remember { mutableStateOf(false) }
     
-    // 🎯 사용자 중심 임시 데이터
-    val sampleDeals = remember {
-        listOf(
-            DealItem(
-                id = 1,
-                title = "🔥 삼성 갤럭시 버즈3 Pro 노이즈캔슬링 무선이어폰",
-                originalPrice = 350000,
-                currentPrice = 198000,
-                discountRate = 43,
-                community = "뽐뿌",
-                postedMinutesAgo = 3,
-                imageUrl = "",
-                purchaseUrl = "https://...",
-                hasFreeship = true,
-                hasCoupon = true,
-                isOverseas = false,
-                isHot = true,
-                coupangPrice = 220000,
-                savingAmount = 22000
-            ),
-            DealItem(
-                id = 2,
-                title = "애플 에어팟 프로 2세대 USB-C 정품 무료배송",
-                originalPrice = 359000,
-                currentPrice = 299000,
-                discountRate = 17,
-                community = "클리앙",
-                postedMinutesAgo = 15,
-                imageUrl = "",
-                purchaseUrl = "https://...",
-                hasFreeship = true,
-                hasCoupon = false,
-                isOverseas = false,
-                isHot = true,
-                coupangPrice = 329000,
-                savingAmount = 30000
-            ),
-            DealItem(
-                id = 3,
-                title = "다이슨 V15 무선청소기 + 침구브러시 세트",
-                originalPrice = 890000,
-                currentPrice = 649000,
-                discountRate = 27,
-                community = "루리웹",
-                postedMinutesAgo = 32,
-                imageUrl = "",
-                purchaseUrl = "https://...",
-                hasFreeship = false,
-                hasCoupon = true,
-                isOverseas = true,
-                isHot = false,
-                coupangPrice = 719000,
-                savingAmount = 70000
-            )
-        )
+    // 🎯 실데이터 연결을 위한 상태
+    var isLoading by remember { mutableStateOf(true) }
+    var deals by remember { mutableStateOf<List<DealItem>>(emptyList()) }
+    var isError by remember { mutableStateOf(false) }
+    
+    // 임시: 로딩 시뮬레이션
+    LaunchedEffect(Unit) {
+        delay(1500) // API 로딩 시뮬레이션
+        
+        // TODO: 실제 API 호출로 교체
+        deals = getSampleDeals()
+        isLoading = false
     }
     
     Column(
@@ -119,21 +77,53 @@ fun HomeScreen(
             onFilterClick = { showFilterSheet = true }
         )
         
-        // 📱 메인 딜 피드
-        DealFeed(
-            deals = sampleDeals,
-            isGridView = isGridView,
-            onDealClick = { deal ->
-                navController.navigate("deal_detail/${deal.id}")
-            },
-            onBookmarkClick = { deal ->
-                // TODO: 북마크 토글
-            },
-            onTrackClick = { deal ->
-                // 🎯 핵심 기능: 추적 추가
-                // TODO: 위시리스트에 추가
+        // 📱 메인 컨텐츠
+        when {
+            isLoading -> {
+                // ⏳ 로딩 상태
+                LoadingFeed()
             }
-        )
+            
+            deals.isEmpty() && !hasSeenOnboarding -> {
+                // 🎯 첫 사용자 온보딩 (핵심!)
+                SampleDealsOnboarding(
+                    onDismiss = { hasSeenOnboarding = true },
+                    onStartTracking = {
+                        // 위시리스트로 이동
+                        navController.navigate("watchlist")
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            
+            deals.isEmpty() -> {
+                // 📭 빈 상태 (온보딩 본 후)
+                EmptyFeedState(
+                    onRefresh = {
+                        isLoading = true
+                        // TODO: 새로고침 로직
+                    }
+                )
+            }
+            
+            else -> {
+                // 📱 실제 딜 피드
+                DealFeed(
+                    deals = deals,
+                    isGridView = isGridView,
+                    onDealClick = { deal ->
+                        navController.navigate("deal_detail/${deal.id}")
+                    },
+                    onBookmarkClick = { deal ->
+                        // TODO: 북마크 토글
+                    },
+                    onTrackClick = { deal ->
+                        // 🎯 핵심 기능: 추적 추가
+                        navController.navigate("watchlist")
+                    }
+                )
+            }
+        }
     }
     
     // 🎛️ 필터 바텀시트
@@ -142,6 +132,212 @@ fun HomeScreen(
             onDismiss = { showFilterSheet = false }
         )
     }
+}
+
+/**
+ * ⏳ 로딩 스켈레톤 UI
+ */
+@Composable
+private fun LoadingFeed() {
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(5) {
+            LoadingDealCard()
+        }
+    }
+}
+
+@Composable
+private fun LoadingDealCard() {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 이미지 스켈레톤
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+            )
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                // 제목 스켈레톤
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.8f)
+                        .height(16.dp)
+                        .background(
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+                            RoundedCornerShape(4.dp)
+                        )
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // 가격 스켈레톤
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.4f)
+                        .height(20.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                            RoundedCornerShape(4.dp)
+                        )
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // 배지 스켈레톤
+                Row {
+                    repeat(2) {
+                        Box(
+                            modifier = Modifier
+                                .width(60.dp)
+                                .height(20.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+                                    RoundedCornerShape(10.dp)
+                                )
+                        )
+                        if (it < 1) Spacer(modifier = Modifier.width(8.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 📭 빈 피드 상태
+ */
+@Composable
+private fun EmptyFeedState(
+    onRefresh: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.SearchOff,
+            contentDescription = null,
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+        )
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Text(
+            text = "새로운 딜을 찾고 있어요",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Text(
+            text = "잠시 후 다시 확인해 주세요",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+        )
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        Button(
+            onClick = onRefresh,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary
+            )
+        ) {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("새로고침")
+        }
+    }
+}
+
+/**
+ * 🎯 샘플 데이터 생성 (실데이터 연결 전)
+ */
+private fun getSampleDeals(): List<DealItem> {
+    return listOf(
+        DealItem(
+            id = 1,
+            title = "🔥 삼성 갤럭시 버즈3 Pro 노이즈캔슬링 무선이어폰",
+            originalPrice = 350000,
+            currentPrice = 198000,
+            discountRate = 43,
+            community = "뽐뿌",
+            postedMinutesAgo = 3,
+            imageUrl = "",
+            purchaseUrl = "https://...",
+            hasFreeship = true,
+            hasCoupon = true,
+            isOverseas = false,
+            isHot = true,
+            coupangPrice = 220000,
+            savingAmount = 22000
+        ),
+        DealItem(
+            id = 2,
+            title = "애플 에어팟 프로 2세대 USB-C 정품 무료배송",
+            originalPrice = 359000,
+            currentPrice = 299000,
+            discountRate = 17,
+            community = "클리앙",
+            postedMinutesAgo = 15,
+            imageUrl = "",
+            purchaseUrl = "https://...",
+            hasFreeship = true,
+            hasCoupon = false,
+            isOverseas = false,
+            isHot = true,
+            coupangPrice = 329000,
+            savingAmount = 30000
+        ),
+        DealItem(
+            id = 3,
+            title = "다이슨 V15 무선청소기 + 침구브러시 세트",
+            originalPrice = 890000,
+            currentPrice = 649000,
+            discountRate = 27,
+            community = "루리웹",
+            postedMinutesAgo = 32,
+            imageUrl = "",
+            purchaseUrl = "https://...",
+            hasFreeship = false,
+            hasCoupon = true,
+            isOverseas = true,
+            isHot = false,
+            coupangPrice = 719000,
+            savingAmount = 70000
+        )
+    )
 }
 
 /**
