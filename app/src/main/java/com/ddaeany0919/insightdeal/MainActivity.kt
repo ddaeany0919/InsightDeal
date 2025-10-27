@@ -17,7 +17,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.ddaeany0919.insightdeal.ui.EnhancedHomeScreen
+import com.ddaeany0919.insightdeal.ui.EnhancedHomeScreen_Applied
+import com.ddaeany0919.insightdeal.ui.HomeViewModel
 
 /**
  * 🏠 InsightDeal 메인 액티비티
@@ -48,9 +49,11 @@ fun MainApp() {
             startDestination = "home",
             modifier = Modifier.padding(innerPadding)
         ) {
-            // 🏠 홈 - 커뮤니티 딜 피드 (Enhanced)
+            // 🏠 홈 - 커뮤니티 딜 피드 (Enhanced + 실시간/스크롤 복원 적용)
             composable("home") {
-                EnhancedHomeScreen(
+                val vm: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+                EnhancedHomeScreen_Applied(
+                    viewModel = vm,
                     onDealClick = { /* TODO: 상세 진입 */ },
                     onBookmarkClick = { /* TODO: 북마크 토글 */ },
                     onTrackClick = { /* TODO: 추적 추가 */ }
@@ -58,21 +61,13 @@ fun MainApp() {
             }
             
             // 📋 추적 - 내 위시리스트
-            composable("watchlist") {
-                WatchlistScreen(navController = navController)
-            }
-            
+            composable("watchlist") { WatchlistScreen(navController = navController) }
             // 🎯 매칭 - AI가 찾은 딜들
-            composable("matches") {
-                MatchesScreen(navController = navController)
-            }
-            
+            composable("matches") { MatchesScreen(navController = navController) }
             // ⚙️ 설정
-            composable("settings") {
-                ThemeSettingsScreen(navController = navController)
-            }
+            composable("settings") { ThemeSettingsScreen(navController = navController) }
             
-            // 상세 화면들 (TODO 보완 예정)
+            // 상세/기존 화면 (TODO 보완 예정)
             composable("deal_detail/{dealId}") { Box { Text("딜 상세 화면") } }
             composable("product_detail/{productId}") { Box { Text("상품 상세 화면") } }
             composable("theme_settings") { ThemeSettingsScreen(navController = navController) }
@@ -95,10 +90,7 @@ fun MainApp() {
             }
             composable("price_graph/{dealId}") { backStackEntry ->
                 val dealId = backStackEntry.arguments?.getString("dealId")?.toIntOrNull() ?: 0
-                PriceGraphScreen(
-                    productId = dealId,
-                    onBackClick = { navController.popBackStack() }
-                )
+                PriceGraphScreen(productId = dealId, onBackClick = { navController.popBackStack() })
             }
         }
     }
@@ -121,8 +113,7 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController) {
             NavigationBarItem(
                 icon = {
                     Icon(
-                        imageVector = if (item.route == "watchlist" && 
-                            currentDestination?.hierarchy?.any { it.route == item.route } == true) {
+                        imageVector = if (item.route == "watchlist" && currentDestination?.hierarchy?.any { it.route == item.route } == true) {
                             Icons.Default.Bookmark
                         } else { item.icon },
                         contentDescription = item.description
@@ -152,9 +143,7 @@ data class BottomNavItem(
 @Composable
 fun MatchesScreen(navController: androidx.navigation.NavController) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
