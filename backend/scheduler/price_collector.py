@@ -11,6 +11,13 @@ from apscheduler.triggers.cron import CronTrigger
 # 프로젝트 루트 디렉토리를 Python path에 추가
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
+# 호환성 패치 적용 (Python 3.9 importlib.metadata 오류 해결)
+try:
+    from .metadata_fix import patch_importlib_metadata
+    patch_importlib_metadata()
+except Exception as e:
+    logging.warning(f"⚠️ Metadata patch failed: {e}")
+
 # ✅ 수정된 import 경로 (backend. 제거)
 from core.notifications import notification_service
 from database.session import get_db_session, create_db_session
