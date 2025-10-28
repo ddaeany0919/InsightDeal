@@ -72,7 +72,7 @@ services:
     networks:
       - insightdeal-network
     restart: unless-stopped
-    command: python scheduler/price_collector.py
+    command: python -m scheduler.price_collector
     working_dir: /app
 
 volumes:

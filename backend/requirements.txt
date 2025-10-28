@@ -57,3 +57,4 @@ redis==5.0.1
 
 # Pydantic v1 (FastAPI 0.104.1과 호환)
 pydantic==1.10.13
+importlib-metadata>=6.0.0
