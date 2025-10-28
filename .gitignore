@@ -27,6 +27,7 @@ local.properties
 .env
 .env.local
 .env.production
+.env.development
 *firebase*.json
 *service-account*.json
 secrets/
