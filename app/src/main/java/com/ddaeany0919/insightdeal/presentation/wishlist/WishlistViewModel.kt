@@ -140,22 +140,3 @@ data class WishlistUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null
 )
-
-/**
- * 관심상품 아이템 데이터 모델
- */
-data class WishlistItem(
-    val id: Int,
-    val keyword: String,
-    val targetPrice: Int,
-    val currentLowestPrice: Int? = null,
-    val currentLowestPlatform: String? = null,
-    val currentLowestProductTitle: String? = null,
-    val priceDropPercentage: Double = 0.0,
-    val isTargetReached: Boolean = false,
-    val isActive: Boolean = true,
-    val alertEnabled: Boolean = true,
-    val createdAt: LocalDateTime,
-    val updatedAt: LocalDateTime,
-    val lastChecked: LocalDateTime? = null
-)
