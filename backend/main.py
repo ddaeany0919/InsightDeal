@@ -41,7 +41,7 @@ from scrapers.naver_shopping_scraper import NaverShoppingScraper
 
 # 관심상품 시스템 import
 from database.models import KeywordWishlist, KeywordPriceHistory, KeywordAlert, Base, get_db_engine
-from database.session import get_db
+from database.session import get_db_session  # 수정: get_db -> get_db_session
 
 # 🎯 사용자 중심 로깅 설정
 logging.basicConfig(
@@ -630,7 +630,7 @@ async def compare_prices(
 @app.post("/api/wishlist", response_model=WishlistResponse)
 async def create_wishlist(
     wishlist: WishlistCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db_session)  # 수정: get_db -> get_db_session
 ):
     """
     🆕 관심상품 등록
@@ -701,7 +701,7 @@ async def create_wishlist(
 async def get_wishlist(
     user_id: str = Query(default="default", description="사용자 ID"),
     active_only: bool = Query(default=True, description="활성상태만 조회"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db_session)  # 수정: get_db -> get_db_session
 ):
     """
     📝 관심상품 목록 조회
@@ -713,12 +713,6 @@ async def get_wishlist(
         query = query.filter(KeywordWishlist.is_active == True)
     
     wishlists = query.order_by(desc(KeywordWishlist.created_at)).all()
-    
-    # 메트릭 업데이트
-    metrics["wishlist_stats"]["total_items"] = db.query(KeywordWishlist).count()
-    metrics["wishlist_stats"]["active_items"] = db.query(KeywordWishlist).filter(
-        KeywordWishlist.is_active == True
-    ).count()
     
     # 응답 데이터 생성
     response_list = []
@@ -749,180 +743,11 @@ async def get_wishlist(
     
     return response_list
 
-@app.get("/api/wishlist/{wishlist_id}", response_model=WishlistResponse)
-async def get_wishlist_item(
-    wishlist_id: int,
-    user_id: str = Query(default="default", description="사용자 ID"),
-    db: Session = Depends(get_db)
-):
-    """
-    🔍 관심상품 상세 조회
-    """
-    wishlist = db.query(KeywordWishlist).filter(
-        and_(
-            KeywordWishlist.id == wishlist_id,
-            KeywordWishlist.user_id == user_id
-        )
-    ).first()
-    
-    if not wishlist:
-        raise HTTPException(status_code=404, detail="관심상품을 찾을 수 없습니다")
-    
-    price_drop_percentage = calculate_price_drop_percentage(
-        wishlist.current_lowest_price, 
-        wishlist.target_price
-    )
-    
-    return WishlistResponse(
-        id=wishlist.id,
-        keyword=wishlist.keyword,
-        target_price=wishlist.target_price,
-        current_lowest_price=wishlist.current_lowest_price,
-        current_lowest_platform=wishlist.current_lowest_platform,
-        current_lowest_product_title=wishlist.current_lowest_product_title,
-        price_drop_percentage=price_drop_percentage,
-        is_target_reached=(
-            wishlist.current_lowest_price is not None and 
-            wishlist.current_lowest_price <= wishlist.target_price
-        ),
-        is_active=wishlist.is_active,
-        alert_enabled=wishlist.alert_enabled,
-        created_at=wishlist.created_at,
-        updated_at=wishlist.updated_at,
-        last_checked=wishlist.last_checked
-    )
-
-@app.put("/api/wishlist/{wishlist_id}", response_model=WishlistResponse)
-async def update_wishlist(
-    wishlist_id: int,
-    update_data: WishlistUpdate,
-    user_id: str = Query(default="default", description="사용자 ID"),
-    db: Session = Depends(get_db)
-):
-    """
-    📝 관심상품 수정
-    """
-    wishlist = db.query(KeywordWishlist).filter(
-        and_(
-            KeywordWishlist.id == wishlist_id,
-            KeywordWishlist.user_id == user_id
-        )
-    ).first()
-    
-    if not wishlist:
-        raise HTTPException(status_code=404, detail="관심상품을 찾을 수 없습니다")
-    
-    # 데이터 업데이트
-    if update_data.target_price is not None:
-        wishlist.target_price = update_data.target_price
-    if update_data.is_active is not None:
-        wishlist.is_active = update_data.is_active
-    if update_data.alert_enabled is not None:
-        wishlist.alert_enabled = update_data.alert_enabled
-    
-    wishlist.updated_at = datetime.utcnow()
-    
-    db.commit()
-    db.refresh(wishlist)
-    
-    price_drop_percentage = calculate_price_drop_percentage(
-        wishlist.current_lowest_price, 
-        wishlist.target_price
-    )
-    
-    return WishlistResponse(
-        id=wishlist.id,
-        keyword=wishlist.keyword,
-        target_price=wishlist.target_price,
-        current_lowest_price=wishlist.current_lowest_price,
-        current_lowest_platform=wishlist.current_lowest_platform,
-        current_lowest_product_title=wishlist.current_lowest_product_title,
-        price_drop_percentage=price_drop_percentage,
-        is_target_reached=(
-            wishlist.current_lowest_price is not None and 
-            wishlist.current_lowest_price <= wishlist.target_price
-        ),
-        is_active=wishlist.is_active,
-        alert_enabled=wishlist.alert_enabled,
-        created_at=wishlist.created_at,
-        updated_at=wishlist.updated_at,
-        last_checked=wishlist.last_checked
-    )
-
-@app.delete("/api/wishlist/{wishlist_id}")
-async def delete_wishlist(
-    wishlist_id: int,
-    user_id: str = Query(default="default", description="사용자 ID"),
-    db: Session = Depends(get_db)
-):
-    """
-    🗑️ 관심상품 삭제
-    """
-    wishlist = db.query(KeywordWishlist).filter(
-        and_(
-            KeywordWishlist.id == wishlist_id,
-            KeywordWishlist.user_id == user_id
-        )
-    ).first()
-    
-    if not wishlist:
-        raise HTTPException(status_code=404, detail="관심상품을 찾을 수 없습니다")
-    
-    # 상태 비활성화 (물리적 삭제 대신)
-    wishlist.is_active = False
-    wishlist.updated_at = datetime.utcnow()
-    
-    db.commit()
-    
-    return {"message": f"'{wishlist.keyword}' 관심상품이 삭제되었습니다"}
-
-@app.get("/api/wishlist/{wishlist_id}/history", response_model=List[PriceHistoryResponse])
-async def get_price_history(
-    wishlist_id: int,
-    user_id: str = Query(default="default", description="사용자 ID"),
-    days: int = Query(default=30, ge=1, le=90, description="기간 (일)"),
-    db: Session = Depends(get_db)
-):
-    """
-    📈 관심상품 가격 히스토리 조회
-    차트에 사용할 가격 변화 데이터
-    """
-    # 관심상품 존재 확인
-    wishlist = db.query(KeywordWishlist).filter(
-        and_(
-            KeywordWishlist.id == wishlist_id,
-            KeywordWishlist.user_id == user_id
-        )
-    ).first()
-    
-    if not wishlist:
-        raise HTTPException(status_code=404, detail="관심상품을 찾을 수 없습니다")
-    
-    # 가격 히스토리 조회
-    start_date = datetime.utcnow() - timedelta(days=days)
-    
-    history = db.query(KeywordPriceHistory).filter(
-        and_(
-            KeywordPriceHistory.keyword_wishlist_id == wishlist_id,
-            KeywordPriceHistory.recorded_at >= start_date
-        )
-    ).order_by(KeywordPriceHistory.recorded_at.asc()).all()
-    
-    return [
-        PriceHistoryResponse(
-            recorded_at=record.recorded_at,
-            lowest_price=record.lowest_price,
-            platform=record.platform,
-            product_title=record.product_title
-        )
-        for record in history
-    ]
-
 @app.post("/api/wishlist/{wishlist_id}/check-price")
 async def manual_price_check(
     wishlist_id: int,
     user_id: str = Query(default="default", description="사용자 ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db_session)  # 수정: get_db -> get_db_session
 ):
     """
     🔄 수동 가격 체크
