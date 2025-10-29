@@ -1,6 +1,6 @@
 package com.ddaeany0919.insightdeal.presentation.wishlist
 
-import com.ddaeany0919.insightdeal.data.network.ApiService
+import com.ddaeany0919.insightdeal.data.network.WishlistApiService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -12,7 +12,7 @@ import java.time.format.DateTimeFormatter
  * 백엔드 API와 통신하여 관심상품 데이터를 관리
  */
 class WishlistRepository(
-    private val apiService: ApiService = ApiService.create()
+    private val apiService: WishlistApiService = WishlistApiService.create()
 ) {
     
     /**
@@ -98,6 +98,37 @@ class WishlistRepository(
         }
     }
 }
+
+// ======= 데이터 모델들 =======
+
+/**
+ * 관심상품 아이템 (UI 모델)
+ */
+data class WishlistItem(
+    val id: Int,
+    val keyword: String,
+    val targetPrice: Int,
+    val currentLowestPrice: Int? = null,
+    val currentLowestPlatform: String? = null,
+    val currentLowestProductTitle: String? = null,
+    val priceDropPercentage: Double = 0.0,
+    val isTargetReached: Boolean = false,
+    val isActive: Boolean = true,
+    val alertEnabled: Boolean = true,
+    val createdAt: LocalDateTime,
+    val updatedAt: LocalDateTime,
+    val lastChecked: LocalDateTime? = null
+)
+
+/**
+ * 가격 히스토리 아이템
+ */
+data class PriceHistoryItem(
+    val recordedAt: LocalDateTime,
+    val lowestPrice: Int,
+    val platform: String,
+    val productTitle: String?
+)
 
 // ======= 네트워크 모델들 =======
 
@@ -194,14 +225,4 @@ data class PriceCheckResponse(
 @Serializable
 data class DeleteResponse(
     val message: String
-)
-
-/**
- * 가격 히스토리 아이템
- */
-data class PriceHistoryItem(
-    val recordedAt: LocalDateTime,
-    val lowestPrice: Int,
-    val platform: String,
-    val productTitle: String?
 )
