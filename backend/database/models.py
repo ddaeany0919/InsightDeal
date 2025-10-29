@@ -92,6 +92,95 @@ class Product(Base):
     # 유니크 제약 조건
     __table_args__ = (UniqueConstraint('user_id', 'product_id', name='unique_user_product'),)
 
+# 🆕 키워드 기반 관심상품 테이블 (새로 추가)
+class KeywordWishlist(Base):
+    """
+    💎 키워드 기반 관심상품 테이블
+    사용자가 키워드로 등록한 관심상품들 (예: '아이폰 15', '갤럭시 S24')
+    """
+    __tablename__ = "keyword_wishlist"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(50), default="default", nullable=False, index=True)
+    keyword = Column(String(100), nullable=False, index=True)  # 검색 키워드
+    target_price = Column(Integer, nullable=False)  # 목표 가격
+    
+    # 현재 상태
+    current_lowest_price = Column(Integer, nullable=True)
+    current_lowest_platform = Column(String(30), nullable=True)
+    current_lowest_product_title = Column(String(200), nullable=True)
+    current_lowest_product_url = Column(TEXT, nullable=True)
+    
+    # 설정
+    is_active = Column(Boolean, default=True)
+    alert_enabled = Column(Boolean, default=True)
+    
+    # 메타 정보
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+    last_checked = Column(TIMESTAMP(timezone=True))
+    
+    # 관계 설정
+    keyword_price_history = relationship("KeywordPriceHistory", back_populates="keyword_wishlist")
+    keyword_alerts = relationship("KeywordAlert", back_populates="keyword_wishlist")
+    
+    # 유니크 제약 조건 (같은 사용자가 같은 키워드 중복 등록 방지)
+    __table_args__ = (UniqueConstraint('user_id', 'keyword', name='unique_user_keyword'),)
+
+class KeywordPriceHistory(Base):
+    """
+    📊 키워드 관심상품 가격 히스토리
+    키워드 검색 결과의 최저가 변화 추적 (차트용)
+    """
+    __tablename__ = "keyword_price_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    keyword_wishlist_id = Column(Integer, ForeignKey("keyword_wishlist.id"), nullable=False)
+    
+    # 가격 정보
+    lowest_price = Column(Integer, nullable=False)
+    platform = Column(String(30), nullable=False)
+    product_title = Column(String(200), nullable=True)
+    product_url = Column(TEXT, nullable=True)
+    
+    # 검색 결과 통계
+    total_products_found = Column(Integer, default=0)
+    platforms_checked = Column(String(200))  # 'naver_shopping,coupang,gmarket'
+    
+    # 메타 정보
+    recorded_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
+    
+    # 관계 설정
+    keyword_wishlist = relationship("KeywordWishlist", back_populates="keyword_price_history")
+
+class KeywordAlert(Base):
+    """
+    🔔 키워드 관심상품 알림 기록
+    목표 가격 도달 시 알림 발송 기록
+    """
+    __tablename__ = "keyword_alerts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    keyword_wishlist_id = Column(Integer, ForeignKey("keyword_wishlist.id"), nullable=False)
+    
+    # 알림 정보
+    alert_type = Column(String(20), default='price_drop')  # 'price_drop', 'target_reached'
+    triggered_price = Column(Integer, nullable=False)
+    target_price = Column(Integer, nullable=False)
+    platform = Column(String(30), nullable=False)
+    product_title = Column(String(200), nullable=True)
+    product_url = Column(TEXT, nullable=True)
+    
+    # 알림 상태
+    is_sent = Column(Boolean, default=False)
+    sent_at = Column(TIMESTAMP(timezone=True))
+    
+    # 메타 정보
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    
+    # 관계 설정
+    keyword_wishlist = relationship("KeywordWishlist", back_populates="keyword_alerts")
+
 class ProductPriceHistory(Base):
     """쿠팡 상품 가격 히스토리 테이블"""
     __tablename__ = "product_price_history"
