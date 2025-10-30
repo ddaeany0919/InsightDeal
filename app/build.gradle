@@ -45,14 +45,14 @@ android {
 
     buildFeatures { compose true; buildConfig true }
 
-    // Restore original Compose config but set a safe compiler extension
-    composeOptions { kotlinCompilerExtensionVersion '1.5.4' }
+    // Align Compose Compiler with Kotlin 1.9.24 per compatibility map
+    composeOptions { kotlinCompilerExtensionVersion '1.5.14' }
 
     packagingOptions { resources { excludes += '/META-INF/{AL2.0,LGPL2.1}' } }
 }
 
 dependencies {
-    // Android Core
+    // Android Core (restored as before)
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     implementation 'androidx.activity:activity-compose:1.8.2'
