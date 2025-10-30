@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -20,6 +22,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistViewModel
 import com.ddaeany0919.insightdeal.ui.EnhancedHomeScreen_Applied
 import com.ddaeany0919.insightdeal.ui.HomeViewModel
 
@@ -197,11 +201,64 @@ fun MatchesScreen() {
     }
 }
 
-// 임시 화면들 (나중에 실제 구현으로 교체)
+// ✅ 실제 위시리스트 화면 구현
 @Composable
-fun WatchlistScreen() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("추적 화면 준비 중")
+fun WatchlistScreen(
+    viewModel: WishlistViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
+    val state by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.loadWishlist()
+    }
+
+    when {
+        state.isLoading -> {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
+        state.errorMessage != null -> {
+            Column(
+                Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(text = state.errorMessage ?: "오류가 발생했습니다")
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = { viewModel.loadWishlist() }) { Text("다시 시도") }
+            }
+        }
+        state.wishlists.isEmpty() -> {
+            Column(
+                Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("관심상품이 없습니다")
+                Spacer(Modifier.height(12.dp))
+                // TODO: 추가 버튼 연결
+            }
+        }
+        else -> {
+            LazyColumn(Modifier.fillMaxSize().padding(12.dp)) {
+                items(state.wishlists) { item ->
+                    WishlistCard(item)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WishlistCard(item: WishlistItem) {
+    Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Column(Modifier.padding(12.dp)) {
+            Text(item.keyword, style = MaterialTheme.typography.titleMedium)
+            Text("목표가: ${item.targetPrice}")
+            item.currentLowestPrice?.let { Text("최저가: $it (${item.currentLowestPlatform ?: "-"})") }
+            item.lastChecked?.let { Text("마지막 체크: $it") }
+        }
     }
 }
 
