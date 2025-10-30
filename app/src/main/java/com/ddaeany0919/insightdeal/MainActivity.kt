@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -27,6 +28,7 @@ import com.ddaeany0919.insightdeal.data.theme.ThemeManager
 import com.ddaeany0919.insightdeal.data.theme.ThemePreferences
 import com.ddaeany0919.insightdeal.presentation.wishlist.AddWishlistFab
 import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistState
 import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistViewModel
 import com.ddaeany0919.insightdeal.ui.EnhancedHomeScreen_Applied
 import com.ddaeany0919.insightdeal.ui.HomeViewModel
@@ -76,7 +78,10 @@ fun MainApp() {
                     onTrackClick = { /* TODO: 추적 추가 */ }
                 )
             }
-            composable("watchlist") { WatchlistScreen() }
+            composable("watchlist") { 
+                // 새로운 WishlistScreen 사용
+                WishlistScreen()
+            }
             composable("matches") { MatchesScreen() }
             composable("settings") { com.ddaeany0919.insightdeal.settings.ThemeSettingsScreen() }
             composable("deal_detail/{dealId}") { Box { Text("딜 상세 화면") } }
@@ -186,33 +191,36 @@ fun MatchesScreen() {
     }
 }
 
+// 이전 WatchlistScreen 제거 및 대체
 @Composable
-fun WatchlistScreen(
+fun OldWatchlistScreen(
     viewModel: WishlistViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { viewModel.loadWishlist() }
 
     Scaffold(
-        floatingActionButton = { AddWishlistFab { k, p -> viewModel.addWishlist(k, p) } }
+        floatingActionButton = { AddWishlistFab { k, p -> viewModel.addItem(k, p) } }
     ) { inner ->
-        when {
-            state.isLoading -> {
-                Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        when (state) {
+            is WishlistState.Loading -> {
+                Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) { 
+                    CircularProgressIndicator() 
+                }
             }
-            state.errorMessage != null -> {
+            is WishlistState.Error -> {
                 Column(
                     Modifier.fillMaxSize().padding(inner).padding(16.dp),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = state.errorMessage ?: "오류가 발생했습니다")
+                    Text(text = state.message)
                     Spacer(Modifier.height(12.dp))
-                    Button(onClick = { viewModel.loadWishlist() }) { Text("다시 시도") }
+                    Button(onClick = { viewModel.retry() }) { Text("다시 시도") }
                 }
             }
-            state.wishlists.isEmpty() -> {
+            is WishlistState.Empty -> {
                 Column(
                     Modifier.fillMaxSize().padding(inner).padding(16.dp),
                     verticalArrangement = Arrangement.Center,
@@ -221,23 +229,17 @@ fun WatchlistScreen(
                     Text("관심상품이 없습니다. + 버튼으로 추가해보세요!")
                 }
             }
-            else -> {
+            is WishlistState.Success -> {
                 LazyColumn(Modifier.fillMaxSize().padding(inner).padding(12.dp)) {
-                    items(state.wishlists) { item -> WishlistCard(item) }
+                    items(state.items) { item: WishlistItem -> 
+                        WishlistCard(
+                            item = item,
+                            onDelete = { viewModel.deleteItem(item) },
+                            onCheckPrice = { viewModel.checkPrice(item) }
+                        ) 
+                    }
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun WishlistCard(item: WishlistItem) {
-    Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Column(Modifier.padding(12.dp)) {
-            Text(item.keyword, style = MaterialTheme.typography.titleMedium)
-            Text("목표가: ${item.targetPrice}")
-            item.currentLowestPrice?.let { Text("최저가: $it (${item.currentLowestPlatform ?: "-"})") }
-            item.lastChecked?.let { Text("마지막 체크: $it") }
         }
     }
 }
