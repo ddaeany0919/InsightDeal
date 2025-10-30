@@ -76,23 +76,7 @@ class WishlistRepository(
     }
 }
 
-// ===== UI 모델만 유지 =====
-
-data class WishlistItem(
-    val id: Int,
-    val keyword: String,
-    val targetPrice: Int,
-    val currentLowestPrice: Int? = null,
-    val currentLowestPlatform: String? = null,
-    val currentLowestProductTitle: String? = null,
-    val priceDropPercentage: Double = 0.0,
-    val isTargetReached: Boolean = false,
-    val isActive: Boolean = true,
-    val alertEnabled: Boolean = true,
-    val createdAt: LocalDateTime,
-    val updatedAt: LocalDateTime,
-    val lastChecked: LocalDateTime? = null
-)
+// NOTE: UI 모델은 별도 파일 WishlistItem.kt에 존재합니다.
 
 // DTO → UI 변환 확장 (WishlistDtos.kt의 DTO 사용)
 
