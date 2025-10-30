@@ -45,14 +45,14 @@ android {
 
     buildFeatures { compose true; buildConfig true }
 
-    // Align Compose Compiler with Kotlin 1.9.24 per compatibility map
+    // Kotlin 1.9.24 + Compose Compiler 1.5.14
     composeOptions { kotlinCompilerExtensionVersion '1.5.14' }
 
     packagingOptions { resources { excludes += '/META-INF/{AL2.0,LGPL2.1}' } }
 }
 
 dependencies {
-    // Android Core (restored as before)
+    // Android Core (original stack)
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     implementation 'androidx.activity:activity-compose:1.8.2'
@@ -66,6 +66,7 @@ dependencies {
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.ui:ui-graphics'
     implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.ui:ui-text'
     implementation 'androidx.compose.material3:material3'
     implementation 'androidx.compose.material:material-icons-extended'
 
