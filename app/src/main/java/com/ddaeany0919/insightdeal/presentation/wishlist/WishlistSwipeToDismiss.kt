@@ -5,12 +5,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
-import androidx.compose.material3.DismissDirection
-import androidx.compose.material3.DismissValue
-import androidx.compose.material3.SwipeToDismiss
-import androidx.compose.material3.rememberDismissState
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,22 +21,24 @@ fun WishlistSwipeToDismiss(
     onConfirmDelete: () -> Unit,
     content: @Composable RowScope.() -> Unit
 ) {
-    val dismissState = rememberDismissState(
-        confirmValueChange = { value: DismissValue ->
-            if (value == DismissValue.DismissedToStart || value == DismissValue.DismissedToEnd) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value: SwipeToDismissBoxValue ->
+            if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
                 onConfirmDelete()
                 true
-            } else false
+            } else {
+                false
+            }
         }
     )
 
-    SwipeToDismiss(
+    SwipeToDismissBox(
         state = dismissState,
-        background = {
-            val color = if (
-                dismissState.targetValue == DismissValue.DismissedToEnd ||
-                dismissState.targetValue == DismissValue.DismissedToStart
-            ) Color(0xFFB00020) else MaterialTheme.colorScheme.surfaceVariant
+        backgroundContent = {
+            val color =
+                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart ||
+                    dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd
+                ) Color(0xFFB00020) else MaterialTheme.colorScheme.surfaceVariant
 
             Box(
                 modifier = Modifier
@@ -50,7 +50,6 @@ fun WishlistSwipeToDismiss(
                 Icon(Icons.Filled.Delete, contentDescription = "삭제", tint = Color.White)
             }
         },
-        dismissContent = { Row(modifier = modifier, content = content) },
-        directions = setOf(DismissDirection.StartToEnd, DismissDirection.EndToStart)
+        content = { Row(modifier = modifier, content = content) }
     )
 }
