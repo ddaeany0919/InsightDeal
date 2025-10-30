@@ -1,13 +1,18 @@
 package com.ddaeany0919.insightdeal.data.theme
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.themeDataStore by preferencesDataStore(name = "theme_settings")
+// File: app/src/main/java/com/ddaeany0919/insightdeal/data/theme/ThemeManager.kt
+// Requires dependency: implementation "androidx.datastore:datastore-preferences:1.0.0"
+
+private val Context.themeDataStore: DataStore<Preferences> by preferencesDataStore(name = "theme_settings")
 
 object ThemePreferences {
     val KEY_MODE = intPreferencesKey("theme_mode")
@@ -25,7 +30,7 @@ class ThemeManager private constructor(private val context: Context) {
     }
 
     suspend fun updateMode(mode: ThemePreferences.Mode) {
-        context.themeDataStore.edit { it[ThemePreferences.KEY_MODE] = mode.value }
+        context.themeDataStore.edit { p -> p[ThemePreferences.KEY_MODE] = mode.value }
     }
 
     companion object {
