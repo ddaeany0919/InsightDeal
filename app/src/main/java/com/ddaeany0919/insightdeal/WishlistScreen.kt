@@ -192,7 +192,9 @@ fun WishlistScreen(
             }
         }
     ) { paddingValues ->
-        when (uiState) {
+        // Smart cast 문제 해결을 위해 지역 변수에 할당
+        val currentState = uiState
+        when (currentState) {
             is WishlistState.Loading -> {
                 LoadingState()
             }
@@ -210,7 +212,7 @@ fun WishlistScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(
-                        items = uiState.items,
+                        items = currentState.items,
                         key = { item: WishlistItem -> item.id }
                     ) { item: WishlistItem ->
                         WishlistCard(
@@ -248,7 +250,7 @@ fun WishlistScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = uiState.message,
+                        text = currentState.message,
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center
                     )
