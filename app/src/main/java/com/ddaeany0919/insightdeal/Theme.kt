@@ -12,10 +12,6 @@ fun InsightDealTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = LightColors,
         typography = androidx.compose.material3.Typography(),
-        content = {
-            Surface(color = MaterialTheme.colorScheme.background) {
-                content()
-            }
-        }
+        content = content
     )
 }
