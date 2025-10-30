@@ -3,7 +3,6 @@ package com.ddaeany0919.insightdeal.presentation.wishlist
 import com.ddaeany0919.insightdeal.data.network.WishlistApiService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -14,9 +13,7 @@ import java.time.format.DateTimeFormatter
 class WishlistRepository(
     private val apiService: WishlistApiService = WishlistApiService.create()
 ) {
-    /**
-     * 관심상품 목록 조회
-     */
+    /** 관심상품 목록 조회 */
     suspend fun getWishlist(userId: String = "default"): List<WishlistItem> = withContext(Dispatchers.IO) {
         try {
             val response = apiService.getWishlist(userId)
@@ -26,9 +23,7 @@ class WishlistRepository(
         }
     }
 
-    /**
-     * 관심상품 추가
-     */
+    /** 관심상품 추가 */
     suspend fun createWishlist(
         keyword: String,
         targetPrice: Int,
@@ -47,9 +42,7 @@ class WishlistRepository(
         }
     }
 
-    /**
-     * 관심상품 삭제
-     */
+    /** 관심상품 삭제 */
     suspend fun deleteWishlist(wishlistId: Int, userId: String = "default") = withContext(Dispatchers.IO) {
         try {
             apiService.deleteWishlist(wishlistId, userId)
@@ -58,9 +51,7 @@ class WishlistRepository(
         }
     }
 
-    /**
-     * 수동 가격 체크
-     */
+    /** 수동 가격 체크 */
     suspend fun checkPrice(wishlistId: Int, userId: String = "default"): String = withContext(Dispatchers.IO) {
         try {
             val response = apiService.checkWishlistPrice(wishlistId, userId)
@@ -70,9 +61,7 @@ class WishlistRepository(
         }
     }
 
-    /**
-     * 관심상품 가격 히스토리 조회
-     */
+    /** 관심상품 가격 히스토리 조회 */
     suspend fun getPriceHistory(
         wishlistId: Int,
         days: Int = 30,
@@ -87,18 +76,9 @@ class WishlistRepository(
     }
 }
 
-// ======= 네트워크 모델들만 유지 (UI 모델은 별도 파일) =======
+// ===== UI 모델만 유지 =====
 
-// NOTE: Retrofit + Gson을 사용하므로 실제 직렬화는 필요 없습니다.
-// 경고를 없애기 위해 @Serializable 주석을 제거합니다.
-
-data class WishlistCreateRequest(
-    val keyword: String,
-    val targetPrice: Int,
-    val userId: String
-)
-
-data class WishlistApiResponse(
+data class WishlistItem(
     val id: Int,
     val keyword: String,
     val targetPrice: Int,
@@ -109,67 +89,34 @@ data class WishlistApiResponse(
     val isTargetReached: Boolean = false,
     val isActive: Boolean = true,
     val alertEnabled: Boolean = true,
-    val createdAt: String,
-    val updatedAt: String,
-    val lastChecked: String? = null
-) {
-    fun toWishlistItem(): WishlistItem = WishlistItem(
-        id = id,
-        keyword = keyword,
-        targetPrice = targetPrice,
-        currentLowestPrice = currentLowestPrice,
-        currentLowestPlatform = currentLowestPlatform,
-        currentLowestProductTitle = currentLowestProductTitle,
-        priceDropPercentage = priceDropPercentage,
-        isTargetReached = isTargetReached,
-        isActive = isActive,
-        alertEnabled = alertEnabled,
-        createdAt = parseDateTime(createdAt),
-        updatedAt = parseDateTime(updatedAt),
-        lastChecked = lastChecked?.let { parseDateTime(it) }
-    )
-
-    private fun parseDateTime(dateTimeString: String): LocalDateTime = try {
-        LocalDateTime.parse(
-            dateTimeString.substring(0, 19),
-            DateTimeFormatter.ISO_LOCAL_DATE_TIME
-        )
-    } catch (e: Exception) {
-        LocalDateTime.now()
-    }
-}
-
-data class PriceHistoryApiResponse(
-    val recordedAt: String,
-    val lowestPrice: Int,
-    val platform: String,
-    val productTitle: String?
-) {
-    fun toPriceHistoryItem(): PriceHistoryItem = PriceHistoryItem(
-        recordedAt = parseDateTime(recordedAt),
-        lowestPrice = lowestPrice,
-        platform = platform,
-        productTitle = productTitle
-    )
-
-    private fun parseDateTime(dateTimeString: String): LocalDateTime = try {
-        LocalDateTime.parse(
-            dateTimeString.substring(0, 19),
-            DateTimeFormatter.ISO_LOCAL_DATE_TIME
-        )
-    } catch (e: Exception) {
-        LocalDateTime.now()
-    }
-}
-
-data class PriceCheckResponse(
-    val message: String,
-    val keyword: String,
-    val currentPrice: Int?,
-    val targetPrice: Int,
-    val updatedAt: String
+    val createdAt: LocalDateTime,
+    val updatedAt: LocalDateTime,
+    val lastChecked: LocalDateTime? = null
 )
 
-data class DeleteResponse(
-    val message: String
+// DTO → UI 변환 확장 (WishlistDtos.kt의 DTO 사용)
+
+fun WishlistApiResponse.toWishlistItem(): WishlistItem = WishlistItem(
+    id = id,
+    keyword = keyword,
+    targetPrice = targetPrice,
+    currentLowestPrice = currentLowestPrice,
+    currentLowestPlatform = currentLowestPlatform,
+    currentLowestProductTitle = currentLowestProductTitle,
+    priceDropPercentage = priceDropPercentage,
+    isTargetReached = isTargetReached,
+    isActive = isActive,
+    alertEnabled = alertEnabled,
+    createdAt = parseDateTime(createdAt),
+    updatedAt = parseDateTime(updatedAt),
+    lastChecked = lastChecked?.let { parseDateTime(it) }
 )
+
+private fun parseDateTime(dateTimeString: String): LocalDateTime = try {
+    LocalDateTime.parse(
+        dateTimeString.substring(0, 19),
+        DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    )
+} catch (e: Exception) {
+    LocalDateTime.now()
+}
