@@ -25,6 +25,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ddaeany0919.insightdeal.data.theme.ThemeManager
 import com.ddaeany0919.insightdeal.data.theme.ThemePreferences
+import com.ddaeany0919.insightdeal.presentation.wishlist.AddWishlistFab
 import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
 import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistViewModel
 import com.ddaeany0919.insightdeal.ui.EnhancedHomeScreen_Applied
@@ -193,34 +194,37 @@ fun WatchlistScreen(
 
     LaunchedEffect(Unit) { viewModel.loadWishlist() }
 
-    when {
-        state.isLoading -> {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        }
-        state.errorMessage != null -> {
-            Column(
-                Modifier.fillMaxSize().padding(16.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(text = state.errorMessage ?: "오류가 발생했습니다")
-                Spacer(Modifier.height(12.dp))
-                Button(onClick = { viewModel.loadWishlist() }) { Text("다시 시도") }
+    Scaffold(
+        floatingActionButton = { AddWishlistFab { k, p -> viewModel.addWishlist(k, p) } }
+    ) { inner ->
+        when {
+            state.isLoading -> {
+                Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             }
-        }
-        state.wishlists.isEmpty() -> {
-            Column(
-                Modifier.fillMaxSize().padding(16.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text("관심상품이 없습니다")
-                Spacer(Modifier.height(12.dp))
+            state.errorMessage != null -> {
+                Column(
+                    Modifier.fillMaxSize().padding(inner).padding(16.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(text = state.errorMessage ?: "오류가 발생했습니다")
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = { viewModel.loadWishlist() }) { Text("다시 시도") }
+                }
             }
-        }
-        else -> {
-            LazyColumn(Modifier.fillMaxSize().padding(12.dp)) {
-                items(state.wishlists) { item -> WishlistCard(item) }
+            state.wishlists.isEmpty() -> {
+                Column(
+                    Modifier.fillMaxSize().padding(inner).padding(16.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("관심상품이 없습니다. + 버튼으로 추가해보세요!")
+                }
+            }
+            else -> {
+                LazyColumn(Modifier.fillMaxSize().padding(inner).padding(12.dp)) {
+                    items(state.wishlists) { item -> WishlistCard(item) }
+                }
             }
         }
     }
