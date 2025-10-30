@@ -203,7 +203,8 @@ fun OldWatchlistScreen(
     Scaffold(
         floatingActionButton = { AddWishlistFab { k, p -> viewModel.addItem(k, p) } }
     ) { inner ->
-        when (state) {
+        val currentState = state
+        when (currentState) {
             is WishlistState.Loading -> {
                 Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) { 
                     CircularProgressIndicator() 
@@ -215,7 +216,7 @@ fun OldWatchlistScreen(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = state.message)
+                    Text(text = currentState.message)
                     Spacer(Modifier.height(12.dp))
                     Button(onClick = { viewModel.retry() }) { Text("다시 시도") }
                 }
@@ -231,7 +232,7 @@ fun OldWatchlistScreen(
             }
             is WishlistState.Success -> {
                 LazyColumn(Modifier.fillMaxSize().padding(inner).padding(12.dp)) {
-                    items(state.items) { item: WishlistItem -> 
+                    items(currentState.items) { item: WishlistItem -> 
                         WishlistCard(
                             item = item,
                             onDelete = { viewModel.deleteItem(item) },
