@@ -39,6 +39,7 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled true
     }
     kotlinOptions {
         jvmTarget = '1.8'
@@ -95,6 +96,9 @@ dependencies {
 
     // 🧰 Kotlinx Serialization
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3'
+
+    // 🧰 Desugaring (java.time for minSdk 24)
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
 
     // 🔧 디버깅
     debugImplementation 'androidx.compose.ui:ui-tooling'
