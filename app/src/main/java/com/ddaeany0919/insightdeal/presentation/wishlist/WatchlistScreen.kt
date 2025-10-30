@@ -22,7 +22,9 @@ fun WatchlistScreen(
     Scaffold(
         floatingActionButton = { AddWishlistFab { k, p -> viewModel.addItem(k, p) } }
     ) { inner ->
-        when (state) {
+        // Smart cast 문제 해결을 위해 지역 변수에 할당
+        val currentState = state
+        when (currentState) {
             is WishlistState.Loading -> {
                 Box(
                     modifier = Modifier.fillMaxSize().padding(inner),
@@ -37,7 +39,7 @@ fun WatchlistScreen(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = state.message)
+                    Text(text = currentState.message)
                     Spacer(Modifier.height(12.dp))
                     Button(onClick = { viewModel.retry() }) { Text("다시 시도") }
                 }
@@ -54,7 +56,7 @@ fun WatchlistScreen(
             is WishlistState.Success -> {
                 LazyColumn(Modifier.fillMaxSize().padding(inner).padding(12.dp)) {
                     items(
-                        items = state.items, 
+                        items = currentState.items, 
                         key = { item: WishlistItem -> item.id }
                     ) { item: WishlistItem ->
                         WishlistSwipeToDismiss(
