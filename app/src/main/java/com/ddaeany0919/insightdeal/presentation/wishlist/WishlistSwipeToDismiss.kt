@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -19,26 +20,28 @@ import androidx.compose.ui.unit.dp
 fun WishlistSwipeToDismiss(
     modifier: Modifier = Modifier,
     onConfirmDelete: () -> Unit,
+    directions: Set<SwipeToDismissBoxValue> = setOf(SwipeToDismissBoxValue.EndToStart),
+    positionalThresholdFraction: Float = 0.3f,
     content: @Composable RowScope.() -> Unit
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
+        positionalThreshold = { distance: Dp -> distance * positionalThresholdFraction },
         confirmValueChange = { value: SwipeToDismissBoxValue ->
-            if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
+            val deleteTriggered = value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd
+            if (deleteTriggered) {
                 onConfirmDelete()
                 true
-            } else {
-                false
-            }
+            } else false
         }
     )
 
     SwipeToDismissBox(
         state = dismissState,
+        enableDismissFromStartToEnd = directions.contains(SwipeToDismissBoxValue.StartToEnd),
+        enableDismissFromEndToStart = directions.contains(SwipeToDismissBoxValue.EndToStart),
         backgroundContent = {
-            val color =
-                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart ||
-                    dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd
-                ) Color(0xFFB00020) else MaterialTheme.colorScheme.surfaceVariant
+            val active = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart || dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd
+            val color = if (active) Color(0xFFB00020) else MaterialTheme.colorScheme.surfaceVariant
 
             Box(
                 modifier = Modifier
