@@ -64,6 +64,7 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     implementation 'androidx.activity:activity-compose:1.8.2'
     implementation 'io.coil-kt:coil-compose:2.4.0'
+
     // ✅ Material Design 3 (Traditional XML Views)
     implementation 'com.google.android.material:material:1.11.0'
 
@@ -110,6 +111,10 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
     androidTestImplementation platform('androidx.compose:compose-bom:2024.02.00')
     androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
+
     // 📊 MPAndroidChart
     implementation 'com.github.PhilJay:MPAndroidChart:v3.1.0'
+
+    // 🗂 DataStore (for ThemeManager)
+    implementation 'androidx.datastore:datastore-preferences:1.0.0'
 }
