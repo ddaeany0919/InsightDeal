@@ -87,16 +87,17 @@ class WishlistRepository(
     }
 }
 
-// ======= 네트워크 모델들만 유지 (UI 모델은 ViewModel 쪽 파일을 사용) =======
+// ======= 네트워크 모델들만 유지 (UI 모델은 별도 파일) =======
 
-@Serializable
+// NOTE: Retrofit + Gson을 사용하므로 실제 직렬화는 필요 없습니다.
+// 경고를 없애기 위해 @Serializable 주석을 제거합니다.
+
 data class WishlistCreateRequest(
     val keyword: String,
     val targetPrice: Int,
     val userId: String
 )
 
-@Serializable
 data class WishlistApiResponse(
     val id: Int,
     val keyword: String,
@@ -138,7 +139,6 @@ data class WishlistApiResponse(
     }
 }
 
-@Serializable
 data class PriceHistoryApiResponse(
     val recordedAt: String,
     val lowestPrice: Int,
@@ -162,7 +162,6 @@ data class PriceHistoryApiResponse(
     }
 }
 
-@Serializable
 data class PriceCheckResponse(
     val message: String,
     val keyword: String,
@@ -171,7 +170,6 @@ data class PriceCheckResponse(
     val updatedAt: String
 )
 
-@Serializable
 data class DeleteResponse(
     val message: String
 )
