@@ -6,7 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * 📎 관심상품 Repository
+ * 💎 관심상품 Repository
  * 백엔드 API와 통신하여 관심상품 데이터를 관리
  */
 class WishlistRepository(
@@ -55,18 +55,24 @@ class WishlistRepository(
     }
 
     /** 관심상품 삭제 */
-    suspend fun deleteWishlist(wishlistId: Int, userId: String) = withContext(Dispatchers.IO) {
+    suspend fun deleteWishlist(wishlistId: Int, userId: String): Boolean = withContext(Dispatchers.IO) {
         Log.d(TAG, "deleteWishlist: API 호출 시작 - id=$wishlistId, userId=$userId (DELETE 요청)")
         try {
             Log.d(TAG, "deleteWishlist: 서버로 DELETE 요청 전송 중 - id=$wishlistId, userId=$userId")
-            val res = apiService.deleteWishlist(wishlistId, userId)
-            Log.d(TAG, "deleteWishlist: API 응답 성공 - id=$wishlistId, userId=$userId, result=$res")
-            if (res) {
+            val response = apiService.deleteWishlist(wishlistId, userId)
+            Log.d(TAG, "deleteWishlist: API 응답 받음 - id=$wishlistId, userId=$userId, response=$response")
+            
+            // DeleteResponse 객체에서 성공 여부 확인
+            val isSuccess = response.success ?: false
+            Log.d(TAG, "deleteWishlist: 삭제 결과 - id=$wishlistId, userId=$userId, success=$isSuccess, message=${response.message}")
+            
+            if (isSuccess) {
                 Log.d(TAG, "deleteWishlist: 삭제 성공 확인 - id=$wishlistId, userId=$userId")
             } else {
-                Log.w(TAG, "deleteWishlist: 삭제 실패 응답 - id=$wishlistId, userId=$userId")
+                Log.w(TAG, "deleteWishlist: 삭제 실패 응답 - id=$wishlistId, userId=$userId, message=${response.message}")
             }
-            res
+            
+            isSuccess
         } catch (e: Exception) {
             Log.e(TAG, "deleteWishlist: API 호출 실패 - id=$wishlistId, userId=$userId, error: ${e.message}", e)
             if (e.message?.contains("404") == true) {
