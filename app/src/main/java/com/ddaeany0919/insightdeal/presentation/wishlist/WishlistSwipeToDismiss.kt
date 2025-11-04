@@ -1,5 +1,6 @@
 package com.ddaeany0919.insightdeal.presentation.wishlist
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -9,6 +10,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,16 +26,23 @@ fun WishlistSwipeToDismiss(
     positionalThresholdFraction: Float = 0.3f,
     content: @Composable RowScope.() -> Unit
 ) {
+    val TAG = "SwipeDismiss"
     val dismissState = rememberSwipeToDismissBoxState(
         positionalThreshold = { fullDistance -> fullDistance * positionalThresholdFraction },
         confirmValueChange = { value: SwipeToDismissBoxValue ->
+            Log.d(TAG, "confirmValueChange called with value = $value")
             val deleteTriggered = value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd
             if (deleteTriggered) {
+                Log.d(TAG, "delete callback triggered")
                 onConfirmDelete()
                 true
             } else false
         }
     )
+
+    LaunchedEffect(dismissState.currentValue) {
+        Log.d(TAG, "dismissState.currentValue changed: ${dismissState.currentValue}")
+    }
 
     SwipeToDismissBox(
         state = dismissState,
