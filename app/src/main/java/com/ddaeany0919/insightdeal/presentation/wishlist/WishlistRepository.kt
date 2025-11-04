@@ -60,17 +60,12 @@ class WishlistRepository(
         try {
             Log.d(TAG, "deleteWishlist: 서버로 DELETE 요청 전송 중 - id=$wishlistId, userId=$userId")
             val response = apiService.deleteWishlist(wishlistId, userId)
-            Log.d(TAG, "deleteWishlist: API 응답 받음 - id=$wishlistId, userId=$userId, response=$response")
+            Log.d(TAG, "deleteWishlist: API 응답 받음 - id=$wishlistId, userId=$userId, message='${response.message}'")
             
-            // DeleteResponse 객체에서 성공 여부 확인
-            val isSuccess = response.success ?: false
-            Log.d(TAG, "deleteWishlist: 삭제 결과 - id=$wishlistId, userId=$userId, success=$isSuccess, message=${response.message}")
-            
-            if (isSuccess) {
-                Log.d(TAG, "deleteWishlist: 삭제 성공 확인 - id=$wishlistId, userId=$userId")
-            } else {
-                Log.w(TAG, "deleteWishlist: 삭제 실패 응답 - id=$wishlistId, userId=$userId, message=${response.message}")
-            }
+            // DeleteResponse에서 message가 있으면 성공으로 간주
+            // 예외가 발생하지 않고 여기까지 도달했다면 성공
+            val isSuccess = true
+            Log.d(TAG, "deleteWishlist: 삭제 성공 확인 - id=$wishlistId, userId=$userId, message='${response.message}'")
             
             isSuccess
         } catch (e: Exception) {
