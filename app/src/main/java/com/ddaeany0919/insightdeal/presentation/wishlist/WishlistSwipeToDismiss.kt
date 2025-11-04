@@ -27,21 +27,43 @@ fun WishlistSwipeToDismiss(
     content: @Composable RowScope.() -> Unit
 ) {
     val TAG = "SwipeDismiss"
+    
+    Log.d(TAG, "WishlistSwipeToDismiss 초기화 - allowStartToEnd=$allowStartToEnd, allowEndToStart=$allowEndToStart")
+    
     val dismissState = rememberSwipeToDismissBoxState(
-        positionalThreshold = { fullDistance -> fullDistance * positionalThresholdFraction },
+        positionalThreshold = { fullDistance -> 
+            val threshold = fullDistance * positionalThresholdFraction
+            Log.d(TAG, "positionalThreshold 계산 - fullDistance=$fullDistance, threshold=$threshold")
+            threshold
+        },
         confirmValueChange = { value: SwipeToDismissBoxValue ->
-            Log.d(TAG, "confirmValueChange called with value = $value")
+            Log.d(TAG, "confirmValueChange 호출 - value=$value")
             val deleteTriggered = value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd
             if (deleteTriggered) {
-                Log.d(TAG, "delete callback triggered")
+                Log.d(TAG, ">>> 삭제 동작 감지됨! 스와이프 방향: $value")
+                Log.d(TAG, ">>> onConfirmDelete 콜백 호출 시작 (이것이 ViewModel.deleteItem으로 이어짐)")
                 onConfirmDelete()
+                Log.d(TAG, ">>> onConfirmDelete 콜백 호출 완료")
                 true
-            } else false
+            } else {
+                Log.d(TAG, "삭제 동작 아님 - value=$value")
+                false
+            }
         }
     )
 
     LaunchedEffect(dismissState.currentValue) {
-        Log.d(TAG, "dismissState.currentValue changed: ${dismissState.currentValue}")
+        Log.d(TAG, "dismissState.currentValue 변경 감지: ${dismissState.currentValue}")
+        if (dismissState.currentValue != SwipeToDismissBoxValue.Settled) {
+            Log.d(TAG, ">>> 사용자가 스와이프 진행 중: ${dismissState.currentValue}")
+        }
+    }
+
+    LaunchedEffect(dismissState.targetValue) {
+        Log.d(TAG, "dismissState.targetValue 변경 감지: ${dismissState.targetValue}")
+        if (dismissState.targetValue != SwipeToDismissBoxValue.Settled) {
+            Log.d(TAG, ">>> 스와이프 대상 위치: ${dismissState.targetValue}")
+        }
     }
 
     SwipeToDismissBox(
@@ -50,7 +72,12 @@ fun WishlistSwipeToDismiss(
         enableDismissFromEndToStart = allowEndToStart,
         backgroundContent = {
             val active = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart || dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd
-            val color = if (active) Color(0xFFB00020) else MaterialTheme.colorScheme.surfaceVariant
+            val color = if (active) {
+                Log.d(TAG, "배경 활성 상태 - 빨간색 삭제 배경 표시")
+                Color(0xFFB00020)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
 
             Box(
                 modifier = Modifier
@@ -62,6 +89,8 @@ fun WishlistSwipeToDismiss(
                 Icon(Icons.Filled.Delete, contentDescription = "삭제", tint = Color.White)
             }
         },
-        content = { Row(modifier = modifier, content = content) }
+        content = { 
+            Row(modifier = modifier, content = content) 
+        }
     )
 }
