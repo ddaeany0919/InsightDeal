@@ -60,7 +60,7 @@ fun ThemeSettingsScreen() {
         Divider(Modifier.padding(vertical = 16.dp))
 
         Text(text = "테마 설정", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(12 dp))
+        Spacer(Modifier.height(12.dp))
         ThemeOptionRow("시스템 기본", ThemePreferences.Mode.SYSTEM, mode) { scope.launch { tm.updateMode(it) } }
         ThemeOptionRow("라이트 모드", ThemePreferences.Mode.LIGHT, mode) { scope.launch { tm.updateMode(it) } }
         ThemeOptionRow("다크 모드", ThemePreferences.Mode.DARK, mode) { scope.launch { tm.updateMode(it) } }
