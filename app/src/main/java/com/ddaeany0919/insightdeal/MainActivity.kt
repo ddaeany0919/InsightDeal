@@ -21,6 +21,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -84,7 +85,6 @@ fun MainApp() {
                         @Suppress("UNCHECKED_CAST")
                         override fun <T : ViewModel> create(modelClass: Class<T>): T {
                             val userIdProvider = {
-                                // TODO: 실제 로그인 연동으로 교체. 임시로 SharedPreferences 사용.
                                 val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
                                 prefs.getString("user_id", null) ?: "guest"
                             }
@@ -141,17 +141,16 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController) {
 
     NavigationBar {
         navigationItems.forEach { item ->
+            val selected = currentDestination?.hierarchy?.any { dest -> dest.route == item.route } == true
             NavigationBarItem(
                 icon = {
                     Icon(
-                        imageVector = if (item.route == "watchlist" && currentDestination?.hierarchy?.any { it.route == item.route } == true) {
-                            Icons.Default.Bookmark
-                        } else { item.icon },
+                        imageVector = if (item.route == "watchlist" && selected) Icons.Default.Bookmark else item.icon,
                         contentDescription = item.description
                     )
                 },
                 label = { Text(item.title) },
-                selected = currentDestination?.hierarchy?.any { it.route == item.route } == true,
+                selected = selected,
                 onClick = {
                     navController.navigate(item.route) {
                         popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -172,7 +171,7 @@ data class BottomNavItem(
 )
 
 @Composable
-fun MatchesScreen() { /* unchanged content */
+fun MatchesScreen() {
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.Center,
