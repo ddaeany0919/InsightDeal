@@ -2,6 +2,7 @@ package com.ddaeany0919.insightdeal
 
 import android.content.Context
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -32,6 +33,8 @@ import com.ddaeany0919.insightdeal.presentation.wishlist.*
 import com.ddaeany0919.insightdeal.ui.EnhancedHomeScreen_Applied
 import com.ddaeany0919.insightdeal.ui.HomeViewModel
 import com.ddaeany0919.insightdeal.ui.theme.InsightDealTheme
+
+private const val TAG_UI = "UserIdUI"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,17 +82,20 @@ fun MainApp() {
             }
             composable("watchlist") {
                 val context = LocalContext.current
-                // 간단한 유저 저장/선택 UI 제공: 최초 실행이면 guest 저장, 수정 가능
+                Log.d(TAG_UI, "watchlist route entered")
+
                 var currentUserId by remember {
                     val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
                     mutableStateOf(prefs.getString("user_id", "guest") ?: "guest")
                 }
                 LaunchedEffect(currentUserId) {
+                    Log.d(TAG_UI, "User ID changed -> $currentUserId (saving to SharedPreferences)")
                     context.getSharedPreferences("app", Context.MODE_PRIVATE)
                         .edit().putString("user_id", currentUserId).apply()
                 }
 
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Log.d(TAG_UI, "Rendering User ID input UI (OutlinedTextField)")
                     OutlinedTextField(
                         value = currentUserId,
                         onValueChange = { currentUserId = it },
@@ -106,7 +112,9 @@ fun MainApp() {
                         override fun <T : ViewModel> create(modelClass: Class<T>): T {
                             val userIdProvider = {
                                 val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
-                                prefs.getString("user_id", null) ?: "guest"
+                                val id = prefs.getString("user_id", null) ?: "guest"
+                                Log.d(TAG_UI, "userIdProvider() -> $id")
+                                id
                             }
                             return WishlistViewModel(
                                 wishlistRepository = WishlistRepository(),
@@ -172,6 +180,7 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController) {
                 label = { Text(item.title) },
                 selected = selected,
                 onClick = {
+                    Log.d(TAG_UI, "Bottom tab clicked -> ${item.route}")
                     navController.navigate(item.route) {
                         popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                         launchSingleTop = true
