@@ -1,24 +1,26 @@
 package com.ddaeany0919.insightdeal
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -26,10 +28,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ddaeany0919.insightdeal.data.theme.ThemeManager
 import com.ddaeany0919.insightdeal.data.theme.ThemePreferences
-import com.ddaeany0919.insightdeal.presentation.wishlist.AddWishlistFab
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistState
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistViewModel
+import com.ddaeany0919.insightdeal.presentation.wishlist.*
 import com.ddaeany0919.insightdeal.ui.EnhancedHomeScreen_Applied
 import com.ddaeany0919.insightdeal.ui.HomeViewModel
 import com.ddaeany0919.insightdeal.ui.theme.InsightDealTheme
@@ -73,14 +72,30 @@ fun MainApp() {
                 val vm: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
                 EnhancedHomeScreen_Applied(
                     viewModel = vm,
-                    onDealClick = { /* TODO: 상세 진입 */ },
-                    onBookmarkClick = { /* TODO: 북마크 토글 */ },
-                    onTrackClick = { /* TODO: 추적 추가 */ }
+                    onDealClick = { /* TODO */ },
+                    onBookmarkClick = { /* TODO */ },
+                    onTrackClick = { /* TODO */ }
                 )
             }
-            composable("watchlist") { 
-                // 새로운 WishlistScreen 사용
-                WishlistScreen()
+            composable("watchlist") {
+                val context = LocalContext.current
+                val wishlistViewModel: WishlistViewModel = viewModel(
+                    factory = object : ViewModelProvider.Factory {
+                        @Suppress("UNCHECKED_CAST")
+                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                            val userIdProvider = {
+                                // TODO: 실제 로그인 연동으로 교체. 임시로 SharedPreferences 사용.
+                                val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
+                                prefs.getString("user_id", null) ?: "guest"
+                            }
+                            return WishlistViewModel(
+                                wishlistRepository = WishlistRepository(),
+                                userIdProvider = userIdProvider
+                            ) as T
+                        }
+                    }
+                )
+                WishlistScreenDetailed(viewModel = wishlistViewModel)
             }
             composable("matches") { MatchesScreen() }
             composable("settings") { com.ddaeany0919.insightdeal.settings.ThemeSettingsScreen() }
@@ -157,7 +172,7 @@ data class BottomNavItem(
 )
 
 @Composable
-fun MatchesScreen() {
+fun MatchesScreen() { /* unchanged content */
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.Center,
@@ -189,68 +204,4 @@ fun MatchesScreen() {
             color = MaterialTheme.colorScheme.primary
         )
     }
-}
-
-// 이전 WatchlistScreen 제거 및 대체
-@Composable
-fun OldWatchlistScreen(
-    viewModel: WishlistViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-
-    LaunchedEffect(Unit) { viewModel.loadWishlist() }
-
-    Scaffold(
-        floatingActionButton = { AddWishlistFab { k, p -> viewModel.addItem(k, p) } }
-    ) { inner ->
-        val currentState = state
-        when (currentState) {
-            is WishlistState.Loading -> {
-                Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) { 
-                    CircularProgressIndicator() 
-                }
-            }
-            is WishlistState.Error -> {
-                Column(
-                    Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(text = currentState.message)
-                    Spacer(Modifier.height(12.dp))
-                    Button(onClick = { viewModel.retry() }) { Text("다시 시도") }
-                }
-            }
-            is WishlistState.Empty -> {
-                Column(
-                    Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("관심상품이 없습니다. + 버튼으로 추가해보세요!")
-                }
-            }
-            is WishlistState.Success -> {
-                LazyColumn(Modifier.fillMaxSize().padding(inner).padding(12.dp)) {
-                    items(currentState.items) { item: WishlistItem -> 
-                        WishlistCard(
-                            item = item,
-                            onDelete = { viewModel.deleteItem(item) },
-                            onCheckPrice = { viewModel.checkPrice(item) }
-                        ) 
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun AdvancedSearchScreen(onDealClick: (com.ddaeany0919.insightdeal.models.DealItem) -> Unit, onBackClick: () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("검색 화면 준비 중") }
-}
-
-@Composable
-fun PriceGraphScreen(productId: Int, onBackClick: () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("가격 차트 화면 준비 중") }
 }
