@@ -50,7 +50,6 @@ fun WishlistScreenDetailed(
             }
         }
     ) { inner ->
-        // Smart cast 문제 해결을 위해 지역 변수에 할당
         val currentState = uiState
         when (currentState) {
             is WishlistState.Loading -> {
@@ -58,7 +57,7 @@ fun WishlistScreenDetailed(
             }
             is WishlistState.Empty -> {
                 EmptyWishlistStateDetailed(
-                    onAdd = { showAddDialog = true }, 
+                    onAdd = { showAddDialog = true },
                     modifier = Modifier.padding(inner)
                 )
             }
@@ -68,19 +67,21 @@ fun WishlistScreenDetailed(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(
-                        items = currentState.items, 
+                        items = currentState.items,
                         key = { item: WishlistItem -> item.id }
                     ) { item: WishlistItem ->
                         WishlistSwipeToDismiss(
                             onConfirmDelete = {
-                                viewModel.deleteItem(item)
                                 scope.launch {
-                                    val result = snackbarHostState.showSnackbar(
-                                        message = "${item.keyword}을(를) 삭제했습니다",
-                                        actionLabel = "실행취소"
-                                    )
-                                    if (result == SnackbarResult.ActionPerformed) {
-                                        viewModel.restoreItem(item)
+                                    val success = runCatching { viewModel.deleteItem(item) }.isSuccess
+                                    if (success) {
+                                        val result = snackbarHostState.showSnackbar(
+                                            message = "${item.keyword}을(를) 삭제했습니다",
+                                            actionLabel = "실행취소"
+                                        )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            viewModel.restoreItem(item)
+                                        }
                                     }
                                 }
                             },
@@ -88,14 +89,16 @@ fun WishlistScreenDetailed(
                                 WishlistCardDetailed(
                                     wishlist = item,
                                     onDeleteClick = {
-                                        viewModel.deleteItem(item)
                                         scope.launch {
-                                            val result = snackbarHostState.showSnackbar(
-                                                message = "${item.keyword}을(를) 삭제했습니다",
-                                                actionLabel = "실행취소"
-                                            )
-                                            if (result == SnackbarResult.ActionPerformed) {
-                                                viewModel.restoreItem(item)
+                                            val success = runCatching { viewModel.deleteItem(item) }.isSuccess
+                                            if (success) {
+                                                val result = snackbarHostState.showSnackbar(
+                                                    message = "${item.keyword}을(를) 삭제했습니다",
+                                                    actionLabel = "실행취소"
+                                                )
+                                                if (result == SnackbarResult.ActionPerformed) {
+                                                    viewModel.restoreItem(item)
+                                                }
                                             }
                                         }
                                     },
@@ -225,7 +228,6 @@ private fun AddWishlistDialogDetailed(
                 OutlinedTextField(
                     value = targetPrice,
                     onValueChange = { value ->
-                        // 숫자만 입력 받도록 필터링
                         if (value.all { it.isDigit() }) {
                             targetPrice = value
                             isError = false
@@ -299,7 +301,6 @@ private fun WishlistCardDetailed(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
-                // 삭제 버튼
                 OutlinedIconButton(onClick = onDeleteClick, colors = IconButtonDefaults.outlinedIconButtonColors(contentColor = Color(0xFFFF5722))) {
                     Icon(Icons.Filled.Delete, contentDescription = "삭제")
                 }
@@ -340,7 +341,6 @@ private fun WishlistCardDetailed(
                     Spacer(Modifier.size(4.dp))
                     Text("가격 체크")
                 }
-                // 보조 삭제 버튼(텍스트 버튼)
                 OutlinedButton(onClick = onDeleteClick, colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5722))) {
                     Icon(Icons.Filled.Delete, contentDescription = "삭제", modifier = Modifier.size(16.dp))
                 }
