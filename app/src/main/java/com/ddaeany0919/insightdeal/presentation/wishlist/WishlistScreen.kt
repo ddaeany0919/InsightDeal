@@ -1,5 +1,6 @@
 package com.ddaeany0919.insightdeal.presentation.wishlist
 
+import android.content.res.Resources
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
