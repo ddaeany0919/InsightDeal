@@ -34,7 +34,7 @@ import com.ddaeany0919.insightdeal.ui.EnhancedHomeScreen_Applied
 import com.ddaeany0919.insightdeal.ui.HomeViewModel
 import com.ddaeany0919.insightdeal.ui.theme.InsightDealTheme
 
-private const val TAG_UI = "UserIdUI"
+private const val TAG_UI = "MainActivity"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
