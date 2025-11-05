@@ -17,7 +17,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -91,7 +90,6 @@ fun WishlistScreenDetailed(
                             WishlistCardDetailed(
                                 wishlist = item,
                                 onDeleteClick = {
-                                    // 버튼 삭제: 확인 다이얼로그
                                     pendingDelete = item
                                     showDeleteDialog = true
                                 },
@@ -162,8 +160,7 @@ private fun LoadingStateDetailed(modifier: Modifier = Modifier) { /* unchanged *
 @Composable
 private fun EmptyWishlistStateDetailed(onAdd: () -> Unit, modifier: Modifier = Modifier) { /* unchanged */ }
 
-@Composable
-private fun AddWishlistDialogDetailed(onDismiss: () -> Unit, onAdd: (String, Int) -> Unit) { /* 기존 구현 내부에서 keyword/targetPrice 파싱 실패, 길이<2 등 예외 시 Log.d(TAG_UI, ...)로 남기세요 */ }
+// 로컬 AddWishlistDialogDetailed 스텁 제거 완료
 
 @Composable
 private fun WishlistCardDetailed(
@@ -234,14 +231,12 @@ private fun SwipeToDeleteContainer(
                         offsetX = 0f
                     }
                 ) { _, dragAmount ->
-                    // 왼쪽으로만 스와이프 허용
                     val newX = offsetX + dragAmount
                     offsetX = if (newX < 0f) newX else 0f
                 }
             }
             .padding(vertical = 2.dp)
     ) {
-        // 배경 아이콘 (우측에 붉은 휴지통)
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.End,
@@ -249,11 +244,7 @@ private fun SwipeToDeleteContainer(
         ) {
             Icon(imageVector = icon, contentDescription = null, tint = iconTint.copy(alpha = progress), modifier = Modifier.size(24.dp))
         }
-
-        // 앞단 콘텐츠 (스와이프 시 좌측으로 슬라이드)
-        Box(modifier = Modifier
-            .offset(x = Dp(offsetX / (Resources.getSystem().displayMetrics.density)))
-        ) {
+        Box(modifier = Modifier.offset(x = Dp(offsetX / (Resources.getSystem().displayMetrics.density)))) {
             content()
         }
     }
