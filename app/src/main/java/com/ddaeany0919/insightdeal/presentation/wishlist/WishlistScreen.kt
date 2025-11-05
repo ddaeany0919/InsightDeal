@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -33,6 +34,9 @@ fun WishlistScreenDetailed(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val numberFmt = remember { NumberFormat.getIntegerInstance(Locale.KOREAN) }
+    val timeFmt = remember { DateTimeFormatter.ofPattern("MM/dd HH:mm", Locale.KOREAN) }
 
     LaunchedEffect(Unit) { viewModel.loadWishlist() }
 
@@ -59,7 +63,9 @@ fun WishlistScreenDetailed(
                                 pendingDelete = item
                                 showDeleteDialog = true
                             },
-                            onPriceCheckClick = { viewModel.checkPrice(item) }
+                            onPriceCheckClick = { viewModel.checkPrice(item) },
+                            numberFmt = numberFmt,
+                            timeFmt = timeFmt
                         )
                     }
                 }
@@ -98,12 +104,7 @@ fun WishlistScreenDetailed(
                     showDeleteDialog = false
                     pendingDelete = null
                     if (item != null) {
-                        scope.launch {
-                            val success = runCatching { viewModel.deleteItem(item) }.isSuccess
-                            if (success) {
-                                // 삭제 스낵바 문구 제거 요청에 따라 성공 스낵바 생략
-                            }
-                        }
+                        scope.launch { runCatching { viewModel.deleteItem(item) } }
                     }
                 },
                 onDismiss = {
@@ -128,7 +129,9 @@ private fun AddWishlistDialogDetailed(onDismiss: () -> Unit, onAdd: (String, Int
 private fun WishlistCardDetailed(
     wishlist: WishlistItem,
     onDeleteClick: () -> Unit,
-    onPriceCheckClick: () -> Unit
+    onPriceCheckClick: () -> Unit,
+    numberFmt: NumberFormat,
+    timeFmt: DateTimeFormatter
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -143,12 +146,15 @@ private fun WishlistCardDetailed(
             }
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column { Text("목표 가격", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("${'$'}{String.format("%,d", wishlist.targetPrice)}원", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold) }
+                Column {
+                    Text("목표 가격", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${'$'}{numberFmt.format(wishlist.targetPrice)}원", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                }
                 Column(horizontalAlignment = Alignment.End) {
                     Text("현재 최저가", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     val price = wishlist.currentLowestPrice
                     if (price != null) {
-                        Text(text = "${'$'}{String.format("%,d", price)}원", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = if (price <= wishlist.targetPrice) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface)
+                        Text(text = "${'$'}{numberFmt.format(price)}원", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = if (price <= wishlist.targetPrice) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface)
                         wishlist.currentLowestPlatform?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     } else {
                         Text("검색 중...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -163,7 +169,16 @@ private fun WishlistCardDetailed(
                 OutlinedButton(onClick = onPriceCheckClick, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp)); Spacer(Modifier.size(4.dp)); Text("가격 체크") }
                 OutlinedButton(onClick = onDeleteClick, colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5722))) { Icon(Icons.Filled.Delete, contentDescription = "삭제", modifier = Modifier.size(16.dp)) }
             }
-            wishlist.lastChecked?.let { Spacer(Modifier.height(8.dp)); Text(text = "마지막 체크: ${'$'}{it.format(DateTimeFormatter.ofPattern("MM/dd HH:mm", Locale.KOREAN))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+            wishlist.lastChecked?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "마지막 체크: ${'$'}{it.format(timeFmt)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }
