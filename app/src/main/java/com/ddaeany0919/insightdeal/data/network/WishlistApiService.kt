@@ -32,10 +32,11 @@ interface WishlistApiService {
         @Query("user_id") userId: String = "default"
     ): WishlistApiResponse
 
-    @DELETE("api/wishlist/{wishlist_id}")
+    // 서버가 DELETE 쿼리 파라미터를 무시하는 경우 대비: 바디로 user_id 전달
+    @HTTP(method = "DELETE", path = "api/wishlist/{wishlist_id}", hasBody = true)
     suspend fun deleteWishlist(
         @Path("wishlist_id") wishlistId: Int,
-        @Query("user_id") userId: String = "default"
+        @Body request: DeleteRequest
     ): DeleteResponse
 
     @POST("api/wishlist/{wishlist_id}/check-price")
@@ -70,4 +71,8 @@ data class WishlistUpdateRequest(
     val targetPrice: Int? = null,
     val isActive: Boolean? = null,
     val alertEnabled: Boolean? = null
+)
+
+data class DeleteRequest(
+    @SerializedName("user_id") val userId: String
 )
