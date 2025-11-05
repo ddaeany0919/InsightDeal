@@ -61,17 +61,11 @@ class WishlistRepository(
             Log.d(TAG, "deleteWishlist: 서버로 DELETE 요청 전송 중 - id=$wishlistId, userId=$userId")
             val response = apiService.deleteWishlist(wishlistId, userId)
             Log.d(TAG, "deleteWishlist: API 응답 받음 - id=$wishlistId, userId=$userId, message='${response.message}'")
-            
-            // DeleteResponse에서 message가 있으면 성공으로 간주
-            // 예외가 발생하지 않고 여기까지 도달했다면 성공
-            val isSuccess = true
-            Log.d(TAG, "deleteWishlist: 삭제 성공 확인 - id=$wishlistId, userId=$userId, message='${response.message}'")
-            
-            isSuccess
+            true // 예외가 없으면 성공으로 간주
         } catch (e: Exception) {
             Log.e(TAG, "deleteWishlist: API 호출 실패 - id=$wishlistId, userId=$userId, error: ${e.message}", e)
             if (e.message?.contains("404") == true) {
-                Log.e(TAG, "deleteWishlist: 404 오류 발생 - 아마 userId 문제일 가능성 높음 - id=$wishlistId, userId=$userId")
+                Log.e(TAG, "deleteWishlist: 404 오류 발생 - 아마 userId 또는 wishlistId 불일치 가능성 - id=$wishlistId, userId=$userId")
             }
             throw Exception("관심상품 삭제에 실패했습니다: "+e.message)
         }
