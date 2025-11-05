@@ -25,14 +25,23 @@ data class WishlistApiResponse(
     @SerializedName("alert_enabled") val alertEnabled: Boolean = true,
     @SerializedName("created_at") val createdAt: String,
     @SerializedName("updated_at") val updatedAt: String,
-    @SerializedName("last_checked") val lastChecked: String? = null
+    @SerializedName("last_checked") val lastChecked: String? = null,
+    // 추가 마켓 확장 필드 (현재는 네이버만 사용, 나머지는 null 허용)
+    @SerializedName("naver_price") val naverPrice: Int? = null,
+    @SerializedName("naver_url") val naverUrl: String? = null,
+    @SerializedName("coupang_price") val coupangPrice: Int? = null,
+    @SerializedName("coupang_url") val coupangUrl: String? = null,
+    @SerializedName("gmarket_price") val gmarketPrice: Int? = null,
+    @SerializedName("gmarket_url") val gmarketUrl: String? = null,
+    @SerializedName("elevenst_price") val elevenstPrice: Int? = null,
+    @SerializedName("elevenst_url") val elevenstUrl: String? = null
 ) {
     fun toWishlistItem(): WishlistItem = WishlistItem(
         id = id,
         keyword = keyword,
         targetPrice = targetPrice,
-        currentLowestPrice = currentLowestPrice,
-        currentLowestPlatform = currentLowestPlatform,
+        currentLowestPrice = currentLowestPrice ?: naverPrice, // 우선 네이버 값만 반영, 나머지는 null 허용
+        currentLowestPlatform = currentLowestPlatform ?: (if (naverPrice != null) "naver_shopping" else null),
         currentLowestProductTitle = currentLowestProductTitle,
         priceDropPercentage = priceDropPercentage,
         isTargetReached = isTargetReached,
@@ -81,7 +90,12 @@ data class PriceCheckResponse(
     @SerializedName("keyword") val keyword: String,
     @SerializedName("current_price") val currentPrice: Int?,
     @SerializedName("target_price") val targetPrice: Int,
-    @SerializedName("updated_at") val updatedAt: String
+    @SerializedName("updated_at") val updatedAt: String,
+    // 확장: 나머지 마켓은 추후에 채움
+    @SerializedName("naver_price") val naverPrice: Int? = null,
+    @SerializedName("naver_url") val naverUrl: String? = null,
+    @SerializedName("coupang_price") val coupangPrice: Int? = null,
+    @SerializedName("coupang_url") val coupangUrl: String? = null
 )
 
 data class DeleteResponse(
