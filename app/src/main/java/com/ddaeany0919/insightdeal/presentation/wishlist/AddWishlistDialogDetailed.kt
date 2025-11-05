@@ -7,6 +7,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardActions
+import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
@@ -38,7 +40,7 @@ fun AddWishlistDialogDetailed(
                     isError = keywordError != null,
                     supportingText = { keywordError?.let { Text(it, color = MaterialTheme.colorScheme.error) } },
                     singleLine = true,
-                    keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions.Default.copy(imeAction = ImeAction.Next)
+                    keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Next)
                 )
                 OutlinedTextField(
                     value = targetText,
@@ -52,14 +54,13 @@ fun AddWishlistDialogDetailed(
                     isError = targetError != null,
                     supportingText = { targetError?.let { Text(it, color = MaterialTheme.colorScheme.error) } },
                     singleLine = true,
-                    keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                    keyboardActions = androidx.compose.ui.text.input.KeyboardActions(onDone = { focus.clearFocus() })
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focus.clearFocus() })
                 )
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                // 검증
                 val k = keyword.trim()
                 val t = targetText.toIntOrNull()
                 var ok = true
@@ -70,7 +71,7 @@ fun AddWishlistDialogDetailed(
                     return@TextButton
                 }
                 Log.d(TAG_UI, "AddDialog 확인: keyword='$k' target=$t")
-                onAdd(k, t)
+                onAdd(k, t!!)
             }) { Text("추가") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }
