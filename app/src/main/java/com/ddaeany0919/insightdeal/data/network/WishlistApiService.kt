@@ -3,13 +3,11 @@ package com.ddaeany0919.insightdeal.data.network
 import com.ddaeany0919.insightdeal.BuildConfig
 import com.ddaeany0919.insightdeal.presentation.wishlist.*
 import com.google.gson.annotations.SerializedName
+import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
 
-/**
- * 💎 관심상품 API 서비스
- */
 interface WishlistApiService {
     @POST("api/wishlist")
     suspend fun createWishlist(@Body request: WishlistCreateRequest): WishlistApiResponse
@@ -33,12 +31,40 @@ interface WishlistApiService {
         @Query("user_id") userId: String = "default"
     ): WishlistApiResponse
 
-    // 서버가 DELETE 쿼리 파라미터를 무시하는 경우 대비: 바디로 user_id 전달
+    // A. DELETE with body
     @HTTP(method = "DELETE", path = "api/wishlist/{wishlist_id}", hasBody = true)
-    suspend fun deleteWishlist(
+    suspend fun deleteWithBody(
         @Path("wishlist_id") wishlistId: Int,
         @Body request: DeleteRequest
-    ): DeleteResponse
+    ): Response<Unit>
+
+    // B. DELETE with header
+    @DELETE("api/wishlist/{wishlist_id}")
+    suspend fun deleteWithHeader(
+        @Path("wishlist_id") wishlistId: Int,
+        @Header("X-User-Id") userId: String
+    ): Response<Unit>
+
+    // C. DELETE with query
+    @DELETE("api/wishlist/{wishlist_id}")
+    suspend fun deleteWithQuery(
+        @Path("wishlist_id") wishlistId: Int,
+        @Query("user_id") userId: String
+    ): Response<Unit>
+
+    // D. alt path {id}
+    @HTTP(method = "DELETE", path = "api/wishlist/{id}", hasBody = true)
+    suspend fun deleteAltPath(
+        @Path("id") id: Int,
+        @Body request: DeleteRequest
+    ): Response<Unit>
+
+    // E. POST fallback
+    @POST("api/wishlist/{wishlist_id}/delete")
+    suspend fun postDelete(
+        @Path("wishlist_id") wishlistId: Int,
+        @Body request: DeleteRequest
+    ): Response<Unit>
 
     @POST("api/wishlist/{wishlist_id}/check-price")
     suspend fun checkWishlistPrice(
@@ -55,18 +81,13 @@ interface WishlistApiService {
 
     companion object {
         private const val BASE_URL: String = BuildConfig.BASE_URL
-
-        fun create(): WishlistApiService {
-            return Retrofit.Builder()
-                .baseUrl(BASE_URL)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build()
-                .create(WishlistApiService::class.java)
-        }
+        fun create(): WishlistApiService = Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(WishlistApiService::class.java)
     }
 }
-
-// ======= 네트워크 데이터 모델들 =======
 
 data class WishlistUpdateRequest(
     val targetPrice: Int? = null,
@@ -74,6 +95,4 @@ data class WishlistUpdateRequest(
     val alertEnabled: Boolean? = null
 )
 
-data class DeleteRequest(
-    @SerializedName("user_id") val userId: String
-)
+data class DeleteRequest(@SerializedName("user_id") val userId: String)
