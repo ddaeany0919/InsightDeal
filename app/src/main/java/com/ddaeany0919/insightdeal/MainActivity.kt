@@ -20,7 +20,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -80,7 +79,28 @@ fun MainApp() {
             }
             composable("watchlist") {
                 val context = LocalContext.current
-                val wishlistViewModel: WishlistViewModel = viewModel(
+                // 간단한 유저 저장/선택 UI 제공: 최초 실행이면 guest 저장, 수정 가능
+                var currentUserId by remember {
+                    val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
+                    mutableStateOf(prefs.getString("user_id", "guest") ?: "guest")
+                }
+                LaunchedEffect(currentUserId) {
+                    context.getSharedPreferences("app", Context.MODE_PRIVATE)
+                        .edit().putString("user_id", currentUserId).apply()
+                }
+
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    OutlinedTextField(
+                        value = currentUserId,
+                        onValueChange = { currentUserId = it },
+                        label = { Text("User ID") },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(text = "서버에 존재하는 user_id 를 입력하세요. (예: 이메일/닉네임/UUID)", style = MaterialTheme.typography.bodySmall)
+                }
+
+                val wishlistViewModel: WishlistViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
                     factory = object : ViewModelProvider.Factory {
                         @Suppress("UNCHECKED_CAST")
                         override fun <T : ViewModel> create(modelClass: Class<T>): T {
