@@ -1,5 +1,7 @@
 package com.ddaeany0919.insightdeal.presentation.wishlist
 
+import android.widget.Toast
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -37,6 +41,7 @@ fun WishlistScreenDetailed(
 
     val numberFmt = remember { NumberFormat.getIntegerInstance(Locale.KOREAN) }
     val timeFmt = remember { DateTimeFormatter.ofPattern("MM/dd HH:mm", Locale.KOREAN) }
+    val ctx = LocalContext.current
 
     LaunchedEffect(Unit) { viewModel.loadWishlist() }
 
@@ -60,8 +65,16 @@ fun WishlistScreenDetailed(
                         WishlistCardDetailed(
                             wishlist = item,
                             onDeleteClick = {
+                                // 버튼 삭제: 확인 다이얼로그
                                 pendingDelete = item
                                 showDeleteDialog = true
+                            },
+                            onSwipeDelete = {
+                                // 스와이프 삭제: 즉시 삭제 + 짧은 토스트
+                                scope.launch {
+                                    val ok = runCatching { viewModel.deleteItem(item) }.isSuccess
+                                    if (ok) Toast.makeText(ctx, "삭제되었습니다", Toast.LENGTH_SHORT).show()
+                                }
                             },
                             onPriceCheckClick = { viewModel.checkPrice(item) },
                             numberFmt = numberFmt,
@@ -104,7 +117,10 @@ fun WishlistScreenDetailed(
                     showDeleteDialog = false
                     pendingDelete = null
                     if (item != null) {
-                        scope.launch { runCatching { viewModel.deleteItem(item) } }
+                        scope.launch {
+                            val ok = runCatching { viewModel.deleteItem(item) }.isSuccess
+                            if (ok) Toast.makeText(ctx, "삭제되었습니다", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 },
                 onDismiss = {
@@ -129,12 +145,23 @@ private fun AddWishlistDialogDetailed(onDismiss: () -> Unit, onAdd: (String, Int
 private fun WishlistCardDetailed(
     wishlist: WishlistItem,
     onDeleteClick: () -> Unit,
+    onSwipeDelete: () -> Unit,
     onPriceCheckClick: () -> Unit,
     numberFmt: NumberFormat,
     timeFmt: DateTimeFormatter
 ) {
+    // 간단한 좌/우 스와이프 제스처 감지 → onSwipeDelete 호출
+    val swipeModifier = Modifier.pointerInput(wishlist.id) {
+        detectDragGestures { change, dragAmount ->
+            if (kotlin.math.abs(dragAmount.x) > 60f) {
+                change.consume()
+                onSwipeDelete()
+            }
+        }
+    }
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().then(swipeModifier),
         colors = CardDefaults.cardColors(containerColor = if (wishlist.isTargetReached) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
     ) {
         Column(Modifier.padding(16.dp)) {
