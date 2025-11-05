@@ -2,6 +2,7 @@ package com.ddaeany0919.insightdeal.data.network
 
 import com.ddaeany0919.insightdeal.BuildConfig
 import com.ddaeany0919.insightdeal.presentation.wishlist.*
+import com.google.gson.annotations.SerializedName
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
