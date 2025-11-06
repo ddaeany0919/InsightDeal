@@ -12,12 +12,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.ddaeany0919.insightdeal.data.theme.ThemeManager
 import com.ddaeany0919.insightdeal.data.theme.ThemePreferences
+import kotlinx.coroutines.launch
 
 @Composable
 fun ThemeSettingsScreenCollapsible(tm: ThemeManager = ThemeManager.getInstance(LocalContext.current)) {
+    val scope = rememberCoroutineScope()
     var expanded by remember { mutableStateOf(true) }
     val mode by tm.modeFlow.collectAsState(initial = ThemePreferences.Mode.SYSTEM)
 
@@ -38,22 +41,22 @@ fun ThemeSettingsScreenCollapsible(tm: ThemeManager = ThemeManager.getInstance(L
         AnimatedVisibility(visible = expanded, enter = expandVertically(), exit = shrinkVertically()) {
             Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 AssistChip(
-                    onClick = { tm.setMode(ThemePreferences.Mode.LIGHT) },
+                    onClick = { scope.launch { tm.updateMode(ThemePreferences.Mode.LIGHT) } },
                     label = { Text("라이트") },
                     leadingIcon = { if (mode == ThemePreferences.Mode.LIGHT) Icon(Icons.Default.Palette, null) }
                 )
                 AssistChip(
-                    onClick = { tm.setMode(ThemePreferences.Mode.DARK) },
+                    onClick = { scope.launch { tm.updateMode(ThemePreferences.Mode.DARK) } },
                     label = { Text("다크") },
                     leadingIcon = { if (mode == ThemePreferences.Mode.DARK) Icon(Icons.Default.Palette, null) }
                 )
                 AssistChip(
-                    onClick = { tm.setMode(ThemePreferences.Mode.AMOLED) },
+                    onClick = { scope.launch { tm.updateMode(ThemePreferences.Mode.AMOLED) } },
                     label = { Text("AMOLED") },
                     leadingIcon = { if (mode == ThemePreferences.Mode.AMOLED) Icon(Icons.Default.Palette, null) }
                 )
                 AssistChip(
-                    onClick = { tm.setMode(ThemePreferences.Mode.SYSTEM) },
+                    onClick = { scope.launch { tm.updateMode(ThemePreferences.Mode.SYSTEM) } },
                     label = { Text("시스템") },
                     leadingIcon = { if (mode == ThemePreferences.Mode.SYSTEM) Icon(Icons.Default.Palette, null) }
                 )
