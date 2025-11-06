@@ -208,22 +208,16 @@ class WishlistRepository {
     private fun extractProductNameFromUrl(url: String): String {
         return try {
             Log.d(TAG, "extractProductNameFromUrl: 시작 - $url")
-            
-            val productName = when {
-                url.contains("coupang.com") -> {
-                    // Extract from Coupang URL pattern
-                    val match = Regex("/vp/products/(\d+)").find(url)
-                    if (match != null) {
-                        "쿠팡 상품 (${match.groupValues[1]})"
-                    } else {
-                        "쿠팡 상품"
-                    }
-                }
-                url.contains("11st.co.kr") -> "11번가 상품"
-                url.contains("shopping.naver.com") -> "네이버 쇼핑 상품"
-                else -> "링크로 추가된 상품"
+            // NOTE: In Kotlin string literal, backslash must be escaped.
+            // Regex("/vp/products/(\\d+)") would not match because of escaping rules.
+            // Use raw triple-quoted string to avoid escaping issues.
+            val pattern = Regex("""/vp/products/(\d+)""")
+            val match = pattern.find(url)
+            val productName = if (match != null) {
+                "쿠팡 상품 (${match.groupValues[1]})"
+            } else {
+                "쿠팡 상품"
             }
-            
             Log.d(TAG, "extractProductNameFromUrl: 추출 완료 - '$productName'")
             productName
         } catch (e: Exception) {
