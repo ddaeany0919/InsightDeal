@@ -7,18 +7,23 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.time.LocalDateTime
+import java.util.UUID
 
 private const val TAG_VM = "WishlistVM"
 
 class WishlistViewModel(
     private val wishlistRepository: WishlistRepository = WishlistRepository(),
-    private val userIdProvider: () -> String = { "user1" }
+    // Remove user settings dependency - use device-based ID until OAuth login
+    private val userIdProvider: () -> String = { 
+        "device_${android.os.Build.SERIAL.take(8)}_${UUID.randomUUID().toString().take(8)}"
+    }
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<WishlistState>(WishlistState.Loading)
     val uiState: StateFlow<WishlistState> = _uiState.asStateFlow()
-    private val httpHelper = HttpWishlistHelper()
+    
+    // REMOVED: HttpWishlistHelper - all network calls now go through Repository
+    // private val httpHelper = HttpWishlistHelper()
 
     fun loadWishlist() {
         viewModelScope.launch {
@@ -100,12 +105,17 @@ class WishlistViewModel(
         }
     }
 
+    /**
+     * FIXED: Now routes through Repository instead of HttpWishlistHelper
+     * This ensures all network calls use the same Retrofit instance with correct BASE_URL
+     */
     fun addFromLink(url: String, targetPrice: Int) {
         viewModelScope.launch {
             val userId = userIdProvider()
             Log.d(TAG_VM, "addFromLink: start url=$url target=$targetPrice userId=$userId")
             try {
-                val created = httpHelper.addFromLink(url, targetPrice, userId)
+                // CHANGED: Use Repository instead of httpHelper
+                val created = wishlistRepository.addFromLink(url, targetPrice, userId)
                 Log.d(TAG_VM, "addFromLink: success id=${created.id} for userId=$userId")
                 loadWishlist()
             } catch (e: Exception) {
