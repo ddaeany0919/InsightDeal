@@ -134,14 +134,13 @@ fun WishlistScreenDetailed(
             onAddFromLink = { url, target ->
                 scope.launch {
                     Log.d(TAG_UI, "AddDialog: onAddFromLink 호출 url=$url target=$target")
-                    // 링크 추가 시나리오
                     try {
-                        // TODO: 실제 API 연동 시 viewModel.addFromLink(url, target)
-                        Log.d(TAG_UI, "LinkTab 예상 성공: url=$url")
+                        viewModel.addFromLink(url, target)
                         showAddDialog = false
+                        Toast.makeText(ctx, "링크로 추가되었습니다", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         Log.e(TAG_UI, "LinkTab 실패: ${e.message}")
-                        Toast.makeText(ctx, "일시적인 오류가 발생했어요. 다시 시도해 주세요", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(ctx, "일시적인 오류가 발생했어요. 다시 시도해 주세요", Toast.LENGTH_LONG).show()
                     }
                 }
             }
@@ -201,7 +200,9 @@ private fun WishlistCardDetailed(
     numberFmt: NumberFormat,
     timeFmt: DateTimeFormatter
 ) {
-    val isTargetReached = wishlist.currentLowestPrice != null && wishlist.currentLowestPrice <= wishlist.targetPrice
+    val price = wishlist.currentLowestPrice
+    val isTargetReached = price != null && price <= wishlist.targetPrice
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -226,7 +227,6 @@ private fun WishlistCardDetailed(
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text("현재 최저가", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    val price = wishlist.currentLowestPrice
                     if (price != null) {
                         Text("${numberFmt.format(price)}원", 
                              style = MaterialTheme.typography.bodyLarge, 
