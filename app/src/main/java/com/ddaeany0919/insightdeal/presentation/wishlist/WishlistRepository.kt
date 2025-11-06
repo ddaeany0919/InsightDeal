@@ -197,7 +197,7 @@ class WishlistRepository {
             }
         }
         
-        Log.e(TAG, "$operationName: 최대 재시도 횟수 초과 ($MAX_RETRIES회)")
+        Log.e(TAG, "$operationName: 최대 재시도 횟수 초과 (${MAX_RETRIES}회)")
         throw lastException ?: Exception("$operationName 실행 실패")
     }
 
