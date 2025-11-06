@@ -33,8 +33,7 @@ fun WishlistScreenDetailed(
             }) { Icon(Icons.Filled.Add, contentDescription = "관심상품 추가") }
         }
     ) { inner ->
-        // 기존 본문을 내부로 인라인하여 Unresolved reference: WishlistBody 제거
-        WishlistScreenBody(uiState = uiState, modifier = Modifier.padding(inner), viewModel = viewModel, snackbarHostState = snackbarHostState)
+        // TODO: 기존 목록/카드 UI를 이곳으로 이관
     }
 
     if (showAddDialog) {
@@ -48,27 +47,11 @@ fun WishlistScreenDetailed(
             },
             onAddFromLink = { url, target ->
                 scope.launch {
-                    try {
-                        // ViewModel에 링크 추가 메서드가 없다면 우선 키워드 기반으로 대체하거나 TODO 남김
-                        // TODO: viewModel.addFromLink(url, target)
-                        Log.d(TAG_UI, "링크 추가 요청: url=$url target=$target")
-                        showAddDialog = false
-                    } catch (e: Exception) {
-                        Log.d(TAG_UI, "링크 추가 실패: ${e.message}")
-                    }
+                    Log.d(TAG_UI, "링크 추가 요청: url=$url target=$target")
+                    // TODO: ViewModel.addFromLink 구현 후 연결
+                    showAddDialog = false
                 }
             }
         )
     }
-}
-
-@Composable
-private fun WishlistScreenBody(
-    uiState: WishlistState,
-    modifier: Modifier,
-    viewModel: WishlistViewModel,
-    snackbarHostState: SnackbarHostState
-) {
-    // 기존 WishlistScreen 콘텐츠를 여기로 이동해 충돌 방지
-    // TODO: 기존 LazyColumn/카드 렌더링 로직 붙여넣기
 }
