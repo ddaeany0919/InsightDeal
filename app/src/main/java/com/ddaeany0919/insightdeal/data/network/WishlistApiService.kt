@@ -11,7 +11,6 @@ import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
-import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
 interface WishlistApiService {
@@ -77,7 +76,7 @@ interface WishlistApiService {
     companion object {
         private const val TAG = "ApiService"
         
-        // Default configuration
+        // Default configuration (legacy)
         private val BASE_URL: String = BuildConfig.BASE_URL
         
         fun create(): WishlistApiService = Retrofit.Builder()
@@ -87,46 +86,65 @@ interface WishlistApiService {
             .create(WishlistApiService::class.java)
             
         /**
-         * Phase 1: Stable network configuration
+         * Phase 1: Stable network configuration with dynamic URL detection
          * - 20-second timeouts for better stability
-         * - Smart BASE_URL detection
-         * - Connection pooling
-         * - Retry interceptor
+         * - Smart BASE_URL detection using NetworkConfig
+         * - Connection pooling and retry mechanisms
          */
-        fun createWithStableConfig(): WishlistApiService {
-            Log.d(TAG, "createWithStableConfig: 네트워크 설정 시작")
+        suspend fun createWithStableConfig(): WishlistApiService {
+            Log.d(TAG, "createWithStableConfig: 시작")
             
-            // Smart BASE_URL detection
-            val baseUrl = getOptimalBaseUrl()
+            // Get optimal server URL using network detection
+            val baseUrl = try {
+                NetworkConfig.getServerUrl()
+            } catch (e: Exception) {
+                Log.w(TAG, "Dynamic URL detection failed, using BuildConfig", e)
+                BASE_URL
+            }
+            
             Log.d(TAG, "createWithStableConfig: baseUrl=$baseUrl")
             
-            // Logging interceptor for debugging
+            // Enhanced logging interceptor
             val loggingInterceptor = HttpLoggingInterceptor { message ->
                 Log.d("OkHttp", message)
             }.apply {
-                level = if (BuildConfig.DEBUG) {
+                level = if (BuildConfig.DEBUG_MODE) {
                     HttpLoggingInterceptor.Level.BODY
                 } else {
                     HttpLoggingInterceptor.Level.BASIC
                 }
             }
             
-            // Retry interceptor for network stability
+            // Connection info interceptor
+            val connectionInterceptor = Interceptor { chain ->
+                val request = chain.request()
+                Log.d(TAG, "API 요청: ${request.method} ${request.url}")
+                
+                val startTime = System.currentTimeMillis()
+                val response = chain.proceed(request)
+                val endTime = System.currentTimeMillis()
+                
+                Log.d(TAG, "API 응답: ${response.code} (${endTime - startTime}ms)")
+                response
+            }
+            
+            // Retry interceptor for server errors
             val retryInterceptor = Interceptor { chain ->
                 val request = chain.request()
                 var response = chain.proceed(request)
                 
-                // Retry on specific network errors
+                // Retry on specific server errors
                 var retryCount = 0
                 while (!response.isSuccessful && retryCount < 2) {
-                    if (response.code in listOf(500, 502, 503, 504)) {
-                        Log.d(TAG, "Retrying request due to server error: ${response.code}")
-                        response.close()
-                        retryCount++
-                        Thread.sleep(1000L * retryCount) // Exponential backoff
-                        response = chain.proceed(request)
-                    } else {
-                        break
+                    when (response.code) {
+                        500, 502, 503, 504 -> {
+                            Log.d(TAG, "서버 오류로 인한 재시도: ${response.code} (${retryCount + 1}/2)")
+                            response.close()
+                            retryCount++
+                            Thread.sleep(1000L * retryCount)
+                            response = chain.proceed(request)
+                        }
+                        else -> break
                     }
                 }
                 response
@@ -137,12 +155,13 @@ interface WishlistApiService {
                 .connectTimeout(20, TimeUnit.SECONDS)
                 .readTimeout(20, TimeUnit.SECONDS)
                 .writeTimeout(20, TimeUnit.SECONDS)
+                .addInterceptor(connectionInterceptor)
                 .addInterceptor(loggingInterceptor)
                 .addInterceptor(retryInterceptor)
                 .retryOnConnectionFailure(true)
                 .build()
                 
-            Log.d(TAG, "createWithStableConfig: OkHttp client 설정 완료")
+            Log.d(TAG, "createWithStableConfig: 완료")
             
             return Retrofit.Builder()
                 .baseUrl(baseUrl)
@@ -150,53 +169,6 @@ interface WishlistApiService {
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
                 .create(WishlistApiService::class.java)
-        }
-        
-        /**
-         * Smart BASE_URL detection for emulator vs real device
-         */
-        private fun getOptimalBaseUrl(): String {
-            return try {
-                // Check if we're running on emulator (10.0.2.2) or real device
-                val localhost = InetAddress.getByName("localhost")
-                val emulatorHost = InetAddress.getByName("10.0.2.2")
-                
-                // Test connectivity to determine best URL
-                when {
-                    isEmulator() -> {
-                        Log.d(TAG, "Detected emulator environment")
-                        "http://10.0.2.2:8000/"
-                    }
-                    else -> {
-                        Log.d(TAG, "Detected real device environment")
-                        // For real device, try local network IP first
-                        BuildConfig.BASE_URL.takeIf { it.isNotBlank() } ?: "http://192.168.1.100:8000/"
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Base URL detection failed, using default", e)
-                BuildConfig.BASE_URL.takeIf { it.isNotBlank() } ?: "http://10.0.2.2:8000/"
-            }
-        }
-        
-        /**
-         * Detect if running on Android emulator
-         */
-        private fun isEmulator(): Boolean {
-            return (android.os.Build.BRAND.startsWith("generic") && android.os.Build.DEVICE.startsWith("generic"))
-                    || android.os.Build.FINGERPRINT.startsWith("generic")
-                    || android.os.Build.FINGERPRINT.startsWith("unknown")
-                    || android.os.Build.HARDWARE.contains("goldfish")
-                    || android.os.Build.HARDWARE.contains("ranchu")
-                    || android.os.Build.MODEL.contains("google_sdk")
-                    || android.os.Build.MODEL.contains("Emulator")
-                    || android.os.Build.MODEL.contains("Android SDK built for x86")
-                    || android.os.Build.MANUFACTURER.contains("Genymotion")
-                    || android.os.Build.PRODUCT.contains("sdk_google")
-                    || android.os.Build.PRODUCT.contains("google_sdk")
-                    || android.os.Build.PRODUCT.contains("sdk")
-                    || android.os.Build.PRODUCT.contains("sdk_x86")
-                    || android.os.Build.PRODUCT.contains("vbox86p")
         }
     }
 }
