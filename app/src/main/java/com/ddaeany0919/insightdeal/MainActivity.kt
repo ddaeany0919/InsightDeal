@@ -2,6 +2,7 @@ package com.ddaeany0919.insightdeal
 
 import android.content.Context
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -33,13 +34,42 @@ import com.ddaeany0919.insightdeal.presentation.wishlist.*
 import com.ddaeany0919.insightdeal.ui.EnhancedHomeScreen_Applied
 import com.ddaeany0919.insightdeal.ui.HomeViewModel
 import com.ddaeany0919.insightdeal.ui.theme.InsightDealTheme
+import java.util.UUID
 
 private const val TAG_UI = "MainActivity"
+
+/**
+ * Generate stable device-based user ID for anonymous usage
+ * Will be replaced with OAuth tokens in Phase 3-4
+ */
+fun generateDeviceUserId(context: Context): String {
+    return try {
+        val androidId = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ANDROID_ID
+        )
+        
+        if (androidId.isNullOrBlank() || androidId == "9774d56d682e549c") {
+            // Fallback for emulator or invalid ANDROID_ID
+            "device_${UUID.randomUUID().toString().take(12)}"
+        } else {
+            "device_${androidId.take(12)}"
+        }
+    } catch (e: Exception) {
+        Log.w(TAG_UI, "Failed to get device ID, using random", e)
+        "device_${UUID.randomUUID().toString().take(12)}"
+    }
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // Generate stable device-based user ID
+        val deviceUserId = generateDeviceUserId(this)
+        Log.d(TAG_UI, "Device User ID: $deviceUserId")
+        
         setContent {
             val tm = remember { ThemeManager.getInstance(this) }
             val mode by tm.modeFlow.collectAsState(initial = ThemePreferences.Mode.SYSTEM)
@@ -54,13 +84,15 @@ class MainActivity : ComponentActivity() {
                 darkTheme = dark,
                 themeMode = if (amoled) ThemeMode.AMOLED else if (dark) ThemeMode.DARK else ThemeMode.LIGHT,
                 amoledMode = amoled
-            ) { MainApp() }
+            ) { 
+                MainApp(deviceUserId = deviceUserId)
+            }
         }
     }
 }
 
 @Composable
-fun MainApp() {
+fun MainApp(deviceUserId: String) {
     val navController = rememberNavController()
 
     Scaffold(
@@ -80,76 +112,60 @@ fun MainApp() {
                     onTrackClick = { /* TODO */ }
                 )
             }
+            
             composable("watchlist") {
-                val context = LocalContext.current
-                Log.d(TAG_UI, "watchlist route entered")
+                Log.d(TAG_UI, "watchlist route entered with deviceUserId=$deviceUserId")
 
-                var currentUserId by remember {
-                    val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
-                    mutableStateOf(prefs.getString("user_id", "guest") ?: "guest")
-                }
-                LaunchedEffect(currentUserId) {
-                    Log.d(TAG_UI, "User ID changed -> $currentUserId (saving to SharedPreferences)")
-                    context.getSharedPreferences("app", Context.MODE_PRIVATE)
-                        .edit().putString("user_id", currentUserId).apply()
-                }
-
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Log.d(TAG_UI, "Rendering User ID input UI (OutlinedTextField)")
-                    OutlinedTextField(
-                        value = currentUserId,
-                        onValueChange = { currentUserId = it },
-                        label = { Text("User ID") },
-                        singleLine = true
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(text = "서버에 존재하는 user_id 를 입력하세요. (예: 이메일/닉네임/UUID)", style = MaterialTheme.typography.bodySmall)
-                }
-
+                // REMOVED: User ID settings UI - now uses automatic device-based ID
                 val wishlistViewModel: WishlistViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
                     factory = object : ViewModelProvider.Factory {
                         @Suppress("UNCHECKED_CAST")
                         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                            val userIdProvider = {
-                                val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
-                                val id = prefs.getString("user_id", null) ?: "guest"
-                                Log.d(TAG_UI, "userIdProvider() -> $id")
-                                id
-                            }
                             return WishlistViewModel(
                                 wishlistRepository = WishlistRepository(),
-                                userIdProvider = userIdProvider
+                                userIdProvider = { 
+                                    Log.d(TAG_UI, "userIdProvider() -> $deviceUserId")
+                                    deviceUserId
+                                }
                             ) as T
                         }
                     }
                 )
                 WishlistScreenDetailed(viewModel = wishlistViewModel)
             }
+            
             composable("matches") { MatchesScreen() }
             composable("settings") { com.ddaeany0919.insightdeal.settings.ThemeSettingsScreen() }
             composable("deal_detail/{dealId}") { Box { Text("딜 상세 화면") } }
             composable("product_detail/{productId}") { Box { Text("상품 상세 화면") } }
             composable("theme_settings") { com.ddaeany0919.insightdeal.settings.ThemeSettingsScreen() }
+            
             composable("advanced_search") {
                 AdvancedSearchScreen(
                     onDealClick = { dealItem -> navController.navigate("price_graph/${dealItem.id}") },
                     onBackClick = { navController.popBackStack() }
                 )
             }
+            
             composable("bookmarks") {
                 BookmarkScreen(
                     onDealClick = { dealItem -> navController.navigate("price_graph/${dealItem.id}") },
                     onBackClick = { navController.popBackStack() }
                 )
             }
+            
             composable("recommendations") {
                 RecommendationScreen(
                     onDealClick = { dealItem -> navController.navigate("price_graph/${dealItem.id}") }
                 )
             }
+            
             composable("price_graph/{dealId}") { backStackEntry ->
                 val dealId = backStackEntry.arguments?.getString("dealId")?.toIntOrNull() ?: 0
-                PriceGraphScreen(productId = dealId, onBackClick = { navController.popBackStack() })
+                PriceGraphScreen(
+                    productId = dealId, 
+                    onBackClick = { navController.popBackStack() }
+                )
             }
         }
     }
@@ -227,7 +243,7 @@ fun MatchesScreen() {
         )
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            text = "내일 구현 예정 (Day 4)",
+            text = "Phase 2에서 구현 예정",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary
         )
