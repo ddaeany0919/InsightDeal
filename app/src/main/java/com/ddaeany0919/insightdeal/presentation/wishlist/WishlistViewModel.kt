@@ -66,6 +66,25 @@ class WishlistViewModel(
         }
     }
 
+    /**
+     * 삭제된 아이템을 복원합니다.
+     * 실제로는 동일한 키워드와 목표가격으로 새 아이템을 생성합니다.
+     */
+    fun restoreItem(item: WishlistItem) {
+        viewModelScope.launch {
+            val userId = userIdProvider()
+            Log.d(TAG_VM, "restoreItem: start keyword=${item.keyword} target=${item.targetPrice} userId=$userId")
+            try {
+                val restored = wishlistRepository.createWishlist(item.keyword, item.targetPrice, userId)
+                Log.d(TAG_VM, "restoreItem: success new_id=${restored.id} for userId=$userId")
+                loadWishlist()
+            } catch (e: Exception) {
+                Log.e(TAG_VM, "restoreItem: error for userId=$userId - ${e.message}", e)
+                _uiState.value = WishlistState.Error("관심상품 복원 오류: ${e.message}")
+            }
+        }
+    }
+
     fun checkPrice(item: WishlistItem) {
         viewModelScope.launch {
             val userId = userIdProvider()
