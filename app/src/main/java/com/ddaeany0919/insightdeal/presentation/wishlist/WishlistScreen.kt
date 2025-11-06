@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -242,11 +243,13 @@ private fun WishlistCardDetailed(
             }
             Spacer(Modifier.height(12.dp))
             val progress = price?.toFloat()?.div(wishlist.targetPrice)?.coerceAtMost(1f) ?: 0f
+            // Fix: Update LinearProgressIndicator to use lambda-based progress parameter
             LinearProgressIndicator(
-                progress = progress, 
+                progress = { progress }, // Use lambda function instead of direct float value
                 modifier = Modifier.fillMaxWidth(), 
                 color = if (isTargetReached) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                strokeCap = StrokeCap.Round
             )
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
