@@ -38,14 +38,16 @@ services:
       - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
       - PYTHONPATH=/app
     ports:
-      - "8000:8000"
+      # Explicit binding to all interfaces for external device access
+      - "0.0.0.0:8000:8000"
     volumes:
       - ./backend:/app
       - ./backend/image_cache:/app/image_cache
     networks:
       - insightdeal-network
     restart: unless-stopped
-    command: python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    # Ensure binding to all interfaces for mobile device access
+    command: python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
