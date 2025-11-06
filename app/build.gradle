@@ -29,7 +29,11 @@ android {
             buildConfigField "boolean", "DEBUG_MODE", "false"
         }
         debug {
+            // Updated to match actual network environment
+            // Device IP: 192.168.0.5 → Server should be accessible via local network
             buildConfigField "String", "BASE_URL", '"http://192.168.0.4:8000/"'
+            buildConfigField "String", "DEV_SERVER_IP", '"192.168.0.4"' // PC IP where backend runs
+            buildConfigField "String", "EMULATOR_BASE_URL", '"http://10.0.2.2:8000/"' // Emulator fallback
             buildConfigField "String", "VERSION_NAME", '"1.0.0-debug"'
             buildConfigField "boolean", "DEBUG_MODE", "true"
         }
@@ -82,10 +86,11 @@ dependencies {
     implementation 'com.google.firebase:firebase-messaging-ktx'
     implementation 'com.google.firebase:firebase-analytics-ktx'
 
-    // Retrofit
+    // Retrofit with enhanced timeout support
     implementation 'com.squareup.retrofit2:retrofit:2.9.0'
     implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
     implementation 'com.squareup.okhttp3:logging-interceptor:4.11.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.11.0'
 
     // Gson
     implementation 'com.google.code.gson:gson:2.10.1'
