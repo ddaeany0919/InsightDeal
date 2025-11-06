@@ -6,7 +6,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,30 +18,30 @@ import kotlinx.coroutines.launch
 
 private const val TAG_UI = "WishlistUI"
 
+/**
+ * Link-only product addition dialog (Phase 1 simplification)
+ * Removed keyword tab for focused user experience
+ */
 @Composable
 fun AddWishlistDialogDetailed(
     onDismiss: () -> Unit,
     onAdd: (String, Int) -> Unit,
     onAddFromLink: ((String, Int) -> Unit)? = null
 ) {
-    var tabIndex by remember { mutableStateOf(0) }
+    Log.d(TAG_UI, "AddWishlistDialogDetailed: link-only mode, onAddFromLink=${onAddFromLink != null}")
+    
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("관심상품 추가") },
+        title = { Text("상품 링크로 추가하기") },
         text = {
-            Column {
-                if (onAddFromLink != null) {
-                    TabRow(selectedTabIndex = tabIndex) {
-                        Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text("키워드") }, icon = { Icon(Icons.Filled.Search, null) })
-                        Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }, text = { Text("링크") }, icon = { Icon(Icons.Filled.Link, null) })
-                    }
-                    Spacer(Modifier.height(16.dp))
+            // Direct link input without tabs for simplified UX
+            LinkInputTab(
+                onDismiss = onDismiss,
+                onAddFromLink = onAddFromLink ?: { url, target -> 
+                    Log.d(TAG_UI, "Fallback to keyword-style add: $url, $target")
+                    onAdd(url, target) 
                 }
-                when (tabIndex) {
-                    0 -> KeywordInputTab(onDismiss, onAdd)
-                    1 -> if (onAddFromLink != null) LinkInputTab(onDismiss, onAddFromLink)
-                }
-            }
+            )
         },
         confirmButton = {},
         dismissButton = {}
@@ -50,49 +49,10 @@ fun AddWishlistDialogDetailed(
 }
 
 @Composable
-private fun KeywordInputTab(onDismiss: () -> Unit, onAdd: (String, Int) -> Unit) {
-    var keyword by remember { mutableStateOf("") }
-    var targetText by remember { mutableStateOf("") }
-    var keywordError by remember { mutableStateOf<String?>(null) }
-    var targetError by remember { mutableStateOf<String?>(null) }
-    val focus = LocalFocusManager.current
-
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        OutlinedTextField(
-            value = keyword,
-            onValueChange = { keyword = it; if (keywordError != null) keywordError = null },
-            label = { Text("키워드 (예: 갤럭시 S24 128GB)") },
-            isError = keywordError != null,
-            supportingText = { keywordError?.let { Text(it, color = MaterialTheme.colorScheme.error) } },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Next)
-        )
-        OutlinedTextField(
-            value = targetText,
-            onValueChange = { val f = it.filter(Char::isDigit); targetText = f; if (targetError != null) targetError = null },
-            label = { Text("목표가 (원 단위)") },
-            isError = targetError != null,
-            supportingText = { targetError?.let { Text(it, color = MaterialTheme.colorScheme.error) } },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { focus.clearFocus() })
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = onDismiss) { Text("취소") }
-            Spacer(Modifier.width(8.dp))
-            TextButton(onClick = {
-                val k = keyword.trim(); val t = targetText.toIntOrNull(); var ok = true
-                if (k.length < 2) { keywordError = "키워드는 2자 이상"; ok = false }
-                if (t == null || t <= 0) { targetError = "목표가는 0보다 커야 합니다"; ok = false }
-                if (!ok) { Log.d(TAG_UI, "KeywordTab 검증 실패: $k / $targetText"); return@TextButton }
-                Log.d(TAG_UI, "KeywordTab 확인: $k / $t"); onAdd(k, t!!)
-            }) { Text("추가하기") }
-        }
-    }
-}
-
-@Composable
-private fun LinkInputTab(onDismiss: () -> Unit, onAddFromLink: (String, Int) -> Unit) {
+private fun LinkInputTab(
+    onDismiss: () -> Unit, 
+    onAddFromLink: (String, Int) -> Unit
+) {
     val scope = rememberCoroutineScope()
     var url by remember { mutableStateOf("") }
     var targetText by remember { mutableStateOf("") }
@@ -102,55 +62,176 @@ private fun LinkInputTab(onDismiss: () -> Unit, onAddFromLink: (String, Int) -> 
     var preview by remember { mutableStateOf<String?>(null) }
     val focus = LocalFocusManager.current
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Log.d(TAG_UI, "LinkInputTab: rendered, url='$url', preview=$preview")
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        // Product link input
         OutlinedTextField(
             value = url,
-            onValueChange = { url = it; urlError = null; preview = null },
-            label = { Text("상품 링크 (예: https://www.coupang.com/…)") },
+            onValueChange = { 
+                url = it
+                urlError = null
+                preview = null
+                Log.d(TAG_UI, "URL changed: '$it'")
+            },
+            label = { Text("상품 링크") },
+            placeholder = { Text("https://www.coupang.com/vp/products/...") },
             isError = urlError != null,
-            supportingText = { urlError?.let { Text(it, color = MaterialTheme.colorScheme.error) } ?: preview?.let { Text(it) } },
+            supportingText = { 
+                urlError?.let { 
+                    Text(it, color = MaterialTheme.colorScheme.error) 
+                } ?: preview?.let { 
+                    Text(it, color = MaterialTheme.colorScheme.primary) 
+                }
+            },
             singleLine = true,
             keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Filled.Link, null) }
+            leadingIcon = { Icon(Icons.Filled.Link, contentDescription = "링크") },
+            modifier = Modifier.fillMaxWidth()
         )
 
+        // Analysis result preview card
         if (preview != null) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "상품 분석 완료",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Text(
+                        text = preview!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+            
+            // Target price input (only show after analysis)
             OutlinedTextField(
                 value = targetText,
-                onValueChange = { val f = it.filter(Char::isDigit); targetText = f; targetError = null },
-                label = { Text("목표가 (원 단위)") },
+                onValueChange = { 
+                    val filtered = it.filter(Char::isDigit)
+                    targetText = filtered
+                    targetError = null
+                    Log.d(TAG_UI, "Target price changed: '$filtered'")
+                },
+                label = { Text("목표가") },
+                placeholder = { Text("원하는 가격을 입력하세요") },
                 isError = targetError != null,
-                supportingText = { targetError?.let { Text(it, color = MaterialTheme.colorScheme.error) } },
+                supportingText = { 
+                    targetError?.let { 
+                        Text(it, color = MaterialTheme.colorScheme.error) 
+                    } ?: Text("목표가 이하로 떨어지면 알림드립니다") 
+                },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { focus.clearFocus() })
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number, 
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
+                suffix = { Text("원") },
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = onDismiss) { Text("취소") }
-            Spacer(Modifier.width(8.dp))
+        // Action buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+        ) {
+            TextButton(onClick = {
+                Log.d(TAG_UI, "LinkInputTab: Cancel clicked")
+                onDismiss()
+            }) {
+                Text("취소")
+            }
+            
             if (preview == null) {
-                Button(onClick = {
-                    if (url.isBlank() || !url.startsWith("http")) { urlError = "올바른 URL을 입력해 주세요"; return@Button }
-                    isAnalyzing = true
-                    scope.launch {
-                        try {
-                            // 실제 백엔드 연동
-                            // val res = api.analyzeLink(url)
-                            // preview = "${res.extracted_info.product_name} | 최저가 ${res.lowest_total_price?.let { "%,d원".format(it) } ?: "-"}"
-                            preview = "분석을 완료했습니다"
-                        } finally { isAnalyzing = false }
+                // Analysis button
+                Button(
+                    onClick = {
+                        Log.d(TAG_UI, "LinkInputTab: Analyze clicked for URL='$url'")
+                        
+                        if (url.isBlank()) {
+                            urlError = "링크를 입력해 주세요"
+                            return@Button
+                        }
+                        
+                        if (!url.startsWith("http")) {
+                            urlError = "올바른 URL을 입력해 주세요 (http:// 또는 https://)"
+                            return@Button
+                        }
+                        
+                        // Validate supported shopping malls
+                        val supportedSites = listOf("coupang.com", "11st.co.kr", "shopping.naver.com")
+                        if (!supportedSites.any { url.contains(it, ignoreCase = true) }) {
+                            urlError = "현재 쿠팡, 11번가, 네이버쇼핑만 지원됩니다"
+                            return@Button
+                        }
+                        
+                        isAnalyzing = true
+                        scope.launch {
+                            try {
+                                Log.d(TAG_UI, "Starting analysis for: $url")
+                                // TODO: Replace with actual backend API call
+                                // val response = repository.analyzeLink(url)
+                                // preview = "${response.productName} | 예상 최저가: ${response.lowestPrice}원"
+                                
+                                // Temporary mock response
+                                kotlinx.coroutines.delay(2000) // Simulate API delay
+                                preview = "상품 분석이 완료되었습니다. 목표가를 설정해 주세요."
+                                Log.d(TAG_UI, "Analysis completed, preview set")
+                            } catch (e: Exception) {
+                                Log.e(TAG_UI, "Analysis failed", e)
+                                urlError = "분석에 실패했습니다. 다시 시도해 주세요."
+                            } finally {
+                                isAnalyzing = false
+                            }
+                        }
+                    },
+                    enabled = !isAnalyzing
+                ) {
+                    if (isAnalyzing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("분석 중...")
+                    } else {
+                        Text("분석하기")
                     }
-                }, enabled = !isAnalyzing) {
-                    if (isAnalyzing) { CircularProgressIndicator(Modifier.size(16.dp)) ; Spacer(Modifier.width(8.dp)); Text("분석중…") } else { Text("분석하기") }
                 }
             } else {
-                Button(onClick = {
-                    val t = targetText.toIntOrNull()
-                    if (t == null || t <= 0) { targetError = "목표가를 입력해 주세요"; return@Button }
-                    onAddFromLink(url, t)
-                }) { Text("위시리스트 추가") }
+                // Add to wishlist button
+                Button(
+                    onClick = {
+                        Log.d(TAG_UI, "LinkInputTab: Add to wishlist clicked, target='$targetText'")
+                        
+                        val targetPrice = targetText.toIntOrNull()
+                        if (targetPrice == null || targetPrice <= 0) {
+                            targetError = "올바른 목표가를 입력해 주세요"
+                            return@Button
+                        }
+                        
+                        Log.d(TAG_UI, "Adding to wishlist: url='$url', target=$targetPrice")
+                        onAddFromLink(url, targetPrice)
+                    }
+                ) {
+                    Text("위시리스트에 추가")
+                }
             }
         }
     }
