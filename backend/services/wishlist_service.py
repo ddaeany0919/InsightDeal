@@ -49,28 +49,41 @@ class WishlistService:
         search_keyword = w.keyword
         logging.info(f"[PRICE] check_price userid={user_id}, wishlist_id={wishlist_id}, keyword={search_keyword}")
         
-        # 1. 링크이면 상품명 추출 (우선순위: 크롤링 -> AI)
+        # 1. 링크이면 상품명 추출
         if is_url(search_keyword):
-            # 1-1. 웹 크롤링 시도
             try:
                 scraper = ProductScraperFactory.get_scraper(search_keyword)
-                scraped_name = await scraper.get_product_name(search_keyword)
                 
-                if scraped_name:
-                    logging.info(f"[크롤링] 성공: {scraped_name}")
-                    search_keyword = scraped_name
+                # 1-1. 먼저 Selenium으로 HTML 가져오기
+                scraped_html = None
+                if hasattr(scraper, 'get_html'):
+                    scraped_html = await scraper.get_html(search_keyword)
+                
+                # 1-2. HTML이 있으면 AI로 분석
+                if scraped_html:
+                    logging.info(f"[HTML] HTML 크기: {len(scraped_html)} bytes")
+                    ai_name = AIProductNameService.extract_name_from_html(scraped_html, search_keyword)
+                    
+                    if ai_name:
+                        logging.info(f"[AI_HTML] HTML 기반 추출 성공: {ai_name}")
+                        search_keyword = ai_name
+                    else:
+                        # HTML 분석 실패 시 URL 기반 AI로 fallback
+                        logging.warning("[AI_HTML] HTML 분석 실패, URL 기반 AI로 fallback")
+                        ai_name = AIProductNameService.extract_name_from_url(search_keyword)
+                        if ai_name:
+                            search_keyword = ai_name
                 else:
-                    # 1-2. 크롤링 실패 시 AI fallback
-                    logging.warning("[크롤링] 실패, AI로 fallback")
+                    # HTML 가져오기 실패 시 URL 기반 AI로 fallback
+                    logging.warning("[HTML] HTML 가져오기 실패, URL 기반 AI로 fallback")
                     ai_name = AIProductNameService.extract_name_from_url(search_keyword)
-                    logging.info(f"[AI] AI 추출 상품명={ai_name}")
                     if ai_name:
                         search_keyword = ai_name
+                        
             except Exception as e:
-                # 크롤링 오류 시 AI로 fallback
-                logging.error(f"[크롤링] 예외 발생: {e}, AI로 fallback")
+                # 모든 오류 시 URL 기반 AI로 fallback
+                logging.error(f"[크롤링] 예외 발생: {e}, URL 기반 AI로 fallback", exc_info=True)
                 ai_name = AIProductNameService.extract_name_from_url(search_keyword)
-                logging.info(f"[AI] AI 추출 상품명={ai_name}")
                 if ai_name:
                     search_keyword = ai_name
         
