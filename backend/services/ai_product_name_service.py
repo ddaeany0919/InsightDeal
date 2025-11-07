@@ -4,7 +4,7 @@ import json
 import logging
 
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent'
 
 class AIProductNameService:
     @staticmethod
