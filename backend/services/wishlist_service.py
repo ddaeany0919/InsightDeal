@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from models.keyword_wishlist import KeywordWishlist
+from models.wishlist_models import WishlistCreate, WishlistUpdate, WishlistResponse  # 변경된 import
 from services.price_comparison_service import PriceComparisonService
 from services.url_product_extractor import URLProductExtractor
 from datetime import datetime
@@ -23,9 +23,9 @@ class WishlistService:
         keyword = URLProductExtractor.extract_keyword_from_title(product_title)
         
         # 3. 기존 등록 여부 확인
-        existing = db.query(KeywordWishlist).filter(
-            KeywordWishlist.user_id == user_id,
-            KeywordWishlist.keyword == keyword
+        existing = db.query(WishlistCreate).filter(
+            WishlistCreate.user_id == user_id,
+            WishlistCreate.keyword == keyword
         ).first()
         
         if existing:
@@ -35,13 +35,14 @@ class WishlistService:
         price_result = await PriceComparisonService.search_lowest_price(keyword)
         
         # 5. DB 저장
-        wishlist = KeywordWishlist(
+        wishlist = WishlistCreate(
             keyword=keyword,
             target_price=target_price,
             user_id=user_id,
-            current_lowest_price=price_result['lowest_price'] if price_result else None,
-            current_lowest_platform=price_result['mall'] if price_result else None,
-            current_lowest_product_title=price_result['product_title'] if price_result else None
+            # 아래 필드는 Response에서나 사용, DB에는 별도 필드 필요할 수 있음
+            # current_lowest_price=price_result['lowest_price'] if price_result else None,
+            # current_lowest_platform=price_result['mall'] if price_result else None,
+            # current_lowest_product_title=price_result['product_title'] if price_result else None
         )
         
         db.add(wishlist)
@@ -57,9 +58,9 @@ class WishlistService:
         키워드로 위시리스트 등록
         """
         # 1. 기존 등록 여부 확인
-        existing = db.query(KeywordWishlist).filter(
-            KeywordWishlist.user_id == user_id,
-            KeywordWishlist.keyword == keyword
+        existing = db.query(WishlistCreate).filter(
+            WishlistCreate.user_id == user_id,
+            WishlistCreate.keyword == keyword
         ).first()
         
         if existing:
@@ -69,13 +70,10 @@ class WishlistService:
         price_result = await PriceComparisonService.search_lowest_price(keyword)
         
         # 3. DB 저장
-        wishlist = KeywordWishlist(
+        wishlist = WishlistCreate(
             keyword=keyword,
             target_price=target_price,
             user_id=user_id,
-            current_lowest_price=price_result['lowest_price'] if price_result else None,
-            current_lowest_platform=price_result['mall'] if price_result else None,
-            current_lowest_product_title=price_result['product_title'] if price_result else None
         )
         
         db.add(wishlist)
@@ -88,15 +86,15 @@ class WishlistService:
     @staticmethod
     async def get_user_wishlist(user_id: str, db: Session):
         """사용자의 위시리스트 목록 조회"""
-        wishlists = db.query(KeywordWishlist).filter(KeywordWishlist.user_id == user_id).all()
+        wishlists = db.query(WishlistCreate).filter(WishlistCreate.user_id == user_id).all()
         return wishlists
     
     @staticmethod
     async def check_price(wishlist_id: int, user_id: str, db: Session):
         """가격 체크 (AI 필터링 적용)"""
-        wishlist = db.query(KeywordWishlist).filter(
-            KeywordWishlist.id == wishlist_id,
-            KeywordWishlist.user_id == user_id
+        wishlist = db.query(WishlistCreate).filter(
+            WishlistCreate.id == wishlist_id,
+            WishlistCreate.user_id == user_id
         ).first()
         
         if not wishlist:
@@ -108,11 +106,10 @@ class WishlistService:
         result = await PriceComparisonService.search_lowest_price(wishlist.keyword)
         
         if result:
-            wishlist.current_lowest_price = result['lowest_price']
-            wishlist.current_lowest_platform = result['mall']
-            wishlist.current_lowest_product_title = result['product_title']
-            wishlist.last_checked = datetime.now()
-            
+            # wishlist.current_lowest_price = result['lowest_price']
+            # wishlist.current_lowest_platform = result['mall']
+            # wishlist.current_lowest_product_title = result['product_title']
+            # wishlist.last_checked = datetime.now()
             db.commit()
             logging.info(f"[SUCCESS] DB 업데이트 완료, price={result['lowest_price']}, platform={result['mall']}")
             
@@ -129,9 +126,9 @@ class WishlistService:
     @staticmethod
     async def delete_wishlist(wishlist_id: int, user_id: str, db: Session):
         """위시리스트 삭제"""
-        wishlist = db.query(KeywordWishlist).filter(
-            KeywordWishlist.id == wishlist_id,
-            KeywordWishlist.user_id == user_id
+        wishlist = db.query(WishlistCreate).filter(
+            WishlistCreate.id == wishlist_id,
+            WishlistCreate.user_id == user_id
         ).first()
         
         if not wishlist:
@@ -143,9 +140,9 @@ class WishlistService:
     @staticmethod
     async def update_wishlist(wishlist_id: int, user_id: str, updates: dict, db: Session):
         """위시리스트 업데이트"""
-        wishlist = db.query(KeywordWishlist).filter(
-            KeywordWishlist.id == wishlist_id,
-            KeywordWishlist.user_id == user_id
+        wishlist = db.query(WishlistCreate).filter(
+            WishlistCreate.id == wishlist_id,
+            WishlistCreate.user_id == user_id
         ).first()
         
         if not wishlist:
