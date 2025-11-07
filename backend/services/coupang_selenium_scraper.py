@@ -51,6 +51,37 @@ class CoupangSeleniumScraper(ProductScraperInterface):
         
         return driver
     
+    def _get_html_sync(self, url: str) -> Optional[str]:
+        """동기식 HTML 가져오기 (쓰레드풀에서 실행)"""
+        driver = None
+        try:
+            logging.info(f"[SELENIUM_HTML] HTML 가져오기 시작: {url}")
+            
+            driver = self._create_driver()
+            driver.get(url)
+            
+            # 페이지 로드 대기
+            wait = WebDriverWait(driver, 10)
+            wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            
+            # HTML 반환
+            html = driver.page_source
+            logging.info(f"[SELENIUM_HTML] HTML 크기: {len(html)} bytes")
+            return html
+            
+        except Exception as e:
+            logging.error(f"[SELENIUM_HTML] 에러: {str(e)}", exc_info=True)
+            return None
+        finally:
+            if driver:
+                driver.quit()
+    
+    async def get_html(self, url: str) -> Optional[str]:
+        """비동기 HTML 가져오기"""
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(self.executor, self._get_html_sync, url)
+        return result
+    
     def _scrape_sync(self, url: str) -> Optional[str]:
         """동기식 Selenium 크롤링 (쓰레드풀에서 실행)"""
         driver = None
