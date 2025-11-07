@@ -115,8 +115,8 @@ class DatabaseManager:
     def test_connection(self) -> bool:
         """데이터베이스 연결 테스트"""
         try:
-            with self.get_session_context() as session:
-                session.execute("SELECT 1")
+            with self.engine.connect() as conn:  # 변경된 부분
+                conn.execute("SELECT 1")
             logger.info("✅ 데이터베이스 연결 테스트 성공")
             return True
         except Exception as e:
