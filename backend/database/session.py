@@ -22,6 +22,8 @@ class DatabaseManager:
             "postgresql://insightdeal:password@localhost:5432/insightdeal"
         )
         
+        logger.info(f"📊 데이터베이스 연결 시도: {database_url.split('@')[1] if '@' in database_url else 'local'}")
+        
         self.engine = create_engine(
             database_url,
             poolclass=QueuePool,
@@ -77,6 +79,7 @@ class DatabaseManager:
         from backend.database.models import Base, Community
         
         try:
+            logger.info("🗄️ 데이터베이스 테이블 생성 시작...")
             # 모든 테이블 생성
             Base.metadata.create_all(self.engine)
             
@@ -126,7 +129,7 @@ db_manager = DatabaseManager()
 # FastAPI 의존성 주입을 위한 함수
 def get_db_session() -> Generator[Session, None, None]:
     """
-FastAPI Depends에서 사용할 데이터베이스 세션 제네레이터
+    FastAPI Depends에서 사용할 데이터베이스 세션 제네레이터
     
     Usage:
         from fastapi import Depends
@@ -149,7 +152,7 @@ FastAPI Depends에서 사용할 데이터베이스 세션 제네레이터
 # 스케줄러/스크래퍼를 위한 직접 세션 생성
 def create_db_session() -> Session:
     """
-스케줄러나 스스링 작업에서 사용할 단일 DB 세션
+    스케줄러나 백그라운드 작업에서 사용할 단일 DB 세션
     
     Usage:
         from backend.database.session import create_db_session
@@ -164,14 +167,19 @@ def create_db_session() -> Session:
 # 하위 호환성을 위한 alias
 SessionLocal = db_manager.SessionLocal
 engine = db_manager.engine
+get_db = get_db_session  # wishlist.py 등에서 사용하는 get_db import 오류 해결
 
 # 데이터베이스 사전 초기화 (import 시)
 if __name__ != "__main__":
     # 서버 시작 시 자동 초기화
-    if not db_manager.test_connection():
-        logger.warning("⚠️ 데이터베이스 연결에 실패했지만 계속 진행")
-    else:
-        db_manager.init_database()
+    try:
+        if not db_manager.test_connection():
+            logger.warning("⚠️ 데이터베이스 연결에 실패했지만 계속 진행")
+        else:
+            db_manager.init_database()
+    except Exception as e:
+        logger.error(f"❌ 데이터베이스 초기화 중 오류: {e}")
+        logger.warning("⚠️ 데이터베이스 오류가 발생했지만 서버는 계속 실행됩니다")
 
 # CLI 실행용
 if __name__ == "__main__":
