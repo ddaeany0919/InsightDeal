@@ -38,4 +38,5 @@ class WishlistResponse(BaseModel):
     updated_at: datetime
     last_checked: Optional[datetime]
     class Config:
+        orm_mode = True
         from_attributes = True
