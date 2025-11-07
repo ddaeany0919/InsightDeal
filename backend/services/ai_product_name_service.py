@@ -1,121 +1,90 @@
 import os
+import requests
+import json
 import logging
-import google.generativeai as genai
-from google.generativeai.types import GenerationConfig
-import re
 
-def is_url(text):
-    return text.startswith('http://') or text.startswith('https://')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
 
 class AIProductNameService:
     @staticmethod
-    def extract_name_from_html(html: str, url: str):
+    def judge_valid_products(keyword, items):
         """
-        HTML 내용을 Gemini에게 전달하여 정확한 상품명 추출
+        Gemini AI를 사용하여 상품이 정상인지 비정상인지 판단
+        
+        Args:
+            keyword: 사용자가 검색한 키워드
+            items: 판단할 상품 리스트 [{'index': 1, 'price': 10000, 'title': '...', 'mall': '...'}]
+            
+        Returns:
+            dict: {'1': '정상', '2': '비정상(낱개)', ...}
         """
-        api_key = os.getenv('GOOGLE_API_KEY')
-        if not api_key:
-            logging.error('[AI] GOOGLE_API_KEY 환경변수가 설정되지 않았습니다.')
-            return None
+        if not GOOGLE_API_KEY:
+            logging.error("[AI] GOOGLE_API_KEY가 설정되지 않았습니다. 모든 상품을 정상으로 처리합니다.")
+            return {str(item['index']): "정상" for item in items}
         
-        genai.configure(api_key=api_key)
-        generation_config = GenerationConfig(
-            temperature=0.0,
-            max_output_tokens=100,
-        )
-        model = genai.GenerativeModel('gemini-2.5-flash-lite-preview-09-2025', generation_config=generation_config)
-        
-        # HTML에서 불필요한 스크립트/스타일 제거
-        clean_html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL)
-        clean_html = re.sub(r'<style[^>]*>.*?</style>', '', clean_html, flags=re.DOTALL)
-        
-        # 처음 8000자만 전송 (Gemini 토큰 제한)
-        clean_html = clean_html[:8000]
-        
-        prompt = f"""[쿠팡 상품 페이지 HTML 분석]
+        prompt = f"""
+사용자가 검색한 키워드: '{keyword}'
 
-URL: {url}
+다음은 쇼핑몰 검색 결과입니다 (가격순).
+각 상품이 실제 완제품(정상)인지, 낱개/부품/증정/서비스류인지(비정상) 판단해주세요.
 
-HTML 내용:
-{clean_html}
+정상 상품의 예:
+- 실제 구매 가능한 정품, 세트, 신품
+- 사은품이 포함된 정품 (예: "갤럭시버즈3 + 케이스")
 
-위 HTML에서 정확한 상품명을 추출하세요.
+비정상 상품의 예:
+- 증정품만 단독으로 판매 (예: "폰 구매시 증정")
+- 약정/번호이동 상품 (예: "번호이동시 10원")
+- 낱개/부품 (예: "왼쪽 이어폰만", "배터리만")
+- 서비스 (예: "인쇄 서비스", "복사 서비스")
 
-요구사항:
-1. 브랜드명 + 모델명 + 주요 사양 포함
-2. 예: "삼성전자 갤럭시버즈3 그래파이트" (O)
-3. 예: "에어프라이어" (X - 너무 일반적)
-4. HTML에서 prod-buy-header__title, product-title 등의 태그를 우선 참고
-5. 최대 80자
-6. 부가 설명 없이 상품명만 출력
+결과는 JSON 형식으로 작성해주세요.
+key는 상품 번호(문자열), value는 '정상' 또는 '비정상(사유)'로 작성하세요.
 
-상품명:
+상품 목록:
 """
         
-        try:
-            response = model.generate_content(prompt)
-            txt = response.text.strip()
-            logging.info(f"[AI_HTML] Gemini response: {txt}")
-            
-            # 첫 번째 줄만 추출, 최대 80자
-            product_name = txt.split('\n')[0].strip()[:80]
-            
-            # 인용부호 제거
-            product_name = product_name.strip('"\'')
-            
-            if product_name and len(product_name) > 3:  # 3자 이상이어야 유효
-                logging.info(f"[AI_HTML] 추출 성공: {product_name}")
-                return product_name
-            else:
-                logging.warning(f"[AI_HTML] 유효하지 않은 상품명: {txt}")
-                return None
-                
-        except Exception as e:
-            logging.error(f"[AI_HTML] Gemini 호출 오류: {e}", exc_info=True)
-            return None
-    
-    @staticmethod
-    def extract_name_from_url(url: str):
-        """
-        URL만으로 상품명 추출 (fallback 용도)
-        """
-        api_key = os.getenv('GOOGLE_API_KEY')
-        if not api_key:
-            logging.error('[AI] GOOGLE_API_KEY 환경변수가 설정되지 않았습니다.')
-            return None
+        for item in items:
+            prompt += f"{item['index']}. {item['price']:,}원 - {item['title']} ({item['mall']})\n"
         
-        genai.configure(api_key=api_key)
-        generation_config = GenerationConfig(
-            temperature=0.0,
-            max_output_tokens=512,
-        )
-        model = genai.GenerativeModel('gemini-2.5-flash-lite-preview-09-2025', generation_config=generation_config)
+        prompt += "\nJSON 형식으로만 답변해주세요. 예: {\"1\": \"정상\", \"2\": \"비정상(낱개)\", ...}\n"
         
-        prompt = f"""다음 쿠팡 상품 URL을 분석하여 정확한 상품명을 추출하세요.
-
-URL: {url}
-
-요구사항:
-1. 브랜드명 + 모델명 포함
-2. 예: "삼성전자 갤럭시버즈3"
-3. 부가 설명 없이 상품명만
-4. 최대 40자
-
-상품명:
-"""
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
+        headers = {
+            "Content-Type": "application/json"
+        }
         
         try:
-            response = model.generate_content(prompt)
-            txt = response.text.strip()
-            logging.info(f"[AI] Gemini response: {txt}")
+            url = f"{GEMINI_ENDPOINT}?key={GOOGLE_API_KEY}"
+            logging.info(f"[AI] Gemini API 호출 중... (상품 {len(items)}개)")
             
-            # 최대 40자, 줄바꿈, 부가설명 등 모두 제거
-            product_name = txt.split('\n')[0].strip()[:40]
-            product_name = product_name.strip('"\'')
+            response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
             
-            if product_name:
-                return product_name
+            if response.status_code != 200:
+                logging.error(f"[AI] Gemini API 오류: {response.status_code} - {response.text}")
+                return {str(item['index']): "정상" for item in items}
+            
+            content = response.json()
+            text = content['candidates'][0]['content']['parts'][0]['text']
+            logging.info(f"[AI] Gemini 응답: {text[:200]}...")
+            
+            # JSON 부분만 추출
+            start = text.find('{')
+            end = text.rfind('}')
+            
+            if start == -1 or end == -1:
+                logging.error("[AI] JSON을 찾을 수 없습니다. 모든 상품을 정상으로 처리합니다.")
+                return {str(item['index']): "정상" for item in items}
+            
+            json_str = text[start:end+1]
+            judgment = json.loads(json_str)
+            
+            logging.info(f"[AI] 판단 결과: {judgment}")
+            return judgment
+            
         except Exception as e:
-            logging.error(f"[AI] Gemini 호출 오류: {e}")
-        
-        return None
+            logging.error(f"[AI] 예외 발생: {str(e)}", exc_info=True)
+            return {str(item['index']): "정상" for item in items}
