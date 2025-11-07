@@ -1,85 +1,159 @@
-from database.models import KeywordWishlist
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, desc
-from models.wishlist_models import WishlistCreate, WishlistUpdate, WishlistResponse
+from models.keyword_wishlist import KeywordWishlist
 from services.price_comparison_service import PriceComparisonService
+from services.url_product_extractor import URLProductExtractor
+from datetime import datetime
 import logging
-from urllib.parse import urlparse, parse_qs
-
-def is_naver_url(text: str) -> bool:
-    return text.startswith('https://search.shopping.naver.com/')
-
-def extract_product_name_from_naver_url(url: str) -> str:
-    parsed = urlparse(url)
-    query_params = parse_qs(parsed.query)
-    if 'query' in query_params:
-        return query_params['query'][0]
-    return url  # Fallback: 그냥 원문 반환
 
 class WishlistService:
     @staticmethod
-    async def get_wishlist(user_id: str, active_only: bool, db: Session):
-        query = db.query(KeywordWishlist).filter(KeywordWishlist.user_id==user_id)
-        if active_only:
-            query = query.filter(KeywordWishlist.is_active==True)
-        wishlists = query.order_by(desc(KeywordWishlist.created_at)).all()
-        return [WishlistResponse.from_orm(w) for w in wishlists]
+    async def create_from_url(product_url: str, target_price: int, user_id: str, db: Session):
+        """
+        URL로 위시리스트 등록
+        1. URL에서 상품명 추출
+        2. 키워드로 최저가 검색
+        3. DB 저장
+        """
+        # 1. URL에서 상품명 추출
+        product_title = URLProductExtractor.extract_product_name(product_url)
+        if not product_title:
+            raise Exception("상품명을 추출할 수 없습니다")
+        
+        # 2. 키워드 추출
+        keyword = URLProductExtractor.extract_keyword_from_title(product_title)
+        
+        # 3. 기존 등록 여부 확인
+        existing = db.query(KeywordWishlist).filter(
+            KeywordWishlist.user_id == user_id,
+            KeywordWishlist.keyword == keyword
+        ).first()
+        
+        if existing:
+            raise Exception(f"이미 '{keyword}' 관심상품이 등록되어 있습니다")
+        
+        # 4. 최저가 검색 (AI 필터링)
+        price_result = await PriceComparisonService.search_lowest_price(keyword)
+        
+        # 5. DB 저장
+        wishlist = KeywordWishlist(
+            keyword=keyword,
+            target_price=target_price,
+            user_id=user_id,
+            current_lowest_price=price_result['lowest_price'] if price_result else None,
+            current_lowest_platform=price_result['mall'] if price_result else None,
+            current_lowest_product_title=price_result['product_title'] if price_result else None
+        )
+        
+        db.add(wishlist)
+        db.commit()
+        db.refresh(wishlist)
+        
+        logging.info(f"[WISHLIST] URL로 등록 성공: {keyword}")
+        return wishlist
     
     @staticmethod
-    async def create_wishlist(wishlist: WishlistCreate, db: Session):
-        existing = db.query(KeywordWishlist).filter(and_(KeywordWishlist.user_id==wishlist.user_id, KeywordWishlist.keyword==wishlist.keyword)).first()
+    async def create_from_keyword(keyword: str, target_price: int, user_id: str, db: Session):
+        """
+        키워드로 위시리스트 등록
+        """
+        # 1. 기존 등록 여부 확인
+        existing = db.query(KeywordWishlist).filter(
+            KeywordWishlist.user_id == user_id,
+            KeywordWishlist.keyword == keyword
+        ).first()
+        
         if existing:
-            raise Exception(f"이미 '{wishlist.keyword}' 관심상품이 등록되어 있습니다")
-        db_wishlist = KeywordWishlist(
-            user_id=wishlist.user_id,
-            keyword=wishlist.keyword,
-            target_price=wishlist.target_price
+            raise Exception(f"이미 '{keyword}' 관심상품이 등록되어 있습니다")
+        
+        # 2. 최저가 검색 (AI 필터링)
+        price_result = await PriceComparisonService.search_lowest_price(keyword)
+        
+        # 3. DB 저장
+        wishlist = KeywordWishlist(
+            keyword=keyword,
+            target_price=target_price,
+            user_id=user_id,
+            current_lowest_price=price_result['lowest_price'] if price_result else None,
+            current_lowest_platform=price_result['mall'] if price_result else None,
+            current_lowest_product_title=price_result['product_title'] if price_result else None
         )
-        db.add(db_wishlist)
+        
+        db.add(wishlist)
         db.commit()
-        db.refresh(db_wishlist)
-        return WishlistResponse.from_orm(db_wishlist)
-
+        db.refresh(wishlist)
+        
+        logging.info(f"[WISHLIST] 키워드로 등록 성공: {keyword}")
+        return wishlist
+    
     @staticmethod
-    async def delete_wishlist(wishlist_id: int, user_id: str, db: Session):
-        w = db.query(KeywordWishlist).filter(and_(KeywordWishlist.id==wishlist_id, KeywordWishlist.user_id==user_id)).first()
-        if not w:
-            raise Exception("관심상품을 찾을 수 없습니다")
-        db.delete(w)
-        db.commit()
-        return {"message":"삭제되었습니다"}
-
+    async def get_user_wishlist(user_id: str, db: Session):
+        """사용자의 위시리스트 목록 조회"""
+        wishlists = db.query(KeywordWishlist).filter(KeywordWishlist.user_id == user_id).all()
+        return wishlists
+    
     @staticmethod
     async def check_price(wishlist_id: int, user_id: str, db: Session):
-        w = db.query(KeywordWishlist).filter(and_(KeywordWishlist.id==wishlist_id, KeywordWishlist.user_id==user_id)).first()
-        if not w:
-            raise Exception("관심상품을 찾을 수 없습니다")
+        """가격 체크 (AI 필터링 적용)"""
+        wishlist = db.query(KeywordWishlist).filter(
+            KeywordWishlist.id == wishlist_id,
+            KeywordWishlist.user_id == user_id
+        ).first()
         
-        search_keyword = w.keyword
-        logging.info(f"[PRICE] check_price userid={user_id}, wishlist_id={wishlist_id}, keyword={search_keyword}")
+        if not wishlist:
+            raise Exception("위시리스트를 찾을 수 없습니다")
         
-        if is_naver_url(search_keyword):
-            search_keyword = extract_product_name_from_naver_url(search_keyword)
-            logging.info(f"[NAVER_URL] URL에서 상품명 추출: {search_keyword}")
+        logging.info(f"[PRICE] check_price userid={user_id}, wishlist_id={wishlist_id}, keyword={wishlist.keyword}")
         
-        # 네이버 최저가 검색만
-        result = await PriceComparisonService.search_lowest_price(search_keyword)
-        logging.info(f"[NAVER] 최저가 검색 result={result}")
+        # AI 필터링 최저가 검색
+        result = await PriceComparisonService.search_lowest_price(wishlist.keyword)
         
-        if not result:
-            logging.error(f"[FAIL] 가격 검색 실패, 최종 검색어={search_keyword}")
-            return {"message": "가격 검색 실패: 상품명을 확인해주세요."}
+        if result:
+            wishlist.current_lowest_price = result['lowest_price']
+            wishlist.current_lowest_platform = result['mall']
+            wishlist.current_lowest_product_title = result['product_title']
+            wishlist.last_checked = datetime.now()
+            
+            db.commit()
+            logging.info(f"[SUCCESS] DB 업데이트 완료, price={result['lowest_price']}, platform={result['mall']}")
+            
+            return {
+                "message": "가격 체크 완료",
+                "lowest_price": result['lowest_price'],
+                "mall": result['mall'],
+                "product_url": result['product_url'],
+                "title": result['product_title']
+            }
+        else:
+            return {"message": "최저가를 찾을 수 없습니다"}
+    
+    @staticmethod
+    async def delete_wishlist(wishlist_id: int, user_id: str, db: Session):
+        """위시리스트 삭제"""
+        wishlist = db.query(KeywordWishlist).filter(
+            KeywordWishlist.id == wishlist_id,
+            KeywordWishlist.user_id == user_id
+        ).first()
         
-        w.current_lowest_price = result["lowest_price"]
-        w.current_lowest_platform = result["mall"]
-        w.current_lowest_product_title = result["product_title"]
-        w.last_checked = None  # 실전 사용시 datetime.now()로!
+        if not wishlist:
+            raise Exception("위시리스트를 찾을 수 없습니다")
+        
+        db.delete(wishlist)
         db.commit()
-        logging.info(f"[SUCCESS] DB 업데이트 완료, price={result['lowest_price']}, platform={result['mall']}")
-        return {
-            "message": "가격 체크 완료",
-            "lowest_price": result["lowest_price"],
-            "mall": result["mall"],
-            "product_url": result["product_url"],
-            "title": result["product_title"]
-        }
+    
+    @staticmethod
+    async def update_wishlist(wishlist_id: int, user_id: str, updates: dict, db: Session):
+        """위시리스트 업데이트"""
+        wishlist = db.query(KeywordWishlist).filter(
+            KeywordWishlist.id == wishlist_id,
+            KeywordWishlist.user_id == user_id
+        ).first()
+        
+        if not wishlist:
+            raise Exception("위시리스트를 찾을 수 없습니다")
+        
+        for key, value in updates.items():
+            setattr(wishlist, key, value)
+        
+        db.commit()
+        db.refresh(wishlist)
+        return wishlist
