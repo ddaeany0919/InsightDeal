@@ -4,6 +4,17 @@ from sqlalchemy import and_, desc
 from models.wishlist_models import WishlistCreate, WishlistUpdate, WishlistResponse
 from services.price_comparison_service import PriceComparisonService
 import logging
+from urllib.parse import urlparse, parse_qs
+
+def is_naver_url(text: str) -> bool:
+    return text.startswith('https://search.shopping.naver.com/')
+
+def extract_product_name_from_naver_url(url: str) -> str:
+    parsed = urlparse(url)
+    query_params = parse_qs(parsed.query)
+    if 'query' in query_params:
+        return query_params['query'][0]
+    return url  # Fallback: 그냥 원문 반환
 
 class WishlistService:
     @staticmethod
@@ -44,8 +55,12 @@ class WishlistService:
         if not w:
             raise Exception("관심상품을 찾을 수 없습니다")
         
-        search_keyword = w.keyword  # 이제 상품명이 들어갑니다!
+        search_keyword = w.keyword
         logging.info(f"[PRICE] check_price userid={user_id}, wishlist_id={wishlist_id}, keyword={search_keyword}")
+        
+        if is_naver_url(search_keyword):
+            search_keyword = extract_product_name_from_naver_url(search_keyword)
+            logging.info(f"[NAVER_URL] URL에서 상품명 추출: {search_keyword}")
         
         # 네이버 최저가 검색만
         result = await PriceComparisonService.search_lowest_price(search_keyword)
@@ -55,15 +70,12 @@ class WishlistService:
             logging.error(f"[FAIL] 가격 검색 실패, 최종 검색어={search_keyword}")
             return {"message": "가격 검색 실패: 상품명을 확인해주세요."}
         
-        # DB에 최저가 정보 업데이트
         w.current_lowest_price = result["lowest_price"]
         w.current_lowest_platform = result["mall"]
         w.current_lowest_product_title = result["product_title"]
         w.last_checked = None  # 실전 사용시 datetime.now()로!
         db.commit()
-        
         logging.info(f"[SUCCESS] DB 업데이트 완료, price={result['lowest_price']}, platform={result['mall']}")
-        
         return {
             "message": "가격 체크 완료",
             "lowest_price": result["lowest_price"],
