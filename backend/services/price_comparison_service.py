@@ -14,21 +14,15 @@ class PriceComparisonService:
         
         # 상위 10개만 AI에게 전달
         ai_items = [
-            {
-                'index': idx + 1,
-                'price': item['price'],
-                'title': item['title'],
-                'mall': item['mall']
-            }
+            {'index': idx + 1, 'price': item['price'], 'title': item['title'], 'mall': item['mall']}
             for idx, item in enumerate(products_sorted[:10])
         ]
         
         judgment = AIProductNameService.judge_valid_products(keyword, ai_items)
         logging.info(f"[AI_RESULT] AI 판단 결과: {judgment}")
         
-        # AI가 정상이라고 판단한 상품 중 최저가 선택
-        # judgment의 key는 문자열이므로 int로 변환
-        valid_indices = [int(i) for i, label in judgment.items() if "정상" in label]
+        # '정상' 만 통과시키도록 완전히 고정
+        valid_indices = [int(i) for i, label in judgment.items() if label.strip() == "정상"]
         logging.info(f"[AI_RESULT] 정상 상품 인덱스: {valid_indices}")
         
         valid_products = [products_sorted[i - 1] for i in valid_indices]
