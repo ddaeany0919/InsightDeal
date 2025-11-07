@@ -43,11 +43,12 @@ class WishlistService:
         if not w:
             raise Exception("관심상품을 찾을 수 없습니다")
         result = await PriceComparisonService.search_lowest_price(w.keyword)
-        if result:
-            # DB에 최저가 정보 업데이트
-            w.current_lowest_price = result["lowest_price"]
-            w.current_lowest_platform = result["mall"]
-            w.current_lowest_product_title = result["product_title"]
-            w.last_checked = None  # 실전 사용시 datetime.now()로!
-            db.commit()
+        if not result:
+            return {"message": "가격 검색 실패: 상품명 또는 링크를 확인해주세요."}
+        # DB에 최저가 정보 업데이트
+        w.current_lowest_price = result["lowest_price"]
+        w.current_lowest_platform = result["mall"]
+        w.current_lowest_product_title = result["product_title"]
+        w.last_checked = None  # 실전 사용시 datetime.now()로!
+        db.commit()
         return {"message": "가격 체크 완료", "lowest_price": result["lowest_price"], "mall": result["mall"], "product_url": result["product_url"], "title": result["product_title"]}
