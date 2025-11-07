@@ -88,3 +88,48 @@ key는 상품 번호(문자열), value는 '정상' 또는 '비정상(사유)'로
         except Exception as e:
             logging.error(f"[AI] 예외 발생: {str(e)}", exc_info=True)
             return {str(item['index']): "정상" for item in items}
+    
+    @staticmethod
+    def extract_core_keyword(product_title: str) -> str:
+        """
+        상품명에서 핵심 키워드만 추출 (Gemini AI 활용)
+        예: '삼성전자 갤럭시버즈3 프로 SM-R630 정품 국내정식 새상품' -> '갤럽시버즈3 프로'
+        """
+        if not GOOGLE_API_KEY:
+            logging.error("[AI] GOOGLE_API_KEY가 설정되지 않았습니다.")
+            return product_title[:30]  # 기본: 앞 30자
+        
+        prompt = f"""
+다음 상품명에서 핵심 키워드만 추출해주세요.
+불필요한 단어(새상품, 정품, 국내정식, SM-XXX, 색상, 용량 등)는 제거하고, 
+제품명과 모델명만 간결하게 추출해주세요.
+
+상품명: {product_title}
+
+키워드만 텍스트로 답변하세요. JSON 형식이나 다른 설명 없이 키워드만 반환하세요.
+"""
+        
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            url = f"{GEMINI_ENDPOINT}?key={GOOGLE_API_KEY}"
+            response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
+            
+            if response.status_code != 200:
+                logging.error(f"[AI_KEYWORD] Gemini API 오류: {response.status_code}")
+                return product_title[:30]
+            
+            content = response.json()
+            keyword = content['candidates'][0]['content']['parts'][0]['text'].strip()
+            
+            logging.info(f"[AI_KEYWORD] 추출 결과: '{product_title}' -> '{keyword}'")
+            return keyword
+            
+        except Exception as e:
+            logging.error(f"[AI_KEYWORD] 예외 발생: {str(e)}")
+            return product_title[:30]
