@@ -1,5 +1,6 @@
 from scrapers.naver_shopping import NaverShoppingScraper
 from services.ai_product_name_service import AIProductNameService
+import logging
 
 class PriceComparisonService:
     @staticmethod
@@ -23,13 +24,21 @@ class PriceComparisonService:
         ]
         
         judgment = AIProductNameService.judge_valid_products(keyword, ai_items)
+        logging.info(f"[AI_RESULT] AI 판단 결과: {judgment}")
+        
         # AI가 정상이라고 판단한 상품 중 최저가 선택
-        valid_indices = [i for i, label in judgment.items() if "정상" in label]
+        # judgment의 key는 문자열이므로 int로 변환
+        valid_indices = [int(i) for i, label in judgment.items() if "정상" in label]
+        logging.info(f"[AI_RESULT] 정상 상품 인덱스: {valid_indices}")
         
         valid_products = [products_sorted[i - 1] for i in valid_indices]
         if not valid_products:
+            logging.warning("[AI_RESULT] 정상 상품이 없습니다. None 반환")
             return None
+        
         lowest = min(valid_products, key=lambda x: x['price'])
+        logging.info(f"[AI_RESULT] 최종 최저가 상품: {lowest['price']}원 - {lowest['title']}")
+        
         return {
             "product_title": lowest['title'],
             "lowest_price": lowest['price'],
