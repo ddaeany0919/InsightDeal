@@ -19,3 +19,9 @@ async def create_wishlist(wishlist: WishlistCreate, db: Session = Depends(get_db
 @router.delete("/{wishlist_id}")
 async def delete_wishlist(wishlist_id: int, user_id: str = Query(default="default"), db: Session = Depends(get_db_session)):
     return await WishlistService.delete_wishlist(wishlist_id, user_id, db)
+
+@router.post("/{wishlist_id}/check-price")
+async def check_price(wishlist_id: int, user_id: str = Query(default="default"), db: Session = Depends(get_db_session)):
+    # 실제 서비스 연결 (간단 스텁 구현): 최저가를 확인하고 DB 업데이트
+    result = await WishlistService.check_price(wishlist_id, user_id, db)
+    return result
