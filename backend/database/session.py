@@ -76,15 +76,15 @@ class DatabaseManager:
     
     def init_database(self):
         """데이터베이스 초기화 (테이블 생성)"""
-        from database.models import Base, Community  # 경로 수정
-        
+        from database.models import Base, Community
         try:
             logger.info("🗄️ 데이터베이스 테이블 생성 시작...")
             # 모든 테이블 생성
             Base.metadata.create_all(self.engine)
             
             # 기본 커뮤니티 데이터 삽입
-            with self.get_session_context() as session:
+            session = self.get_session()  # 컨텍스트 매니저 대신 직접 생성/닫기
+            try:
                 communities = [
                     Community(name="뽐뿌", base_url="https://www.ppomppu.co.kr"),
                     Community(name="루리웹", base_url="https://bbs.ruliweb.com"),
@@ -93,21 +93,18 @@ class DatabaseManager:
                     Community(name="퀘이사존", base_url="https://quasarzone.com"),
                     Community(name="페던코리아", base_url="https://www.fmkorea.com")
                 ]
-                
                 for community in communities:
                     existing = session.query(Community).filter(
                         Community.name == community.name
                     ).first()
-                    
                     if not existing:
                         session.add(community)
                         logger.info(f"✅ 커뮤니티 '{community.name}' 추가")
-                
                 session.commit()
-            
+            finally:
+                session.close()
             logger.info("✅ 데이터베이스 초기화 완료")
             return True
-            
         except Exception as e:
             logger.error(f"❌ 데이터베이스 초기화 실패: {e}")
             return False
