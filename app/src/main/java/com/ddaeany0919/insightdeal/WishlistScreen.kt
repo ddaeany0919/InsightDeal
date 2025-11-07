@@ -29,7 +29,6 @@ suspend fun SnackbarHostState.offerUndo(
         message = message,
         actionLabel = actionLabel
     )
-    
     return if (result == SnackbarResult.ActionPerformed) {
         onUndo()
         true
@@ -89,16 +88,18 @@ fun EmptyWishlistState(
 fun AddWishlistDialog(
     showDialog: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (String, Int) -> Unit
+    onConfirm: (String, String, Int) -> Unit
 ) {
     var keyword by remember { mutableStateOf("") }
+    var productUrl by remember { mutableStateOf("") }
     var targetPrice by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
-    
+
     if (showDialog) {
         AlertDialog(
             onDismissRequest = {
                 keyword = ""
+                productUrl = ""
                 targetPrice = ""
                 isError = false
                 onDismiss()
@@ -109,15 +110,22 @@ fun AddWishlistDialog(
                     OutlinedTextField(
                         value = keyword,
                         onValueChange = { keyword = it },
-                        label = { Text("상품 키워드") },
+                        label = { Text("상품명 또는 키워드") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = productUrl,
+                        onValueChange = { productUrl = it },
+                        label = { Text("상품 링크(URL)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = targetPrice,
                         onValueChange = { value ->
-                            // 숫자만 입력 받도록 필터링
                             if (value.all { it.isDigit() }) {
                                 targetPrice = value
                                 isError = false
@@ -137,9 +145,10 @@ fun AddWishlistDialog(
                 TextButton(
                     onClick = {
                         val price = targetPrice.toIntOrNull()
-                        if (keyword.isNotBlank() && price != null && price > 0) {
-                            onConfirm(keyword, price)
+                        if (keyword.isNotBlank() && productUrl.isNotBlank() && price != null && price > 0) {
+                            onConfirm(keyword, productUrl, price)
                             keyword = ""
+                            productUrl = ""
                             targetPrice = ""
                             isError = false
                         } else {
@@ -154,6 +163,7 @@ fun AddWishlistDialog(
                 TextButton(
                     onClick = {
                         keyword = ""
+                        productUrl = ""
                         targetPrice = ""
                         isError = false
                         onDismiss()
@@ -166,7 +176,6 @@ fun AddWishlistDialog(
     }
 }
 
-// 메인 위시리스트 스크린
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WishlistScreen(
@@ -176,7 +185,7 @@ fun WishlistScreen(
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showDialog by remember { mutableStateOf(false) }
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -192,7 +201,6 @@ fun WishlistScreen(
             }
         }
     ) { paddingValues ->
-        // Smart cast 문제 해결을 위해 지역 변수에 할당
         val currentState = uiState
         when (currentState) {
             is WishlistState.Loading -> {
@@ -263,16 +271,15 @@ fun WishlistScreen(
                 }
             }
         }
-        
         AddWishlistDialog(
             showDialog = showDialog,
             onDismiss = { showDialog = false },
-            onConfirm = { keyword: String, targetPrice: Int ->
-                viewModel.addItem(keyword, targetPrice)
+            onConfirm = { keyword: String, productUrl: String, targetPrice: Int ->
+                viewModel.addItem(keyword, productUrl, targetPrice)
                 showDialog = false
                 scope.launch {
                     snackbarHostState.showSnackbar(
-                        message = "$keyword 을(를) 위시리스트에 추가했습니다"
+                        message = "$keyword ($productUrl) 위시리스트에 추가됨"
                     )
                 }
             }
