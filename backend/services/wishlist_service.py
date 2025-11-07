@@ -2,6 +2,7 @@ from database.models import KeywordWishlist
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc
 from models.wishlist_models import WishlistCreate, WishlistUpdate, WishlistResponse
+from services.price_comparison_service import PriceComparisonService
 
 class WishlistService:
     @staticmethod
@@ -41,6 +42,12 @@ class WishlistService:
         w = db.query(KeywordWishlist).filter(and_(KeywordWishlist.id==wishlist_id, KeywordWishlist.user_id==user_id)).first()
         if not w:
             raise Exception("관심상품을 찾을 수 없습니다")
-        # 실제 가격 체크(크롤러/API/AI 등) 로직은 추후 구현, 여기선 단순 확인
-        # 예: w.current_lowest_price 업데이트 가능
-        return {"message": "가격 체크 완료", "wishlist_id": wishlist_id, "keyword": w.keyword}
+        result = await PriceComparisonService.search_lowest_price(w.keyword)
+        if result:
+            # DB에 최저가 정보 업데이트
+            w.current_lowest_price = result["lowest_price"]
+            w.current_lowest_platform = result["mall"]
+            w.current_lowest_product_title = result["product_title"]
+            w.last_checked = None  # 실전 사용시 datetime.now()로!
+            db.commit()
+        return {"message": "가격 체크 완료", "lowest_price": result["lowest_price"], "mall": result["mall"], "product_url": result["product_url"], "title": result["product_title"]}
