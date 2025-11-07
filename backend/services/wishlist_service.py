@@ -35,3 +35,12 @@ class WishlistService:
         db.delete(w)
         db.commit()
         return {"message":"삭제되었습니다"}
+
+    @staticmethod
+    async def check_price(wishlist_id: int, user_id: str, db: Session):
+        w = db.query(KeywordWishlist).filter(and_(KeywordWishlist.id==wishlist_id, KeywordWishlist.user_id==user_id)).first()
+        if not w:
+            raise Exception("관심상품을 찾을 수 없습니다")
+        # 실제 가격 체크(크롤러/API/AI 등) 로직은 추후 구현, 여기선 단순 확인
+        # 예: w.current_lowest_price 업데이트 가능
+        return {"message": "가격 체크 완료", "wishlist_id": wishlist_id, "keyword": w.keyword}
