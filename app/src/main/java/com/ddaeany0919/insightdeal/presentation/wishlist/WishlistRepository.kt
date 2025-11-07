@@ -9,12 +9,6 @@ import retrofit2.HttpException
 import java.io.IOException
 import java.net.SocketTimeoutException
 
-/**
- * Production-ready WishlistRepository
- * - Single Retrofit path for ALL network calls (no OkHttp direct)
- * - No hardcoded URLs; uses AppConfig/NetworkConfig
- * - User ID will be provided by Auth layer later (OAuth/SNS login)
- */
 class WishlistRepository(
     private val apiServiceProvider: suspend () -> WishlistApiService = {
         WishlistApiService.createWithStableConfig()
@@ -37,23 +31,10 @@ class WishlistRepository(
         }
     }
 
-    suspend fun createWishlist(keyword: String, targetPrice: Int, userId: String) = withContext(Dispatchers.IO) {
-        Log.d(TAG, "createWishlist: start keyword=$keyword target=$targetPrice userId=$userId")
+    suspend fun createWishlist(keyword: String, productUrl: String, targetPrice: Int, userId: String) = withContext(Dispatchers.IO) {
+        Log.d(TAG, "createWishlist: start keyword=$keyword url=$productUrl target=$targetPrice userId=$userId")
         executeWithRetry("createWishlist") {
-            service().createWishlist(WishlistCreateRequest(keyword, targetPrice, userId)).toWishlistItem()
-        }
-    }
-
-    suspend fun addFromLink(url: String, targetPrice: Int, userId: String) = withContext(Dispatchers.IO) {
-        Log.d(TAG, "addFromLink: start url=$url target=$targetPrice userId=$userId")
-        executeWithRetry("addFromLink") {
-            // Phase 2: use real endpoint
-            // val res = service().addFromLink(LinkAddRequest(url, targetPrice, userId))
-            // res.toWishlistItem()
-
-            // Phase 1 fallback: convert link→name then create
-            val productName = extractProductNameFromUrl(url)
-            service().createWishlist(WishlistCreateRequest(productName, targetPrice, userId)).toWishlistItem()
+            service().createWishlist(WishlistCreateRequest(keyword, productUrl, targetPrice, userId)).toWishlistItem()
         }
     }
 
@@ -91,16 +72,5 @@ class WishlistRepository(
         throw last ?: Exception("$name failed")
     }
 
-    private fun extractProductNameFromUrl(url: String): String {
-        return try {
-            val m = Regex("""/vp/products/(\d+)""").find(url)
-            if (m != null) "쿠팡 상품 (${m.groupValues[1]})" else when {
-                url.contains("11st.co.kr") -> "11번가 상품"
-                url.contains("shopping.naver.com") -> "네이버 쇼핑 상품"
-                else -> "링크로 추가된 상품"
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "extractProductNameFromUrl fail", e); "링크로 추가된 상품"
-        }
-    }
+    // Phase-out legacy link-only add: now handled by dialog and ViewModel
 }
