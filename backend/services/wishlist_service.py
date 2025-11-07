@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc
 from models.wishlist_models import WishlistCreate, WishlistUpdate, WishlistResponse
 from services.price_comparison_service import PriceComparisonService
+from services.ai_product_name_service import AIProductNameService, is_url
 
 class WishlistService:
     @staticmethod
@@ -42,13 +43,19 @@ class WishlistService:
         w = db.query(KeywordWishlist).filter(and_(KeywordWishlist.id==wishlist_id, KeywordWishlist.user_id==user_id)).first()
         if not w:
             raise Exception("관심상품을 찾을 수 없습니다")
-        result = await PriceComparisonService.search_lowest_price(w.keyword)
+        search_keyword = w.keyword
+        # 1. 링크이면 AI로 상품명 추출
+        if is_url(search_keyword):
+            ai_name = AIProductNameService.extract_name_from_url(search_keyword)
+            if ai_name:
+                search_keyword = ai_name
+        result = await PriceComparisonService.search_lowest_price(search_keyword)
         if not result:
             return {"message": "가격 검색 실패: 상품명 또는 링크를 확인해주세요."}
         # DB에 최저가 정보 업데이트
         w.current_lowest_price = result["lowest_price"]
         w.current_lowest_platform = result["mall"]
         w.current_lowest_product_title = result["product_title"]
-        w.last_checked = None  # 실전 사용시 datetime.now()로!
+        w.last_checked = None # 실전 사용시 datetime.now()로!
         db.commit()
         return {"message": "가격 체크 완료", "lowest_price": result["lowest_price"], "mall": result["mall"], "product_url": result["product_url"], "title": result["product_title"]}
