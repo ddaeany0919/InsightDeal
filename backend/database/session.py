@@ -76,7 +76,7 @@ class DatabaseManager:
     
     def init_database(self):
         """데이터베이스 초기화 (테이블 생성)"""
-        from backend.database.models import Base, Community
+        from database.models import Base, Community  # 경로 수정
         
         try:
             logger.info("🗄️ 데이터베이스 테이블 생성 시작...")
@@ -115,7 +115,7 @@ class DatabaseManager:
     def test_connection(self) -> bool:
         """데이터베이스 연결 테스트"""
         try:
-            with self.engine.connect() as conn:  # 변경된 부분
+            with self.engine.connect() as conn:
                 conn.execute("SELECT 1")
             logger.info("✅ 데이터베이스 연결 테스트 성공")
             return True
