@@ -13,7 +13,6 @@ private const val TAG_VM = "WishlistVM"
 
 class WishlistViewModel(
     private val wishlistRepository: WishlistRepository = WishlistRepository(),
-    // Remove user settings dependency - use device-based ID until OAuth login
     private val userIdProvider: () -> String = { 
         "device_${android.os.Build.SERIAL.take(8)}_${UUID.randomUUID().toString().take(8)}"
     }
@@ -21,9 +20,6 @@ class WishlistViewModel(
 
     private val _uiState = MutableStateFlow<WishlistState>(WishlistState.Loading)
     val uiState: StateFlow<WishlistState> = _uiState.asStateFlow()
-    
-    // REMOVED: HttpWishlistHelper - all network calls now go through Repository
-    // private val httpHelper = HttpWishlistHelper()
 
     fun loadWishlist() {
         viewModelScope.launch {
@@ -41,12 +37,12 @@ class WishlistViewModel(
         }
     }
 
-    fun addItem(keyword: String, targetPrice: Int) {
+    fun addItem(keyword: String, productUrl: String, targetPrice: Int) {
         viewModelScope.launch {
             val userId = userIdProvider()
-            Log.d(TAG_VM, "addItem: start keyword=$keyword target=$targetPrice userId=$userId")
+            Log.d(TAG_VM, "addItem: start keyword=$keyword productUrl=$productUrl target=$targetPrice userId=$userId")
             try {
-                val created = wishlistRepository.createWishlist(keyword.trim(), targetPrice, userId)
+                val created = wishlistRepository.createWishlist(keyword.trim(), productUrl, targetPrice, userId)
                 Log.d(TAG_VM, "addItem: success id=${created.id} for userId=$userId")
                 loadWishlist()
             } catch (e: Exception) {
@@ -71,16 +67,12 @@ class WishlistViewModel(
         }
     }
 
-    /**
-     * 삭제된 아이템을 복원합니다.
-     * 실제로는 동일한 키워드와 목표가격으로 새 아이템을 생성합니다.
-     */
     fun restoreItem(item: WishlistItem) {
         viewModelScope.launch {
             val userId = userIdProvider()
             Log.d(TAG_VM, "restoreItem: start keyword=${item.keyword} target=${item.targetPrice} userId=$userId")
             try {
-                val restored = wishlistRepository.createWishlist(item.keyword, item.targetPrice, userId)
+                val restored = wishlistRepository.createWishlist(item.keyword, "", item.targetPrice, userId)
                 Log.d(TAG_VM, "restoreItem: success new_id=${restored.id} for userId=$userId")
                 loadWishlist()
             } catch (e: Exception) {
@@ -101,26 +93,6 @@ class WishlistViewModel(
             } catch (e: Exception) {
                 Log.e(TAG_VM, "checkPrice: error for userId=$userId - ${e.message}", e)
                 _uiState.value = WishlistState.Error("가격 체크 오류: ${e.message}")
-            }
-        }
-    }
-
-    /**
-     * FIXED: Now routes through Repository instead of HttpWishlistHelper
-     * This ensures all network calls use the same Retrofit instance with correct BASE_URL
-     */
-    fun addFromLink(url: String, targetPrice: Int) {
-        viewModelScope.launch {
-            val userId = userIdProvider()
-            Log.d(TAG_VM, "addFromLink: start url=$url target=$targetPrice userId=$userId")
-            try {
-                // CHANGED: Use Repository instead of httpHelper
-                val created = wishlistRepository.addFromLink(url, targetPrice, userId)
-                Log.d(TAG_VM, "addFromLink: success id=${created.id} for userId=$userId")
-                loadWishlist()
-            } catch (e: Exception) {
-                Log.e(TAG_VM, "addFromLink: error for userId=$userId - ${e.message}", e)
-                _uiState.value = WishlistState.Error("링크 추가 오류: ${e.message}")
             }
         }
     }
