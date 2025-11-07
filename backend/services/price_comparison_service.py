@@ -1,32 +1,16 @@
-from scrapers.naver_shopping_scraper import NaverShoppingScraper
-from scrapers.coupang_scraper import CoupangScraper
-from scrapers.eleventh_scraper import EleventhScraper
-from scrapers.gmarket_scraper import GmarketScraper
-from scrapers.auction_scraper import AuctionScraper
+from scrapers.naver_shopping import NaverShoppingScraper
 
 class PriceComparisonService:
-    def __init__(self):
-        self.scrapers = {
-            "naver": NaverShoppingScraper(),
-            "coupang": CoupangScraper(),
-            "eleventh": EleventhScraper(),
-            "gmarket": GmarketScraper(),
-            "auction": AuctionScraper(),
+    @staticmethod
+    async def search_lowest_price(keyword: str):
+        products = NaverShoppingScraper.search_products(keyword)
+        if not products:
+            return None
+        lowest = min(products, key=lambda x: x['price'])
+        return {
+            "product_title": lowest['title'],
+            "lowest_price": lowest['price'],
+            "mall": lowest['mall'],
+            "product_url": lowest['link'],
+            "image": lowest['image']
         }
-
-    def compare_prices(self, keyword: str):
-        results = []
-        for name, scraper in self.scrapers.items():
-            try:
-                products = scraper.search_products(keyword)
-                if products:
-                    best = min(products, key=lambda x: getattr(x, "price", None) or float("inf"))
-                    results.append({
-                        "platform": name,
-                        "price": getattr(best, "price", None),
-                        "title": getattr(best, "title", None),
-                        "url": getattr(best, "url", None)
-                    })
-            except Exception:
-                continue
-        return results
