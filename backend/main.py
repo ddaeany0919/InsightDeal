@@ -1,3 +1,16 @@
+# ... (생략: 기존 import 및 설정 코드)
+
+# ===== 앱 생성 및 기존 라우트 모두 이곳 아래에 =====
+app = FastAPI(
+    title="InsightDeal API",
+    description="🛒 국내 최초 4몰 통합 가격비교 API + 네이버 쇼핑 API + 관심상품 시스템 + 🤖 AI 상품 분석",
+    version="2.1.0",
+    lifespan=lifespan
+)
+
+# ... (생략: 미들웨어, 모든 기존 엔드포인트 정의)
+
+# ===== manual_price_check는 이 곳에 위치 =====
 @app.post("/api/wishlist/{wishlist_id}/check-price")
 async def manual_price_check(wishlist_id: int, user_id: str = Query(default="default"), db: Session = Depends(get_db_session)):
     """🔄 수동 가격 체크: 네이버 쇼핑 API로 최신 가격 업데이트"""
@@ -7,7 +20,6 @@ async def manual_price_check(wishlist_id: int, user_id: str = Query(default="def
     # 네이버 쇼핑 검색으로 최신 가격 업데이트
     if naver_scraper:
         try:
-            # [핵심 수정] 동기 함수(네이버 API)는 await 없이 바로 호출해야 함
             results = naver_scraper.search_products(w.keyword)
             if results:
                 best_result = min(results, key=lambda x: x.get('price', float('inf')))
@@ -30,3 +42,5 @@ async def manual_price_check(wishlist_id: int, user_id: str = Query(default="def
             raise HTTPException(status_code=500, detail="가격 체크에 실패했습니다")
     else:
         raise HTTPException(status_code=503, detail="네이버 쇼핑 서비스를 사용할 수 없습니다")
+
+# ... (생략: if __name__ == "__main__" 블록)
