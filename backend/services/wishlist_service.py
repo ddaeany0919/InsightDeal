@@ -4,6 +4,7 @@ from sqlalchemy import and_, desc
 from models.wishlist_models import WishlistCreate, WishlistUpdate, WishlistResponse
 from services.price_comparison_service import PriceComparisonService
 from services.ai_product_name_service import AIProductNameService, is_url
+import logging
 
 class WishlistService:
     @staticmethod
@@ -44,13 +45,17 @@ class WishlistService:
         if not w:
             raise Exception("관심상품을 찾을 수 없습니다")
         search_keyword = w.keyword
+        logging.info(f"[PRICE] check_price userid={user_id}, wishlist_id={wishlist_id}, keyword={search_keyword}")
         # 1. 링크이면 AI로 상품명 추출
         if is_url(search_keyword):
             ai_name = AIProductNameService.extract_name_from_url(search_keyword)
+            logging.info(f"[AI] AI 추출 상품명={ai_name}")
             if ai_name:
                 search_keyword = ai_name
         result = await PriceComparisonService.search_lowest_price(search_keyword)
+        logging.info(f"[NAVER] 최저가 검색 result={result}")
         if not result:
+            logging.error(f"[FAIL] 가격 검색 실패, 최종 검색어={search_keyword}")
             return {"message": "가격 검색 실패: 상품명 또는 링크를 확인해주세요."}
         # DB에 최저가 정보 업데이트
         w.current_lowest_price = result["lowest_price"]
@@ -58,4 +63,5 @@ class WishlistService:
         w.current_lowest_product_title = result["product_title"]
         w.last_checked = None # 실전 사용시 datetime.now()로!
         db.commit()
+        logging.info(f"[SUCCESS] DB 업데이트 완료, price={result['lowest_price']}, platform={result['mall']}")
         return {"message": "가격 체크 완료", "lowest_price": result["lowest_price"], "mall": result["mall"], "product_url": result["product_url"], "title": result["product_title"]}
