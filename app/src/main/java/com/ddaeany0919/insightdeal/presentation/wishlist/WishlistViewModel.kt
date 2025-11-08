@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalDateTime
 import android.util.Log
 
 sealed class WishlistUiState {
@@ -41,6 +42,16 @@ class WishlistViewModel(
         started = SharingStarted.Eagerly,
         initialValue = emptyList()
     )
+
+    private fun filterPriceHistoryForPeriod(list: List<PriceHistoryItem>, period: Period): List<PriceHistoryItem> {
+        val fromDate = when (period) {
+            Period.THREE_MONTHS -> LocalDate.now().minusMonths(3)
+            Period.ONE_MONTH -> LocalDate.now().minusMonths(1)
+            Period.ONE_WEEK -> LocalDate.now().minusWeeks(1)
+            Period.ONE_DAY -> LocalDate.now().minusDays(1)
+        }
+        return list.filter { it.recordedAt.toLocalDate().isAfter(fromDate) || it.recordedAt.toLocalDate().isEqual(fromDate) }
+    }
 
     fun setPeriod(period: Period) {
         _selectedPeriod.value = period
@@ -88,7 +99,8 @@ class WishlistViewModel(
                     currentLowestProductTitle = priceResponse.title,
                     isTargetReached = priceResponse.isTargetReached ?: false,
                     latestPriceCheckResult = priceResponse,
-                    isLoading = false
+                    isLoading = false,
+                    lastChecked = LocalDateTime.now() // 가격 체크 시간 업데이트
                 )
 
                 val refreshedItems = _uiState.value.let { state ->
