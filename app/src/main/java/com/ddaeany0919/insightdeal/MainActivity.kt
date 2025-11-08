@@ -110,7 +110,7 @@ fun MainApp(deviceUserId: String) {
                     }
                 )
                 val itemId = backStackEntry.arguments?.getString("itemId")?.toIntOrNull() ?: -1
-                WishlistDetailScreen(itemId = itemId, viewModel = wishlistViewModel)
+                WishlistDetailScreen(itemId = itemId, onBack = { navController.popBackStack() }, viewModel = wishlistViewModel)
             }
             composable("matches") { MatchesScreen() }
             composable("settings") { ThemeSettingsScreenCollapsible() }
