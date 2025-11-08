@@ -65,4 +65,22 @@ data class WishlistApiResponse(
     }
 }
 
-// ...이하 동일... (기존 응답/DTO 구조 그대로 두면 됩니다)
+// 추가된 DTO 클래스들
+data class PriceCheckResponse(
+    @SerializedName("message") val message: String,
+    @SerializedName("keyword") val keyword: String,
+    @SerializedName("current_price") val currentPrice: Int?,
+    @SerializedName("target_price") val targetPrice: Int,
+    @SerializedName("updated_at") val updatedAt: String,
+    @SerializedName("naver_price") val naverPrice: Int? = null,
+    @SerializedName("naver_url") val naverUrl: String? = null,
+    @SerializedName("coupang_price") val coupangPrice: Int? = null,
+    @SerializedName("coupang_url") val coupangUrl: String? = null
+)
+
+data class PriceHistoryApiResponse(
+    @SerializedName("recorded_at") val recordedAt: String,
+    @SerializedName("lowest_price") val lowestPrice: Int,
+    @SerializedName("platform") val platform: String,
+    @SerializedName("product_title") val productTitle: String?
+)
