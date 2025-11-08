@@ -2,35 +2,34 @@ package com.ddaeany0919.insightdeal.presentation.wishlist
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Button
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistCardSimple
+import com.ddaeany0919.insightdeal.presentation.wishlist.PriceCheckResponse
 import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
 
 @Composable
@@ -42,7 +41,7 @@ fun WishlistScreenDetailed(
 
     androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.loadWishlist() }
 
-    androidx.compose.material3.Scaffold(
+    Scaffold(
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddDialog = true }) {
                 Text("+")
@@ -66,7 +65,8 @@ fun WishlistScreenDetailed(
                     ) { item ->
                         WishlistCardSimple(
                             item = item,
-                            checkResult = item.latestPriceCheckResult ?: com.ddaeany0919.insightdeal.presentation.wishlist.PriceCheckResponse(
+                            checkResult = item.latestPriceCheckResult ?: PriceCheckResponse(
+                                message = "",
                                 currentPrice = item.currentLowestPrice,
                                 isTargetReached = item.isTargetReached,
                                 platform = item.currentLowestPlatform,
@@ -86,7 +86,7 @@ fun WishlistScreenDetailed(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("오류가 발생했어요. 잠시 후 다시 시도해 주세요", color = MaterialTheme.colorScheme.error)
+                    Text("오류가 발생했어요. 잠시 후 다시 시도해 주세요")
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { viewModel.retry() }) { Text("다시 시도") }
                 }
