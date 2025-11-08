@@ -32,20 +32,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.KeyboardType
 import kotlinx.coroutines.launch
-import com.ddaeany0919.insightdeal.WishlistCard
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistCardSimple
 
 @Composable
 fun WishlistScreenDetailed(
     viewModel: WishlistViewModel = viewModel()
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var pendingDelete: WishlistItem? by remember { mutableStateOf(null) }
-
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    val numberFmt = java.text.NumberFormat.getIntegerInstance(java.util.Locale.KOREAN)
-    val ctx = androidx.compose.ui.platform.LocalContext.current
 
     androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.loadWishlist() }
 
@@ -71,10 +66,12 @@ fun WishlistScreenDetailed(
                         items = currentState.items,
                         key = { item -> item.id }
                     ) { item ->
-                        WishlistCard(
+                        WishlistCardSimple(
                             item = item,
-                            onDelete = { viewModel.deleteItem(item) },
-                            onCheckPrice = { viewModel.checkPrice(item) }
+                            checkResult = item.latestPriceCheckResult,
+                            isLoading = item.isLoading,
+                            onPriceCheck = { viewModel.checkPrice(item) },
+                            onDelete = { viewModel.deleteItem(item) }
                         )
                     }
                 }
@@ -101,9 +98,6 @@ fun WishlistScreenDetailed(
                 showAddDialog = false
             }
         )
-    }
-    if (showDeleteDialog && pendingDelete != null) {
-        // ConfirmDeleteDialog 구현 필요(삭제 모달)
     }
 }
 
