@@ -13,8 +13,6 @@ data class WishlistCreateRequest(
     @SerializedName("user_id") val userId: String
 )
 
-// ... 기존 응답 및 DTO 클래스(생략, 변동 없음) ...
-
 data class WishlistApiResponse(
     @SerializedName("id") val id: Int,
     @SerializedName("keyword") val keyword: String,
@@ -43,7 +41,7 @@ data class WishlistApiResponse(
         id = id,
         keyword = keyword,
         targetPrice = targetPrice,
-        currentLowestPrice = currentLowestPrice ?: naverPrice, // 우선 네이버 값만 반영, 나머지는 null 허용
+        currentLowestPrice = currentLowestPrice ?: naverPrice,
         currentLowestPlatform = currentLowestPlatform ?: (if (naverPrice != null) "naver_shopping" else null),
         currentLowestProductTitle = currentLowestProductTitle,
         priceDropPercentage = priceDropPercentage,
@@ -65,22 +63,44 @@ data class WishlistApiResponse(
     }
 }
 
-// 추가된 DTO 클래스들
+// ✅ 추가: PriceHistoryApiResponse
+data class PriceHistoryApiResponse(
+    @SerializedName("recorded_at") val recordedAt: String,
+    @SerializedName("lowest_price") val lowestPrice: Int,
+    @SerializedName("platform") val platform: String,
+    @SerializedName("product_title") val productTitle: String?
+) {
+    fun toPriceHistoryItem(): PriceHistoryItem = PriceHistoryItem(
+        recordedAt = parseDateTime(recordedAt),
+        lowestPrice = lowestPrice,
+        platform = platform,
+        productTitle = productTitle
+    )
+
+    private fun parseDateTime(dateTimeString: String): LocalDateTime = try {
+        LocalDateTime.parse(
+            dateTimeString.substring(0, 19),
+            DateTimeFormatter.ISO_LOCAL_DATE_TIME
+        )
+    } catch (e: Exception) {
+        LocalDateTime.now()
+    }
+}
+
+// ✅ 추가: PriceCheckResponse
 data class PriceCheckResponse(
     @SerializedName("message") val message: String,
     @SerializedName("keyword") val keyword: String,
     @SerializedName("current_price") val currentPrice: Int?,
     @SerializedName("target_price") val targetPrice: Int,
     @SerializedName("updated_at") val updatedAt: String,
+    // 확장: 나머지 마켓은 추후에 채움
     @SerializedName("naver_price") val naverPrice: Int? = null,
     @SerializedName("naver_url") val naverUrl: String? = null,
     @SerializedName("coupang_price") val coupangPrice: Int? = null,
     @SerializedName("coupang_url") val coupangUrl: String? = null
 )
 
-data class PriceHistoryApiResponse(
-    @SerializedName("recorded_at") val recordedAt: String,
-    @SerializedName("lowest_price") val lowestPrice: Int,
-    @SerializedName("platform") val platform: String,
-    @SerializedName("product_title") val productTitle: String?
+data class DeleteResponse(
+    @SerializedName("message") val message: String
 )
