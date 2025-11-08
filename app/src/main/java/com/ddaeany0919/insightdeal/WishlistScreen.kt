@@ -1,25 +1,29 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.presentation.wishlist
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.material3.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistState
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistViewModel
+import com.ddaeany0919.insightdeal.WishlistCard
 import kotlinx.coroutines.launch
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistUiState
 
-// SnackbarHostState 확장 함수
 suspend fun SnackbarHostState.offerUndo(
     message: String,
     actionLabel: String = "실행 취소",
@@ -37,7 +41,6 @@ suspend fun SnackbarHostState.offerUndo(
     }
 }
 
-// 로딩 상태 컴포저블
 @Composable
 fun LoadingState() {
     Box(
@@ -48,34 +51,27 @@ fun LoadingState() {
     }
 }
 
-// 빈 위시리스트 상태 컴포저블
 @Composable
-fun EmptyWishlistState(
-    onAddItemClick: () -> Unit
-) {
+fun EmptyWishlistState(onAddItemClick: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = "위시리스트가 비어있습니다",
+        Text("위시리스트가 비어있습니다",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "관심 있는 상품을 추가해보세요",
+        Text("관심 있는 상품을 추가해보세요",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(24.dp))
-        Button(
-            onClick = onAddItemClick,
-            modifier = Modifier.padding(horizontal = 32.dp)
-        ) {
+        Button(onClick = onAddItemClick,
+            modifier = Modifier.padding(horizontal = 32.dp)) {
             Icon(Icons.Default.Add, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
             Text("아이템 추가")
@@ -83,7 +79,6 @@ fun EmptyWishlistState(
     }
 }
 
-// 위시리스트 아이템 추가 다이얼로그
 @Composable
 fun AddWishlistDialog(
     showDialog: Boolean,
@@ -135,40 +130,34 @@ fun AddWishlistDialog(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         isError = isError,
-                        supportingText = if (isError) {
-                            { Text("올바른 가격을 입력해주세요") }
-                        } else null
+                        supportingText = if (isError) { { Text("올바른 가격을 입력해주세요") } } else null
                     )
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        val price = targetPrice.toIntOrNull()
-                        if (keyword.isNotBlank() && productUrl.isNotBlank() && price != null && price > 0) {
-                            onConfirm(keyword, productUrl, price)
-                            keyword = ""
-                            productUrl = ""
-                            targetPrice = ""
-                            isError = false
-                        } else {
-                            isError = true
-                        }
-                    }
-                ) {
-                    Text("추가")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
+                TextButton(onClick = {
+                    val price = targetPrice.toIntOrNull()
+                    if (keyword.isNotBlank() && productUrl.isNotBlank() && price != null && price > 0) {
+                        onConfirm(keyword, productUrl, price)
                         keyword = ""
                         productUrl = ""
                         targetPrice = ""
                         isError = false
-                        onDismiss()
+                    } else {
+                        isError = true
                     }
-                ) {
+                }) {
+                    Text("추가")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    keyword = ""
+                    productUrl = ""
+                    targetPrice = ""
+                    isError = false
+                    onDismiss()
+                }) {
                     Text("취소")
                 }
             }
@@ -187,67 +176,44 @@ fun WishlistScreen(
     var showDialog by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("위시리스트") }
-            )
-        },
+        topBar = { TopAppBar(title = { Text("위시리스트") }) },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showDialog = true }
-            ) {
+            FloatingActionButton(onClick = { showDialog = true }) {
                 Icon(Icons.Default.Add, contentDescription = "아이템 추가")
             }
         }
     ) { paddingValues ->
         val currentState = uiState
         when (currentState) {
-            is WishlistState.Loading -> {
-                LoadingState()
-            }
-            is WishlistState.Empty -> {
-                EmptyWishlistState {
-                    showDialog = true
-                }
-            }
-            is WishlistState.Success -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(
-                        items = currentState.items,
-                        key = { item: WishlistItem -> item.id }
-                    ) { item: WishlistItem ->
-                        WishlistCard(
-                            item = item,
-                            onDelete = {
-                                viewModel.deleteItem(item)
-                                scope.launch {
-                                    snackbarHostState.offerUndo(
-                                        message = "${item.keyword}을(를) 삭제했습니다",
-                                        onUndo = {
-                                            viewModel.restoreItem(item)
-                                        }
-                                    )
-                                }
-                            },
-                            onCheckPrice = {
-                                viewModel.checkPrice(item)
+            is WishlistUiState.Loading -> LoadingState()
+            is WishlistUiState.Empty -> EmptyWishlistState { showDialog = true }
+            is WishlistUiState.Success -> LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(paddingValues),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(items = currentState.items, key = { it.id }) { item ->
+                    WishlistCard(
+                        item = item,
+                        onDelete = {
+                            viewModel.deleteItem(item)
+                            scope.launch {
+                                snackbarHostState.offerUndo(
+                                    message = "${item.keyword}을(를) 삭제했습니다",
+                                    onUndo = {
+                                        viewModel.restoreItem(item)
+                                    }
+                                )
                             }
-                        )
-                    }
+                        },
+                        onCheckPrice = { viewModel.checkPrice(item) }
+                    )
                 }
             }
-            is WishlistState.Error -> {
+            is WishlistUiState.Error -> {
                 Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
+                    modifier = Modifier.fillMaxSize().padding(paddingValues),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -263,11 +229,7 @@ fun WishlistScreen(
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = { viewModel.retry() }
-                    ) {
-                        Text("다시 시도")
-                    }
+                    Button(onClick = { viewModel.retry() }) { Text("다시 시도") }
                 }
             }
         }
@@ -278,9 +240,7 @@ fun WishlistScreen(
                 viewModel.addItem(keyword, productUrl, targetPrice)
                 showDialog = false
                 scope.launch {
-                    snackbarHostState.showSnackbar(
-                        message = "$keyword ($productUrl) 위시리스트에 추가됨"
-                    )
+                    snackbarHostState.showSnackbar(message = "$keyword ($productUrl) 위시리스트에 추가됨")
                 }
             }
         )
