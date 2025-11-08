@@ -14,13 +14,21 @@ import retrofit2.http.*
 import java.util.concurrent.TimeUnit
 
 interface WishlistApiService {
-    @POST("api/wishlist")
-    suspend fun createWishlist(@Body request: WishlistCreateRequest): WishlistApiResponse
+    /**
+     * 키워드로 위시리스트 추가 (from-keyword 엔드포인트)
+     */
+    @POST("api/wishlist/from-keyword")
+    suspend fun createWishlistFromKeyword(@Body request: WishlistCreateFromKeywordRequest): WishlistApiResponse
+
+    /**
+     * URL로 위시리스트 추가 (from-url 엔드포인트)
+     */
+    @POST("api/wishlist/from-url")
+    suspend fun createWishlistFromUrl(@Body request: WishlistCreateFromUrlRequest): WishlistApiResponse
 
     @GET("api/wishlist")
     suspend fun getWishlist(
-        @Query("user_id") userId: String = "default",
-        @Query("active_only") activeOnly: Boolean = true
+        @Query("user_id") userId: String = "default"
     ): List<WishlistApiResponse>
 
     @GET("api/wishlist/{wishlist_id}")
@@ -29,7 +37,7 @@ interface WishlistApiService {
         @Query("user_id") userId: String = "default"
     ): WishlistApiResponse
 
-    @PUT("api/wishlist/{wishlist_id}")
+    @PATCH("api/wishlist/{wishlist_id}")
     suspend fun updateWishlist(
         @Path("wishlist_id") wishlistId: Int,
         @Body request: WishlistUpdateRequest,
@@ -44,7 +52,7 @@ interface WishlistApiService {
     suspend fun deleteWithQuery(
         @Path("wishlist_id") wishlistId: Int,
         @Query("user_id") userId: String
-    ): Response<Unit>
+    ): Response<DeleteResponse>
 
     @POST("api/wishlist/{wishlist_id}/check-price")
     suspend fun checkWishlistPrice(
@@ -65,13 +73,6 @@ interface WishlistApiService {
      */
     @POST("api/product/analyze-link")
     suspend fun analyzeLink(@Body request: AnalyzeLinkRequest): ProductAnalysisResponse
-
-    /**
-     * Phase 1 preparation: Add from link endpoint  
-     * TODO: Implement in Phase 2 with full link processing
-     */
-    @POST("api/wishlist/add-from-link")
-    suspend fun addFromLink(@Body request: LinkAddRequest): WishlistApiResponse
 
     companion object {
         private const val TAG = "ApiService"
@@ -181,6 +182,19 @@ data class WishlistUpdateRequest(
 )
 
 data class DeleteRequest(
+    @SerializedName("user_id") val userId: String
+)
+
+// ✅ 서버 API에 맞게 분리된 요청 모델
+data class WishlistCreateFromKeywordRequest(
+    @SerializedName("keyword") val keyword: String,
+    @SerializedName("target_price") val targetPrice: Int,
+    @SerializedName("user_id") val userId: String
+)
+
+data class WishlistCreateFromUrlRequest(
+    @SerializedName("product_url") val productUrl: String,
+    @SerializedName("target_price") val targetPrice: Int,
     @SerializedName("user_id") val userId: String
 )
 
