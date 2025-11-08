@@ -2,6 +2,7 @@ package com.ddaeany0919.insightdeal.presentation.wishlist
 
 import android.util.Log
 import com.ddaeany0919.insightdeal.data.network.*
+import com.ddaeany0919.insightdeal.presentation.wishlist.PriceCheckResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -31,11 +32,6 @@ class WishlistRepository(
         }
     }
 
-    /**
-     * 위시리스트 추가 - 키워드 또는 URL 자동 판단
-     * @param keyword 검색어 또는 URL
-     * @param productUrl URL (선택적, 비어있으면 keyword가 URL인지 판단)
-     */
     suspend fun createWishlist(
         keyword: String, 
         productUrl: String, 
@@ -45,11 +41,8 @@ class WishlistRepository(
         Log.d(TAG, "createWishlist: keyword=$keyword url=$productUrl target=$targetPrice userId=$userId")
         
         executeWithRetry("createWishlist") {
-            // URL 판단: productUrl이 있거나 keyword가 http로 시작하면 URL 방식
             val isUrl = productUrl.isNotBlank() || keyword.startsWith("http://") || keyword.startsWith("https://")
-            
             if (isUrl) {
-                // URL 방식으로 추가
                 val url = if (productUrl.isNotBlank()) productUrl else keyword
                 Log.d(TAG, "createWishlist: using from-url endpoint with url=$url")
                 service().createWishlistFromUrl(
@@ -60,7 +53,6 @@ class WishlistRepository(
                     )
                 ).toWishlistItem()
             } else {
-                // 키워드 방식으로 추가
                 Log.d(TAG, "createWishlist: using from-keyword endpoint with keyword=$keyword")
                 service().createWishlistFromKeyword(
                     WishlistCreateFromKeywordRequest(
@@ -82,12 +74,12 @@ class WishlistRepository(
         }
     }
 
-    suspend fun checkPrice(wishlistId: Int, userId: String): String = withContext(Dispatchers.IO) {
+    suspend fun checkPrice(wishlistId: Int, userId: String): PriceCheckResponse = withContext(Dispatchers.IO) {
         Log.d(TAG, "checkPrice: start id=$wishlistId userId=$userId")
         executeWithRetry("checkPrice") {
             val response = service().checkWishlistPrice(wishlistId, userId)
             Log.d(TAG, "checkPrice: response=$response")
-            response.message
+            response
         }
     }
 
