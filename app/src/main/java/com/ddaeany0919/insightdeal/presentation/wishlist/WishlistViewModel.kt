@@ -13,8 +13,17 @@ private const val TAG_VM = "WishlistVM"
 
 class WishlistViewModel(
     private val wishlistRepository: WishlistRepository = WishlistRepository(),
-    private val userIdProvider: () -> String = { 
-        "device_${android.os.Build.SERIAL.take(8)}_${UUID.randomUUID().toString().take(8)}"
+    private val userIdProvider: () -> String = {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                "device_${android.os.Build.getSerial().take(8)}_${UUID.randomUUID().toString().take(8)}"
+            } else {
+                @Suppress("DEPRECATION")
+                "device_${android.os.Build.SERIAL.take(8)}_${UUID.randomUUID().toString().take(8)}"
+            }
+        } catch (e: Exception) {
+            "device_UNKNOWN_${UUID.randomUUID().toString().take(8)}"
+        }
     }
 ) : ViewModel() {
 
