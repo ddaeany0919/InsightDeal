@@ -11,12 +11,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ddaeany0919.insightdeal.WishlistCard
 import com.ddaeany0919.insightdeal.presentation.wishlist.AddWishlistUI
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistUiState
 
 @Composable
 fun WatchlistScreen(
-    viewModel: WishlistViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    viewModel: WishlistViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -43,7 +45,7 @@ fun WatchlistScreen(
 
         val currentState = state
         when (currentState) {
-            is WishlistState.Loading -> {
+            is WishlistUiState.Loading -> {
                 Box(
                     modifier = Modifier.fillMaxSize().padding(inner),
                     contentAlignment = Alignment.Center
@@ -51,7 +53,7 @@ fun WatchlistScreen(
                     CircularProgressIndicator()
                 }
             }
-            is WishlistState.Error -> {
+            is WishlistUiState.Error -> {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(inner).padding(16.dp),
                     verticalArrangement = Arrangement.Center,
@@ -62,7 +64,7 @@ fun WatchlistScreen(
                     Button(onClick = { viewModel.retry() }) { Text("다시 시도") }
                 }
             }
-            is WishlistState.Empty -> {
+            is WishlistUiState.Empty -> {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(inner).padding(16.dp),
                     verticalArrangement = Arrangement.Center,
@@ -71,7 +73,7 @@ fun WatchlistScreen(
                     Text("관심상품이 없습니다.")
                 }
             }
-            is WishlistState.Success -> {
+            is WishlistUiState.Success -> {
                 LazyColumn(Modifier.fillMaxSize().padding(inner).padding(12.dp)) {
                     items(
                         items = currentState.items,
