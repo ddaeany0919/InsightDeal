@@ -3,6 +3,7 @@ package com.ddaeany0919.insightdeal.presentation.wishlist
 import com.google.gson.annotations.SerializedName
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import android.util.Log
 
 // Gson snake_case → camelCase 매핑을 위해 @SerializedName 추가
 
@@ -13,6 +14,7 @@ import java.time.format.DateTimeFormatter
 data class WishlistApiResponse(
     @SerializedName("id") val id: Int,
     @SerializedName("keyword") val keyword: String,
+    @SerializedName("product_url") val productUrl: String? = null,  // productUrl 필드 추가
     @SerializedName("target_price") val targetPrice: Int,
     @SerializedName("user_id") val userId: String? = null,
     @SerializedName("current_lowest_price") val currentLowestPrice: Int? = null,
@@ -35,21 +37,26 @@ data class WishlistApiResponse(
     @SerializedName("elevenst_price") val elevenstPrice: Int? = null,
     @SerializedName("elevenst_url") val elevenstUrl: String? = null
 ) {
-    fun toWishlistItem(): WishlistItem = WishlistItem(
-        id = id,
-        keyword = keyword,
-        targetPrice = targetPrice,
-        currentLowestPrice = currentLowestPrice ?: naverPrice,
-        currentLowestPlatform = currentLowestPlatform ?: (if (naverPrice != null) "naver_shopping" else null),
-        currentLowestProductTitle = currentLowestProductTitle,
-        priceDropPercentage = priceDropPercentage,
-        isTargetReached = isTargetReached,
-        isActive = isActive,
-        alertEnabled = alertEnabled,
-        createdAt = parseDateTime(createdAt),
-        updatedAt = parseDateTime(updatedAt),
-        lastChecked = lastChecked?.let { parseDateTime(it) }
-    )
+    fun toWishlistItem(): WishlistItem {
+        Log.d("WishlistDtos", "toWishlistItem: id=$id, keyword=$keyword, productUrl=$productUrl")
+        
+        return WishlistItem(
+            id = id,
+            keyword = keyword,
+            productUrl = productUrl ?: naverUrl ?: "",  // productUrl 매핑 추가
+            targetPrice = targetPrice,
+            currentLowestPrice = currentLowestPrice ?: naverPrice,
+            currentLowestPlatform = currentLowestPlatform ?: (if (naverPrice != null) "naver_shopping" else null),
+            currentLowestProductTitle = currentLowestProductTitle,
+            priceDropPercentage = priceDropPercentage,
+            isTargetReached = isTargetReached,
+            isActive = isActive,
+            alertEnabled = alertEnabled,
+            createdAt = parseDateTime(createdAt),
+            updatedAt = parseDateTime(updatedAt),
+            lastChecked = lastChecked?.let { parseDateTime(it) }
+        )
+    }
 
     private fun parseDateTime(dateTimeString: String): LocalDateTime = try {
         LocalDateTime.parse(
@@ -57,6 +64,7 @@ data class WishlistApiResponse(
             DateTimeFormatter.ISO_LOCAL_DATE_TIME
         )
     } catch (e: Exception) {
+        Log.w("WishlistDtos", "parseDateTime 실패: $dateTimeString", e)
         LocalDateTime.now()
     }
 }
@@ -68,12 +76,16 @@ data class PriceHistoryApiResponse(
     @SerializedName("platform") val platform: String,
     @SerializedName("product_title") val productTitle: String?
 ) {
-    fun toPriceHistoryItem(): PriceHistoryItem = PriceHistoryItem(
-        recordedAt = parseDateTime(recordedAt),
-        lowestPrice = lowestPrice,
-        platform = platform,
-        productTitle = productTitle
-    )
+    fun toPriceHistoryItem(): PriceHistoryItem {
+        Log.d("WishlistDtos", "toPriceHistoryItem: recordedAt=$recordedAt, price=$lowestPrice")
+        
+        return PriceHistoryItem(
+            recordedAt = parseDateTime(recordedAt),
+            lowestPrice = lowestPrice,
+            platform = platform,
+            productTitle = productTitle
+        )
+    }
 
     private fun parseDateTime(dateTimeString: String): LocalDateTime = try {
         LocalDateTime.parse(
@@ -81,9 +93,24 @@ data class PriceHistoryApiResponse(
             DateTimeFormatter.ISO_LOCAL_DATE_TIME
         )
     } catch (e: Exception) {
+        Log.w("WishlistDtos", "parseDateTime 실패: $dateTimeString", e)
         LocalDateTime.now()
     }
 }
+
+// ✅ 추가: PriceHistoryItem 데이터 클래스
+data class PriceHistoryItem(
+    val recordedAt: LocalDateTime,
+    val lowestPrice: Int,
+    val platform: String,
+    val productTitle: String?
+)
+
+// ✅ 추가: UpdateAlarmRequest DTO
+data class UpdateAlarmRequest(
+    @SerializedName("user_id") val userId: String,
+    @SerializedName("is_enabled") val isEnabled: Boolean
+)
 
 // ✅ 추가: PriceCheckResponse
 data class PriceCheckResponse(
