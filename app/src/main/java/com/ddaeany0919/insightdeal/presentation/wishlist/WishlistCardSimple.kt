@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -29,10 +30,11 @@ fun WishlistCardSimple(
     checkResult: PriceCheckResponse?,
     isLoading: Boolean = false,
     onPriceCheck: () -> Unit,
-    onBuy: ((String) -> Unit)? = null,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+
     Card(
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF212121)),
@@ -84,9 +86,9 @@ fun WishlistCardSimple(
                         color = Color(0xFFCCCCCC),
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    if (!checkResult.productUrl.isNullOrBlank() && onBuy != null) {
+                    if (!checkResult.productUrl.isNullOrBlank()) {
                         TextButton(
-                            onClick = { onBuy(checkResult.productUrl!!) },
+                            onClick = { openLinkInBrowser(context, checkResult.productUrl!!) },
                             modifier = Modifier.padding(vertical = 2.dp)
                         ) {
                             Text(
@@ -134,3 +136,18 @@ fun openLinkInBrowser(context: Context, url: String) {
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
     ContextCompat.startActivity(context, intent, null)
 }
+
+// 데이터 클래스 (예시)
+data class WishlistItem(
+    val keyword: String,
+    val targetPrice: Int
+)
+
+// 가격 체크 결과 데이터 클래스 (예시)
+data class PriceCheckResponse(
+    val currentPrice: Int?,
+    val isTargetReached: Boolean?,
+    val platform: String?,
+    val title: String?,
+    val productUrl: String?
+)
