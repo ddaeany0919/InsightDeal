@@ -110,6 +110,7 @@ fun AlarmToggle(isOn: Boolean, onToggle: (Boolean) -> Unit) {
         }
     }
 }
+
 @Composable
 fun PriceChart(priceHistory: List<PriceHistoryItem>) {
     Column(modifier = Modifier.fillMaxWidth()) {
