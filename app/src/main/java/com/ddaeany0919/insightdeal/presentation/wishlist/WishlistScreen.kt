@@ -5,18 +5,101 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.KeyboardType
+import kotlinx.coroutines.launch
+import com.ddaeany0919.insightdeal.WishlistCard
+
+@Composable
+fun WishlistScreenDetailed(
+    viewModel: WishlistViewModel = viewModel()
+) {
+    var showAddDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var pendingDelete: WishlistItem? by remember { mutableStateOf(null) }
+
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    val numberFmt = java.text.NumberFormat.getIntegerInstance(java.util.Locale.KOREAN)
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+
+    androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.loadWishlist() }
+
+    androidx.compose.material3.Scaffold(
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showAddDialog = true }) {
+                Text("+")
+            }
+        }
+    ) { inner ->
+        when (val currentState = uiState) {
+            is WishlistState.Loading -> LoadingStateDetailed(modifier = Modifier.padding(inner))
+            is WishlistState.Empty -> EmptyWishlistStateDetailed(
+                onAdd = { showAddDialog = true },
+                modifier = Modifier.padding(inner)
+            )
+            is WishlistState.Success -> {
+                LazyColumn(
+                    modifier = Modifier.padding(inner).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(currentState.items, key = { it.id }) { item ->
+                        WishlistCard(
+                            item = item,
+                            onDelete = { viewModel.deleteItem(item) },
+                            onCheckPrice = { viewModel.checkPrice(item) }
+                        )
+                    }
+                }
+            }
+            is WishlistState.Error -> {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(inner).padding(16.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("오류가 발생했어요. 잠시 후 다시 시도해 주세요", color = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { viewModel.retry() }) { Text("다시 시도") }
+                }
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        AddWishlistUI(
+            onDismiss = { showAddDialog = false },
+            onAdd = { keyword: String, productUrl: String, targetPrice: Int ->
+                viewModel.addItem(keyword, productUrl, targetPrice)
+                showAddDialog = false
+            }
+        )
+    }
+    if (showDeleteDialog && pendingDelete != null) {
+        // ConfirmDeleteDialog 구현 필요(삭제 모달)
+    }
+}
 
 @Composable
 fun AddWishlistUI(
@@ -82,4 +165,26 @@ fun AddWishlistUI(
             }
         }
     )
+}
+
+@Composable
+fun LoadingStateDetailed(modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(Modifier.height(16.dp))
+            Text("가격 정보를 가져오고 있어요...")
+        }
+    }
+}
+
+@Composable
+fun EmptyWishlistStateDetailed(onAdd: () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("아직 관심상품이 없어요")
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = onAdd) { Text("상품 추가하기") }
+        }
+    }
 }
