@@ -60,12 +60,31 @@ interface WishlistApiService {
         @Query("user_id") userId: String = "default"
     ): PriceCheckResponse
 
+    /**
+     * 가격 이력 조회 API
+     */
     @GET("api/wishlist/{wishlist_id}/history")
     suspend fun getWishlistPriceHistory(
         @Path("wishlist_id") wishlistId: Int,
         @Query("user_id") userId: String = "default",
         @Query("days") days: Int = 30
     ): List<PriceHistoryApiResponse>
+
+    /**
+     * 사용자의 전체 가격 이력 조회 API
+     */
+    @GET("api/wishlist/price-history")
+    suspend fun getPriceHistory(
+        @Query("user_id") userId: String
+    ): Response<List<PriceHistoryApiResponse>>
+
+    /**
+     * 알람 상태 업데이트 API
+     */
+    @POST("api/wishlist/alarm")
+    suspend fun updateAlarmState(
+        @Body request: UpdateAlarmRequest
+    ): Response<Unit>
 
     /**
      * Phase 1 preparation: Link analysis endpoint
@@ -80,11 +99,14 @@ interface WishlistApiService {
         // Default configuration (legacy)
         private val BASE_URL: String = BuildConfig.BASE_URL
         
-        fun create(): WishlistApiService = Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(WishlistApiService::class.java)
+        fun create(): WishlistApiService {
+            Log.d(TAG, "create: 기본 API 서비스 생성")
+            return Retrofit.Builder()
+                .baseUrl(BASE_URL)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build()
+                .create(WishlistApiService::class.java)
+        }
             
         /**
          * Phase 1: Stable network configuration with dynamic URL detection
