@@ -7,7 +7,8 @@ import com.ddaeany0919.insightdeal.presentation.wishlist.model.PriceHistoryItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -22,6 +23,7 @@ class WishlistViewModel(
     private val wishlistRepository: WishlistRepository,
     private val userIdProvider: () -> String
 ) : ViewModel() {
+
     private val _uiState = MutableStateFlow<WishlistUiState>(WishlistUiState.Loading)
     val uiState: StateFlow<WishlistUiState> = _uiState
 
@@ -33,7 +35,11 @@ class WishlistViewModel(
 
     val filteredPriceHistory: StateFlow<List<PriceHistoryItem>> = combine(_priceHistory, _selectedPeriod) { list, period ->
         filterPriceHistoryForPeriod(list, period)
-    }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
 
     private val _isAlarmOn = MutableStateFlow(false)
     val isAlarmOn: StateFlow<Boolean> = _isAlarmOn

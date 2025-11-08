@@ -30,8 +30,7 @@ fun WatchlistScreen(
             }
         }
     ) { inner ->
-        if (showDialog) {
-            AddWishlistUI(
+        if (showDialog) { AddWishlistUI(
                 onDismiss = { showDialog = false },
                 onAdd = { keyword: String, productUrl: String, targetPrice: Int ->
                     viewModel.addItem(keyword, productUrl, targetPrice)

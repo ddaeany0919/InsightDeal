@@ -34,6 +34,7 @@ import com.ddaeany0919.insightdeal.ui.EnhancedHomeScreen_Applied
 import com.ddaeany0919.insightdeal.ui.HomeViewModel
 import com.ddaeany0919.insightdeal.ui.theme.InsightDealTheme
 import java.util.UUID
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistDetailScreen
 
 private const val TAG_UI = "MainActivity"
 
@@ -77,9 +78,9 @@ class MainActivity : ComponentActivity() {
             }
             composable("watchlist") {
                 val wishlistViewModel: WishlistViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                    factory = object : ViewModelProvider.Factory {
                         @Suppress("UNCHECKED_CAST")
-                        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
                             return WishlistViewModel(
                                 wishlistRepository = WishlistRepository(),
                                 userIdProvider = { deviceUserId }
@@ -87,7 +88,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 )
-                WishlistScreenDetailed(viewModel = wishlistViewModel)
+                WishlistDetailScreen(viewModel = wishlistViewModel)
             }
             composable("matches") { MatchesScreen() }
             composable("settings") { ThemeSettingsScreenCollapsible() }

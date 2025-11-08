@@ -1,6 +1,6 @@
 package com.ddaeany0919.insightdeal.presentation.wishlist.model
 
-import kotlinx.datetime.LocalDate
+import java.time.LocalDate
 
 // 가격 변동/최저가 쇼핑몰 정보
 
