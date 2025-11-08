@@ -1,10 +1,9 @@
 package com.ddaeany0919.insightdeal.presentation.wishlist
 
 import java.time.LocalDateTime
+import com.ddaeany0919.insightdeal.presentation.wishlist.PriceCheckResponse
 
-/**
- * 관심상품 아이템 (UI 모델)
- */
+/** 관심상품 아이템 (UI 모델) */
 data class WishlistItem(
     val id: Int,
     val keyword: String,
@@ -18,5 +17,7 @@ data class WishlistItem(
     val alertEnabled: Boolean = true,
     val createdAt: LocalDateTime,
     val updatedAt: LocalDateTime,
-    val lastChecked: LocalDateTime? = null
+    val lastChecked: LocalDateTime? = null,
+    val latestPriceCheckResult: PriceCheckResponse? = null,
+    val isLoading: Boolean = false
 )
