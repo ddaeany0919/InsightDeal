@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.ddaeany0919.insightdeal.WishlistCard
 
 private const val TAG_UI = "WishlistUI"
 
@@ -90,15 +91,10 @@ fun WishlistScreenDetailed(
                                 }
                             }
                         ) {
-                            WishlistCardDetailed(
-                                wishlist = item,
-                                onDeleteClick = {
-                                    pendingDelete = item
-                                    showDeleteDialog = true
-                                },
-                                onPriceCheckClick = { viewModel.checkPrice(item) },
-                                numberFmt = numberFmt,
-                                timeFmt = timeFmt
+                            WishlistCard(
+                                item = item,
+                                onDelete = { viewModel.deleteItem(item) },
+                                onCheckPrice = { viewModel.checkPrice(item) }
                             )
                         }
                     }
@@ -122,29 +118,15 @@ fun WishlistScreenDetailed(
     }
 
     if (showAddDialog) {
-        AddWishlistDialogDetailed(
+        AddWishlistUI(
             onDismiss = {
                 Log.d(TAG_UI, "AddDialog: 닫힘")
                 showAddDialog = false
             },
-            onAdd = { keyword, productUrl, targetPrice ->
+            onAdd = { keyword: String, productUrl: String, targetPrice: Int ->
                 Log.d(TAG_UI, "AddDialog: onAdd 호출 keyword=$keyword productUrl=$productUrl target=$targetPrice")
                 viewModel.addItem(keyword, productUrl, targetPrice)
                 showAddDialog = false
-            },
-            onAddFromLink = { url, targetPrice ->
-                scope.launch {
-                    Log.d(TAG_UI, "AddDialog: onAddFromLink 호출 url=$url target=$targetPrice")
-                    try {
-                        // addFromLink 함수가 없으므로 addItem 사용
-                        viewModel.addItem("", url, targetPrice)
-                        showAddDialog = false
-                        Toast.makeText(ctx, "링크로 추가되었습니다", Toast.LENGTH_SHORT).show()
-                    } catch (e: Exception) {
-                        Log.e(TAG_UI, "LinkTab 실패: ${e.message}")
-                        Toast.makeText(ctx, "일시적인 오류가 발생했어요. 다시 시도해 주세요", Toast.LENGTH_LONG).show()
-                    }
-                }
             }
         )
     }
@@ -173,145 +155,21 @@ fun WishlistScreenDetailed(
 }
 
 @Composable
-private fun LoadingStateDetailed(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator()
-            Spacer(Modifier.height(16.dp))
-            Text("가격 정보를 가져오고 있어요...", style = MaterialTheme.typography.bodyLarge)
-        }
-    }
-}
-
-@Composable
-private fun EmptyWishlistStateDetailed(onAdd: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("아직 관심상품이 없어요", style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = onAdd) { Text("상품 추가하기") }
-        }
-    }
-}
-
-@Composable
-private fun WishlistCardDetailed(
-    wishlist: WishlistItem,
-    onDeleteClick: () -> Unit,
-    onPriceCheckClick: () -> Unit,
-    numberFmt: NumberFormat,
-    timeFmt: DateTimeFormatter
+fun AddWishlistUI(
+    onDismiss: () -> Unit,
+    onAdd: (String, String, Int) -> Unit
 ) {
-    val price = wishlist.currentLowestPrice
-    val isTargetReached = price != null && price <= wishlist.targetPrice
-    
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isTargetReached) 
-                MaterialTheme.colorScheme.primaryContainer 
-            else 
-                MaterialTheme.colorScheme.surface
-        )
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(wishlist.keyword, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                IconButton(onClick = onDeleteClick) {
-                    Icon(Icons.Filled.Delete, "삭제", tint = MaterialTheme.colorScheme.error)
-                }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(onClick = { onAdd("샘플", "https://naver.com", 10000) }) {
+                Text("추가")
             }
-            Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column {
-                    Text("목표 가격", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${numberFmt.format(wishlist.targetPrice)}원", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("현재 최저가", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (price != null) {
-                        Text("${numberFmt.format(price)}원", 
-                             style = MaterialTheme.typography.bodyLarge, 
-                             fontWeight = FontWeight.Bold, 
-                             color = if (isTargetReached) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                        wishlist.currentLowestPlatform?.let { 
-                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) 
-                        }
-                    } else {
-                        Text("검색 중...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            val progress = price?.toFloat()?.div(wishlist.targetPrice)?.coerceAtMost(1f) ?: 0f
-            // Fix: Update LinearProgressIndicator to use lambda-based progress parameter
-            LinearProgressIndicator(
-                progress = { progress }, // Use lambda function instead of direct float value
-                modifier = Modifier.fillMaxWidth(), 
-                color = if (isTargetReached) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                strokeCap = StrokeCap.Round
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onPriceCheckClick, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Refresh, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("가격 체크")
-                }
-                OutlinedButton(
-                    onClick = onDeleteClick,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Icon(Icons.Filled.Delete, "삭제", Modifier.size(16.dp))
-                }
-            }
-            wishlist.lastChecked?.let {
-                Spacer(Modifier.height(8.dp))
-                Text("마지막 체크: ${it.format(timeFmt)}", 
-                     style = MaterialTheme.typography.bodySmall, 
-                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                     textAlign = TextAlign.Center, 
-                     modifier = Modifier.fillMaxWidth())
-            }
-        }
-    }
-}
-
-@Composable
-private fun SwipeToDeleteContainer(
-    thresholdPx: Float,
-    backgroundColor: Color,
-    icon: ImageVector,
-    iconTint: Color,
-    onSwipedLeft: () -> Unit,
-    content: @Composable () -> Unit
-) {
-    var offsetX by remember { mutableStateOf(0f) }
-    val progress by animateFloatAsState((kotlin.math.abs(offsetX) / thresholdPx).coerceIn(0f, 1f), label = "swipeProgress")
-
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .background(backgroundColor.copy(alpha = progress * 0.8f))
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragEnd = {
-                        if (offsetX <= -thresholdPx) onSwipedLeft()
-                        offsetX = 0f
-                    }
-                ) { _, dragAmount ->
-                    val newX = offsetX + dragAmount
-                    offsetX = if (newX < 0f) newX else 0f
-                }
-            }
-            .padding(vertical = 2.dp)
-    ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = iconTint.copy(alpha = progress), modifier = Modifier.size(24.dp))
-        }
-        Box(Modifier.offset(x = Dp(offsetX / Resources.getSystem().displayMetrics.density))) {
-            content()
-        }
-    }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) { Text("취소") }
+        },
+        title = { Text("관심상품 추가") },
+        text = { Text("이 Dialog는 예시입니다. 실제 UI를 여기에 구현하세요.") }
+    )
 }
