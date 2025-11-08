@@ -6,20 +6,28 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun WishlistCard(item: WishlistItem, onDelete: (() -> Unit)? = null, onCheckPrice: (() -> Unit)? = null) {
+fun WishlistCard(
+    item: WishlistItem,
+    onDelete: (() -> Unit)? = null,
+    onCheckPrice: (() -> Unit)? = null,
+    onClick: (() -> Unit)? = null
+) {
     val targetReached = item.isTargetReached || (item.currentLowestPrice != null && item.targetPrice >= item.currentLowestPrice)
     val priceText = item.currentLowestPrice?.let { price ->
         "최저가: ${price.toString().reversed().chunked(3).joinToString(",").reversed()} (${item.currentLowestPlatform ?: "-"})"
     }
     val targetText = "목표가: ${item.targetPrice.toString().reversed().chunked(3).joinToString(",").reversed()}"
 
-    Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    Card(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable { onClick?.invoke() } // 카드 클릭 가능하게 수정
+    ) {
         Column(Modifier.padding(14.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(item.keyword, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
