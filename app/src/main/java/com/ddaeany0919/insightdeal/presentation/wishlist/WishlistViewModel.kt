@@ -3,7 +3,7 @@ package com.ddaeany0919.insightdeal.presentation.wishlist
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ddaeany0919.insightdeal.presentation.wishlist.model.Period
-import com.ddaeany0919.insightdeal.presentation.wishlist.model.PriceHistoryItem
+import com.ddaeany0919.insightdeal.presentation.wishlist.PriceHistoryItem // 타입 경로 통일
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -67,7 +67,8 @@ class WishlistViewModel(
             Period.ONE_WEEK -> LocalDate.now().minusWeeks(1)
             Period.ONE_DAY -> LocalDate.now().minusDays(1)
         }
-        return list.filter { it.date.isAfter(fromDate) || it.date.isEqual(fromDate) }
+        // PriceHistoryItem의 date 대신 recordedAt 필드 사용
+        return list.filter { it.recordedAt.toLocalDate().isAfter(fromDate) || it.recordedAt.toLocalDate().isEqual(fromDate) }
     }
 
     fun loadWishlist() {
