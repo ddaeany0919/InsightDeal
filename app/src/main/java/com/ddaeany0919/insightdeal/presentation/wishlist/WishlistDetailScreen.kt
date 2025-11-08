@@ -16,11 +16,15 @@ import com.ddaeany0919.insightdeal.presentation.wishlist.PriceHistoryItem // 타
 
 @Composable
 fun WishlistDetailScreen(
+    itemId: Int, // 추가된 파라미터 (MainActivity, 네비게이션에서 전달)
     viewModel: WishlistViewModel = viewModel()
 ) {
     val selectedPeriod by viewModel.selectedPeriod.collectAsState()
     val priceHistory by viewModel.filteredPriceHistory.collectAsState()
     val isAlarmOn by viewModel.isAlarmOn.collectAsState()
+
+    // TODO: itemId 기반 원하는 상품 가져와서 상세 구성
+    // 예: viewModel.loadItemDetail(itemId) 등
 
     Column(modifier = Modifier.padding(16.dp)) {
         PeriodToggleRow(selectedPeriod, onPeriodSelected = { viewModel.setPeriod(it) })
