@@ -21,14 +21,19 @@ class WishlistRepository(
 
     private var apiService: WishlistApiService? = null
     private suspend fun service(): WishlistApiService {
-        if (apiService == null) apiService = apiServiceProvider()
+        if (apiService == null) {
+            Log.d(TAG, "service: API 서비스 생성")
+            apiService = apiServiceProvider()
+        }
         return apiService!!
     }
 
     suspend fun getWishlist(userId: String) = withContext(Dispatchers.IO) {
         Log.d(TAG, "getWishlist: start userId=$userId")
         executeWithRetry("getWishlist") {
-            service().getWishlist(userId).map { it.toWishlistItem() }
+            val result = service().getWishlist(userId).map { it.toWishlistItem() }
+            Log.d(TAG, "getWishlist: 성공 (${result.size}개 항목)")
+            result
         }
     }
 
@@ -80,6 +85,58 @@ class WishlistRepository(
             val response = service().checkWishlistPrice(wishlistId, userId)
             Log.d(TAG, "checkPrice: response=$response")
             response
+        }
+    }
+
+    /**
+     * 가격 이력 조회
+     * WishlistViewModel에서 호출하는 메서드
+     */
+    suspend fun getPriceHistory(userId: String): List<PriceHistoryItem> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "getPriceHistory: start userId=$userId")
+        executeWithRetry("getPriceHistory") {
+            try {
+                val response = service().getPriceHistory(userId)
+                if (response.isSuccessful && response.body() != null) {
+                    val items = response.body()!!.map { it.toPriceHistoryItem() }
+                    Log.d(TAG, "getPriceHistory: 성공 (${items.size}개 항목)")
+                    items
+                } else {
+                    Log.e(TAG, "getPriceHistory: 실패 code=${response.code()}")
+                    emptyList()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "getPriceHistory: 예외 발생", e)
+                emptyList()
+            }
+        }
+    }
+
+    /**
+     * 알람 상태 업데이트
+     * WishlistViewModel에서 호출하는 메서드
+     */
+    suspend fun updateAlarmState(isEnabled: Boolean, userId: String): Boolean = withContext(Dispatchers.IO) {
+        Log.d(TAG, "updateAlarmState: start isEnabled=$isEnabled userId=$userId")
+        executeWithRetry("updateAlarmState") {
+            try {
+                val response = service().updateAlarmState(
+                    UpdateAlarmRequest(
+                        userId = userId,
+                        isEnabled = isEnabled
+                    )
+                )
+                if (response.isSuccessful) {
+                    Log.d(TAG, "updateAlarmState: 성공")
+                    true
+                } else {
+                    Log.e(TAG, "updateAlarmState: 실패 code=${response.code()}")
+                    false
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "updateAlarmState: 예외 발생", e)
+                false
+            }
         }
     }
 
