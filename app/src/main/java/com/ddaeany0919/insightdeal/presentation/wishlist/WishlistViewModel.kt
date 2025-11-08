@@ -41,7 +41,6 @@ class WishlistViewModel(
                 _uiState.value = if (items.isEmpty()) WishlistState.Empty else WishlistState.Success(items)
             } catch (e: retrofit2.HttpException) {
                 if (e.code() == 404) {
-                    // 404면 빈 리스트로 처리
                     Log.d(TAG_VM, "loadWishlist: 404 - treating as empty list")
                     _uiState.value = WishlistState.Empty
                 } else {
@@ -63,6 +62,14 @@ class WishlistViewModel(
                 val created = wishlistRepository.createWishlist(keyword.trim(), productUrl, targetPrice, userId)
                 Log.d(TAG_VM, "addItem: success id=${created.id} for userId=$userId")
                 loadWishlist()
+            } catch (e: retrofit2.HttpException) {
+                if (e.code() == 404) {
+                    Log.e(TAG_VM, "addItem: 404 - API endpoint not found for userId=$userId")
+                    _uiState.value = WishlistState.Error("서버 연결 오류: 관심상품 추가 기능이 준비되지 않았습니다.")
+                } else {
+                    Log.e(TAG_VM, "addItem: HTTP error ${e.code()} for userId=$userId - ${e.message}", e)
+                    _uiState.value = WishlistState.Error("관심상품 추가 오류: ${e.message}")
+                }
             } catch (e: Exception) {
                 Log.e(TAG_VM, "addItem: error for userId=$userId - ${e.message}", e)
                 _uiState.value = WishlistState.Error("관심상품 추가 오류: ${e.message}")
