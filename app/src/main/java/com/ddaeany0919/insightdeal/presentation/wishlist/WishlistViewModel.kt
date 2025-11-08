@@ -50,16 +50,19 @@ class WishlistViewModel(
             Period.ONE_WEEK -> LocalDate.now().minusWeeks(1)
             Period.ONE_DAY -> LocalDate.now().minusDays(1)
         }
+        Log.d("WishlistViewModel", "필터링 기준 fromDate=$fromDate, 데이터 수=${list.size}")
         return list.filter { it.recordedAt.toLocalDate().isAfter(fromDate) || it.recordedAt.toLocalDate().isEqual(fromDate) }
     }
 
     fun setPeriod(period: Period) {
         _selectedPeriod.value = period
+        Log.d("WishlistViewModel", "선택 기간 변경: $period, 가격 내역 리프레시 시도")
         loadPriceHistory()
     }
 
     fun toggleAlarm(on: Boolean) {
         _isAlarmOn.value = on
+        Log.d("WishlistViewModel", "알림 상태 변경: on=$on")
         syncAlarmStateToServer(on)
     }
 
@@ -73,8 +76,10 @@ class WishlistViewModel(
                 val userId = userIdProvider()
                 val items = wishlistRepository.getWishlist(userId)
                 _uiState.value = if (items.isEmpty()) WishlistUiState.Empty else WishlistUiState.Success(items)
+                Log.d("WishlistViewModel", "위시리스트 로드: ${items.size}개")
             } catch (e: Exception) {
                 _uiState.value = WishlistUiState.Error("목록을 불러오는데 실패했습니다: ${e.message}")
+                Log.e("WishlistViewModel", "위시리스트 불러오기 오류", e)
             }
         }
     }
@@ -88,7 +93,7 @@ class WishlistViewModel(
                 if (it.id == item.id) it.copy(isLoading = true) else it
             }
             _uiState.value = WishlistUiState.Success(loadingItems)
-
+            Log.d("WishlistViewModel", "${item.id} 가격 체크 시작")
             try {
                 val userId = userIdProvider()
                 val priceResponse = wishlistRepository.checkPrice(item.id, userId)
@@ -132,9 +137,11 @@ class WishlistViewModel(
             try {
                 val userId = userIdProvider()
                 wishlistRepository.createWishlist(keyword, productUrl, targetPrice, userId)
+                Log.d("WishlistViewModel", "아이템 추가: $keyword")
                 loadWishlist()
             } catch (e: Exception) {
                 _uiState.value = WishlistUiState.Error("아이템 추가 실패: ${e.message}")
+                Log.e("WishlistViewModel", "아이템 추가 실패", e)
             }
         }
     }
@@ -146,8 +153,10 @@ class WishlistViewModel(
                 val success = wishlistRepository.deleteWishlist(item.id, userId)
                 if (success) loadWishlist()
                 else _uiState.value = WishlistUiState.Error("아이템 삭제 실패")
+                Log.d("WishlistViewModel", "아이템 삭제 시도: ${item.id}")
             } catch (e: Exception) {
                 _uiState.value = WishlistUiState.Error("아이템 삭제 실패: ${e.message}")
+                Log.e("WishlistViewModel", "아이템 삭제 실패", e)
             }
         }
     }
@@ -166,8 +175,9 @@ class WishlistViewModel(
                 val userId = userIdProvider()
                 val items = wishlistRepository.getPriceHistory(userId)
                 _priceHistory.value = items
+                Log.d("WishlistViewModel", "가격 이력 로드: ${items.size}개")
             } catch (e: Exception) {
-                // Handle error
+                Log.e("WishlistViewModel", "가격 이력 불러오기 오류", e)
             }
         }
     }
@@ -177,9 +187,9 @@ class WishlistViewModel(
             try {
                 val userId = userIdProvider()
                 wishlistRepository.updateAlarmState(on, userId)
-                // 서버 반영 성공 시 로그 등
+                Log.d("WishlistViewModel", "알림 상태 서버 반영 성공")
             } catch (e: Exception) {
-                // 동기화 실패 처리
+                Log.e("WishlistViewModel", "알림 동기화 오류", e)
             }
         }
     }
