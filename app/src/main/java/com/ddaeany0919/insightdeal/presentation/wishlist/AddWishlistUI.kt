@@ -10,14 +10,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun AddWishlistFab(onAdd: (String, Int) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    FloatingActionButton(onClick = { open = true }) { Icon(Icons.Default.Add, contentDescription = "추가") }
-    if (open) AddWishlistDialogContent(onDismiss = { open = false }) { k, p -> open = false; onAdd(k, p) }
-}
-
-@Composable
-private fun AddWishlistDialogContent(onDismiss: () -> Unit, onSubmit: (String, Int) -> Unit) {
+fun AddWishlistDialogContent(
+    onDismiss: () -> Unit,
+    onSubmit: (String, Int) -> Unit
+) {
     var keyword by remember { mutableStateOf("") }
     var target by remember { mutableStateOf("") }
     AlertDialog(
