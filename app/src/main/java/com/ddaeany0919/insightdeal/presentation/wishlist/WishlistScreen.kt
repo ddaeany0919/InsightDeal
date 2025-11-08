@@ -6,191 +6,244 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.*
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistCardSimple
-import com.ddaeany0919.insightdeal.presentation.wishlist.PriceCheckResponse
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
+import kotlinx.coroutines.launch
+
+// 필요한 데이터 클래스나 기타 import는 상황에 맞게 추가
+
+suspend fun SnackbarHostState.offerUndo(
+    message: String,
+    actionLabel: String = "실행 취소",
+    onUndo: () -> Unit
+): Boolean {
+    val result = showSnackbar(
+        message = message,
+        actionLabel = actionLabel
+    )
+    return if (result == SnackbarResult.ActionPerformed) {
+        onUndo()
+        true
+    } else {
+        false
+    }
+}
 
 @Composable
-fun WishlistScreenDetailed(
-    viewModel: WishlistViewModel = viewModel()
-) {
-    var showAddDialog by remember { mutableStateOf(false) }
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+fun LoadingState() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator()
+    }
+}
 
-    androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.loadWishlist() }
-
-    Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
-                Text("+")
-            }
-        }
-    ) { inner ->
-        when (val currentState = uiState) {
-            is WishlistUiState.Loading -> LoadingStateDetailed(modifier = Modifier.padding(inner))
-            is WishlistUiState.Empty -> EmptyWishlistStateDetailed(
-                onAdd = { showAddDialog = true },
-                modifier = Modifier.padding(inner)
-            )
-            is WishlistUiState.Success -> {
-                LazyColumn(
-                    modifier = Modifier.padding(inner).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(
-                        items = currentState.items,
-                        key = { item -> item.id }
-                    ) { item ->
-                        WishlistCardSimple(
-                            item = item,
-                            checkResult = item.latestPriceCheckResult ?: PriceCheckResponse(
-                                message = "",
-                                currentPrice = item.currentLowestPrice,
-                                isTargetReached = item.isTargetReached,
-                                platform = item.currentLowestPlatform,
-                                title = item.currentLowestProductTitle,
-                                productUrl = null
-                            ),
-                            isLoading = item.isLoading,
-                            onPriceCheck = { viewModel.checkPrice(item) },
-                            onDelete = { viewModel.deleteItem(item) }
-                        )
-                    }
-                }
-            }
-            is WishlistUiState.Error -> {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("오류가 발생했어요. 잠시 후 다시 시도해 주세요")
-                    Spacer(Modifier.height(16.dp))
-                    Button(onClick = { viewModel.retry() }) { Text("다시 시도") }
-                }
-            }
+@Composable
+fun EmptyWishlistState(onAddItemClick: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = "위시리스트가 비어있습니다",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "관심 있는 상품을 추가해보세요",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(
+            onClick = onAddItemClick,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        ) {
+            Icon(Icons.Default.Add, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("아이템 추가")
         }
     }
+}
 
-    if (showAddDialog) {
-        AddWishlistUI(
-            onDismiss = { showAddDialog = false },
-            onAdd = { keyword: String, productUrl: String, targetPrice: Int ->
-                viewModel.addItem(keyword, productUrl, targetPrice)
-                showAddDialog = false
+@Composable
+fun AddWishlistDialog(
+    showDialog: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String, Int) -> Unit
+) {
+    var keyword by remember { mutableStateOf("") }
+    var productUrl by remember { mutableStateOf("") }
+    var targetPrice by remember { mutableStateOf("") }
+    var isError by remember { mutableStateOf(false) }
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                keyword = ""
+                productUrl = ""
+                targetPrice = ""
+                isError = false
+                onDismiss()
+            },
+            title = { Text("위시리스트 아이템 추가") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = keyword,
+                        onValueChange = { keyword = it },
+                        label = { Text("상품명 또는 키워드") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = productUrl,
+                        onValueChange = { productUrl = it },
+                        label = { Text("상품 링크(URL)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = targetPrice,
+                        onValueChange = { value ->
+                            if (value.all { it.isDigit() }) {
+                                targetPrice = value
+                                isError = false
+                            }
+                        },
+                        label = { Text("목표 가격 (원)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = isError,
+                        supportingText = if (isError) { { Text("올바른 가격을 입력해주세요") } } else null
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val price = targetPrice.toIntOrNull()
+                    if (keyword.isNotBlank() && productUrl.isNotBlank() && price != null && price > 0) {
+                        onConfirm(keyword, productUrl, price)
+                        keyword = ""
+                        productUrl = ""
+                        targetPrice = ""
+                        isError = false
+                    } else {
+                        isError = true
+                    }
+                }) {
+                    Text("추가")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    keyword = ""
+                    productUrl = ""
+                    targetPrice = ""
+                    isError = false
+                    onDismiss()
+                }) {
+                    Text("취소")
+                }
             }
         )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddWishlistUI(
-    onDismiss: () -> Unit,
-    onAdd: (String, String, Int) -> Unit
-) {
-    var keyword by remember { mutableStateOf("") }
-    var productUrl by remember { mutableStateOf("") }
-    var targetPrice by remember { mutableStateOf("") }
+fun WishlistScreen(viewModel: WishlistViewModel = viewModel()) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showDialog by remember { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("관심상품 추가") },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("위시리스트") }) },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "아이템 추가")
+            }
+        }
+    ) { paddingValues ->
+        val currentState = uiState
+        when (currentState) {
+            is WishlistUiState.Loading -> LoadingState()
+            is WishlistUiState.Empty -> EmptyWishlistState { showDialog = true }
+            is WishlistUiState.Success -> LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(paddingValues),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedTextField(
-                    value = keyword,
-                    onValueChange = { keyword = it },
-                    label = { Text("상품명") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = productUrl,
-                    onValueChange = { productUrl = it },
-                    label = { Text("상품 URL (선택)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = targetPrice,
-                    onValueChange = { newValue ->
-                        if (newValue.isEmpty() || newValue.all { char -> char.isDigit() }) {
-                            targetPrice = newValue
-                        }
-                    },
-                    label = { Text("목표 가격 (원)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
+                items(items = currentState.items, key = { it.id }) { item ->
+                    WishlistCard(
+                        item = item,
+                        onDelete = {
+                            viewModel.deleteItem(item)
+                            scope.launch {
+                                snackbarHostState.offerUndo(
+                                    message = "${item.keyword}을(를) 삭제했습니다",
+                                    onUndo = {
+                                        viewModel.restoreItem(item)
+                                    }
+                                )
+                            }
+                        },
+                        onCheckPrice = { viewModel.checkPrice(item) }
+                    )
+                }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val price = targetPrice.toIntOrNull()
-                    if (keyword.isNotBlank() && price != null && price > 0) {
-                        onAdd(keyword, productUrl, price)
-                    }
-                },
-                enabled = keyword.isNotBlank() && targetPrice.toIntOrNull()?.let { it > 0 } == true
-            ) {
-                Text("추가")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("취소")
+            is WishlistUiState.Error -> {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(paddingValues),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "오류가 발생했습니다",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = currentState.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { viewModel.retry() }) { Text("다시 시도") }
+                }
             }
         }
-    )
-}
-
-@Composable
-fun LoadingStateDetailed(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator()
-            Spacer(Modifier.height(16.dp))
-            Text("가격 정보를 가져오고 있어요...")
-        }
-    }
-}
-
-@Composable
-fun EmptyWishlistStateDetailed(onAdd: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("아직 관심상품이 없어요")
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = onAdd) { Text("상품 추가하기") }
-        }
+        AddWishlistDialog(
+            showDialog = showDialog,
+            onDismiss = { showDialog = false },
+            onConfirm = { keyword: String, productUrl: String, targetPrice: Int ->
+                viewModel.addItem(keyword, productUrl, targetPrice)
+                showDialog = false
+                scope.launch {
+                    snackbarHostState.showSnackbar(message = "$keyword ($productUrl) 위시리스트에 추가됨")
+                }
+            }
+        )
     }
 }
