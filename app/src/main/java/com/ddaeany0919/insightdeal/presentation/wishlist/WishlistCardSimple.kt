@@ -1,5 +1,8 @@
 package com.ddaeany0919.insightdeal.presentation.wishlist
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 
 @Composable
 fun WishlistCardSimple(
@@ -70,7 +74,7 @@ fun WishlistCardSimple(
                         fontWeight = if (checkResult.isTargetReached == true) FontWeight.Bold else null
                     )
                     Text(
-                        text = "[${checkResult.platform ?: "-"]}",
+                        text = "[${checkResult.platform ?: "-"}]",
                         color = Color(0xFF42a5f5),
                         style = MaterialTheme.typography.bodyMedium
                     )
