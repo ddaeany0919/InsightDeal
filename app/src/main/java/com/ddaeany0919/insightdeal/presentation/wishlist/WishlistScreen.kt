@@ -5,7 +5,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.AlertDialog
@@ -31,8 +30,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.KeyboardType
-import kotlinx.coroutines.launch
 import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistCardSimple
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
 
 @Composable
 fun WishlistScreenDetailed(
@@ -40,7 +39,6 @@ fun WishlistScreenDetailed(
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
 
     androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.loadWishlist() }
 
@@ -68,7 +66,13 @@ fun WishlistScreenDetailed(
                     ) { item ->
                         WishlistCardSimple(
                             item = item,
-                            checkResult = item.latestPriceCheckResult,
+                            checkResult = item.latestPriceCheckResult ?: com.ddaeany0919.insightdeal.presentation.wishlist.PriceCheckResponse(
+                                currentPrice = item.currentLowestPrice,
+                                isTargetReached = item.isTargetReached,
+                                platform = item.currentLowestPlatform,
+                                title = item.currentLowestProductTitle,
+                                productUrl = null
+                            ),
                             isLoading = item.isLoading,
                             onPriceCheck = { viewModel.checkPrice(item) },
                             onDelete = { viewModel.deleteItem(item) }
