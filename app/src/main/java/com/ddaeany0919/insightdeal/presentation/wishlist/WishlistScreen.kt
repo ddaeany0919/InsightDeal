@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Button
@@ -42,9 +43,9 @@ fun WishlistScreenDetailed(
     var pendingDelete: WishlistItem? by remember { mutableStateOf(null) }
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    rememberCoroutineScope()
-    java.text.NumberFormat.getIntegerInstance(java.util.Locale.KOREAN)
-    androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    val numberFmt = java.text.NumberFormat.getIntegerInstance(java.util.Locale.KOREAN)
+    val ctx = androidx.compose.ui.platform.LocalContext.current
 
     androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.loadWishlist() }
 
@@ -66,7 +67,10 @@ fun WishlistScreenDetailed(
                     modifier = Modifier.padding(inner).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(currentState.items, key = { it.id }) { item ->
+                    items(
+                        items = currentState.items,
+                        key = { item -> item.id }
+                    ) { item ->
                         WishlistCard(
                             item = item,
                             onDelete = { viewModel.deleteItem(item) },
