@@ -20,7 +20,11 @@ fun WatchlistScreen(
     LaunchedEffect(Unit) { viewModel.loadWishlist() }
 
     Scaffold(
-        floatingActionButton = { AddWishlistFab { k, p -> viewModel.addItem(k, p) } }
+        floatingActionButton = { 
+            AddWishlistFab { keyword, productUrl, targetPrice -> 
+                viewModel.addItem(keyword, productUrl, targetPrice) 
+            } 
+        }
     ) { inner ->
         // Smart cast 문제 해결을 위해 지역 변수에 할당
         val currentState = state
@@ -72,5 +76,26 @@ fun WatchlistScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun AddWishlistFab(onAdd: (String, String, Int) -> Unit) {
+    var showDialog by remember { mutableStateOf(false) }
+    
+    FloatingActionButton(onClick = { showDialog = true }) {
+        androidx.compose.material.icons.Icons.Filled.Add
+    }
+    
+    if (showDialog) {
+        // AddWishlistDialog 구현 필요
+        // 임시로 keyword, productUrl, targetPrice를 받는 다이얼로그
+        AddWishlistUI(
+            onDismiss = { showDialog = false },
+            onAdd = { keyword, productUrl, targetPrice ->
+                onAdd(keyword, productUrl, targetPrice)
+                showDialog = false
+            }
+        )
     }
 }
