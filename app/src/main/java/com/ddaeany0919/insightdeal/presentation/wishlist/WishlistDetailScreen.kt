@@ -3,7 +3,7 @@ package com.ddaeany0919.insightdeal.presentation.wishlist
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material3.*
@@ -15,7 +15,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ddaeany0919.insightdeal.presentation.wishlist.model.Period
 import com.ddaeany0919.insightdeal.presentation.wishlist.PriceHistoryItem
 import java.time.format.DateTimeFormatter
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,8 +27,6 @@ fun WishlistDetailScreen(
     val priceHistory by viewModel.filteredPriceHistory.collectAsState()
     val isAlarmOn by viewModel.isAlarmOn.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
-
-    // 실제 아이템 불러오기
     val item = (uiState as? WishlistUiState.Success)?.items?.find { it.id == itemId }
     val timeFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm")
 
@@ -54,7 +51,7 @@ fun WishlistDetailScreen(
                         Text(it.keyword, style = MaterialTheme.typography.headlineSmall)
                         Text("목표가: ${it.targetPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원")
                         if (it.currentLowestPrice != null) {
-                            Text("최저가: ${it.currentLowestPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원 (${it.currentLowestPlatform ?: "-"})")
+                            Text("최저가: ${it.currentLowestPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원 (${it.currentLowestPlatform})")
                         }
                         it.lastChecked?.let { lastChecked ->
                             Text("마지막 체크: ${lastChecked.format(timeFormatter)}",
@@ -65,7 +62,7 @@ fun WishlistDetailScreen(
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-            }
+            } ?: Text("상품 데이터를 불러올 수 없습니다.", color = MaterialTheme.colorScheme.error)
 
             PeriodToggleRow(selectedPeriod, onPeriodSelected = { viewModel.setPeriod(it) })
             Spacer(Modifier.height(12.dp))
@@ -76,7 +73,6 @@ fun WishlistDetailScreen(
     }
 }
 
-// 기간 버튼 그룹
 @Composable
 fun PeriodToggleRow(selectedPeriod: Period, onPeriodSelected: (Period) -> Unit) {
     Row(
@@ -97,7 +93,6 @@ fun PeriodToggleRow(selectedPeriod: Period, onPeriodSelected: (Period) -> Unit) 
     }
 }
 
-// 알림 토글 스위치
 @Composable
 fun AlarmToggle(isOn: Boolean, onToggle: (Boolean) -> Unit) {
     Row(
@@ -115,13 +110,15 @@ fun AlarmToggle(isOn: Boolean, onToggle: (Boolean) -> Unit) {
         }
     }
 }
-
-// 가격 히스토리 차트 (예시: 리스트 출력)
 @Composable
 fun PriceChart(priceHistory: List<PriceHistoryItem>) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        priceHistory.forEach { item ->
-            Text(text = "${item.recordedAt} - ${item.lowestPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원 (${item.platform})")
+        if(priceHistory.isEmpty()) {
+            Text("해당 기간 가격 이력이 없습니다.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
+        } else {
+            priceHistory.forEach { item ->
+                Text(text = "${item.recordedAt} - ${item.lowestPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원 (${item.platform})")
+            }
         }
     }
 }
