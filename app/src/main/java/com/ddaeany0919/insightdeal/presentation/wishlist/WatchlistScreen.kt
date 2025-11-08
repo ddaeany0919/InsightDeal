@@ -12,9 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ddaeany0919.insightdeal.WishlistCard
-import com.ddaeany0919.insightdeal.presentation.wishlist.AddWishlistUI
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistUiState
 
 @Composable
 fun WatchlistScreen(

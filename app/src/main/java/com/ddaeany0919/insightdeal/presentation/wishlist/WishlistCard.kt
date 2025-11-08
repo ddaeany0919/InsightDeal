@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.presentation.wishlist
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -10,7 +10,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
 
 @Composable
 fun WishlistCard(item: WishlistItem, onDelete: (() -> Unit)? = null, onCheckPrice: (() -> Unit)? = null) {

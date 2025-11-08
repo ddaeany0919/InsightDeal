@@ -19,10 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.ddaeany0919.insightdeal.WishlistCard
 import kotlinx.coroutines.launch
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistUiState
 
 suspend fun SnackbarHostState.offerUndo(
     message: String,
