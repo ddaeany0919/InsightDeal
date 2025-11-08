@@ -6,17 +6,15 @@ import java.time.format.DateTimeFormatter
 
 // Gson snake_case → camelCase 매핑을 위해 @SerializedName 추가
 
-data class WishlistCreateRequest(
-    @SerializedName("keyword") val keyword: String,
-    @SerializedName("product_url") val productUrl: String,
-    @SerializedName("target_price") val targetPrice: Int,
-    @SerializedName("user_id") val userId: String
-)
+// ❌ 제거: WishlistCreateRequest는 이제 WishlistApiService.kt에서 분리됨
+// - WishlistCreateFromKeywordRequest
+// - WishlistCreateFromUrlRequest
 
 data class WishlistApiResponse(
     @SerializedName("id") val id: Int,
     @SerializedName("keyword") val keyword: String,
     @SerializedName("target_price") val targetPrice: Int,
+    @SerializedName("user_id") val userId: String? = null,
     @SerializedName("current_lowest_price") val currentLowestPrice: Int? = null,
     @SerializedName("current_lowest_platform") val currentLowestPlatform: String? = null,
     @SerializedName("current_lowest_product_title") val currentLowestProductTitle: String? = null,
@@ -90,10 +88,14 @@ data class PriceHistoryApiResponse(
 // ✅ 추가: PriceCheckResponse
 data class PriceCheckResponse(
     @SerializedName("message") val message: String,
-    @SerializedName("keyword") val keyword: String,
-    @SerializedName("current_price") val currentPrice: Int?,
-    @SerializedName("target_price") val targetPrice: Int,
-    @SerializedName("updated_at") val updatedAt: String,
+    @SerializedName("keyword") val keyword: String? = null,
+    @SerializedName("current_price") val currentPrice: Int? = null,
+    @SerializedName("target_price") val targetPrice: Int? = null,
+    @SerializedName("platform") val platform: String? = null,
+    @SerializedName("product_url") val productUrl: String? = null,
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("is_target_reached") val isTargetReached: Boolean? = null,
+    @SerializedName("updated_at") val updatedAt: String? = null,
     // 확장: 나머지 마켓은 추후에 채움
     @SerializedName("naver_price") val naverPrice: Int? = null,
     @SerializedName("naver_url") val naverUrl: String? = null,
