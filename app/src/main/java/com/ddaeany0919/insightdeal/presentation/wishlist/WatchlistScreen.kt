@@ -16,7 +16,8 @@ import android.util.Log
 
 @Composable
 fun WatchlistScreen(
-    viewModel: WishlistViewModel = viewModel()
+    viewModel: WishlistViewModel = viewModel(),
+    onItemClick: (WishlistItem) -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -111,7 +112,8 @@ fun WatchlistScreen(
                                 onCheckPrice = { 
                                     Log.d("WatchlistScreen", "가격 확인 요청: id=${item.id}")
                                     viewModel.checkPrice(item) 
-                                }
+                                },
+                                onClick = { onItemClick(item) }
                             )
                         }
                     }
