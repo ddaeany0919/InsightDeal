@@ -24,39 +24,151 @@ class WishlistViewModel(
     private val wishlistRepository: WishlistRepository,
     private val userIdProvider: () -> String
 ) : ViewModel() {
-    // ... 생략 부분 동일
 
-    // 가격 체크 로직 수정!
+    private val _uiState = MutableStateFlow<WishlistUiState>(WishlistUiState.Loading)
+    val uiState: StateFlow<WishlistUiState> = _uiState
+
+    private val _selectedPeriod = MutableStateFlow(Period.THREE_MONTHS)
+    val selectedPeriod: StateFlow<Period> = _selectedPeriod
+
+    private val _priceHistory = MutableStateFlow<List<PriceHistoryItem>>(emptyList())
+    val priceHistory: StateFlow<List<PriceHistoryItem>> = _priceHistory
+
+    val filteredPriceHistory: StateFlow<List<PriceHistoryItem>> = combine(_priceHistory, _selectedPeriod) { list, period ->
+        filterPriceHistoryForPeriod(list, period)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+
+    fun setPeriod(period: Period) {
+        _selectedPeriod.value = period
+        loadPriceHistory()
+    }
+
+    fun toggleAlarm(on: Boolean) {
+        _isAlarmOn.value = on
+        syncAlarmStateToServer(on)
+    }
+
+    private val _isAlarmOn = MutableStateFlow(false)
+    val isAlarmOn: StateFlow<Boolean> = _isAlarmOn
+
+    fun loadWishlist() {
+        viewModelScope.launch {
+            _uiState.value = WishlistUiState.Loading
+            try {
+                val userId = userIdProvider()
+                val items = wishlistRepository.getWishlist(userId)
+                _uiState.value = if (items.isEmpty()) WishlistUiState.Empty else WishlistUiState.Success(items)
+            } catch (e: Exception) {
+                _uiState.value = WishlistUiState.Error("목록을 불러오는데 실패했습니다: ${e.message}")
+            }
+        }
+    }
+
     fun checkPrice(item: WishlistItem) {
         viewModelScope.launch {
+            val currentState = _uiState.value
+            if (currentState !is WishlistUiState.Success) return@launch
+
+            val loadingItems = currentState.items.map {
+                if (it.id == item.id) it.copy(isLoading = true) else it
+            }
+            _uiState.value = WishlistUiState.Success(loadingItems)
+
             try {
                 val userId = userIdProvider()
                 val priceResponse = wishlistRepository.checkPrice(item.id, userId)
 
-                // 가격 체크 응답으로 아이템 업데이트 (UI에 즉시 반영)
                 val updatedItem = item.copy(
                     currentLowestPrice = priceResponse.currentPrice,
                     currentLowestPlatform = priceResponse.platform,
                     currentLowestProductTitle = priceResponse.title,
                     isTargetReached = priceResponse.isTargetReached ?: false,
-                    latestPriceCheckResult = priceResponse
+                    latestPriceCheckResult = priceResponse,
+                    isLoading = false
                 )
 
-                val currentState = _uiState.value
-                if (currentState is WishlistUiState.Success) {
-                    val updatedItems = currentState.items.map {
-                        if (it.id == item.id) updatedItem else it
-                    }
-                    _uiState.value = WishlistUiState.Success(updatedItems)
+                val refreshedItems = _uiState.value.let { state ->
+                    if (state is WishlistUiState.Success) {
+                        state.items.map {
+                            if (it.id == item.id) updatedItem else it
+                        }
+                    } else emptyList()
                 }
-
-                Log.d("WishlistViewModel", "가격 체크 완료 및 UI 업데이트: ${priceResponse.currentPrice}")
+                _uiState.value = WishlistUiState.Success(refreshedItems)
+                Log.d("WishlistViewModel", "가격 체크 및 로딩 완료")
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "가격 확인 실패", e)
+                val errorItems = _uiState.value.let { state ->
+                    if (state is WishlistUiState.Success) {
+                        state.items.map {
+                            if (it.id == item.id) it.copy(isLoading = false) else it
+                        }
+                    } else emptyList()
+                }
+                _uiState.value = WishlistUiState.Success(errorItems)
                 _uiState.value = WishlistUiState.Error("가격 확인 실패: ${e.message}")
             }
         }
     }
 
-    // ... 나머지 기존 함수 동일
+    fun addItem(keyword: String, productUrl: String, targetPrice: Int) {
+        viewModelScope.launch {
+            try {
+                val userId = userIdProvider()
+                wishlistRepository.createWishlist(keyword, productUrl, targetPrice, userId)
+                loadWishlist()
+            } catch (e: Exception) {
+                _uiState.value = WishlistUiState.Error("아이템 추가 실패: ${e.message}")
+            }
+        }
+    }
+
+    fun deleteItem(item: WishlistItem) {
+        viewModelScope.launch {
+            try {
+                val userId = userIdProvider()
+                val success = wishlistRepository.deleteWishlist(item.id, userId)
+                if (success) loadWishlist()
+                else _uiState.value = WishlistUiState.Error("아이템 삭제 실패")
+            } catch (e: Exception) {
+                _uiState.value = WishlistUiState.Error("아이템 삭제 실패: ${e.message}")
+            }
+        }
+    }
+
+    fun restoreItem(item: WishlistItem) {
+        addItem(item.keyword, item.productUrl, item.targetPrice)
+    }
+
+    fun retry() {
+        loadWishlist()
+    }
+
+    private fun loadPriceHistory() {
+        viewModelScope.launch {
+            try {
+                val userId = userIdProvider()
+                val items = wishlistRepository.getPriceHistory(userId)
+                _priceHistory.value = items
+            } catch (e: Exception) {
+                // Handle error
+            }
+        }
+    }
+
+    private fun syncAlarmStateToServer(on: Boolean) {
+        viewModelScope.launch {
+            try {
+                val userId = userIdProvider()
+                wishlistRepository.updateAlarmState(on, userId)
+                // 서버 반영 성공 시 로그 등
+            } catch (e: Exception) {
+                // 동기화 실패 처리
+            }
+        }
+    }
 }
