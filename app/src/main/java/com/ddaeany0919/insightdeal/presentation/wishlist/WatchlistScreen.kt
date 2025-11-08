@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ddaeany0919.insightdeal.WishlistCard
+import com.ddaeany0919.insightdeal.presentation.wishlist.AddWishlistUI
 
 @Composable
 fun WatchlistScreen(
@@ -90,24 +91,4 @@ fun WatchlistScreen(
             }
         }
     }
-}
-
-@Composable
-fun AddWishlistUI(
-    onDismiss: () -> Unit,
-    onAdd: (String, String, Int) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            Button(onClick = { onAdd("샘플", "https://naver.com", 10000) }) {
-                Text("추가")
-            }
-        },
-        dismissButton = {
-            Button(onClick = onDismiss) { Text("취소") }
-        },
-        title = { Text("관심상품 추가") },
-        text = { Text("이 Dialog는 예시입니다. 실제 UI를 여기에 구현하세요.") }
-    )
 }
