@@ -1,8 +1,121 @@
-// ... (생략) ...
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.serialization' version '1.9.24'
+    id 'com.google.gms.google-services'
+}
+
+android {
+    namespace 'com.ddaeany0919.insightdeal'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.ddaeany0919.insightdeal"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables { useSupportLibrary true }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            buildConfigField "String", "BASE_URL", '"https://api.insightdeal.com/"'
+            buildConfigField "String", "VERSION_NAME", '"1.0.0"'
+            buildConfigField "boolean", "DEBUG_MODE", "false"
+        }
+        debug {
+            // Updated to match actual network environment
+            // Device IP: 192.168.0.5 → Server should be accessible via local network
+            buildConfigField "String", "BASE_URL", '"http://192.168.0.4:8000/"'
+            buildConfigField "String", "DEV_SERVER_IP", '"192.168.0.4"' // PC IP where backend runs
+            buildConfigField "String", "EMULATOR_BASE_URL", '"http://10.0.2.2:8000/"' // Emulator fallback
+            buildConfigField "String", "VERSION_NAME", '"1.0.0-debug"'
+            buildConfigField "boolean", "DEBUG_MODE", "true"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled true
+    }
+
+    kotlinOptions { jvmTarget = '1.8' }
+
+    buildFeatures { compose true; buildConfig true }
+
+    // Kotlin 1.9.24 + Compose Compiler 1.5.14
+    composeOptions { kotlinCompilerExtensionVersion '1.5.14' }
+
+    packagingOptions { resources { excludes += '/META-INF/{AL2.0,LGPL2.1}' } }
+}
+
+dependencies {
+    // Android Core
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'androidx.activity:activity-compose:1.8.2'
+    implementation 'io.coil-kt:coil-compose:2.4.0'
+
+    // Material Design 3
+    implementation 'com.google.android.material:material:1.11.0'
+
+    // Jetpack Compose BOM (UPGRADED for SwipeToDismiss)
+    implementation platform('androidx.compose:compose-bom:2024.06.00')
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.ui:ui-text'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
+
+    // Navigation Compose
+    implementation 'androidx.navigation:navigation-compose:2.7.6'
+
+    // ViewModel + Compose
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.7.0'
+
+    // Firebase BOM
+    implementation platform('com.google.firebase:firebase-bom:32.7.1')
+    implementation 'com.google.firebase:firebase-messaging-ktx'
+    implementation 'com.google.firebase:firebase-analytics-ktx'
+
+    // Retrofit with enhanced timeout support
+    implementation 'com.squareup.retrofit2:retrofit:2.9.0'
+    implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+    implementation 'com.squareup.okhttp3:logging-interceptor:4.11.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.11.0'
+
+    // Gson
+    implementation 'com.google.code.gson:gson:2.10.1'
+
+    // Kotlinx Serialization
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3'
+
+    // Desugaring
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
+
+    // Debug
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+
+    // Test
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    androidTestImplementation platform('androidx.compose:compose-bom:2024.06.00')
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
+
     // MPAndroidChart
     implementation 'com.github.PhilJay:MPAndroidChart:v3.1.0'
 
-    // ▲ 여기에 Vico 차트 의존성 추가
+    //Vico 차트 의존성 추가
     implementation "com.patrykandpatrick.vico:compose:2.1.0"
     implementation "com.patrykandpatrick.vico:core:2.1.0"
 
