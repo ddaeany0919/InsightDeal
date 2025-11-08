@@ -39,6 +39,15 @@ class WishlistViewModel(
                 val items = wishlistRepository.getWishlist(userId)
                 Log.d(TAG_VM, "loadWishlist: success count=${items.size} for userId=$userId")
                 _uiState.value = if (items.isEmpty()) WishlistState.Empty else WishlistState.Success(items)
+            } catch (e: retrofit2.HttpException) {
+                if (e.code() == 404) {
+                    // 404면 빈 리스트로 처리
+                    Log.d(TAG_VM, "loadWishlist: 404 - treating as empty list")
+                    _uiState.value = WishlistState.Empty
+                } else {
+                    Log.e(TAG_VM, "loadWishlist: error for userId=$userId - ${e.message}", e)
+                    _uiState.value = WishlistState.Error("관심상품을 불러오는 중 오류: ${e.message}")
+                }
             } catch (e: Exception) {
                 Log.e(TAG_VM, "loadWishlist: error for userId=$userId - ${e.message}", e)
                 _uiState.value = WishlistState.Error("관심상품을 불러오는 중 오류: ${e.message}")
