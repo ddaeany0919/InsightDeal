@@ -10,6 +10,14 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -70,7 +78,7 @@ fun WishlistCardSimple(
                         fontWeight = if (checkResult.isTargetReached == true) FontWeight.Bold else null
                     )
                     Text(
-                        text = "[${checkResult.platform ?: "-"]}",
+                        text = "[${checkResult.platform ?: "-"}]",
                         color = Color(0xFF42a5f5),
                         style = MaterialTheme.typography.body2
                     )
