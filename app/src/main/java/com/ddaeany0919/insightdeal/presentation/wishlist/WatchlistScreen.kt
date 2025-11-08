@@ -3,13 +3,14 @@ package com.ddaeany0919.insightdeal.presentation.wishlist
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.ddaeany0919.insightdeal.WishlistCard
 
 @Composable
 fun WatchlistScreen(
@@ -17,16 +18,27 @@ fun WatchlistScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
+    var showDialog by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) { viewModel.loadWishlist() }
 
     Scaffold(
-        floatingActionButton = { 
-            AddWishlistFab { keyword, productUrl, targetPrice -> 
-                viewModel.addItem(keyword, productUrl, targetPrice) 
-            } 
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showDialog = true }) {
+                Icon(Icons.Filled.Add, contentDescription = "추가")
+            }
         }
     ) { inner ->
-        // Smart cast 문제 해결을 위해 지역 변수에 할당
+        if (showDialog) {
+            AddWishlistUI(
+                onDismiss = { showDialog = false },
+                onAdd = { keyword: String, productUrl: String, targetPrice: Int ->
+                    viewModel.addItem(keyword, productUrl, targetPrice)
+                    showDialog = false
+                }
+            )
+        }
+
         val currentState = state
         when (currentState) {
             is WishlistState.Loading -> {
@@ -60,7 +72,7 @@ fun WatchlistScreen(
             is WishlistState.Success -> {
                 LazyColumn(Modifier.fillMaxSize().padding(inner).padding(12.dp)) {
                     items(
-                        items = currentState.items, 
+                        items = currentState.items,
                         key = { item: WishlistItem -> item.id }
                     ) { item: WishlistItem ->
                         WishlistSwipeToDismiss(
@@ -80,22 +92,21 @@ fun WatchlistScreen(
 }
 
 @Composable
-fun AddWishlistFab(onAdd: (String, String, Int) -> Unit) {
-    var showDialog by remember { mutableStateOf(false) }
-    
-    FloatingActionButton(onClick = { showDialog = true }) {
-        androidx.compose.material.icons.Icons.Filled.Add
-    }
-    
-    if (showDialog) {
-        // AddWishlistDialog 구현 필요
-        // 임시로 keyword, productUrl, targetPrice를 받는 다이얼로그
-        AddWishlistUI(
-            onDismiss = { showDialog = false },
-            onAdd = { keyword, productUrl, targetPrice ->
-                onAdd(keyword, productUrl, targetPrice)
-                showDialog = false
+fun AddWishlistUI(
+    onDismiss: () -> Unit,
+    onAdd: (String, String, Int) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(onClick = { onAdd("샘플", "https://naver.com", 10000) }) {
+                Text("추가")
             }
-        )
-    }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) { Text("취소") }
+        },
+        title = { Text("관심상품 추가") },
+        text = { Text("이 Dialog는 예시입니다. 실제 UI를 여기에 구현하세요.") }
+    )
 }
