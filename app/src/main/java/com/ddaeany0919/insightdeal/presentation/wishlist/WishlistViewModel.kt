@@ -45,11 +45,11 @@ class WishlistViewModel(
                     _uiState.value = WishlistState.Empty
                 } else {
                     Log.e(TAG_VM, "loadWishlist: error for userId=$userId - ${e.message}", e)
-                    _uiState.value = WishlistState.Error("관심상품을 불러오는 중 오류: ${e.message}")
+                    _uiState.value = WishlistState.Error("[translate:관심상품을 불러오는 중 오류:] ${e.message}")
                 }
             } catch (e: Exception) {
                 Log.e(TAG_VM, "loadWishlist: error for userId=$userId - ${e.message}", e)
-                _uiState.value = WishlistState.Error("관심상품을 불러오는 중 오류: ${e.message}")
+                _uiState.value = WishlistState.Error("[translate:관심상품을 불러오는 중 오류:] ${e.message}")
             }
         }
     }
@@ -65,14 +65,14 @@ class WishlistViewModel(
             } catch (e: retrofit2.HttpException) {
                 if (e.code() == 404) {
                     Log.e(TAG_VM, "addItem: 404 - API endpoint not found for userId=$userId")
-                    _uiState.value = WishlistState.Error("서버 연결 오류: 관심상품 추가 기능이 준비되지 않았습니다.")
+                    _uiState.value = WishlistState.Error("[translate:서버 연결 오류:] [translate:관심상품 추가 기능이 준비되지 않았습니다.]")
                 } else {
                     Log.e(TAG_VM, "addItem: HTTP error ${e.code()} for userId=$userId - ${e.message}", e)
-                    _uiState.value = WishlistState.Error("관심상품 추가 오류: ${e.message}")
+                    _uiState.value = WishlistState.Error("[translate:관심상품 추가 오류:] ${e.message}")
                 }
             } catch (e: Exception) {
                 Log.e(TAG_VM, "addItem: error for userId=$userId - ${e.message}", e)
-                _uiState.value = WishlistState.Error("관심상품 추가 오류: ${e.message}")
+                _uiState.value = WishlistState.Error("[translate:관심상품 추가 오류:] ${e.message}")
             }
         }
     }
@@ -87,7 +87,7 @@ class WishlistViewModel(
                 loadWishlist()
             } catch (e: Exception) {
                 Log.e(TAG_VM, "deleteItem: server error for userId=$userId - ${e.message}", e)
-                _uiState.value = WishlistState.Error("관심상품 삭제 오류: ${e.message}")
+                _uiState.value = WishlistState.Error("[translate:관심상품 삭제 오류:] ${e.message}")
             }
         }
     }
@@ -102,7 +102,7 @@ class WishlistViewModel(
                 loadWishlist()
             } catch (e: Exception) {
                 Log.e(TAG_VM, "restoreItem: error for userId=$userId - ${e.message}", e)
-                _uiState.value = WishlistState.Error("관심상품 복원 오류: ${e.message}")
+                _uiState.value = WishlistState.Error("[translate:관심상품 복원 오류:] ${e.message}")
             }
         }
     }
@@ -112,12 +112,25 @@ class WishlistViewModel(
             val userId = userIdProvider()
             Log.d(TAG_VM, "checkPrice: start id=${item.id} userId=$userId")
             try {
-                val msg = wishlistRepository.checkPrice(item.id, userId)
-                Log.d(TAG_VM, "checkPrice: success message=$msg for userId=$userId")
-                loadWishlist()
+                val priceCheckResponse = wishlistRepository.checkPrice(item.id, userId)
+                Log.d(TAG_VM, "checkPrice: success message=${priceCheckResponse.message} for userId=$userId")
+
+                val currentList = (_uiState.value as? WishlistState.Success)?.items?.toMutableList() ?: mutableListOf()
+                val index = currentList.indexOfFirst { it.id == item.id }
+                if (index != -1) {
+                    val updatedItem = currentList[index].copy(
+                        latestPriceCheckResult = priceCheckResponse,
+                        currentLowestPrice = priceCheckResponse.currentPrice,
+                        currentLowestPlatform = priceCheckResponse.platform,
+                        currentLowestProductTitle = priceCheckResponse.title,
+                        isTargetReached = priceCheckResponse.isTargetReached ?: false
+                    )
+                    currentList[index] = updatedItem
+                    _uiState.value = WishlistState.Success(currentList)
+                }
             } catch (e: Exception) {
                 Log.e(TAG_VM, "checkPrice: error for userId=$userId - ${e.message}", e)
-                _uiState.value = WishlistState.Error("가격 체크 오류: ${e.message}")
+                _uiState.value = WishlistState.Error("[translate:가격 체크 오류:] ${e.message}")
             }
         }
     }
