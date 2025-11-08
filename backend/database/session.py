@@ -31,7 +31,7 @@ class DatabaseManager:
             max_overflow=20,
             pool_pre_ping=True,
             pool_recycle=3600,  # 1시간
-            echo=False,  # 프로덕션에서는 False
+            echo=False,  # 프록덕션에서는 False
             connect_args={
                 "options": "-c timezone=Asia/Seoul"
             }
@@ -76,20 +76,29 @@ class DatabaseManager:
     
     def init_database(self):
         """데이터베이스 초기화 (테이블 생성)"""
-        from database.models import Base, Community
         try:
             logger.info("🗄️ 데이터베이스 테이블 생성 시작...")
-            # 모든 테이블 생성
-            Base.metadata.create_all(self.engine)
+            
+            # 모델 import
+            from database.models import Base as CommunityBase, Community
+            from models.wishlist_models import Base as WishlistBase
+            
+            # 1. 커뮤니티/딩/상품 테이블 생성
+            logger.info("📄 커뮤니티 관련 테이블 생성 중...")
+            CommunityBase.metadata.create_all(self.engine)
+            
+            # 2. 위시리스트 테이블 생성
+            logger.info("💚 위시리스트 테이블 생성 중...")
+            WishlistBase.metadata.create_all(self.engine)
             
             # 기본 커뮤니티 데이터 삽입
             session = self.get_session()  # 컨텍스트 매니저 대신 직접 생성/닫기
             try:
                 communities = [
-                    Community(name="뽐뿌", base_url="https://www.ppomppu.co.kr"),
+                    Community(name="뿐뿐", base_url="https://www.ppomppu.co.kr"),
                     Community(name="루리웹", base_url="https://bbs.ruliweb.com"),
                     Community(name="클리앙", base_url="https://www.clien.net"),
-                    Community(name="알리뽐뿌", base_url="https://www.ppomppu.co.kr"),
+                    Community(name="알리뿐뿐", base_url="https://www.ppomppu.co.kr"),
                     Community(name="퀘이사존", base_url="https://quasarzone.com"),
                     Community(name="페던코리아", base_url="https://www.fmkorea.com")
                 ]
@@ -101,12 +110,16 @@ class DatabaseManager:
                         session.add(community)
                         logger.info(f"✅ 커뮤니티 '{community.name}' 추가")
                 session.commit()
+            except Exception as e:
+                logger.warning(f"⚠️ 커뮤니티 데이터 초기화 경고: {e}")
+                session.rollback()
             finally:
                 session.close()
+            
             logger.info("✅ 데이터베이스 초기화 완료")
             return True
         except Exception as e:
-            logger.error(f"❌ 데이터베이스 초기화 실패: {e}")
+            logger.error(f"❌ 데이터베이스 초기화 실패: {e}", exc_info=True)
             return False
     
     def test_connection(self) -> bool:
@@ -120,7 +133,7 @@ class DatabaseManager:
             logger.error(f"❌ 데이터베이스 연결 테스트 실패: {e}")
             return False
 
-# 싱글톤 인스턴스
+# 싱글턴 인스턴스
 db_manager = DatabaseManager()
 
 # FastAPI 의존성 주입을 위한 함수
