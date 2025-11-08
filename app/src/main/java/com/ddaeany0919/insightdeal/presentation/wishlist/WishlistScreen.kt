@@ -127,16 +127,17 @@ fun WishlistScreenDetailed(
                 Log.d(TAG_UI, "AddDialog: 닫힘")
                 showAddDialog = false
             },
-            onAdd = { keyword, targetPrice ->
-                Log.d(TAG_UI, "AddDialog: onAdd 호출 keyword=$keyword target=$targetPrice")
-                viewModel.addItem(keyword, targetPrice)
+            onAdd = { keyword, productUrl, targetPrice ->
+                Log.d(TAG_UI, "AddDialog: onAdd 호출 keyword=$keyword productUrl=$productUrl target=$targetPrice")
+                viewModel.addItem(keyword, productUrl, targetPrice)
                 showAddDialog = false
             },
-            onAddFromLink = { url, target ->
+            onAddFromLink = { url, targetPrice ->
                 scope.launch {
-                    Log.d(TAG_UI, "AddDialog: onAddFromLink 호출 url=$url target=$target")
+                    Log.d(TAG_UI, "AddDialog: onAddFromLink 호출 url=$url target=$targetPrice")
                     try {
-                        viewModel.addFromLink(url, target)
+                        // addFromLink 함수가 없으므로 addItem 사용
+                        viewModel.addItem("", url, targetPrice)
                         showAddDialog = false
                         Toast.makeText(ctx, "링크로 추가되었습니다", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
