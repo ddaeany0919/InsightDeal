@@ -51,12 +51,12 @@ fun WishlistScreenDetailed(
         }
     ) { inner ->
         when (val currentState = uiState) {
-            is WishlistState.Loading -> LoadingStateDetailed(modifier = Modifier.padding(inner))
-            is WishlistState.Empty -> EmptyWishlistStateDetailed(
+            is WishlistUiState.Loading -> LoadingStateDetailed(modifier = Modifier.padding(inner))
+            is WishlistUiState.Empty -> EmptyWishlistStateDetailed(
                 onAdd = { showAddDialog = true },
                 modifier = Modifier.padding(inner)
             )
-            is WishlistState.Success -> {
+            is WishlistUiState.Success -> {
                 LazyColumn(
                     modifier = Modifier.padding(inner).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -82,7 +82,7 @@ fun WishlistScreenDetailed(
                     }
                 }
             }
-            is WishlistState.Error -> {
+            is WishlistUiState.Error -> {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(inner).padding(16.dp),
                     verticalArrangement = Arrangement.Center,
