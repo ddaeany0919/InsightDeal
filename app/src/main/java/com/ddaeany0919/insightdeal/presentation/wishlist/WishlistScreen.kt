@@ -173,3 +173,63 @@ fun AddWishlistUI(
         text = { Text("이 Dialog는 예시입니다. 실제 UI를 여기에 구현하세요.") }
     )
 }
+
+@Composable
+fun LoadingStateDetailed(modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(Modifier.height(16.dp))
+            Text("가격 정보를 가져오고 있어요...", style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+}
+
+@Composable
+fun EmptyWishlistStateDetailed(onAdd: () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("아직 관심상품이 없어요", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = onAdd) { Text("상품 추가하기") }
+        }
+    }
+}
+
+@Composable
+fun SwipeToDeleteContainer(
+    thresholdPx: Float,
+    backgroundColor: Color,
+    icon: ImageVector,
+    iconTint: Color,
+    onSwipedLeft: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    var offsetX by remember { mutableStateOf(0f) }
+    val progress by animateFloatAsState((kotlin.math.abs(offsetX) / thresholdPx).coerceIn(0f, 1f), label = "swipeProgress")
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .background(backgroundColor.copy(alpha = progress * 0.8f))
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (offsetX <= -thresholdPx) onSwipedLeft()
+                        offsetX = 0f
+                    }
+                ) { _, dragAmount ->
+                    val newX = offsetX + dragAmount
+                    offsetX = if (newX < 0f) newX else 0f
+                }
+            }
+            .padding(vertical = 2.dp)
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = iconTint.copy(alpha = progress), modifier = Modifier.size(24.dp))
+        }
+        Box(Modifier.offset(x = Dp(offsetX / Resources.getSystem().displayMetrics.density))) {
+            content()
+        }
+    }
+}
