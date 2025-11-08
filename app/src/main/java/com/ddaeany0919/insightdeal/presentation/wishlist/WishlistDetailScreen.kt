@@ -12,7 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ddaeany0919.insightdeal.presentation.wishlist.model.Period
-import com.ddaeany0919.insightdeal.presentation.wishlist.model.PriceHistoryItem
+import com.ddaeany0919.insightdeal.presentation.wishlist.PriceHistoryItem // 타입 통일
 
 @Composable
 fun WishlistDetailScreen(
@@ -62,7 +62,7 @@ fun AlarmToggle(isOn: Boolean, onToggle: (Boolean) -> Unit) {
 fun PriceChart(priceHistory: List<PriceHistoryItem>) {
     Column(modifier = Modifier.fillMaxWidth()) {
         priceHistory.forEach { item ->
-            Text(text = "${item.date} - ${item.lowestPrice}원 (${item.lowestPriceShopName})")
+            Text(text = "${item.recordedAt} - ${item.lowestPrice}원 (${item.platform ?: "-"}})")
         }
     }
 }
