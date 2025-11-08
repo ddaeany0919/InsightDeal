@@ -1,0 +1,22 @@
+// UI 상단에 새로고침 버튼 추가 (예: XML 레이아웃)
+/*
+<LinearLayout
+    android:orientation="horizontal"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="8dp">
+
+    <Button
+        android:id="@+id/refreshButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="새로고침" />
+</LinearLayout>
+*/
+
+// 버튼 클릭 시 ViewModel 내 가격 데이터 강제 갱신 호출 예 (Activity/Fragment 내에서)
+/*
+refreshButton.setOnClickListener {
+    viewModel.refreshPriceData()
+}
+*/
