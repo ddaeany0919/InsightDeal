@@ -70,7 +70,7 @@ fun WishlistCardSimple(
                         fontWeight = if (checkResult.isTargetReached == true) FontWeight.Bold else null
                     )
                     Text(
-                        text = "[${checkResult.platform ?: "-"}]",
+                        text = "[${checkResult.platform ?: "-"]}",
                         color = Color(0xFF42a5f5),
                         style = MaterialTheme.typography.body2
                     )
@@ -129,3 +129,18 @@ fun openLinkInBrowser(context: Context, url: String) {
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
     ContextCompat.startActivity(context, intent, null)
 }
+
+// 데이터 클래스 (예시)
+data class WishlistItem(
+    val keyword: String,
+    val targetPrice: Int
+)
+
+// 가격 체크 결과 데이터 클래스 (예시)
+data class PriceCheckResponse(
+    val currentPrice: Int?,
+    val isTargetReached: Boolean?,
+    val platform: String?,
+    val title: String?,
+    val productUrl: String?
+)
