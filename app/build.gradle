@@ -54,6 +54,14 @@ android {
 
     packagingOptions { resources { excludes += '/META-INF/{AL2.0,LGPL2.1}' } }
 }
+configurations.all {
+    resolutionStrategy {
+        force 'org.jetbrains.kotlin:kotlin-stdlib:1.9.24'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.24'
+        force 'androidx.core:core-ktx:1.12.0'
+        force 'androidx.core:core:1.12.0'
+    }
+}
 
 dependencies {
     // Android Core
@@ -116,8 +124,8 @@ dependencies {
     implementation 'com.github.PhilJay:MPAndroidChart:v3.1.0'
 
     //Vico 차트 의존성 추가
-    implementation "com.patrykandpatrick.vico:compose:2.1.0"
-    implementation "com.patrykandpatrick.vico:core:2.1.0"
+    implementation "com.patrykandpatrick.vico:compose:1.15.0"
+    implementation "com.patrykandpatrick.vico:core:1.15.0"
 
     // DataStore
     implementation 'androidx.datastore:datastore-preferences:1.0.0'
