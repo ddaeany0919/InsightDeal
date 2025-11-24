@@ -1,5 +1,6 @@
 package com.ddaeany0919.insightdeal.presentation.wishlist
 
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -168,32 +171,101 @@ fun AddWishlistDialog(
     }
 }
 
+@Composable
+fun DashboardHeader(items: List<WishlistItem>) {
+    val totalCount = items.size
+    val targetReachedCount = items.count { it.isTargetReached || (it.currentLowestPrice != null && it.targetPrice >= it.currentLowestPrice) }
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("전체 상품", style = MaterialTheme.typography.labelMedium)
+                Text("$totalCount", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
+            }
+            VerticalDivider(modifier = Modifier.height(40.dp).width(1.dp), color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("목표 달성", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "$targetReachedCount", 
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = if (targetReachedCount > 0) com.ddaeany0919.insightdeal.ui.theme.PriceBest else MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WishlistScreen(viewModel: WishlistViewModel = viewModel()) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val itemPriceHistories by viewModel.itemPriceHistories.collectAsStateWithLifecycle()
     var showDialog by remember { mutableStateOf(false) }
+    var expandedItemId by remember { mutableStateOf<Int?>(null) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("위시리스트") }) },
+        topBar = {
+            LargeTopAppBar(
+                title = {
+                    Text(
+                        "Insight Deal",
+                        style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold)
+                    )
+                },
+                colors = TopAppBarDefaults.largeTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "아이템 추가")
+            ExtendedFloatingActionButton(
+                onClick = { showDialog = true },
+                containerColor = MaterialTheme.colorScheme.secondary,
+                contentColor = MaterialTheme.colorScheme.onSecondary,
+                elevation = FloatingActionButtonDefaults.elevation(8.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("상품 추가", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
             }
-        }
+        },
+        containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
         val currentState = uiState
         when (currentState) {
             is WishlistUiState.Loading -> LoadingState()
             is WishlistUiState.Empty -> EmptyWishlistState { showDialog = true }
             is WishlistUiState.Success -> LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(paddingValues),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentPadding = PaddingValues(bottom = 80.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                item {
+                    DashboardHeader(items = currentState.items)
+                }
                 items(items = currentState.items, key = { it.id }) { item ->
                     WishlistCard(
                         item = item,
@@ -208,8 +280,22 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel()) {
                                 )
                             }
                         },
-                        onCheckPrice = { viewModel.checkPrice(item) }
+                        onCheckPrice = { viewModel.checkPrice(item) },
+                        isExpanded = expandedItemId == item.id,
+                        onExpand = {
+                            Log.d("WishlistScreen", "onExpand called for ${item.keyword}, current expanded: $expandedItemId")
+                            if (expandedItemId == item.id) {
+                                expandedItemId = null
+                            } else {
+                                expandedItemId = item.id
+                                viewModel.loadItemHistory(item)
+                            }
+                        },
+                        priceHistory = itemPriceHistories[item.id]
                     )
+                    // Add Graph below card if expanded (simplified for now, just showing placeholder)
+                    // In a real app, we would fetch history for this item
+                    // PriceHistoryGraph(dataPoints = emptyList(), modifier = Modifier.height(100.dp).fillMaxWidth())
                 }
             }
             is WishlistUiState.Error -> {

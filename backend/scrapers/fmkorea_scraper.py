@@ -15,7 +15,7 @@ class FmkoreaScraper(BaseScraper):
     def __init__(self, db_session):
         super().__init__(
             db_session,
-            community_name="펨코리아",
+            community_name="펨코",
             community_url="https://www.fmkorea.com/hotdeal"
         )
 

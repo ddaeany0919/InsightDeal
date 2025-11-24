@@ -1,46 +1,51 @@
 package com.ddaeany0919.insightdeal.data
 
+import android.util.Log
 import com.ddaeany0919.insightdeal.BuildConfig
-import com.ddaeany0919.insightdeal.network.DealsRetrofitClient
+import com.ddaeany0919.insightdeal.network.NetworkModule
+import com.ddaeany0919.insightdeal.network.DealsApiService
 
 /**
  * 🏭 리포지토리 제공자 (간단한 DI 패턴)
  */
 object RepositoryProvider {
+    
+    private const val TAG = "RepositoryProvider"
 
     /**
      * 📊 딜 리포지토리 인스턴스 (싱글톤)
-     * 디버그/릴리스 환경에 따라 자동 전환
      */
     val dealsRepository: DealsRepository by lazy {
-        if (BuildConfig.DEBUG) { // ✅ DEBUG_MODE → DEBUG 수정
-            // 디버그: 실제 API + 자세한 로깅
-            RemoteDealsRepository(DealsRetrofitClient.dealsApiService) // ✅ apiService 제공
-        } else {
-            // 릴리스: 실제 API + 최적화된 로깅
-            RemoteDealsRepository(DealsRetrofitClient.dealsApiService) // ✅ apiService 제공
-        }
+        Log.d(TAG, "📦 DealsRepository 초기화 중...")
+        // NetworkModule을 사용하여 API 서비스 생성
+        val dealsApiService = NetworkModule.createService<DealsApiService>()
+        Log.d(TAG, "✅ DealsRepository 생성 완료 (NetworkModule 사용)")
+        RemoteDealsRepository(dealsApiService)
     }
 
     /**
      * 🧪 테스트용 Mock Repository 제공
-     * 단위 테스트나 개발 중 네트워크 없이 테스트할 때 사용
+     * 
+     * NOTE: MockDealsRepository가 삭제되었으므로 사용 불가
      */
+    @Deprecated("MockDealsRepository has been removed. Use test doubles instead.")
     fun createMockRepository(): DealsRepository {
-        return MockDealsRepository()
+        Log.w(TAG, "⚠️ createMockRepository() 호출됨 - 이 메서드는 deprecated 되었습니다")
+        throw UnsupportedOperationException("MockDealsRepository has been removed. Please use test doubles or fakes in your test code.")
     }
 
     /**
      * 🔧 Repository 강제 교체 (테스트/디버깅용)
-     * 특정 상황에서 Mock 데이터를 사용하고 싶을 때
      */
     private var _overrideRepository: DealsRepository? = null
 
     fun setTestRepository(repository: DealsRepository) {
+        Log.d(TAG, "🔧 Test Repository 설정: ${repository::class.java.simpleName}")
         _overrideRepository = repository
     }
 
     fun clearTestRepository() {
+        Log.d(TAG, "🗑️ Test Repository 제거")
         _overrideRepository = null
     }
 
@@ -53,7 +58,7 @@ object RepositoryProvider {
      */
     fun getRepositoryInfo(): Map<String, Any> {
         val currentRepo = getCurrentRepository()
-        return mapOf(
+        val info = mapOf(
             "repository_type" to currentRepo::class.java.simpleName,
             "debug_mode" to BuildConfig.DEBUG,
             "is_override" to (_overrideRepository != null),
@@ -63,5 +68,7 @@ object RepositoryProvider {
                 "N/A"
             }
         )
+        Log.d(TAG, "📊 Repository Info: $info")
+        return info
     }
 }

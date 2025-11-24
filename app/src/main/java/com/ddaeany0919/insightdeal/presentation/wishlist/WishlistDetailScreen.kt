@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -62,7 +65,22 @@ fun WishlistDetailScreen(
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-            } ?: Text("상품 데이터를 불러올 수 없습니다.", color = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(16.dp))
+            } ?: Box(
+                modifier = Modifier.fillMaxWidth().height(200.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text("상품 데이터를 불러올 수 없습니다.", color = MaterialTheme.colorScheme.error)
+                }
+            }
 
             PeriodToggleRow(selectedPeriod, onPeriodSelected = { viewModel.setPeriod(it) })
             Spacer(Modifier.height(12.dp))
@@ -77,18 +95,18 @@ fun WishlistDetailScreen(
 fun PeriodToggleRow(selectedPeriod: Period, onPeriodSelected: (Period) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
     ) {
         Period.values().forEach { period ->
-            Button(
+            FilterChip(
+                selected = period == selectedPeriod,
                 onClick = { onPeriodSelected(period) },
-                colors = if (period == selectedPeriod)
-                    ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                else
-                    ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Text(text = period.label)
-            }
+                label = { Text(period.label) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
         }
     }
 }
@@ -113,12 +131,43 @@ fun AlarmToggle(isOn: Boolean, onToggle: (Boolean) -> Unit) {
 
 @Composable
 fun PriceChart(priceHistory: List<PriceHistoryItem>) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        if(priceHistory.isEmpty()) {
-            Text("해당 기간 가격 이력이 없습니다.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
-        } else {
-            priceHistory.forEach { item ->
-                Text(text = "${item.recordedAt} - ${item.lowestPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원 (${item.platform})")
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+            Text("가격 변동 추이", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(16.dp))
+            
+            if(priceHistory.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(150.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.DateRange,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text("해당 기간 가격 이력이 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
+                priceHistory.forEach { item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(item.recordedAt.format(DateTimeFormatter.ofPattern("MM/dd HH:mm")), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "${item.lowestPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+                }
             }
         }
     }

@@ -7,6 +7,8 @@ import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
+import retrofit2.http.POST
+import retrofit2.http.Path
 import retrofit2.http.Query
 import java.util.concurrent.ConcurrentHashMap
 
@@ -36,12 +38,17 @@ data class PriceHistory(
  * 🌐 가격 히스토리 API 인터페이스
  */
 interface PriceHistoryApi {
-    @GET("/api/history")
+    @GET("/api/product/{productId}/history")
     suspend fun getPriceHistory(
-        @Query("product") product: String,
-        @Query("period") period: Int = 30,
-        @Query("platform") platform: String? = null
-    ): Response<ApiHistoryResponse>
+        @Path("productId") productId: Int
+    ): List<ApiPricePoint>
+
+    @POST("/api/product/track")
+    suspend fun trackProduct(
+        @Query("product_id") productId: String,
+        @Query("target_price") targetPrice: Int,
+        @Query("user_id") userId: String
+    ): Response<Unit>
 }
 
 /**
@@ -83,7 +90,7 @@ sealed class HistoryState {
 class PriceHistoryRepository {
     companion object {
         private const val TAG = "PriceHistory"
-        private const val BASE_URL = "http://10.0.2.2:8000/"
+        private const val BASE_URL = "http://192.168.0.4:8000/"
         private const val CACHE_DURATION_MS = 300_000L // 5분 캐시
         private const val REQUEST_TIMEOUT_MS = 2000L // 2초 타임아웃
     }
@@ -112,110 +119,58 @@ class PriceHistoryRepository {
      */
     suspend fun getPriceHistory(
         productName: String,
+        productId: Int, // Added productId
         periodDays: Int = 30,
         platform: String? = null,
         forceRefresh: Boolean = false
     ): PriceHistory? {
-        val cacheKey = "${productName}_${periodDays}_${platform ?: "all"}"
-        val cleanProductName = productName.trim().take(50)
-
-        if (cleanProductName.isBlank()) {
-            Log.w(TAG, "⚠️ 빈 상품명 - 히스토리 조회 스킵")
-            return null
-        }
-
+        val cacheKey = "${productId}_${periodDays}"
+        
         // 캐시 확인
         if (!forceRefresh) {
             getCachedHistory(cacheKey)?.let { cached ->
-                Log.d(TAG, "💨 히스토리 캐시 히트: $cleanProductName (${periodDays}일)")
                 _historyState.value = HistoryState.Cached(cached)
                 return cached
             }
         }
 
-        // 중복 요청 방지
-        activeJobs[cacheKey]?.let { job ->
-            if (job.isActive) {
-                Log.d(TAG, "🔄 진행 중인 히스토리 요청 대기: $cleanProductName")
-                job.join()
-                return getCachedHistory(cacheKey)
-            }
-        }
-
         // 로딩 상태 알림
         _historyState.value = HistoryState.Loading
-        val startTime = System.currentTimeMillis()
-        Log.i(TAG, "📈 ${periodDays}일 가격 히스토리 조회: $cleanProductName")
+        System.currentTimeMillis()
 
         val job = CoroutineScope(Dispatchers.IO).launch {
             try {
-                // 2초 내 응답 또는 타임아웃
-                val response = withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
-                    api.getPriceHistory(
-                        product = cleanProductName,
-                        period = periodDays.coerceIn(7, 90),
-                        platform = platform
-                    )
-                }
-
-                val elapsedMs = System.currentTimeMillis() - startTime
-
-                if (response == null) {
-                    Log.w(TAG, "⏱️ 히스토리 요청 타임아웃 ($elapsedMs ms): $cleanProductName")
-                    _historyState.value = HistoryState.Error(
-                        "네트워크 연결이 느립니다. 다시 시도해주세요.",
-                        canRetry = true
-                    )
-                    return@launch
-                }
-
-                when {
-                    response.isSuccessful -> {
-                        response.body()?.let { apiResponse ->
-                            val history = mapToHistory(apiResponse)
-                            // 캐시 저장
-                            historyCache[cacheKey] = history to System.currentTimeMillis()
-
-                            val isFastResponse = elapsedMs <= 1000
-                            Log.i(TAG, "✅ 히스토리 조회 성공 ($elapsedMs ms, fast: $isFastResponse): " +
-                                    "${history.dataPoints.size}개 데이터 포인트, " +
-                                    "최저가 ${history.lowestEver}원, 트렌드 ${history.currentTrend}")
-                            _historyState.value = HistoryState.Success(history)
-                        } ?: run {
-                            Log.e(TAG, "❌ API 응답 바디 비어있음: $cleanProductName")
-                            _historyState.value = HistoryState.Error("데이터를 불러올 수 없습니다")
-                        }
-                    }
-                    response.code() == 404 -> {
-                        Log.w(TAG, "📋 가격 히스토리 데이터 없음: $cleanProductName")
-                        _historyState.value = HistoryState.Error(
-                            "아직 가격 데이터가 수집되지 않았습니다. 잠시 후 다시 시도해주세요.",
-                            canRetry = true
-                        )
-                    }
-                    else -> {
-                        Log.e(TAG, "❌ API 요청 실패 ${response.code()}: $cleanProductName")
-                        _historyState.value = HistoryState.Error(
-                            "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-                            canRetry = response.code() != 400
-                        )
-                    }
+                val response = api.getPriceHistory(productId)
+                
+                // API 응답이 List<ApiPricePoint>이므로 직접 처리
+                if (response.isNotEmpty()) {
+                    val history = mapToHistory(productName, response)
+                    historyCache[cacheKey] = history to System.currentTimeMillis()
+                    _historyState.value = HistoryState.Success(history)
+                } else {
+                    _historyState.value = HistoryState.Error("데이터가 없습니다")
                 }
             } catch (e: Exception) {
-                val elapsedMs = System.currentTimeMillis() - startTime
-                Log.e(TAG, "❌ 히스토리 조회 예외 ($elapsedMs ms): $cleanProductName", e)
-                _historyState.value = HistoryState.Error(
-                    "네트워크 오류가 발생했습니다. 다시 시도해주세요.",
-                    canRetry = true
-                )
+                Log.e(TAG, "❌ 히스토리 조회 실패", e)
+                _historyState.value = HistoryState.Error("네트워크 오류")
             } finally {
                 activeJobs.remove(cacheKey)
             }
         }
-
+        
         activeJobs[cacheKey] = job
         job.join()
         return getCachedHistory(cacheKey)
+    }
+
+    suspend fun trackProduct(productId: String, targetPrice: Int, userId: String): Boolean {
+        return try {
+            val response = api.trackProduct(productId, targetPrice, userId)
+            response.isSuccessful
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 추적 등록 실패", e)
+            false
+        }
     }
 
     /**
@@ -235,8 +190,8 @@ class PriceHistoryRepository {
     /**
      * 🔄 API 응답을 앱 내부 모델로 매핑
      */
-    private fun mapToHistory(apiResponse: ApiHistoryResponse): PriceHistory {
-        val dataPoints = apiResponse.data_points.map { point ->
+    private fun mapToHistory(productName: String, apiPoints: List<ApiPricePoint>): PriceHistory {
+        val dataPoints = apiPoints.map { point ->
             PricePoint(
                 date = point.date,
                 price = point.price,
@@ -244,17 +199,28 @@ class PriceHistoryRepository {
                 isAvailable = point.is_available
             )
         }
+        
+        val prices = dataPoints.map { it.price }
+        val lowest = prices.minOrNull() ?: 0
+        val highest = prices.maxOrNull() ?: 0
+        
+        // 간단한 트렌드 분석
+        val trend = if (prices.size >= 2) {
+            val last = prices.first()
+            val prev = prices[1]
+            if (last < prev) "down" else if (last > prev) "up" else "stable"
+        } else "stable"
 
         return PriceHistory(
-            productName = apiResponse.product_name,
-            periodDays = apiResponse.period_days,
+            productName = productName,
+            periodDays = 30, // Default
             dataPoints = dataPoints,
-            platforms = apiResponse.platforms,
-            lowestEver = apiResponse.lowest_ever,
-            highestEver = apiResponse.highest_ever,
-            currentTrend = apiResponse.current_trend,
-            lastUpdated = apiResponse.last_updated,
-            traceId = apiResponse.trace_id
+            platforms = dataPoints.map { it.platform }.distinct(),
+            lowestEver = lowest,
+            highestEver = highest,
+            currentTrend = trend,
+            lastUpdated = dataPoints.firstOrNull()?.date ?: "",
+            traceId = ""
         )
     }
 

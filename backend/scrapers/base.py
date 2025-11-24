@@ -6,7 +6,7 @@ import requests
 import logging
 import time
 import json
-from backend.core import ai_parser
+from core import ai_parser
 import base64
 from abc import ABC, abstractmethod
 from urllib.parse import urlparse, urljoin, unquote, parse_qs
@@ -25,8 +25,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 
-from backend.database import models
-from backend.database import session as database
+from database import models
+from database import session as database
 
 # 환경변수 설정
 SELENIUM_TIMEOUT = int(os.getenv("SELENIUM_TIMEOUT", "5"))
@@ -980,26 +980,28 @@ class BaseScraper(ABC):
                 logger.warning(f"   - [Redirect] 3. Invalid URL after decoding. Returning as-is: {decoded_url}")
                 return decoded_url
 
-            self.driver.get(decoded_url)
-            try:
-                WebDriverWait(self.driver, 2).until(
-                    lambda driver: driver.execute_script("return document.readyState") == "complete"
-                )
-            except Exception:
-                logger.warning(f"   - [Redirect] Page load timeout for {decoded_url}. Proceeding anyway.")
+            # [Performance Optimization]
+            # 실제 페이지 방문을 통한 리다이렉트 해결은 시간이 너무 오래 걸리므로(페이지 로드),
+            # 디코딩된 URL을 그대로 반환합니다.
+            # 앱에서 사용자가 클릭했을 때 리다이렉트가 발생하도록 합니다.
             
-            final_url = self.driver.current_url
-            logger.info(f"   - [Redirect] 3. Final resolved URL: {final_url}")
-            return final_url
+            # self.driver.get(decoded_url)
+            # try:
+            #     WebDriverWait(self.driver, 2).until(
+            #         lambda driver: driver.execute_script("return document.readyState") == "complete"
+            #     )
+            # except Exception:
+            #     logger.warning(f"   - [Redirect] Page load timeout for {decoded_url}. Proceeding anyway.")
+            
+            # final_url = self.driver.current_url
+            # logger.info(f"   - [Redirect] 3. Final resolved URL: {final_url}")
+            # return final_url
+            
+            return decoded_url
 
         except Exception as e:
             logger.error(f"   - [Redirect] 3. Failed to resolve redirect for {url}: {e}", exc_info=True)
-            try:
-                current_url_on_fail = self.driver.current_url
-                logger.warning(f"   - [Redirect] Error occurred. Returning current URL: {current_url_on_fail}")
-                return current_url_on_fail
-            except:
-                return decoded_url if 'decoded_url' in locals() else url
+            return decoded_url if 'decoded_url' in locals() else url
 
     def _get_final_price(self, price_from_list: str, price_from_ai: str) -> str:
         # 가격 결정 로직

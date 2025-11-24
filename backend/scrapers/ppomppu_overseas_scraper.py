@@ -13,15 +13,15 @@ logger = logging.getLogger(__name__)
 
 class PpomppuOverseasScraper(BaseScraper):
     def __init__(self, db_session):
-        """해외뽐뿌 스크래퍼 초기화"""
+        """뽐뿌 해외 스크래퍼 초기화"""
         super().__init__(
             db_session,
-            community_name="해외뽐뿌",
-            community_url="https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu3"
+            community_name="뽐뿌 해외",
+            community_url="https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu4"
         )
 
     def scrape(self):
-        """해외뽐뿌 목록 페이지에서 딜 정보를 수집"""
+        """뽐뿌 해외 목록 페이지에서 딜 정보를 수집"""
         logger.info(f"[{self.community_name}] 딜 목록 스크래핑 시작...")
         
         WebDriverWait(self.driver, 15).until(
@@ -61,7 +61,7 @@ class PpomppuOverseasScraper(BaseScraper):
         return self._process_detail_pages(temp_deals_info)
 
     def get_post_details(self, post_url):
-        """해외뽐뿌 전용 게시글 상세 정보 추출"""
+        """뽐뿌 해외 전용 게시글 상세 정보 추출"""
         logger.info(f"[{self.community_name}] 게시글 상세 추출 시작: {post_url[:50]}...")
         
         try:
@@ -75,7 +75,7 @@ class PpomppuOverseasScraper(BaseScraper):
             soup = BeautifulSoup(self.driver.page_source, 'html.parser')
             soup['data-url'] = post_url  # URL 정보 추가
             
-            # 해외뽐뿌 전용 최적화 설정 (뽐뿌와 동일)
+            # 뽐뿌 해외 전용 최적화 설정 (뽐뿌와 동일)
             site_config = {
                 "content_selectors": ['td.board-contents', '.board-contents', '.view_content'],
                 "time_selectors": ['li:contains("등록일")', 'li', '.date', '.post-date'],

@@ -8,9 +8,9 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.ddaeany0919.insightdeal.network.ApiClient
 import com.ddaeany0919.insightdeal.network.FCMTokenRequest
-import com.ddaeany0919.insightdeal.network.RetrofitClient
+import com.ddaeany0919.insightdeal.network.NetworkModule
+import com.ddaeany0919.insightdeal.network.ApiService
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
@@ -46,15 +46,19 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         // 서버에 새 토큰 등록
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val apiService = RetrofitClient.apiService
+                Log.d(TAG, "📡 NetworkModule을 사용하여 API Service 생성 중...")
+                val apiService = NetworkModule.createService<ApiService>()
 
-                // ✅ FCMTokenRequest DTO 사용 (Map 대신)
+                val deviceId = getCustomDeviceId()
+                Log.d(TAG, "📱 Device ID: $deviceId")
+                
                 val request = FCMTokenRequest(
                     token = token,
-                    deviceId = getCustomDeviceId(),
+                    deviceId = deviceId,
                     platform = "android"
                 )
-
+                
+                Log.d(TAG, "📤 FCM Token 서버 전송 중...")
                 val response = apiService.registerFCMToken(request)
                 if (response.isSuccessful) {
                     Log.d(TAG, "✅ FCM Token 서버 등록 성공")
@@ -63,9 +67,9 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
                     Log.e(TAG, "❌ FCM Token 서버 등록 실패: ${response.code()}")
                 }
             } catch (e: HttpException) {
-                Log.e(TAG, "❌ FCM Token 등록 중 네트워크 오류: ${e.message}")
+                Log.e(TAG, "❌ FCM Token 등록 중 네트워크 오류: ${e.message}", e)
             } catch (e: Exception) {
-                Log.e(TAG, "❌ FCM Token 등록 중 알 수 없는 오류: ${e.message}")
+                Log.e(TAG, "❌ FCM Token 등록 중 알 수 없는 오류: ${e.message}", e)
             }
         }
     }
@@ -163,7 +167,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
             data = data,
             icon = R.drawable.ic_notification,
             priority = NotificationCompat.PRIORITY_MAX,
-            autoCancel = false // 중요한 알림이므로 자동 삭제 안 함
+            autoCancel = false
         )
     }
 
@@ -197,7 +201,6 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
     ) {
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-        // 딥링크 인텐트 생성
         val intent = createDeepLinkIntent(data)
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -264,7 +267,6 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         return "${NumberFormat.getInstance().format(price)}원"
     }
 
-    // ✅ 이름 충돌 방지를 위해 메서드명 변경
     private fun getCustomDeviceId(): String {
         return android.provider.Settings.Secure.getString(
             contentResolver,

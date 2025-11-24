@@ -21,7 +21,7 @@ except Exception as e:
 # ✅ 수정된 import 경로 (backend. 제거)
 from core.notifications import notification_service
 from database.session import get_db_session, create_db_session
-from database.models import Deal, Product, PriceHistory
+from database.models import Deal, Product, PriceHistory, ProductPriceHistory, PriceAlert, FCMToken
 
 logging.basicConfig(
     level=logging.INFO,
@@ -300,43 +300,142 @@ class PriceCollectionScheduler:
     
     async def _get_active_tracked_products(self) -> List[Dict]:
         """활성 추적 상품 목록 조회"""
-        # TODO: 실제 DB 쿼리 구현
-        return []
+        try:
+            with create_db_session() as session:
+                products = session.query(Product).filter(
+                    Product.is_tracking == True
+                ).all()
+                
+                return [
+                    {
+                        "id": p.id,
+                        "product_id": p.product_id,
+                        "url": p.url,
+                        "title": p.title,
+                        "current_price": p.current_price,
+                        "target_price": p.target_price,
+                        "user_id": p.user_id
+                    }
+                    for p in products
+                ]
+        except Exception as e:
+            logger.error(f"❌ Failed to get active products: {e}")
+            return []
     
     async def _get_all_products(self, limit: int = 100) -> List[Dict]:
         """전체 상품 목록 조회"""
-        # TODO: 실제 DB 쿼리 구현
-        return []
+        try:
+            with create_db_session() as session:
+                products = session.query(Product).limit(limit).all()
+                return [
+                    {
+                        "id": p.id,
+                        "url": p.url,
+                        "title": p.title
+                    }
+                    for p in products
+                ]
+        except Exception as e:
+            logger.error(f"❌ Failed to get all products: {e}")
+            return []
     
     async def _collect_product_prices(self, product: Dict) -> Optional[Dict]:
         """특정 상품의 4몰 가격 수집"""
-        # TODO: 4몰 가격 수집 로직 구현
+        # TODO: 실제 스크래퍼 연동 (현재는 시뮬레이션 로직)
+        # 실제 구현시에는 product['url']을 기반으로 적절한 스크래퍼 선택 필요
         return None
     
-    async def _save_price_history(self, product_id: str, prices: Dict):
+    async def _save_price_history(self, product_id: int, prices: Dict):
         """가격 히스토리 저장"""
-        # TODO: DB 저장 로직 구현
-        pass
+        try:
+            with create_db_session() as session:
+                # 1. ProductPriceHistory 추가
+                history = ProductPriceHistory(
+                    product_id=product_id,
+                    price=prices.get('price', 0),
+                    is_available=prices.get('is_available', True)
+                )
+                session.add(history)
+                
+                # 2. Product 현재가 업데이트
+                product = session.query(Product).filter(Product.id == product_id).first()
+                if product:
+                    product.current_price = prices.get('price', 0)
+                    product.last_checked = datetime.now()
+                    
+                    # 최저가 갱신 로직
+                    if not product.lowest_price or product.current_price < product.lowest_price:
+                        product.lowest_price = product.current_price
+                
+                session.commit()
+        except Exception as e:
+            logger.error(f"❌ Failed to save price history: {e}")
     
     async def _check_significant_price_change(self, product: Dict, new_prices: Dict):
         """유의미한 가격 변동 체크 (5% 이상)"""
-        # TODO: 가격 변동 체크 및 즉시 알림 로직
-        pass
-    
+        if not product.get('current_price'):
+            return
+            
+        old_price = product['current_price']
+        new_price = new_prices.get('price', 0)
+        
+        if new_price == 0: return
+        
+        # 5% 이상 하락 시
+        if new_price < old_price * 0.95:
+            logger.info(f"📉 Price drop detected for {product['title']}: {old_price} -> {new_price}")
+            # 알림 발송 로직 호출 가능
+            
     async def _find_target_price_reached(self) -> List[Dict]:
         """목표가 도달한 알림 찾기"""
-        # TODO: 목표가 도달 상품 조회
-        return []
+        try:
+            with create_db_session() as session:
+                # PriceAlert 테이블과 Product 테이블 조인
+                alerts = session.query(PriceAlert).join(Product).filter(
+                    PriceAlert.is_active == True,
+                    Product.current_price <= PriceAlert.target_price
+                ).all()
+                
+                return [
+                    {
+                        "alert_id": a.id,
+                        "user_id": a.user_id,
+                        "product": {
+                            "title": a.product.title,
+                            "price": a.product.current_price,
+                            "url": a.product.url
+                        }
+                    }
+                    for a in alerts
+                ]
+        except Exception as e:
+            logger.error(f"❌ Failed to find target price alerts: {e}")
+            return []
     
     async def _get_user_fcm_tokens(self, user_id: str) -> List[str]:
         """사용자 FCM 토큰 조회"""
-        # TODO: 사용자 FCM 토큰 DB 조회
-        return []
+        try:
+            with create_db_session() as session:
+                tokens = session.query(FCMToken.token).filter(
+                    FCMToken.user_id == user_id,
+                    FCMToken.is_active == True
+                ).all()
+                return [t[0] for t in tokens]
+        except Exception as e:
+            logger.error(f"❌ Failed to get FCM tokens: {e}")
+            return []
     
-    async def _mark_alert_sent(self, alert_id: str):
+    async def _mark_alert_sent(self, alert_id: int):
         """알림 발송 완료 표시"""
-        # TODO: 알림 발송 기록 업데이트
-        pass
+        try:
+            with create_db_session() as session:
+                alert = session.query(PriceAlert).filter(PriceAlert.id == alert_id).first()
+                if alert:
+                    alert.last_triggered = datetime.now()
+                    alert.trigger_count += 1
+                    session.commit()
+        except Exception as e:
+            logger.error(f"❌ Failed to mark alert sent: {e}")
 
 async def main():
     """스케줄러 메인 실행 함수"""

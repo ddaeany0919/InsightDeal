@@ -26,6 +26,11 @@ class WishlistViewModel(
     private val userIdProvider: () -> String
 ) : ViewModel() {
 
+    private val priceHistoryRepository = com.ddaeany0919.insightdeal.data.PriceHistoryRepository()
+    
+    private val _itemPriceHistories = MutableStateFlow<Map<Int, com.ddaeany0919.insightdeal.data.PriceHistory>>(emptyMap())
+    val itemPriceHistories: StateFlow<Map<Int, com.ddaeany0919.insightdeal.data.PriceHistory>> = _itemPriceHistories
+
     private val _uiState = MutableStateFlow<WishlistUiState>(WishlistUiState.Loading)
     val uiState: StateFlow<WishlistUiState> = _uiState
 
@@ -78,8 +83,14 @@ class WishlistViewModel(
                 _uiState.value = if (items.isEmpty()) WishlistUiState.Empty else WishlistUiState.Success(items)
                 Log.d("WishlistViewModel", "위시리스트 로드: ${items.size}개")
             } catch (e: Exception) {
-                _uiState.value = WishlistUiState.Error("목록을 불러오는데 실패했습니다: ${e.message}")
-                Log.e("WishlistViewModel", "위시리스트 불러오기 오류", e)
+                val errorMessage = if (e is java.net.SocketTimeoutException) {
+                    "서버 연결 시간 초과 (Timeout). 백엔드가 응답하지 않습니다."
+                } else {
+                    "목록을 불러오는데 실패했습니다: ${e.message}"
+                }
+                _uiState.value = WishlistUiState.Error(errorMessage)
+                Log.e("WishlistViewModel", "위시리스트 불러오기 오류: ${e.javaClass.simpleName}", e)
+                Log.d("WishlistViewModel", "Detailed Error: $errorMessage")
             }
         }
     }
@@ -190,6 +201,58 @@ class WishlistViewModel(
                 Log.d("WishlistViewModel", "알림 상태 서버 반영 성공")
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "알림 동기화 오류", e)
+            }
+        }
+    }
+    fun loadItemHistory(item: WishlistItem) {
+        Log.d("WishlistViewModel", "loadItemHistory requested for ${item.keyword} (id=${item.id})")
+        viewModelScope.launch {
+            try {
+                // 이미 로드된 경우 스킵 (옵션)
+                if (_itemPriceHistories.value.containsKey(item.id)) {
+                    Log.d("WishlistViewModel", "History already loaded for ${item.id}")
+                    return@launch
+                }
+
+                Log.d("WishlistViewModel", "Fetching history from repository for ${item.id}")
+                val history = priceHistoryRepository.getPriceHistory(
+                    productName = item.keyword,
+                    productId = item.id,
+                    periodDays = 30
+                )
+                
+                if (history != null) {
+                    Log.d("WishlistViewModel", "History loaded for ${item.id}: ${history.dataPoints.size} points")
+                    _itemPriceHistories.value = _itemPriceHistories.value + (item.id to history)
+                } else {
+                    Log.w("WishlistViewModel", "History is null for ${item.id}")
+                    // 빈 히스토리 객체를 넣어 로딩 상태 해제
+                    _itemPriceHistories.value = _itemPriceHistories.value + (item.id to com.ddaeany0919.insightdeal.data.PriceHistory(
+                        productName = item.keyword,
+                        periodDays = 30,
+                        dataPoints = emptyList(),
+                        platforms = emptyList(),
+                        lowestEver = 0,
+                        highestEver = 0,
+                        currentTrend = "stable",
+                        lastUpdated = "",
+                        traceId = ""
+                    ))
+                }
+            } catch (e: Exception) {
+                Log.e("WishlistViewModel", "개별 상품 히스토리 로드 실패: ${item.keyword}", e)
+                // 에러 발생 시에도 빈 객체 넣어 로딩 해제
+                _itemPriceHistories.value = _itemPriceHistories.value + (item.id to com.ddaeany0919.insightdeal.data.PriceHistory(
+                    productName = item.keyword,
+                    periodDays = 30,
+                    dataPoints = emptyList(),
+                    platforms = emptyList(),
+                    lowestEver = 0,
+                    highestEver = 0,
+                    currentTrend = "stable",
+                    lastUpdated = "",
+                    traceId = ""
+                ))
             }
         }
     }

@@ -112,11 +112,11 @@ fun MainApp(deviceUserId: String) {
                 val itemId = backStackEntry.arguments?.getString("itemId")?.toIntOrNull() ?: -1
                 WishlistDetailScreen(itemId = itemId, onBack = { navController.popBackStack() }, viewModel = wishlistViewModel)
             }
-            composable("matches") { MatchesScreen() }
-            composable("settings") { ThemeSettingsScreenCollapsible() }
+            composable("community") { com.ddaeany0919.insightdeal.presentation.community.CommunityScreen() }
+            composable("settings") { com.ddaeany0919.insightdeal.settings.SettingsScreen() }
             composable("deal_detail/{dealId}") { Box { Text("딜 상세 화면") } }
             composable("product_detail/{productId}") { Box { Text("상품 상세 화면") } }
-            composable("theme_settings") { ThemeSettingsScreenCollapsible() }
+            composable("theme_settings") { com.ddaeany0919.insightdeal.settings.SettingsScreen() }
         }
     }
 }
@@ -126,16 +126,23 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val navigationItems = listOf(
-        BottomNavItem("home", "발견", Icons.Default.Home, "커뮤니티 딜 피드"),
-        BottomNavItem("watchlist", "추적", Icons.Default.BookmarkBorder, "내 위시리스트"),
-        BottomNavItem("matches", "매칭", Icons.Default.Notifications, "AI가 찾은 딜"),
-        BottomNavItem("settings", "설정", Icons.Default.Settings, "테마 설정")
+        BottomNavItem("home", "홈", Icons.Default.Home, "홈"),
+        BottomNavItem("watchlist", "관심", Icons.Default.FavoriteBorder, "내 위시리스트"),
+        BottomNavItem("community", "커뮤니티", Icons.Default.Forum, "커뮤니티 핫딜"),
+        BottomNavItem("settings", "설정", Icons.Default.Settings, "설정")
     )
     NavigationBar {
         navigationItems.forEach { item ->
             val selected = currentDestination?.hierarchy?.any { dest -> dest.route == item.route } == true
             NavigationBarItem(
-                icon = { Icon(if (item.route == "watchlist" && selected) Icons.Default.Bookmark else item.icon, contentDescription = item.description) },
+                icon = { 
+                    Icon(
+                        if (item.route == "watchlist" && selected) Icons.Default.Favorite 
+                        else if (item.route == "community" && selected) Icons.Default.Forum
+                        else item.icon, 
+                        contentDescription = item.description
+                    ) 
+                },
                 label = { Text(item.title) },
                 selected = selected,
                 onClick = {

@@ -14,7 +14,7 @@ services:
     networks:
       - insightdeal-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U insightdeal"]
+      test: [ "CMD-SHELL", "pg_isready -U insightdeal" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,19 +37,21 @@ services:
       - NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
       - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
       - PYTHONPATH=/app
+      - BASE_URL=http://192.168.0.4:8000
+      - HEADLESS=true
+    shm_size: '2gb'
     ports:
-      # Explicit binding to all interfaces for external device access
       - "0.0.0.0:8000:8000"
     volumes:
       - ./backend:/app
       - ./backend/image_cache:/app/image_cache
+      - ./backend/logs:/app/logs
     networks:
       - insightdeal-network
     restart: unless-stopped
-    # Ensure binding to all interfaces for mobile device access
     command: python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/api/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -83,6 +85,7 @@ services:
 
 volumes:
   postgres_data:
+
 
 networks:
   insightdeal-network:

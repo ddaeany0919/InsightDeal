@@ -8,8 +8,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from .base import BaseScraper
 from datetime import datetime
-from backend.database import models
-from backend.core import ai_parser
+from database import models
+from core import ai_parser
 
 # 로거 설정
 logger = logging.getLogger(__name__)
