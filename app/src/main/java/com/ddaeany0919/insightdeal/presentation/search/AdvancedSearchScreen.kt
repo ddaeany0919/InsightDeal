@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.presentation.search
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background

@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.presentation.recommendation
 
 import android.app.Application
 import android.util.Log
@@ -6,6 +6,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.ApiClient
+import com.ddaeany0919.insightdeal.domain.PersonalizationEngine
+import com.ddaeany0919.insightdeal.domain.PersonalizationInsights
+import com.ddaeany0919.insightdeal.domain.UserInteraction
+import com.ddaeany0919.insightdeal.domain.InteractionType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

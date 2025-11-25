@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.domain
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -327,8 +327,8 @@ class PersonalizationEngine private constructor(private val context: Context) {
      */
     fun provideFeedback(dealId: Int, isPositive: Boolean) {
         // 추천 정확도 개선을 위한 피드백 학습
-        val profile = _userProfile.value
-        val feedbackWeight = if (isPositive) 2.0 else -1.0
+        _userProfile.value
+        if (isPositive) 2.0 else -1.0
 
         // 피드백을 다음 추천에 반영
         // (실제 구현에서는 더 복잡한 강화학습 알고리즘 사용)

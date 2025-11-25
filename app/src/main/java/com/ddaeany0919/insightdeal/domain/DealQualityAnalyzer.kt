@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.domain
 
 import android.util.Log
 import com.ddaeany0919.insightdeal.models.DealItem

@@ -1,9 +1,10 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.presentation.recommendation
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -11,25 +12,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.ui.A11yIconButton
 import com.ddaeany0919.insightdeal.ui.rememberSavedLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BookmarkScreen(
+fun RecommendationScreen(
     onDealClick: (DealItem) -> Unit,
-    onBackClick: () -> Unit
+    viewModel: RecommendationViewModel = viewModel()
 ) {
-    val listState = rememberSavedLazyListState(key = "bookmark_list")
+    val listState = rememberSavedLazyListState(key = "recommend_list")
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(text = "🔖 즐겨찾기", fontWeight = FontWeight.Bold) },
+                title = { Text(text = "추천", fontWeight = FontWeight.Bold, fontSize = 20.sp) },
                 navigationIcon = {
-                    A11yIconButton(onClick = onBackClick, contentDescription = "뒤로가기") {
+                    A11yIconButton(onClick = { /* TODO: back */ }, contentDescription = "뒤로가기") {
                         Icon(Icons.Default.ArrowBack, contentDescription = null)
+                    }
+                },
+                actions = {
+                    A11yIconButton(onClick = { /* TODO: refresh */ }, contentDescription = "새로고침") {
+                        Icon(Icons.Default.Refresh, contentDescription = null)
                     }
                 }
             )
@@ -38,7 +45,8 @@ fun BookmarkScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
+                .padding(paddingValues)
+                .background(MaterialTheme.colorScheme.background),
             state = listState,
             contentPadding = PaddingValues(16.dp)
         ) {
@@ -52,7 +60,7 @@ fun BookmarkScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "📌 북마크 기능 준비 중",
+                            text = "🤖 AI 추천 기능 준비 중",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -60,7 +68,7 @@ fun BookmarkScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
-                            text = "홈에서 하트 버튼을 눌러\n마음에 드는 딜을 저장하세요!",
+                            text = "사용자의 관심사를 분석하여\n맞춤형 딜을 추천해드릴 예정입니다!",
                             fontSize = 14.sp
                         )
                     }

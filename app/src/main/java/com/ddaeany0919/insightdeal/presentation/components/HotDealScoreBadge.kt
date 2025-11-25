@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.presentation.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -17,6 +17,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ddaeany0919.insightdeal.domain.HotDealScore
+import com.ddaeany0919.insightdeal.domain.DealBadge
+import com.ddaeany0919.insightdeal.domain.ScoreBreakdown
 
 /**
  * 🏅 꿀딜 지수 배지 UI 컴포넌트

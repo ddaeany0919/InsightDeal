@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.presentation.search
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -163,8 +163,8 @@ class SearchAutoComplete private constructor(private val context: Context) {
      */
     private fun searchByChosung(query: String): List<String> {
         if (!isChosung(query)) return emptyList()
-        
-        val chosungMap = mapOf(
+
+        mapOf(
             'ㄱ' to "가-깋", 'ㄴ' to "나-닣", 'ㄷ' to "다-딯", 'ㄹ' to "라-맇",
             'ㅁ' to "마-밓", 'ㅂ' to "바-빟", 'ㅅ' to "사-싷", 'ㅇ' to "아-잏",
             'ㅈ' to "자-짛", 'ㅊ' to "차-칳", 'ㅋ' to "카-킿", 'ㅌ' to "타-팋",

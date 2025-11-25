@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.presentation.price
 
 import android.util.Log
 import androidx.lifecycle.ViewModel

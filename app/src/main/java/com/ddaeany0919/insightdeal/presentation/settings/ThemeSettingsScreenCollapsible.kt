@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal.settings
+package com.ddaeany0919.insightdeal.presentation.settings
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -14,15 +14,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.ddaeany0919.insightdeal.data.theme.ThemeManager
-import com.ddaeany0919.insightdeal.data.theme.ThemePreferences
+import com.ddaeany0919.insightdeal.presentation.theme.ThemeManager
+import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
 import kotlinx.coroutines.launch
 
 @Composable
 fun ThemeSettingsScreenCollapsible(tm: ThemeManager = ThemeManager.getInstance(LocalContext.current)) {
-    val scope = rememberCoroutineScope()
+    rememberCoroutineScope()
     var expanded by remember { mutableStateOf(true) }
-    val mode by tm.modeFlow.collectAsState(initial = ThemePreferences.Mode.SYSTEM)
+    val mode by tm.themeMode.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(
@@ -41,24 +41,24 @@ fun ThemeSettingsScreenCollapsible(tm: ThemeManager = ThemeManager.getInstance(L
         AnimatedVisibility(visible = expanded, enter = expandVertically(), exit = shrinkVertically()) {
             Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 AssistChip(
-                    onClick = { scope.launch { tm.updateMode(ThemePreferences.Mode.LIGHT) } },
+                    onClick = { tm.setThemeMode(ThemeMode.LIGHT) },
                     label = { Text("라이트") },
-                    leadingIcon = { if (mode == ThemePreferences.Mode.LIGHT) Icon(Icons.Default.Palette, null) }
+                    leadingIcon = { if (mode == ThemeMode.LIGHT) Icon(Icons.Default.Palette, null) }
                 )
                 AssistChip(
-                    onClick = { scope.launch { tm.updateMode(ThemePreferences.Mode.DARK) } },
+                    onClick = { tm.setThemeMode(ThemeMode.DARK) },
                     label = { Text("다크") },
-                    leadingIcon = { if (mode == ThemePreferences.Mode.DARK) Icon(Icons.Default.Palette, null) }
+                    leadingIcon = { if (mode == ThemeMode.DARK) Icon(Icons.Default.Palette, null) }
                 )
                 AssistChip(
-                    onClick = { scope.launch { tm.updateMode(ThemePreferences.Mode.AMOLED) } },
+                    onClick = { tm.setThemeMode(ThemeMode.AMOLED) },
                     label = { Text("AMOLED") },
-                    leadingIcon = { if (mode == ThemePreferences.Mode.AMOLED) Icon(Icons.Default.Palette, null) }
+                    leadingIcon = { if (mode == ThemeMode.AMOLED) Icon(Icons.Default.Palette, null) }
                 )
                 AssistChip(
-                    onClick = { scope.launch { tm.updateMode(ThemePreferences.Mode.SYSTEM) } },
+                    onClick = { tm.setThemeMode(ThemeMode.SYSTEM) },
                     label = { Text("시스템") },
-                    leadingIcon = { if (mode == ThemePreferences.Mode.SYSTEM) Icon(Icons.Default.Palette, null) }
+                    leadingIcon = { if (mode == ThemeMode.SYSTEM) Icon(Icons.Default.Palette, null) }
                 )
             }
         }

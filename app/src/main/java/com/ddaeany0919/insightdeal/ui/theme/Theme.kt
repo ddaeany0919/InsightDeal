@@ -8,9 +8,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import com.ddaeany0919.insightdeal.AppColorScheme
-import com.ddaeany0919.insightdeal.ThemeMode
-import com.ddaeany0919.insightdeal.data.theme.ThemeManager
+import com.ddaeany0919.insightdeal.presentation.theme.AppColorScheme
+import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
+import com.ddaeany0919.insightdeal.presentation.theme.ThemeManager
 
 // 🎨 InsightDeal Premium Palette
 val White = Color(0xFFFFFFFF)
@@ -121,10 +121,6 @@ fun InsightDealTheme(
         ThemeMode.DARK -> true
         ThemeMode.AMOLED -> true
         ThemeMode.SYSTEM -> darkTheme
-        ThemeMode.AUTO_TIME -> {
-            val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-            hour >= 19 || hour <= 7
-        }
         else -> darkTheme // Fallback for safety
     }
 

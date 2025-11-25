@@ -36,7 +36,7 @@
         
         <!-- Firebase Cloud Messaging Service -->
         <service
-            android:name=".firebase.InsightDealMessagingService"
+            android:name=".core.InsightDealFirebaseMessagingService"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />

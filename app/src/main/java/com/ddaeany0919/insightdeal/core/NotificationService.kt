@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.core
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -11,6 +11,8 @@ import androidx.core.app.NotificationCompat
 import com.ddaeany0919.insightdeal.network.FCMTokenRequest
 import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.network.ApiService
+import com.ddaeany0919.insightdeal.MainActivity
+import com.ddaeany0919.insightdeal.R
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope

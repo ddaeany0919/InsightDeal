@@ -26,10 +26,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.ddaeany0919.insightdeal.data.theme.ThemeManager
-import com.ddaeany0919.insightdeal.data.theme.ThemePreferences
+import com.ddaeany0919.insightdeal.presentation.theme.ThemeManager
+import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
 import com.ddaeany0919.insightdeal.presentation.wishlist.*
-import com.ddaeany0919.insightdeal.settings.ThemeSettingsScreenCollapsible
+import com.ddaeany0919.insightdeal.presentation.settings.ThemeSettingsScreenCollapsible
 import com.ddaeany0919.insightdeal.ui.EnhancedHomeScreen_Applied
 import com.ddaeany0919.insightdeal.ui.HomeViewModel
 import com.ddaeany0919.insightdeal.ui.theme.InsightDealTheme
@@ -55,14 +55,19 @@ class MainActivity : ComponentActivity() {
         val deviceUserId = generateDeviceUserId(this)
         setContent {
             val tm = remember { ThemeManager.getInstance(this) }
-            val mode by tm.modeFlow.collectAsState(initial = ThemePreferences.Mode.SYSTEM)
-            val dark = when (mode) {
-                ThemePreferences.Mode.LIGHT -> false
-                ThemePreferences.Mode.DARK, ThemePreferences.Mode.AMOLED -> true
-                ThemePreferences.Mode.SYSTEM -> isSystemInDarkTheme()
-            }
-            val amoled = mode == ThemePreferences.Mode.AMOLED
-            InsightDealTheme(darkTheme = dark, themeMode = if (amoled) ThemeMode.AMOLED else if (dark) ThemeMode.DARK else ThemeMode.LIGHT, amoledMode = amoled) {
+            val mode by tm.themeMode.collectAsState()
+            val colorScheme by tm.colorScheme.collectAsState()
+            val amoledMode by tm.amoledMode.collectAsState()
+            
+            val systemDark = isSystemInDarkTheme()
+            val useDark = tm.shouldUseDarkTheme(systemDark)
+            
+            InsightDealTheme(
+                darkTheme = useDark,
+                themeMode = mode,
+                colorScheme = colorScheme,
+                amoledMode = amoledMode
+            ) {
                 MainApp(deviceUserId)
             }
         }
@@ -113,10 +118,10 @@ fun MainApp(deviceUserId: String) {
                 WishlistDetailScreen(itemId = itemId, onBack = { navController.popBackStack() }, viewModel = wishlistViewModel)
             }
             composable("community") { com.ddaeany0919.insightdeal.presentation.community.CommunityScreen() }
-            composable("settings") { com.ddaeany0919.insightdeal.settings.SettingsScreen() }
+            composable("settings") { com.ddaeany0919.insightdeal.presentation.settings.SettingsScreen() }
             composable("deal_detail/{dealId}") { Box { Text("딜 상세 화면") } }
             composable("product_detail/{productId}") { Box { Text("상품 상세 화면") } }
-            composable("theme_settings") { com.ddaeany0919.insightdeal.settings.SettingsScreen() }
+            composable("theme_settings") { com.ddaeany0919.insightdeal.presentation.settings.ThemeSettingsScreen(onBackClick = { navController.popBackStack() }) }
         }
     }
 }

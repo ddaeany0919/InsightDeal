@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.presentation.settings
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -21,6 +21,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.*
+import com.ddaeany0919.insightdeal.presentation.theme.ThemeManager
+import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
+import com.ddaeany0919.insightdeal.presentation.theme.AppColorScheme
 
 /**
  * 🎨 테마 설정 화면 (AMOLED 및 컴러 테마 지원)
@@ -162,7 +165,7 @@ private fun ThemeModeSection(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // AMOLED 모드 (새로 추가)
+            // AMOLED 모드
             ThemeOptionItem(
                 title = "🖤 AMOLED 블랙",
                 subtitle = "완전한 검은색 배경 (배터리 절약)",
@@ -182,27 +185,14 @@ private fun ThemeModeSection(
                 onClick = { onThemeChange(ThemeMode.SYSTEM) }
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // AUTO_TIME 모드
-            ThemeOptionItem(
-                title = "⏰ 시간 자동 전환",
-                subtitle = if (isNightTime) "현재 다크모드 (저녁 19시~오전 7시)"
-                else "현재 라이트모드 (오전 7시~저녁 19시)",
-                icon = Icons.Default.Schedule,
-                isSelected = currentTheme == ThemeMode.AUTO_TIME,
-                onClick = { onThemeChange(ThemeMode.AUTO_TIME) }
-            )
-
-            // 분리선
             if (currentTheme != ThemeMode.AMOLED) {
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
                 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // AMOLED 토글 (다른 모드에서만 사용 가능)
+                // AMOLED 토글
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -417,7 +407,7 @@ private fun ColorThemeButton(
         modifier = Modifier
             .clickable { onClick() }
             .padding(8.dp)
-    ) {
+        ) {
         Box(
             modifier = Modifier
                 .size(56.dp)
@@ -583,16 +573,17 @@ private fun ThemeInfoSection(
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "• ☀️ 라이트 모드: 밝은 화면으로 낮에 최적\n" +
-                        "• 🌙 다크 모드: 어두운 화면으로 눈의 피로 감소\n" +
-                        "• 🖤 AMOLED 블랙: 완전 검은색 배경으로 배터리 절약\n" +
-                        "• 📱 시스템 따라가기: 기기 설정에 따라 자동 변경\n" +
-                        "• ⏰ 시간 자동 전환: 저녁 19시부터 다음날 오전 7시까지 다크모드\n" +
-                        "• 🎨 컬러 테마: 4가지 개성있는 컬러 선택 가능\n" +
-                        "• 🕰️ 현재 시간: ${if (isNightTime) "밤 (다크모드 적용 시간)" else "낮 (라이트모드 적용 시간)"}",
+                text = "현재 시간: ${if (isNightTime) "야간 (다크모드 권장)" else "주간 (라이트모드 권장)"}",
                 fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 20.sp
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "시스템 설정에 따라 자동으로 테마가 변경될 수 있습니다.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

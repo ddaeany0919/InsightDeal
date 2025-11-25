@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal.settings
+package com.ddaeany0919.insightdeal.presentation.settings
 
 import android.content.Context
 import android.util.Log
@@ -17,8 +17,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.ddaeany0919.insightdeal.data.theme.ThemeManager
-import com.ddaeany0919.insightdeal.data.theme.ThemePreferences
+import com.ddaeany0919.insightdeal.presentation.theme.ThemeManager
+import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -26,8 +26,8 @@ import kotlinx.coroutines.launch
 fun SettingsScreen() {
     val ctx = LocalContext.current
     val tm = remember { ThemeManager.getInstance(ctx) }
-    val mode by tm.modeFlow.collectAsState(initial = ThemePreferences.Mode.SYSTEM)
-    val scope = rememberCoroutineScope()
+    val mode by tm.themeMode.collectAsState()
+    rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
     Scaffold(
@@ -101,7 +101,7 @@ fun SettingsScreen() {
                 Column {
                     // 테마 설정
                     ExpandableThemeSetting(currentMode = mode) { newMode ->
-                        scope.launch { tm.updateMode(newMode) }
+                        tm.setThemeMode(newMode)
                     }
                     
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -209,8 +209,8 @@ fun SettingsNavigationRow(
 
 @Composable
 fun ExpandableThemeSetting(
-    currentMode: ThemePreferences.Mode,
-    onModeSelected: (ThemePreferences.Mode) -> Unit
+    currentMode: ThemeMode,
+    onModeSelected: (ThemeMode) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     
@@ -227,10 +227,10 @@ fun ExpandableThemeSetting(
             Text(text = "테마 설정", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             Text(
                 text = when(currentMode) {
-                    ThemePreferences.Mode.SYSTEM -> "시스템 기본"
-                    ThemePreferences.Mode.LIGHT -> "라이트 모드"
-                    ThemePreferences.Mode.DARK -> "다크 모드"
-                    ThemePreferences.Mode.AMOLED -> "블랙(AMOLED)"
+                    ThemeMode.SYSTEM -> "시스템 기본"
+                    ThemeMode.LIGHT -> "라이트 모드"
+                    ThemeMode.DARK -> "다크 모드"
+                    ThemeMode.AMOLED -> "블랙(AMOLED)"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary
@@ -239,10 +239,10 @@ fun ExpandableThemeSetting(
         
         if (expanded) {
             Column(modifier = Modifier.padding(start = 56.dp, end = 16.dp, bottom = 16.dp)) {
-                ThemeOptionRow("시스템 기본", ThemePreferences.Mode.SYSTEM, currentMode, onModeSelected)
-                ThemeOptionRow("라이트 모드", ThemePreferences.Mode.LIGHT, currentMode, onModeSelected)
-                ThemeOptionRow("다크 모드", ThemePreferences.Mode.DARK, currentMode, onModeSelected)
-                ThemeOptionRow("블랙(AMOLED)", ThemePreferences.Mode.AMOLED, currentMode, onModeSelected)
+                ThemeOptionRow("시스템 기본", ThemeMode.SYSTEM, currentMode, onModeSelected)
+                ThemeOptionRow("라이트 모드", ThemeMode.LIGHT, currentMode, onModeSelected)
+                ThemeOptionRow("다크 모드", ThemeMode.DARK, currentMode, onModeSelected)
+                ThemeOptionRow("블랙(AMOLED)", ThemeMode.AMOLED, currentMode, onModeSelected)
             }
         }
     }
@@ -251,9 +251,9 @@ fun ExpandableThemeSetting(
 @Composable
 private fun ThemeOptionRow(
     label: String,
-    value: ThemePreferences.Mode,
-    current: ThemePreferences.Mode,
-    onSelect: (ThemePreferences.Mode) -> Unit
+    value: ThemeMode,
+    current: ThemeMode,
+    onSelect: (ThemeMode) -> Unit
 ) {
     Row(
         modifier = Modifier

@@ -1,4 +1,4 @@
-package com.ddaeany0919.insightdeal
+package com.ddaeany0919.insightdeal.presentation.price
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
