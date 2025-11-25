@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val tm = remember { ThemeManager.getInstance(this) }
             val mode by tm.themeMode.collectAsState()
-            val colorScheme by tm.colorScheme.collectAsState()
+
             val amoledMode by tm.amoledMode.collectAsState()
             
             val systemDark = isSystemInDarkTheme()
@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
             InsightDealTheme(
                 darkTheme = useDark,
                 themeMode = mode,
-                colorScheme = colorScheme,
+
                 amoledMode = amoledMode
             ) {
                 MainApp(deviceUserId)
