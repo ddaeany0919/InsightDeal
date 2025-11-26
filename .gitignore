@@ -37,3 +37,5 @@ keys/
 __pycache__/
 *.pyc
 *.log
+
+backend/image_cache/
