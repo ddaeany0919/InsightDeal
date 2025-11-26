@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocalMall
-import androidx.compose.material.icons.filled.TrendingDown
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -87,6 +87,7 @@ private fun ComparisonTimeout(modifier: Modifier = Modifier) {
 }
 
 @Composable
+
 private fun ComparisonContent(data: PriceComparison, modifier: Modifier = Modifier) {
     if (data.lowestPlatform == null || data.lowestPrice == null) return
 
@@ -98,7 +99,7 @@ private fun ComparisonContent(data: PriceComparison, modifier: Modifier = Modifi
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Default.TrendingDown, contentDescription = null, tint = Color(0xFF00C853))
+                Icon(Icons.AutoMirrored.Filled.TrendingDown, contentDescription = null, tint = Color(0xFF00C853))
                 Text(
                     text = "최저가: ${data.lowestPlatform.uppercase()} ${"%,d".format(data.lowestPrice)}원",
                     style = MaterialTheme.typography.bodyMedium,
@@ -109,7 +110,7 @@ private fun ComparisonContent(data: PriceComparison, modifier: Modifier = Modifi
             val others = data.platforms.filterKeys { it != data.lowestPlatform }.toList().sortedBy { it.second.price }
             if (others.isNotEmpty()) {
                 val summary = others.joinToString(" · ") { (k, v) ->
-                    val diff = v.price - (data.lowestPrice ?: v.price)
+                    val diff = v.price - data.lowestPrice
                     "${k.uppercase()}(+${"%,d".format(diff)})"
                 }
                 Text(

@@ -1,0 +1,696 @@
+﻿./gradlew : WARNING: A restricted method in java.lang.System has been called
+위치 줄:1 문자:1
++ ./gradlew assembleDebug 2>&1 | Out-File -FilePath "build_log.txt" -En ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: A rest...has been called:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnam
+ed module (file:/C:/Users/kth00/.gradle/wrapper/dists/gradle-8.7-bin/bhs2wmbdwecv87pi65oeuq5iu/gradle-8.7/lib/native-pl
+atform-0.22-milestone-25.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+Reusing configuration cache.
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :app:checkKotlinGradlePluginConfigurationErrors
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:mergeDebugShaders UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets UP-TO-DATE
+> Task :app:l8DexDesugarLibDebug UP-TO-DATE
+> Task :app:processDebugGoogleServices UP-TO-DATE
+> Task :app:checkDebugDuplicateClasses UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:compressDebugAssets UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:desugarDebugFileDependencies UP-TO-DATE
+> Task :app:mergeDebugStartupProfile UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:mergeExtDexDebug UP-TO-DATE
+> Task :app:mergeLibDexDebug UP-TO-DATE
+> Task :app:validateSigningDebug UP-TO-DATE
+> Task :app:mergeDebugJniLibFolders UP-TO-DATE
+> Task :app:writeDebugAppMetadata UP-TO-DATE
+> Task :app:mergeDebugNativeLibs NO-SOURCE
+> Task :app:writeDebugSigningConfigVersions UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:stripDebugDebugSymbols NO-SOURCE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :app:compileDebugKotlin
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:1:5 Expecting a top level declaration
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:15:5 Expecting a top level declaration
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:15:10 Expecting a top level declaration
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:127:1 Expecting a top level declaration
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:130:24 Expecting ')'
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:131:5 Expecting a top level declaration
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:145:5 Expecting a top level declaration
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:145:10 Expecting a top level declaration
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:257:1 Expecting a top level declaration
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:3:17 Conflicting declarations: private val apiService: [Error type: Return type for function cannot be resol
+ved], private val apiService: [Error type: Return type for function cannot be resolved]
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:3:30 Unresolved reference: ApiClient
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:6:17 Conflicting declarations: private val _products: [Error type: Not found recorded type for MutableStateF
+low<List<ProductData>>(emptyList())], private val _products: [Error type: Not found recorded type for MutableStateFlow<
+List<ProductData>>(emptyList())]
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:6:29 Unresolved reference: MutableStateFlow
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:7:9 Conflicting declarations: public val products: [Error type: Unresolved type for StateFlow<List<ProductDa
+ta>>]<List<ProductData>>, public val products: [Error type: Unresolved type for StateFlow<List<ProductData>>]<List<Prod
+uctData>>
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:7:19 Unresolved reference: StateFlow
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:7:50 Overload resolution ambiguity: 
+private val _products: [Error type: Not found recorded type for MutableStateFlow<List<ProductData>>(emptyList())] defin
+ed in root package in file CoupangTrackingViewModel.kt
+private val _products: [Error type: Not found recorded type for MutableStateFlow<List<ProductData>>(emptyList())] defin
+ed in root package in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:9:17 Conflicting declarations: private val _isLoading: [Error type: Not found recorded type for MutableState
+Flow(false)], private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)]
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:9:30 Unresolved reference: MutableStateFlow
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:10:9 Conflicting declarations: public val isLoading: [Error type: Unresolved type for StateFlow<Boolean>]<Bo
+olean>, public val isLoading: [Error type: Unresolved type for StateFlow<Boolean>]<Boolean>
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:10:20 Unresolved reference: StateFlow
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:10:41 Overload resolution ambiguity: 
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:12:17 Conflicting declarations: private val _errorMessage: [Error type: Not found recorded type for MutableS
+tateFlow<String?>(null)], private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>
+(null)]
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:12:33 Unresolved reference: MutableStateFlow
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:13:9 Conflicting declarations: public val errorMessage: [Error type: Unresolved type for StateFlow<String?>]
+<String?>, public val errorMessage: [Error type: Unresolved type for StateFlow<String?>]<String?>
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:13:23 Unresolved reference: StateFlow
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:13:44 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:15:10 Conflicting overloads: public fun `<no name provided>`(): Unit defined in root package in file Coupang
+TrackingViewModel.kt, public fun `<no name provided>`(): Unit defined in root package in file CoupangTrackingViewModel.
+kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:15:10 Function declaration must have a name
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:16:9 Overload resolution ambiguity: 
+public fun loadProducts(): Unit defined in root package in file CoupangTrackingViewModel.kt
+public fun loadProducts(): Unit defined in root package in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:19:5 Conflicting overloads: public fun loadProducts(): Unit defined in root package in file CoupangTrackingV
+iewModel.kt, public fun loadProducts(): Unit defined in root package in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:20:9 Unresolved reference: viewModelScope
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:20:31 Unresolved reference: Dispatchers
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:22:17 Overload resolution ambiguity: 
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:22:28 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:23:17 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:23:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:24:17 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:24:23 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:25:32 Overload resolution ambiguity: 
+private val apiService: [Error type: Return type for function cannot be resolved] defined in root package in file Coupa
+ngTrackingViewModel.kt
+private val apiService: [Error type: Return type for function cannot be resolved] defined in root package in file Coupa
+ngTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:27:81 Cannot infer a type for this parameter. Please specify it explicitly.
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:29:29 Cannot find a parameter with this name: id
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:30:29 Cannot find a parameter with this name: title
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:31:29 Cannot find a parameter with this name: brand
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:32:29 Cannot find a parameter with this name: imageUrl
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:33:29 Cannot find a parameter with this name: currentPrice
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:34:29 Cannot find a parameter with this name: lowestPrice
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:35:29 Cannot find a parameter with this name: highestPrice
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:36:29 Cannot find a parameter with this name: targetPrice
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:37:29 Cannot find a parameter with this name: priceChangePercent
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:37:50 Overload resolution ambiguity: 
+private fun calculatePriceChange(apiProduct: [Error type: Unresolved type for ApiProduct]): Float defined in root packa
+ge in file CoupangTrackingViewModel.kt
+private fun calculatePriceChange(apiProduct: [Error type: Unresolved type for ApiProduct]): Float defined in root packa
+ge in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:38:29 Cannot find a parameter with this name: discountRate
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:38:44 Overload resolution ambiguity: 
+private fun calculateDiscountRate(apiProduct: [Error type: Unresolved type for ApiProduct]): Int defined in root packag
+e in file CoupangTrackingViewModel.kt
+private fun calculateDiscountRate(apiProduct: [Error type: Unresolved type for ApiProduct]): Int defined in root packag
+e in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:41:21 Overload resolution ambiguity: 
+private val _products: [Error type: Not found recorded type for MutableStateFlow<List<ProductData>>(emptyList())] defin
+ed in root package in file CoupangTrackingViewModel.kt
+private val _products: [Error type: Not found recorded type for MutableStateFlow<List<ProductData>>(emptyList())] defin
+ed in root package in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:41:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:42:21 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:42:27 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:45:21 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:45:35 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:46:21 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:46:27 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:48:25 Unresolved reference: HttpException
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:50:17 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:50:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:51:17 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:51:23 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:54:17 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:54:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:55:17 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:55:23 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:57:17 Overload resolution ambiguity: 
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:57:28 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:62:5 Conflicting overloads: public fun addProduct(url: String, targetPrice: Int): Unit defined in root packa
+ge in file CoupangTrackingViewModel.kt, public fun addProduct(url: String, targetPrice: Int): Unit defined in root pack
+age in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:64:13 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:64:27 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:67:9 Unresolved reference: viewModelScope
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:67:31 Unresolved reference: Dispatchers
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:69:17 Overload resolution ambiguity: 
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:69:28 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:70:17 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:70:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:71:17 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:71:23 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:77:32 Overload resolution ambiguity: 
+private val apiService: [Error type: Return type for function cannot be resolved] defined in root package in file Coupa
+ngTrackingViewModel.kt
+private val apiService: [Error type: Return type for function cannot be resolved] defined in root package in file Coupa
+ngTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:79:21 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:79:27 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:80:21 Overload resolution ambiguity: 
+public fun loadProducts(): Unit defined in root package in file CoupangTrackingViewModel.kt
+public fun loadProducts(): Unit defined in root package in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:83:21 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:83:35 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:84:21 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:84:27 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:86:25 Unresolved reference: HttpException
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:88:17 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:88:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:89:17 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:89:23 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:92:17 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:92:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:93:17 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:93:23 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:95:17 Overload resolution ambiguity: 
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:95:28 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:100:5 Conflicting overloads: public fun clearError(): Unit defined in root package in file CoupangTrackingVi
+ewModel.kt, public fun clearError(): Unit defined in root package in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:101:9 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:101:23 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:104:50 Unresolved reference: ApiProduct
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:116:51 Unresolved reference: ApiProduct
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:133:17 Conflicting declarations: private val apiService: [Error type: Return type for function cannot be res
+olved], private val apiService: [Error type: Return type for function cannot be resolved]
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:133:30 Unresolved reference: ApiClient
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:136:17 Conflicting declarations: private val _products: [Error type: Not found recorded type for MutableStat
+eFlow<List<ProductData>>(emptyList())], private val _products: [Error type: Not found recorded type for MutableStateFlo
+w<List<ProductData>>(emptyList())]
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:136:29 Unresolved reference: MutableStateFlow
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:137:9 Conflicting declarations: public val products: [Error type: Unresolved type for StateFlow<List<Product
+Data>>]<List<ProductData>>, public val products: [Error type: Unresolved type for StateFlow<List<ProductData>>]<List<Pr
+oductData>>
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:137:19 Unresolved reference: StateFlow
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:137:50 Overload resolution ambiguity: 
+private val _products: [Error type: Not found recorded type for MutableStateFlow<List<ProductData>>(emptyList())] defin
+ed in root package in file CoupangTrackingViewModel.kt
+private val _products: [Error type: Not found recorded type for MutableStateFlow<List<ProductData>>(emptyList())] defin
+ed in root package in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:139:17 Conflicting declarations: private val _isLoading: [Error type: Not found recorded type for MutableSta
+teFlow(false)], private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)]
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:139:30 Unresolved reference: MutableStateFlow
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:140:9 Conflicting declarations: public val isLoading: [Error type: Unresolved type for StateFlow<Boolean>]<B
+oolean>, public val isLoading: [Error type: Unresolved type for StateFlow<Boolean>]<Boolean>
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:140:20 Unresolved reference: StateFlow
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:140:41 Overload resolution ambiguity: 
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:142:17 Conflicting declarations: private val _errorMessage: [Error type: Not found recorded type for Mutable
+StateFlow<String?>(null)], private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?
+>(null)]
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:142:33 Unresolved reference: MutableStateFlow
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:143:9 Conflicting declarations: public val errorMessage: [Error type: Unresolved type for StateFlow<String?>
+]<String?>, public val errorMessage: [Error type: Unresolved type for StateFlow<String?>]<String?>
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:143:23 Unresolved reference: StateFlow
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:143:44 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:145:10 Conflicting overloads: public fun `<no name provided>`(): Unit defined in root package in file Coupan
+gTrackingViewModel.kt, public fun `<no name provided>`(): Unit defined in root package in file CoupangTrackingViewModel
+.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:145:10 Function declaration must have a name
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:146:9 Overload resolution ambiguity: 
+public fun loadProducts(): Unit defined in root package in file CoupangTrackingViewModel.kt
+public fun loadProducts(): Unit defined in root package in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:149:5 Conflicting overloads: public fun loadProducts(): Unit defined in root package in file CoupangTracking
+ViewModel.kt, public fun loadProducts(): Unit defined in root package in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:150:9 Unresolved reference: viewModelScope
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:150:31 Unresolved reference: Dispatchers
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:152:17 Overload resolution ambiguity: 
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:152:28 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:153:17 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:153:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:154:17 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:154:23 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:155:32 Overload resolution ambiguity: 
+private val apiService: [Error type: Return type for function cannot be resolved] defined in root package in file Coupa
+ngTrackingViewModel.kt
+private val apiService: [Error type: Return type for function cannot be resolved] defined in root package in file Coupa
+ngTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:157:81 Cannot infer a type for this parameter. Please specify it explicitly.
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:159:29 Cannot find a parameter with this name: id
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:160:29 Cannot find a parameter with this name: title
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:161:29 Cannot find a parameter with this name: brand
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:162:29 Cannot find a parameter with this name: imageUrl
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:163:29 Cannot find a parameter with this name: currentPrice
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:164:29 Cannot find a parameter with this name: lowestPrice
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:165:29 Cannot find a parameter with this name: highestPrice
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:166:29 Cannot find a parameter with this name: targetPrice
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:167:29 Cannot find a parameter with this name: priceChangePercent
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:167:50 Overload resolution ambiguity: 
+private fun calculatePriceChange(apiProduct: [Error type: Unresolved type for ApiProduct]): Float defined in root packa
+ge in file CoupangTrackingViewModel.kt
+private fun calculatePriceChange(apiProduct: [Error type: Unresolved type for ApiProduct]): Float defined in root packa
+ge in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:168:29 Cannot find a parameter with this name: discountRate
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:168:44 Overload resolution ambiguity: 
+private fun calculateDiscountRate(apiProduct: [Error type: Unresolved type for ApiProduct]): Int defined in root packag
+e in file CoupangTrackingViewModel.kt
+private fun calculateDiscountRate(apiProduct: [Error type: Unresolved type for ApiProduct]): Int defined in root packag
+e in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:171:21 Overload resolution ambiguity: 
+private val _products: [Error type: Not found recorded type for MutableStateFlow<List<ProductData>>(emptyList())] defin
+ed in root package in file CoupangTrackingViewModel.kt
+private val _products: [Error type: Not found recorded type for MutableStateFlow<List<ProductData>>(emptyList())] defin
+ed in root package in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:171:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:172:21 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:172:27 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:175:21 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:175:35 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:176:21 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:176:27 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:178:25 Unresolved reference: HttpException
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:180:17 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:180:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:181:17 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:181:23 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:184:17 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:184:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:185:17 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:185:23 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:187:17 Overload resolution ambiguity: 
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:187:28 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:192:5 Conflicting overloads: public fun addProduct(url: String, targetPrice: Int): Unit defined in root pack
+age in file CoupangTrackingViewModel.kt, public fun addProduct(url: String, targetPrice: Int): Unit defined in root pac
+kage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:194:13 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:194:27 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:197:9 Unresolved reference: viewModelScope
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:197:31 Unresolved reference: Dispatchers
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:199:17 Overload resolution ambiguity: 
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:199:28 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:200:17 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:200:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:201:17 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:201:23 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:207:32 Overload resolution ambiguity: 
+private val apiService: [Error type: Return type for function cannot be resolved] defined in root package in file Coupa
+ngTrackingViewModel.kt
+private val apiService: [Error type: Return type for function cannot be resolved] defined in root package in file Coupa
+ngTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:209:21 Unresolved reference: Log
+
+> Task :app:compileDebugKotlin FAILED
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:209:27 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:210:21 Overload resolution ambiguity: 
+public fun loadProducts(): Unit defined in root package in file CoupangTrackingViewModel.kt
+public fun loadProducts(): Unit defined in root package in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:213:21 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:213:35 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:214:21 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:214:27 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:216:25 Unresolved reference: HttpException
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:218:17 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:218:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:219:17 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:219:23 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:222:17 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:222:31 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:223:17 Unresolved reference: Log
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:223:23 Unresolved reference: TAG
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:225:17 Overload resolution ambiguity: 
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+private val _isLoading: [Error type: Not found recorded type for MutableStateFlow(false)] defined in root package in fi
+le CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:225:28 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:230:5 Conflicting overloads: public fun clearError(): Unit defined in root package in file CoupangTrackingVi
+ewModel.kt, public fun clearError(): Unit defined in root package in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:231:9 Overload resolution ambiguity: 
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+private val _errorMessage: [Error type: Not found recorded type for MutableStateFlow<String?>(null)] defined in root pa
+ckage in file CoupangTrackingViewModel.kt
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:231:23 Variable expected
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:234:50 Unresolved reference: ApiProduct
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:246:51 Unresolved reference: ApiProduct
+e: file:///C:/Project/InsightDeal/app/src/main/java/com/ddaeany0919/insightdeal/presentation/tracking/CoupangTrackingVi
+ewModel.kt:260:12 Redeclaration: ProductData
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileDebugKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCo
+mpilerWorkAction
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 56s
+31 actionable tasks: 2 executed, 29 up-to-date
+Configuration cache entry reused.

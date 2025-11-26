@@ -54,7 +54,7 @@ private fun DealFeedFromApi(deals: List<ApiDeal>) {
                     Text("최저가: ${deal.lowestPrice ?: '-'} | 최저몰: ${deal.lowestPlatform ?: '-'} | 응답: ${deal.responseTimeMs}ms")
                 }
             )
-            Divider()
+            HorizontalDivider()
         }
     }
 }

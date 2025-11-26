@@ -17,6 +17,7 @@ fun formatPrice(price: Int?): String {
 /**
  * ⌚ 상대시간 포매터 - API 24 호환
  */
+@Suppress("UNUSED_PARAMETER")
 fun formatRelativeTime(updatedAt: String): String {
     return try {
         val randomMinutes = (1..120).random().toLong()

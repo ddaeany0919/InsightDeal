@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -56,7 +57,7 @@ fun ThemeSettingsScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "뒤로가기")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
                     }
                 },
                 actions = {
@@ -122,6 +123,7 @@ fun ThemeSettingsScreen(
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 private fun ThemeModeSection(
     currentTheme: ThemeMode,
     onThemeChange: (ThemeMode) -> Unit,
@@ -451,6 +453,7 @@ private fun ColorThemeButton(
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 private fun ThemePreviewSection(
     currentTheme: ThemeMode
 ) {

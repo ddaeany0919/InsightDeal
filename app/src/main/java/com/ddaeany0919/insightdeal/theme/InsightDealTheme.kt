@@ -78,7 +78,7 @@ fun InsightDealTheme(
     themeMode: ThemeMode = ThemeMode.AUTO,
     content: @Composable () -> Unit
 ) {
-    val context = LocalContext.current
+
     val currentTheme by remember(themeMode) {
         mutableStateOf(themeMode)
     }

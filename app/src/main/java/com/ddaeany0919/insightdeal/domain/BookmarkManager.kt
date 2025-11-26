@@ -77,11 +77,11 @@ class BookmarkManager private constructor(private val context: Context) {
             id = generateBookmarkId(),
             dealId = deal.id,
             title = deal.title,
-            originalPrice = deal.price ?: 0,
-            currentPrice = deal.price ?: 0,
+            originalPrice = deal.price,
+            currentPrice = deal.price,
             imageUrl = deal.imageUrl ?: "",
-            siteName = deal.siteName ?: "",
-            url = deal.url ?: "",
+            siteName = deal.siteName,
+            url = deal.url,
             tags = finalTags,
             note = note,
             createdAt = System.currentTimeMillis(),
@@ -149,7 +149,7 @@ class BookmarkManager private constructor(private val context: Context) {
             val index = existingBookmarks.indexOfFirst { it.dealId == deal.id }
             if (index != -1) {
                 val bookmark = existingBookmarks[index]
-                val newPrice = deal.price ?: bookmark.currentPrice
+                val newPrice = deal.price
 
                 if (newPrice != bookmark.currentPrice) {
                     existingBookmarks[index] = bookmark.copy(
@@ -388,7 +388,7 @@ class BookmarkManager private constructor(private val context: Context) {
         }
 
         // 가격 기반 태그
-        val price = deal.price ?: 0
+        val price = deal.price
         when {
             price <= 10000 -> tags.add("1만원이하")
             price <= 50000 -> tags.add("5만원이하")
@@ -399,19 +399,24 @@ class BookmarkManager private constructor(private val context: Context) {
         return tags.take(3).toSet() // 최대 3개 자동 태그
     }
 
-    private fun updateTagUsage(tags: Set<String>) {
-        val existingTags = _tags.value.toMutableList()
-        tags.forEach { tagName ->
-            val index = existingTags.indexOfFirst { it.name.equals(tagName, ignoreCase = true) }
+    private fun updateTagUsage(usedTags: Set<String>) {
+        val currentTags = _tags.value.toMutableList()
+        var hasChanges = false
+
+        usedTags.forEach { tagName ->
+            val index = currentTags.indexOfFirst { it.name == tagName }
             if (index != -1) {
-                existingTags[index] = existingTags[index].copy(
-                    usageCount = existingTags[index].usageCount + 1
+                currentTags[index] = currentTags[index].copy(
+                    usageCount = currentTags[index].usageCount + 1
                 )
+                hasChanges = true
             }
         }
 
-        _tags.value = existingTags
-        saveTags(existingTags)
+        if (hasChanges) {
+            _tags.value = currentTags
+            saveTags(currentTags)
+        }
     }
 
     private fun updateBookmarkStats() {
@@ -421,59 +426,48 @@ class BookmarkManager private constructor(private val context: Context) {
     private fun calculateBookmarkStats(): BookmarkStats {
         val bookmarks = _bookmarks.value
         val activeBookmarks = bookmarks.filter { it.isActive }
-
-        val tagCounts = mutableMapOf<String, Int>()
-        val siteCounts = mutableMapOf<String, Int>()
-        var totalSavings = 0
-
-        activeBookmarks.forEach { bookmark ->
-            // 태그 통계
-            bookmark.tags.forEach { tag ->
-                tagCounts[tag] = (tagCounts[tag] ?: 0) + 1
-            }
-
-            // 사이트 통계
-            siteCounts[bookmark.siteName] = (siteCounts[bookmark.siteName] ?: 0) + 1
-
-            // 절약 금액 계산
-            if (bookmark.currentPrice < bookmark.originalPrice) {
-                totalSavings += (bookmark.originalPrice - bookmark.currentPrice)
-            }
+        
+        val totalPrice = activeBookmarks.sumOf { it.currentPrice.toLong() }
+        val totalSavings = activeBookmarks.sumOf { 
+            if (it.currentPrice < it.originalPrice) 
+                (it.originalPrice - it.currentPrice).toLong() 
+            else 0L 
         }
 
         return BookmarkStats(
-            totalBookmarks = bookmarks.size,
-            activeBookmarks = activeBookmarks.size,
-            topTags = tagCounts.toList().sortedByDescending { it.second }.take(5),
-            topSites = siteCounts.toList().sortedByDescending { it.second }.take(3),
+            totalCount = activeBookmarks.size,
+            totalPrice = totalPrice,
             totalSavings = totalSavings,
-            averagePrice = if (activeBookmarks.isNotEmpty()) activeBookmarks.map { it.currentPrice }.average().toInt() else 0
+            mostUsedTag = _tags.value.maxByOrNull { it.usageCount }?.name ?: "없음"
         )
     }
 
-    private fun generateBookmarkId(): String {
-        return "bookmark_${System.currentTimeMillis()}_${(1000..9999).random()}"
+    // 로컬 저장소 관련 (SharedPreferences 사용)
+    // 실제 프로덕션에서는 Room Database 사용 권장
+
+    private fun loadBookmarks(): List<BookmarkItem> {
+        val json = prefs.getString(KEY_BOOKMARKS, null) ?: return emptyList()
+        return try {
+            val type = object : com.google.gson.reflect.TypeToken<List<BookmarkItem>>() {}.type
+            com.google.gson.Gson().fromJson(json, type)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 북마크 로드 실패", e)
+            emptyList()
+        }
     }
 
-    private fun generateTagId(): String {
-        return "tag_${System.currentTimeMillis()}_${(100..999).random()}"
-    }
-
-    // 저장/로드 메소드
     private fun saveBookmarks(bookmarks: List<BookmarkItem>) {
         val json = com.google.gson.Gson().toJson(bookmarks)
         prefs.edit().putString(KEY_BOOKMARKS, json).apply()
     }
 
-    private fun loadBookmarks(): List<BookmarkItem> {
-        val json = prefs.getString(KEY_BOOKMARKS, null) ?: return emptyList()
+    private fun loadTags(): List<BookmarkTag> {
+        val json = prefs.getString(KEY_TAGS, null) ?: return emptyList()
         return try {
-            com.google.gson.Gson().fromJson(
-                json,
-                object : com.google.gson.reflect.TypeToken<List<BookmarkItem>>() {}.type
-            ) ?: emptyList()
+            val type = object : com.google.gson.reflect.TypeToken<List<BookmarkTag>>() {}.type
+            com.google.gson.Gson().fromJson(json, type)
         } catch (e: Exception) {
-            Log.e(TAG, "북마크 로드 실패: ${e.message}")
+            Log.e(TAG, "❌ 태그 로드 실패", e)
             emptyList()
         }
     }
@@ -483,22 +477,15 @@ class BookmarkManager private constructor(private val context: Context) {
         prefs.edit().putString(KEY_TAGS, json).apply()
     }
 
-    private fun loadTags(): List<BookmarkTag> {
-        val json = prefs.getString(KEY_TAGS, null) ?: return emptyList()
-        return try {
-            com.google.gson.Gson().fromJson(
-                json,
-                object : com.google.gson.reflect.TypeToken<List<BookmarkTag>>() {}.type
-            ) ?: emptyList()
-        } catch (e: Exception) {
-            Log.e(TAG, "태그 로드 실패: ${e.message}")
-            emptyList()
-        }
+    private fun generateBookmarkId(): String = UUID.randomUUID().toString()
+    private fun generateTagId(): String = UUID.randomUUID().toString()
+
+    private fun String.containsAny(keywords: List<String>): Boolean {
+        return keywords.any { this.contains(it, ignoreCase = true) }
     }
 }
 
-// 🏷️ 데이터 모델들
-
+// 데이터 모델들
 data class BookmarkItem(
     val id: String,
     val dealId: Int,
@@ -509,11 +496,11 @@ data class BookmarkItem(
     val siteName: String,
     val url: String,
     val tags: Set<String>,
-    val note: String = "",
-    val priceHistory: List<PricePoint> = emptyList(),
+    val note: String,
     val createdAt: Long,
-    val updatedAt: Long = System.currentTimeMillis(),
-    val isActive: Boolean = true
+    val updatedAt: Long = createdAt,
+    val isActive: Boolean = true,
+    val priceHistory: List<PricePoint> = emptyList()
 )
 
 data class BookmarkTag(
@@ -531,12 +518,10 @@ data class PricePoint(
 )
 
 data class BookmarkStats(
-    val totalBookmarks: Int,
-    val activeBookmarks: Int,
-    val topTags: List<Pair<String, Int>>,
-    val topSites: List<Pair<String, Int>>,
-    val totalSavings: Int,
-    val averagePrice: Int
+    val totalCount: Int,
+    val totalPrice: Long,
+    val totalSavings: Long,
+    val mostUsedTag: String
 )
 
 data class BookmarkBackup(
@@ -545,12 +530,3 @@ data class BookmarkBackup(
     val bookmarks: List<BookmarkItem>,
     val tags: List<BookmarkTag>
 )
-
-enum class BookmarkSortBy {
-    DATE_DESC, DATE_ASC, PRICE_LOW, PRICE_HIGH, TITLE, SITE
-}
-
-// 🛠️ 유틸리티 확장 함수
-private fun String.containsAny(keywords: List<String>): Boolean {
-    return keywords.any { this.contains(it, ignoreCase = true) }
-}

@@ -6,7 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Share
@@ -26,6 +26,7 @@ import com.ddaeany0919.insightdeal.models.MallPrice
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun DealDetailScreen(
     dealId: Int,
     title: String,
@@ -44,7 +45,7 @@ fun DealDetailScreen(
                 title = { Text(text = title, maxLines = 1) },
                 navigationIcon = {
                     A11yIconButton(onClick = onBack, contentDescription = "뒤로가기") {
-                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
                 },
                 actions = {
@@ -78,6 +79,7 @@ fun DealDetailScreen(
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 private fun PriceHistoryCard(history: List<PriceHistoryPoint>) {
     Card(
         elevation = CardDefaults.cardElevation(3.dp)
@@ -118,7 +120,7 @@ private fun MallPriceTable(mallPrices: List<MallPrice>, onOpenOrigin: (String) -
                     Text(String.format("%,d원", row.price), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     TextButton(onClick = { onOpenOrigin(row.url) }) { Text("바로가기") }
                 }
-                Divider()
+                HorizontalDivider()
             }
         }
     }

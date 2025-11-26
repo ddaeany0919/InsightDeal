@@ -88,7 +88,7 @@ fun WishlistCardSimple(
                     )
                     if (!checkResult.productUrl.isNullOrBlank()) {
                         TextButton(
-                            onClick = { openLinkInBrowser(context, checkResult.productUrl!!) },
+                            onClick = { openLinkInBrowser(context, checkResult.productUrl) },
                             modifier = Modifier.padding(vertical = 2.dp)
                         ) {
                             Text(

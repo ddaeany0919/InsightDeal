@@ -166,6 +166,7 @@ class AdvancedSearchViewModel : ViewModel() {
     /**
      * 🔍 딜 검색 (실제 구현)
      */
+    @Suppress("UNUSED_PARAMETER")
     private suspend fun searchDeals(
         query: String,
         filters: Map<String, Set<String>>

@@ -40,6 +40,7 @@ fun EnhancedHomeScreen_Applied(
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 private fun EnhancedHomeScreenCore(
     dealsState: Resource<List<ApiDeal>>,
     isRefreshing: Boolean,

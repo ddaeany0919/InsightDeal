@@ -107,9 +107,7 @@ private val AmoledColorScheme = darkColorScheme(
 @Composable
 fun InsightDealTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false,
     themeMode: ThemeMode = ThemeMode.SYSTEM,
-    colorScheme: AppColorScheme = AppColorScheme.ORANGE_CLASSIC,
     amoledMode: Boolean = false,
     content: @Composable () -> Unit
 ) {
@@ -121,7 +119,6 @@ fun InsightDealTheme(
         ThemeMode.DARK -> true
         ThemeMode.AMOLED -> true
         ThemeMode.SYSTEM -> darkTheme
-        else -> darkTheme // Fallback for safety
     }
 
     val finalColorScheme = when {

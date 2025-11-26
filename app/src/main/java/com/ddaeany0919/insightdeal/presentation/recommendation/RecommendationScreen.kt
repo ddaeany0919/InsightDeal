@@ -4,7 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +20,7 @@ import com.ddaeany0919.insightdeal.ui.rememberSavedLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun RecommendationScreen(
     onDealClick: (DealItem) -> Unit,
     viewModel: RecommendationViewModel = viewModel()
@@ -31,7 +33,7 @@ fun RecommendationScreen(
                 title = { Text(text = "추천", fontWeight = FontWeight.Bold, fontSize = 20.sp) },
                 navigationIcon = {
                     A11yIconButton(onClick = { /* TODO: back */ }, contentDescription = "뒤로가기") {
-                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
                 },
                 actions = {

@@ -12,6 +12,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -65,7 +67,7 @@ fun AdvancedSearchScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "뒤로가기")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
                     }
                 },
                 actions = {
@@ -248,6 +250,7 @@ private fun SearchInputSection(
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 private fun SuggestionItem(
     suggestion: String,
     query: String,
@@ -407,7 +410,7 @@ private fun PopularKeywordsSection(
             modifier = Modifier.padding(bottom = 12.dp)
         ) {
             Icon(
-                Icons.Default.TrendingUp,
+                Icons.AutoMirrored.Filled.TrendingUp,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.primary
@@ -520,6 +523,7 @@ private fun SearchResultsList(
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 private fun SearchResultItem(
     deal: DealItem,
     onClick: () -> Unit,

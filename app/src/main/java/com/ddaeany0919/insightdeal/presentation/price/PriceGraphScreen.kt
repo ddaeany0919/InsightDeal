@@ -1,15 +1,17 @@
 package com.ddaeany0919.insightdeal.presentation.price
 
+import android.view.ViewGroup
+import android.widget.LinearLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.TrendingDown
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,34 +34,29 @@ import java.text.NumberFormat
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PriceGraphScreen(
-    productId: Int,
+    productId: String,
     onBackClick: () -> Unit,
     viewModel: PriceChartViewModel = viewModel()
 ) {
-    val product by viewModel.product.collectAsState()
     val priceHistory by viewModel.priceHistory.collectAsState()
+    val product by viewModel.product.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
-    var selectedPeriod by remember { mutableStateOf("전체") }
-    val periods = listOf("7일", "30일", "전체")
+    
+    var selectedPeriod by remember { mutableStateOf("3개월") }
+    val periods = listOf("7일", "1개월", "3개월", "6개월", "1년", "전체")
 
     LaunchedEffect(productId) {
-        viewModel.loadProductData(productId)
+        viewModel.loadProductData(productId.toIntOrNull() ?: 0)
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        text = "가격 추이",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
-                    )
-                },
+                title = { Text("가격 변동 그래프", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "뒤로가기")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
                     }
                 },
                 actions = {
@@ -93,7 +90,10 @@ fun PriceGraphScreen(
             ) {
                 // 📊 상품 정보 카드
                 item {
-                    product?.let { ProductInfoCard(it) }
+                    val p = product
+                    if (p != null) {
+                        ProductInfoCard(p)
+                    }
                 }
 
                 // 📈 기간 선택 버튼
@@ -231,7 +231,7 @@ private fun ProductInfoCard(product: PriceChartViewModel.ProductData) {
                         text = "${NumberFormat.getNumberInstance().format(product.originalPrice)}원",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp)
+                        style = MaterialTheme.typography.bodySmall.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
                     )
                 }
             }
@@ -241,130 +241,99 @@ private fun ProductInfoCard(product: PriceChartViewModel.ProductData) {
 
 @Composable
 private fun PeriodSelector(
-    periods: List<String>,  // ✅ 제네릭 타입 추가
+    periods: List<String>,
     selectedPeriod: String,
     onPeriodSelected: (String) -> Unit
 ) {
-    Card(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = "📈 기간 선택",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 12.dp)
+        periods.forEach { period ->
+            FilterChip(
+                selected = period == selectedPeriod,
+                onClick = { onPeriodSelected(period) },
+                label = { Text(period) },
+                modifier = Modifier.weight(1f)
             )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                periods.forEach { period ->
-                    FilterChip(
-                        onClick = { onPeriodSelected(period) },
-                        label = { Text(period) },
-                        selected = selectedPeriod == period,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
         }
     }
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 private fun PriceChart(
-    priceHistory: List<PriceChartViewModel.PriceHistoryData>,  // ✅ 제네릭 타입 추가
+    priceHistory: List<PriceChartViewModel.PriceHistoryData>,
     targetPrice: Int
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .height(300.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            .height(300.dp)
+            .padding(horizontal = 16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = "📊 가격 변동 그래프",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-
-            AndroidView(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp),
-                factory = { context ->
-                    LineChart(context).apply {
-                        description.isEnabled = false
-                        setTouchEnabled(true)
-                        isDragEnabled = true
-                        setScaleEnabled(true)
-                        setPinchZoom(true)
-
-                        xAxis.apply {
-                            position = XAxis.XAxisPosition.BOTTOM
-                            setDrawGridLines(false)
-                        }
-
-                        axisLeft.apply {
-                            setDrawGridLines(true)
-                        }
-
-                        axisRight.isEnabled = false
-                        legend.isEnabled = false
-                    }
-                },
-                update = { chart ->
-                    val entries = priceHistory.mapIndexed { index, item ->
-                        Entry(index.toFloat(), item.price.toFloat())
-                    }
-
-                    val dataSet = LineDataSet(entries, "가격").apply {
-                        color = android.graphics.Color.rgb(255, 152, 0) // 오렌지
-                        setCircleColor(android.graphics.Color.rgb(255, 152, 0))
-                        lineWidth = 2f
-                        circleRadius = 4f
-                        setDrawFilled(true)
-                        fillColor = android.graphics.Color.argb(50, 255, 152, 0)
-                        mode = LineDataSet.Mode.CUBIC_BEZIER
-                        setDrawValues(false)
-                    }
-
-                    chart.data = LineData(dataSet)
-                    chart.animateX(800)
-                    chart.invalidate()
+        AndroidView(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            factory = { context ->
+                LineChart(context).apply {
+                    description.isEnabled = false
+                    setTouchEnabled(true)
+                    isDragEnabled = true
+                    setScaleEnabled(true)
+                    setPinchZoom(true)
+                    setDrawGridBackground(false)
+                    
+                    xAxis.position = XAxis.XAxisPosition.BOTTOM
+                    xAxis.setDrawGridLines(false)
+                    axisRight.isEnabled = false
+                    legend.isEnabled = false
                 }
-            )
-        }
+            },
+            update = { chart ->
+                val entries = priceHistory.mapIndexed { index, item ->
+                    Entry(index.toFloat(), item.price.toFloat())
+                }
+
+                val dataSet = LineDataSet(entries, "Price").apply {
+                    color = android.graphics.Color.parseColor("#6200EE")
+                    setCircleColor(android.graphics.Color.parseColor("#6200EE"))
+                    lineWidth = 2f
+                    circleRadius = 4f
+                    setDrawValues(false)
+                    mode = LineDataSet.Mode.CUBIC_BEZIER
+                    setDrawFilled(true)
+                    fillColor = android.graphics.Color.parseColor("#BB86FC")
+                    fillAlpha = 50
+                }
+
+                chart.data = LineData(dataSet)
+                chart.invalidate()
+            }
+        )
     }
 }
 
 @Composable
-private fun PriceStatisticsCard(
-    statistics: PriceChartViewModel.PriceStatistics
-) {
+private fun PriceStatisticsCard(statistics: PriceChartViewModel.PriceStatistics) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "📈 가격 통계",
+                text = "가격 통계",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -372,83 +341,26 @@ private fun PriceStatisticsCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // ✅ maxPrice 사용
-                StatisticItem(
-                    label = "최고가",
-                    value = "${NumberFormat.getNumberInstance().format(statistics.maxPrice)}원",
-                    icon = Icons.Default.TrendingUp,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.weight(1f)
-                )
-
-                // ✅ minPrice 사용
-                StatisticItem(
-                    label = "최저가",
-                    value = "${NumberFormat.getNumberInstance().format(statistics.minPrice)}원",
-                    icon = Icons.Default.TrendingDown,
-                    color = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // ✅ averagePrice 사용
-                StatisticItem(
-                    label = "평균가",
-                    value = "${NumberFormat.getNumberInstance().format(statistics.averagePrice)}원",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
-
-                // 변동폭
-                StatisticItem(
-                    label = "변동폭",
-                    value = "${NumberFormat.getNumberInstance().format(statistics.maxPrice - statistics.minPrice)}원",
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.weight(1f)
-                )
+                StatisticItem("최저가", statistics.lowest, Color(0xFF00C853))
+                StatisticItem("평균가", statistics.averagePrice, Color(0xFF2962FF))
+                StatisticItem("최고가", statistics.highest, Color(0xFFD50000))
             }
         }
     }
 }
 
 @Composable
-private fun StatisticItem(
-    label: String,
-    value: String,
-    color: Color,
-    modifier: Modifier = Modifier,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        if (icon != null) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-        }
-
+private fun StatisticItem(label: String, price: Int, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = label,
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-
         Text(
-            text = value,
+            text = "${NumberFormat.getNumberInstance().format(price)}원",
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             color = color
@@ -457,67 +369,50 @@ private fun StatisticItem(
 }
 
 @Composable
-private fun BuyingAdviceCard(
-    advice: PriceChartViewModel.BuyingAdvice  // ✅ BuyingAdvice 객체 사용
-) {
+private fun BuyingAdviceCard(advice: PriceChartViewModel.BuyingAdvice) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(
             containerColor = when (advice.timing) {
-                "지금 구매" -> MaterialTheme.colorScheme.primaryContainer
-                "조금 더 기다리기" -> MaterialTheme.colorScheme.secondaryContainer
-                else -> MaterialTheme.colorScheme.surfaceVariant
+                "지금 구매" -> Color(0xFFE8F5E9)
+                "조금 더 기다리기" -> Color(0xFFE3F2FD)
+                else -> Color(0xFFFFF3E0)
             }
         )
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "🎯",
-                    fontSize = 18.sp
-                )
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Text(
-                    text = "구매 타이밍 조언",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // ✅ timing 사용
-            Text(
-                text = advice.timing,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+            Icon(
+                imageVector = when (advice.timing) {
+                    "지금 구매" -> Icons.AutoMirrored.Filled.TrendingDown
+                    "조금 더 기다리기" -> Icons.Default.Share // Placeholder
+                    else -> Icons.AutoMirrored.Filled.TrendingUp
+                },
+                contentDescription = null,
+                tint = when (advice.timing) {
+                    "지금 구매" -> Color(0xFF00C853)
+                    "조금 더 기다리기" -> Color(0xFF2962FF)
+                    else -> Color(0xFFFF6D00)
+                },
+                modifier = Modifier.size(32.dp)
             )
 
-            // ✅ reason 사용
-            Text(
-                text = advice.reason,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
+            Spacer(modifier = Modifier.width(12.dp))
 
-            // ✅ savings 사용
-            if (advice.savings > 0) {
+            Column {
                 Text(
-                    text = "💰 예상 절약: ${NumberFormat.getNumberInstance().format(advice.savings)}원",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.padding(top = 8.dp)
+                    text = advice.timing,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+                Text(
+                    text = advice.reason,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -525,17 +420,12 @@ private fun BuyingAdviceCard(
 }
 
 @Composable
-private fun PriceHistoryItem(
-    historyItem: PriceChartViewModel.PriceHistoryData
-) {
+private fun PriceHistoryItem(historyItem: PriceChartViewModel.PriceHistoryData) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(
             modifier = Modifier
@@ -544,46 +434,45 @@ private fun PriceHistoryItem(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                // ✅ siteName 사용
+            Text(
+                text = historyItem.date,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = historyItem.siteName,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.primary,
+                    text = "${NumberFormat.getNumberInstance().format(historyItem.price)}원",
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Medium
                 )
 
-                Text(
-                    text = historyItem.date,
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+                Spacer(modifier = Modifier.width(8.dp))
 
-            Text(
-                text = "${NumberFormat.getNumberInstance().format(historyItem.price)}원",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+                if (historyItem.priceChange != 0) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(
+                                color = if (historyItem.priceChange > 0) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.tertiaryContainer,
+                                shape = RoundedCornerShape(4.dp)
+                            )
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (historyItem.priceChange > 0) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = if (historyItem.priceChange > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary
+                        )
 
-            // ✅ priceChange 사용땜 가격 변동 표시
-            if (historyItem.priceChange != 0) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (historyItem.priceChange > 0) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = if (historyItem.priceChange > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary
-                    )
-
-                    Text(
-                        text = "${if (historyItem.priceChange > 0) "+" else ""}${NumberFormat.getNumberInstance().format(historyItem.priceChange)}원",
-                        fontSize = 12.sp,
-                        color = if (historyItem.priceChange > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary
-                    )
+                        Text(
+                            text = "${kotlin.math.abs(historyItem.priceChange)}원",
+                            fontSize = 12.sp,
+                            color = if (historyItem.priceChange > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }

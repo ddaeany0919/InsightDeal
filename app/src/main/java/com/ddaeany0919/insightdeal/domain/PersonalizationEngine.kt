@@ -133,7 +133,7 @@ class PersonalizationEngine private constructor(private val context: Context) {
     }
 
     private fun getPricePreference(deal: DealItem, profile: UserProfile): Double {
-        val price = deal.price ?: 0
+        val price = deal.price
 
         return when {
             price <= 50000 && profile.preferredPriceRange.contains("low") -> 80.0
@@ -153,14 +153,16 @@ class PersonalizationEngine private constructor(private val context: Context) {
         return minOf(matchingKeywords * 15.0, 100.0)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun getTimePreference(deal: DealItem, profile: UserProfile): Double {
         // 시간대별 활동 패턴 반영 (추후 구현)
         return 50.0
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun getSitePreference(deal: DealItem, profile: UserProfile): Double {
         // 🔥 사용자 지정 우선순위 반영
-        return when (deal.siteName?.lowercase()) {
+        return when (deal.siteName.lowercase()) {
             "ppomppu", "뽐뿌" -> 25.0        // 1순위
             "fmkorea", "에펨코리아" -> 25.0    // 1순위
             "bbasak", "빠삭" -> 15.0         // 2순위 (중간)
@@ -327,8 +329,8 @@ class PersonalizationEngine private constructor(private val context: Context) {
      */
     fun provideFeedback(dealId: Int, isPositive: Boolean) {
         // 추천 정확도 개선을 위한 피드백 학습
-        _userProfile.value
-        if (isPositive) 2.0 else -1.0
+        // _userProfile.value // Removed unused code
+        // if (isPositive) 2.0 else -1.0 // Removed unused code
 
         // 피드백을 다음 추천에 반영
         // (실제 구현에서는 더 복잡한 강화학습 알고리즘 사용)

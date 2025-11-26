@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.ddaeany0919.insightdeal.data.PricePoint
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun PriceHistoryGraph(
     dataPoints: List<PricePoint>,
     modifier: Modifier = Modifier,

@@ -16,7 +16,7 @@ fun ConfirmDeleteDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("삭제 확인") },
-        text = { Text("'${'$'}keyword' 항목을 삭제하시겠습니까?") },
+        text = { Text("'$keyword' 항목을 삭제하시겠습니까?") },
         confirmButton = {
             TextButton(onClick = onConfirm) { Text("삭제") }
         },

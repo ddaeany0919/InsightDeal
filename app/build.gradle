@@ -1,6 +1,6 @@
 plugins {
     id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
+    id 'kotlin-android'
     id 'org.jetbrains.kotlin.plugin.serialization' version '1.9.24'
     id 'com.google.gms.google-services'
 }
@@ -29,11 +29,9 @@ android {
             buildConfigField "boolean", "DEBUG_MODE", "false"
         }
         debug {
-            // Updated to match actual network environment
-            // Device IP: 192.168.0.5 → Server should be accessible via local network
             buildConfigField "String", "BASE_URL", '"http://192.168.0.4:8000/"'
-            buildConfigField "String", "DEV_SERVER_IP", '"192.168.0.4"' // PC IP where backend runs
-            buildConfigField "String", "EMULATOR_BASE_URL", '"http://10.0.2.2:8000/"' // Emulator fallback
+            buildConfigField "String", "DEV_SERVER_IP", '"192.168.0.4"'
+            buildConfigField "String", "EMULATOR_BASE_URL", '"http://10.0.2.2:8000/"'
             buildConfigField "String", "VERSION_NAME", '"1.0.0-debug"'
             buildConfigField "boolean", "DEBUG_MODE", "true"
         }
@@ -45,21 +43,23 @@ android {
         coreLibraryDesugaringEnabled true
     }
 
-    kotlinOptions { jvmTarget = '1.8' }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
 
-    buildFeatures { compose true; buildConfig true }
+    buildFeatures {
+        compose true
+        buildConfig true
+    }
 
-    // Kotlin 1.9.24 + Compose Compiler 1.5.14
-    composeOptions { kotlinCompilerExtensionVersion '1.5.14' }
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.5.14'
+    }
 
-    packagingOptions { resources { excludes += '/META-INF/{AL2.0,LGPL2.1}' } }
-}
-configurations.all {
-    resolutionStrategy {
-        force 'org.jetbrains.kotlin:kotlin-stdlib:1.9.24'
-        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.24'
-        force 'androidx.core:core-ktx:1.12.0'
-        force 'androidx.core:core:1.12.0'
+    packagingOptions {
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
     }
 }
 
@@ -72,8 +72,6 @@ dependencies {
 
     // Material Design 3
     implementation 'com.google.android.material:material:1.11.0'
-
-    // Jetpack Compose BOM (UPGRADED for SwipeToDismiss)
     implementation platform('androidx.compose:compose-bom:2024.06.00')
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.ui:ui-graphics'
@@ -82,19 +80,19 @@ dependencies {
     implementation 'androidx.compose.material3:material3'
     implementation 'androidx.compose.material:material-icons-extended'
 
-    // Navigation Compose
+    // Navigation
     implementation 'androidx.navigation:navigation-compose:2.7.6'
 
     // ViewModel + Compose
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.7.0'
 
-    // Firebase BOM
+    // Firebase
     implementation platform('com.google.firebase:firebase-bom:32.7.1')
     implementation 'com.google.firebase:firebase-messaging-ktx'
     implementation 'com.google.firebase:firebase-analytics-ktx'
 
-    // Retrofit with enhanced timeout support
+    // Retrofit
     implementation 'com.squareup.retrofit2:retrofit:2.9.0'
     implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
     implementation 'com.squareup.okhttp3:logging-interceptor:4.11.0'
@@ -120,14 +118,12 @@ dependencies {
     androidTestImplementation platform('androidx.compose:compose-bom:2024.06.00')
     androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
 
-    // MPAndroidChart
+    // Charts
     implementation 'com.github.PhilJay:MPAndroidChart:v3.1.0'
-
-    //Vico 차트 의존성 추가
     implementation "com.patrykandpatrick.vico:compose:1.15.0"
     implementation "com.patrykandpatrick.vico:core:1.15.0"
 
-    // DataStore
+    // DataStore & WorkManager
     implementation 'androidx.datastore:datastore-preferences:1.0.0'
     implementation "androidx.work:work-runtime-ktx:2.8.0"
 }

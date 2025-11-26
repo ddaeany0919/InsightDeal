@@ -3,7 +3,8 @@ package com.ddaeany0919.insightdeal.presentation.bookmark
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,6 +18,7 @@ import com.ddaeany0919.insightdeal.ui.rememberSavedLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun BookmarkScreen(
     onDealClick: (DealItem) -> Unit,
     onBackClick: () -> Unit
@@ -29,7 +31,7 @@ fun BookmarkScreen(
                 title = { Text(text = "🔖 즐겨찾기", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     A11yIconButton(onClick = onBackClick, contentDescription = "뒤로가기") {
-                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
                 }
             )

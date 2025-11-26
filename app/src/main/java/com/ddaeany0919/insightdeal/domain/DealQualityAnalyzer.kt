@@ -84,7 +84,7 @@ class DealQualityAnalyzer {
 
             // 1️⃣ 댓글 감정 분석 (40% 가중치)
             // ✅ [수정] deal.content 대신 deal.title을 분석합니다.
-            val sentimentScore = analyzeSentiment(deal.title, deal.commentCount ?: 0)
+            val sentimentScore = analyzeSentiment(deal.title, deal.commentCount)
 
             // 2️⃣ 커뮤니티 반응 분석 (30% 가중치)
             val communityScore = analyzeCommunityReaction(deal)
@@ -179,7 +179,7 @@ class DealQualityAnalyzer {
         var communityScore = 50.0
 
         // 조회수 보정
-        val viewCount = deal.viewCount ?: 0
+        val viewCount = deal.viewCount
         val viewBonus = when {
             viewCount >= 10000 -> 20.0
             viewCount >= 5000 -> 15.0
@@ -190,7 +190,7 @@ class DealQualityAnalyzer {
         communityScore += viewBonus
 
         // 댓글/조회수 비율 (참여도)
-        val commentCount = deal.commentCount ?: 0
+        val commentCount = deal.commentCount
         if (viewCount > 0) {
             val participationRatio = (commentCount.toDouble() / viewCount) * 100
             val participationBonus = when {
@@ -203,8 +203,8 @@ class DealQualityAnalyzer {
         }
 
         // 추천/반대 비율 (좋아요/싫어요)
-        val likeCount = deal.likeCount ?: 0
-        val dislikeCount = deal.dislikeCount ?: 0
+        val likeCount = deal.likeCount
+        val dislikeCount = deal.dislikeCount
         if (likeCount > 0 || dislikeCount > 0) {
             val totalVotes = likeCount + dislikeCount
             val likeRatio = likeCount.toDouble() / totalVotes
