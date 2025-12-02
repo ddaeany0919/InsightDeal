@@ -8,6 +8,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import coil.request.ImageRequest
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -148,10 +152,15 @@ fun HotDealCard(deal: HotDealDto) {
             ) {
                 if (!deal.imageUrl.isNullOrEmpty()) {
                     AsyncImage(
-                        model = deal.imageUrl,
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(deal.imageUrl)
+                            .crossfade(true)
+                            .build(),
                         contentDescription = null,
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        error = rememberVectorPainter(Icons.Default.BrokenImage),
+                        placeholder = rememberVectorPainter(Icons.Default.Image)
                     )
                 } else {
                     Icon(

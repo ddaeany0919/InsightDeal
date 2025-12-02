@@ -10,7 +10,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # BASE_URL for image URLs
-BASE_URL = os.getenv("BASE_URL", "http://10.0.2.2:8000") # 안드로이드 에뮬레이터 기준 localhost
+BASE_URL = os.getenv("BASE_URL", "http://192.168.0.4:8000") # 사용자 환경에 맞춰 IP 변경
 
 # Mock data for testing (Fallback)
 MOCK_DEALS = [
