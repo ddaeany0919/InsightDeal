@@ -25,6 +25,10 @@ class HomeViewModel(
     private val _popularDeals = MutableStateFlow<Resource<List<ApiDeal>>>(Resource.Loading())
     val popularDeals: StateFlow<Resource<List<ApiDeal>>> = _popularDeals
 
+    init {
+        loadInitialFeed()
+    }
+
     private val _searchResult = MutableStateFlow<Resource<ComparisonResponse>?>(null)
     val searchResult: StateFlow<Resource<ComparisonResponse>?> = _searchResult
 

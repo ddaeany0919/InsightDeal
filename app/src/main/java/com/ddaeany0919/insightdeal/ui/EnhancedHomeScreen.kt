@@ -19,7 +19,7 @@ import com.ddaeany0919.insightdeal.ui.formatRelativeTime
  * EnhancedHomeScreen의 DealCard를 접근성/대비 강화 버전으로 대체
  */
 @Composable
-private fun DealCard(
+internal fun DealCard(
     deal: ApiDeal,
     onClick: () -> Unit,
     onBookmarkClick: () -> Unit,

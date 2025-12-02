@@ -19,6 +19,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import com.ddaeany0919.insightdeal.data.HotDealDto
 import coil.compose.AsyncImage
 
@@ -28,6 +32,8 @@ import coil.compose.AsyncImage
 @Composable
 fun CommunityScreen(viewModel: CommunityViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    val communities = listOf("전체", "뽐뿌", "펨코", "클리앙")
 
     Scaffold(
         topBar = {
@@ -45,31 +51,73 @@ fun CommunityScreen(viewModel: CommunityViewModel = androidx.lifecycle.viewmodel
             )
         }
     ) { paddingValues ->
-        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            android.util.Log.d("CommunityScreen", "Current UI State: $uiState")
-            when (val state = uiState) {
-                is CommunityUiState.Loading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            // 커뮤니티 탭
+            ScrollableTabRow(
+                selectedTabIndex = selectedTabIndex,
+                edgePadding = 16.dp,
+                containerColor = MaterialTheme.colorScheme.background,
+                contentColor = MaterialTheme.colorScheme.primary,
+                indicator = { tabPositions ->
+                    TabRowDefaults.SecondaryIndicator(
+                        Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
-                is CommunityUiState.Error -> {
-                    Column(
-                        modifier = Modifier.align(Alignment.Center),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(text = state.message, color = MaterialTheme.colorScheme.error)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = { viewModel.loadHotDeals() }) {
-                            Text("다시 시도")
+            ) {
+                communities.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTabIndex == index,
+                        onClick = { selectedTabIndex = index },
+                        text = { Text(text = title) }
+                    )
+                }
+            }
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                android.util.Log.d("CommunityScreen", "Current UI State: $uiState")
+                when (val state = uiState) {
+                    is CommunityUiState.Loading -> {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    }
+                    is CommunityUiState.Error -> {
+                        Column(
+                            modifier = Modifier.align(Alignment.Center),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(text = state.message, color = MaterialTheme.colorScheme.error)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(onClick = { viewModel.loadHotDeals() }) {
+                                Text("다시 시도")
+                            }
                         }
                     }
-                }
-                is CommunityUiState.Success -> {
-                    LazyColumn(
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(items = state.deals) { deal ->
-                            HotDealCard(deal)
+                    is CommunityUiState.Success -> {
+                        // 필터링 로직
+                        val filteredDeals = if (selectedTabIndex == 0) {
+                            state.deals
+                        } else {
+                            val targetCommunity = communities[selectedTabIndex]
+                            state.deals.filter { it.communityName == targetCommunity }
+                        }
+
+                        if (filteredDeals.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "등록된 핫딜이 없습니다.",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(items = filteredDeals) { deal ->
+                                    HotDealCard(deal)
+                                }
+                            }
                         }
                     }
                 }
