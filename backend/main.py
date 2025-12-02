@@ -1,4 +1,3 @@
-```python
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -47,4 +46,3 @@ async def generic_exception_handler(request, exc):
     return JSONResponse(status_code=500, content={"message": "Internal Server Error - Please contact admin."})
 
 # (선택적으로 lifespan, DB/스크래퍼 초기화 등도 여기에 추가 가능)
-```
