@@ -9,14 +9,20 @@ import json
 from core import ai_parser
 import base64
 from abc import ABC, abstractmethod
+from PIL import Image
 from urllib.parse import urlparse, urljoin, unquote, parse_qs
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium_stealth import stealth
 from sqlalchemy.orm import Session
+from PIL import Image
 import easyocr
 from pathlib import Path
+
+# Pillow 10.0.0 이상 호환성 패치
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else 1
 import random
 from datetime import datetime
 
@@ -462,9 +468,9 @@ class BaseScraper(ABC):
         
         try:
             self.driver = webdriver.Chrome(options=chrome_options)
-            self.driver.set_page_load_timeout(3)
-            self.driver.implicitly_wait(5)
-            self.wait = WebDriverWait(self.driver, 3)
+            self.driver.set_page_load_timeout(30)
+            self.driver.implicitly_wait(10)
+            self.wait = WebDriverWait(self.driver, 10)
             
             # Stealth 설정
             stealth(
@@ -486,6 +492,52 @@ class BaseScraper(ABC):
         except Exception as e:
             logger.error(f"[{self.community_name}] 드라이버 초기화 실패: {e}")
             raise
+
+    def _save_cookies(self):
+        """현재 세션의 쿠키를 파일로 저장합니다."""
+        if not self.driver:
+            return
+        
+        try:
+            cookie_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+            if not os.path.exists(cookie_dir):
+                os.makedirs(cookie_dir, exist_ok=True)
+                
+            file_path = os.path.join(cookie_dir, f"cookies_{self.community_name}.json")
+            cookies = self.driver.get_cookies()
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(cookies, f)
+            logger.info(f"[{self.community_name}] 쿠키 저장 완료: {file_path}")
+        except Exception as e:
+            logger.error(f"[{self.community_name}] 쿠키 저장 실패: {e}")
+
+    def _load_cookies(self):
+        """저장된 쿠키가 있다면 불러와서 드라이버에 적용합니다."""
+        if not self.driver:
+            return False
+            
+        try:
+            cookie_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+            file_path = os.path.join(cookie_dir, f"cookies_{self.community_name}.json")
+            if not os.path.exists(file_path):
+                return False
+                
+            with open(file_path, 'r', encoding='utf-8') as f:
+                cookies = json.load(f)
+                
+            # 쿠키 적용 전 먼저 도메인에 접속해야 함
+            self.driver.get(self.community_url)
+            for cookie in cookies:
+                try:
+                    self.driver.add_cookie(cookie)
+                except Exception as e:
+                    logger.warning(f"[{self.community_name}] 개별 쿠키 적용 실패: {e}")
+            
+            logger.info(f"[{self.community_name}] 쿠키 불러오기 및 적용 완료")
+            return True
+        except Exception as e:
+            logger.error(f"[{self.community_name}] 쿠키 불러오기 실패: {e}")
+            return False
 
     def _download_and_get_local_path(self, image_url, deal_id: int, perform_ocr: bool = True):
         """최적화된 이미지 다운로드 및 캐싱"""
@@ -863,15 +915,36 @@ class BaseScraper(ABC):
                 price_from_list = deal_info.get('list_price') or self._extract_price_from_title(full_title)
                 shipping_fee_from_list = deal_info.get('list_shipping_fee') or self._extract_shipping_from_title(full_title)
                 
-                category_ai_result = ai_parser.parse_title_with_ai(full_title) or {}
-                category = self._clean_text(category_from_list or category_ai_result.get('category', '기타'))
+                # [Optimization] Rule-Based Parsing First
+                from core.rule_parser import RuleBasedParser
                 
-                ai_result = ai_parser.parse_content_with_ai(content_html=content_html, post_link=post_link, original_title=full_title)
+                rule_result = RuleBasedParser.parse_deal_info(full_title, content_html)
+                
+                # 규칙 기반 파싱 결과가 충분하면 AI 호출 건너뛰기
+                if rule_result['confidence'] == 'high' and rule_result['price'] != '정보 없음':
+                    logger.info(f"  [Rule Parser] High confidence result. Skipping AI.")
+                    category = rule_result['category']
+                    ai_result = {
+                        "deals": [{
+                            "product_title": rule_result['product_title'],
+                            "price": rule_result['price'],
+                            "shipping_fee": shipping_fee_from_list or "정보 없음", # 목록 배송비 우선
+                            "category": category,
+                            "ecommerce_link": None # 링크는 나중에 추출 로직으로 보강 가능
+                        }]
+                    }
+                else:
+                    logger.info(f"  [Rule Parser] Low confidence. Falling back to AI.")
+                    category_ai_result = ai_parser.parse_title_with_ai(full_title) or {}
+                    category = self._clean_text(category_from_list or category_ai_result.get('category', '기타'))
+                    
+                    ai_result = ai_parser.parse_content_with_ai(content_html=content_html, post_link=post_link, original_title=full_title)
+                
                 if not ai_result or not ai_result.get('deals'):
-                    logger.warning(f"AI parsing failed for link: {post_link}")
+                    logger.warning(f"AI/Rule parsing failed for link: {post_link}")
                     continue
                 
-                logger.info(f"  [AI Multi-Deal Analysis] Found {len(ai_result['deals'])} deals.")
+                logger.info(f"  [Deal Analysis] Found {len(ai_result['deals'])} deals.")
                 
                 # 이미지 대표 이미지 결정 로직
                 list_image_url = deal_info.get('original_image_url')

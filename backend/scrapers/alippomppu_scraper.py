@@ -24,6 +24,9 @@ class AlippomppuScraper(BaseScraper):
         알리뽐뿌 목록 페이지에서 딜 정보를 수집하고,
         상세 분석은 BaseScraper의 공통 처리 함수에 위임합니다.
         """
+        if not self.driver:
+            self._create_selenium_driver()
+            
         WebDriverWait(self.driver, 15).until(
             EC.presence_of_element_located((By.ID, "revolution_main_table"))
         )
@@ -31,16 +34,8 @@ class AlippomppuScraper(BaseScraper):
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
         post_rows = soup.select('tr.baseList')
 
-        if self.limit:
-            post_rows = post_rows[:self.limit]
-
         temp_deals_info = []
         for row in post_rows:
-            # 일반 게시물 제외
-            general_tag = row.select_one('small.baseList-small')
-            if general_tag and '[일반]' in general_tag.get_text(strip=True):
-                continue
-
             title_element = row.select_one('a.baseList-title')
             if not title_element:
                 continue
@@ -57,6 +52,9 @@ class AlippomppuScraper(BaseScraper):
                 'full_title': full_title_text,
                 'original_image_url': original_image_url
             })
+
+            if self.limit and len(temp_deals_info) >= self.limit:
+                break
 
         return self._process_detail_pages(temp_deals_info)
 

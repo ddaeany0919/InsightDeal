@@ -22,8 +22,10 @@ class PpomppuOverseasScraper(BaseScraper):
 
     def scrape(self):
         """뽐뿌 해외 목록 페이지에서 딜 정보를 수집"""
-        logger.info(f"[{self.community_name}] 딜 목록 스크래핑 시작...")
-        
+        logger.info(f"[{self.community_name}] Scraping list page...")
+        if not self.driver:
+            self._create_selenium_driver()
+            
         WebDriverWait(self.driver, 15).until(
             EC.presence_of_element_located((By.ID, "revolution_main_table"))
         )
@@ -36,10 +38,6 @@ class PpomppuOverseasScraper(BaseScraper):
 
         temp_deals_info = []
         for row in post_rows:
-            general_tag = row.select_one('small.baseList-small')
-            if general_tag and '[일반]' in general_tag.get_text(strip=True):
-                continue
-
             title_element = row.select_one('a.baseList-title')
             if not title_element:
                 continue

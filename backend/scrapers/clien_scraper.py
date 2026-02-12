@@ -25,24 +25,30 @@ class ClienScraper(BaseScraper):
         상세 분석은 BaseScraper의 공통 처리 함수에 위임합니다.
         """
         # 1. 목록 페이지 로딩 및 기본 정보 수집
+        if not self.driver:
+            self._create_selenium_driver()
+            
         WebDriverWait(self.driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.list_item.symph_row"))
         )
 
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-        post_rows = soup.select('div.list_item.symph_row')
-
-        if self.limit:
-            post_rows = post_rows[:self.limit]
+        # 목록 항목 선택 (공지사항 제외)
+        post_rows = soup.select('div.list_item:not(.notice)')
+        logger.info(f"[{self.community_name}] Found {len(post_rows)} potential items.")
 
         temp_deals_info = []
-        for row in post_rows:
-            # 품절 게시물 제외
-            sold_out_tag = row.select_one('span.icon_info')
-            if sold_out_tag and '품절' in sold_out_tag.get_text(strip=True):
+        for item in post_rows:
+            # 광고글 제외 (label_ad 클래스가 있는 요소가 있는 경우)
+            if item.select_one('.label_ad'):
                 continue
 
-            title_element = row.select_one('a[data-role="list-title-text"]')
+            # 품절 게시물 제외
+            sold_out_tag = item.select_one('span.icon_info')
+            if sold_out_tag and '품절' in sold_out_tag.get_text(strip=True):
+                continue
+            
+            title_element = item.select_one('a[data-role="list-title-text"]')
             if not title_element:
                 continue
 
@@ -53,6 +59,9 @@ class ClienScraper(BaseScraper):
                 'post_link': post_link,
                 'full_title': full_title_text
             })
+
+            if self.limit and len(temp_deals_info) >= self.limit:
+                break
 
         # 2. 수집된 기본 정보를 바탕으로 공통 상세 페이지 처리 함수 호출
         return self._process_detail_pages(temp_deals_info)
@@ -66,7 +75,12 @@ class ClienScraper(BaseScraper):
             if not self.driver:
                 self._create_selenium_driver()
                 
-            self.driver.get(post_url)
+            # href가 /nnnnn 형태인 경우 보정
+            if not post_url.startswith('http'):
+                post_link = urljoin('https://www.clien.net', post_url)
+            else:
+                post_link = post_url
+            self.driver.get(post_link)
             self.wait.until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
             
             soup = BeautifulSoup(self.driver.page_source, 'html.parser')

@@ -21,35 +21,60 @@ class QuasarzoneScraper(BaseScraper):
 
     def scrape(self):
         """
-        퀘이사존 목록 페이지에서 딜 정보를 수집하고,
-        상세 분석은 BaseScraper의 공통 처리 함수에 위임합니다.
+        퀘이사존 목록 페이지에서 딜 정보를 수집합니다.
         """
-        WebDriverWait(self.driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "tbody tr"))
-        )
+        if not self.driver:
+            self._create_selenium_driver()
+            
+        try:
+            logger.info(f"[{self.community_name}] 페이지 접속 시도: {self.community_url}")
+            self.driver.get(self.community_url)
+            
+            # 페이지 로딩 대기 (게시글 목록 컨테이너 대기)
+            WebDriverWait(self.driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.market-info-type-list table tbody tr"))
+            )
+            
+        except Exception as e:
+            logger.error(f"[{self.community_name}] 페이지 로딩 실패: {e}")
+            return []
 
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-        post_rows = soup.select('tbody tr')
-
-        if self.limit:
-            post_rows = post_rows[:self.limit]
+        
+        # 목록 항목 선택
+        post_rows = soup.select('div.market-info-type-list table tbody tr')
+        logger.info(f"[{self.community_name}] Found {len(post_rows)} potential rows.")
 
         temp_deals_info = []
-        for row in post_rows:
-            # 공지사항 제외
-            notice_tag = row.select_one('td.num span')
-            if notice_tag and '공지' in notice_tag.get_text(strip=True):
+        for i, row in enumerate(post_rows):
+            # 1. 공지사항 제외 (label 텍스트가 '공지'인 경우)
+            label_tag = row.select_one('span.label')
+            if label_tag and '공지' in label_tag.get_text():
+                logger.info(f"Row {i}: Skipped (Notice)")
                 continue
 
-            title_element = row.select_one('td.subject a')
+            # 2. 타이틀 및 링크 추출 (subject-link 클래스 사용)
+            title_element = row.select_one('a.subject-link')
             if not title_element:
                 continue
 
-            post_link = urljoin(self.base_url, title_element['href'])
-            full_title_text = title_element.get_text(strip=True)
+            href = title_element.get('href', '')
+            if not href or href.startswith('javascript'):
+                continue
+            
+            post_link = urljoin(self.base_url, href)
+            
+            # 실제 제목은 span.ellipsis-with-reply-cnt 내부에 있음 (댓글 수 제외를 위함)
+            title_span = title_element.select_one('span.ellipsis-with-reply-cnt')
+            if title_span:
+                full_title_text = title_span.get_text(strip=True)
+            else:
+                full_title_text = title_element.get_text(strip=True)
+            
+            logger.info(f"[{self.community_name}] 게시글 발견: {full_title_text}")
 
-            # 카테고리 정보
-            category_tag = row.select_one('td.category')
+            # 3. 추가 정보 (카테고리 등)
+            category_tag = row.select_one('span.category')
             category_text = category_tag.get_text(strip=True) if category_tag else None
 
             temp_deals_info.append({
@@ -57,6 +82,9 @@ class QuasarzoneScraper(BaseScraper):
                 'full_title': full_title_text,
                 'list_category': category_text
             })
+
+            if self.limit and len(temp_deals_info) >= self.limit:
+                break
 
         return self._process_detail_pages(temp_deals_info)
 
@@ -76,15 +104,16 @@ class QuasarzoneScraper(BaseScraper):
             
             # 퀘이사존 전용 최적화 설정
             site_config = {
-                "content_selectors": ['.post-content', '.article-content', '.view_content'],
-                "time_selectors": ['.date', '.time', '.post-info'],
-                "time_patterns": [
-                    r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})',
-                    r'(\d{4}\.\d{2}\.\d{2}\s+\d{2}:\d{2})'
-                ],
-                "exclude_image_keywords": ['icon_', 'btn_', 'logo_', 'quasar_'],
-                "text_selectors": ['p', 'div']
-            }
+            "content_selectors": ['.view-content', '.board-view-content', 'div.view-content', '.note-editor'],
+            "time_selectors": ['.date', '.time', '.board-view-time'],
+            "time_patterns": [
+                r'(\d{4}\.\d{2}\.\d{2}\s+\d{2}:\d{2})',
+                r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})',
+                r'(\d{2}\.\d{2}\.\d{2}\s+\d{2}:\d{2})'
+            ],
+            "exclude_image_keywords": ['btn_', 'icon_', 'button_', 'logo_', 'quasarzone_'],
+            "text_selectors": ['p', 'div']
+        }
             
             # base.py의 공통 메서드 활용
             result = self.extract_post_content_and_images(

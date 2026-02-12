@@ -24,10 +24,17 @@ class RuliwebScraper(BaseScraper):
 
     def _parse_list_page(self, soup):
         """루리웹 목록 페이지의 신/구 UI를 모두 파싱합니다."""
-        post_rows = soup.select('tr.table_body.blocktarget:not(.best), a.board_list_item.deco:not(.notice)')
+        # 공지사항 제외 및 베스트글 제외 (UI 구조에 따라 다름)
+        # tr.table_body.blocktarget: 신 UI 기준
+        # a.board_list_item.deco: 구 UI 또는 모바일 일부 기준
+        post_rows = soup.select('tr.table_body.blocktarget:not(.notice):not(.best), a.board_list_item.deco:not(.notice)')
         if not post_rows: return []
 
-        logger.info("Parsing ruliweb list page...")
+        logger.info("Starting ruliweb scrape...")
+        if not self.driver:
+            self._create_selenium_driver()
+            
+        # 페이지 로딩 대기
         temp_deals_info = []
         processed_links = set()
 
@@ -61,6 +68,9 @@ class RuliwebScraper(BaseScraper):
 
     def scrape(self):
         """루리웹 목록 페이지에서 딜 정보를 수집하고, 공통 처리 함수를 호출합니다."""
+        if not self.driver:
+            self._create_selenium_driver()
+            
         WebDriverWait(self.driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "table.board_list_table, a.board_list_item"))
         )

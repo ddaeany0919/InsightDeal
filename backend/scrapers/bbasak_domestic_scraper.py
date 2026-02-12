@@ -5,5 +5,5 @@ class BbasakDomesticScraper(BbasakBaseScraper):
         super().__init__(
             db_session,
             community_name="빠삭국내",
-            community_url="https://bbs.bbasak.com/domestic"
+            community_url="https://bbasak.com/bbs/board.php?bo_table=bbasak1"
         )

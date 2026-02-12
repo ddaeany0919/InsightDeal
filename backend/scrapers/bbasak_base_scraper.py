@@ -24,28 +24,55 @@ class BbasakBaseScraper(BaseScraper):
         """빠삭 목록 페이지에서 딜 정보를 수집"""
         logger.info(f"[{self.community_name}] 빠삭 목록 스크래핑 시작...")
         
-        WebDriverWait(self.driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "div.board-list"))
-        )
+        try:
+            WebDriverWait(self.driver, 15).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "table.t1"))
+            )
+        except Exception as e:
+            logger.error(f"[{self.community_name}] 테이블 로딩 실패: {e}")
+            return []
 
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-        post_rows = soup.select('div.board-item')
+        
+        # 공지사항 테이블 제외하고 일반 게시글 테이블 찾기 (보통 두번째 table.t1)
+        tables = soup.select('table.t1')
+        post_rows = []
+        if len(tables) >= 2:
+            # 두번째 테이블이 일반 글
+            post_rows = tables[1].select('tbody tr')
+        elif len(tables) == 1:
+             post_rows = tables[0].select('tbody tr')
+        
+        if not post_rows:
+            logger.warning(f"[{self.community_name}] 게시글 목록을 찾을 수 없습니다.")
+            return []
 
         if self.limit:
             post_rows = post_rows[:self.limit]
 
         temp_deals_info = []
         for row in post_rows:
-            title_element = row.select_one('a.title-link')
+            # 제목 컬럼 (td.tit)
+            title_element = row.select_one('td.tit a')
             if not title_element:
                 continue
 
-            post_link = urljoin(self.base_url, title_element['href'])
+            # 링크 추출
+            post_link = title_element['href']
+            # 상대 경로인 경우 절대 경로로 변환
+            if not post_link.startswith('http'):
+                 post_link = urljoin(self.base_url, post_link)
+                 
             full_title_text = title_element.get_text(strip=True)
 
-            # 빠삭 목록에서 이미지 수집
-            image_tag = row.select_one('img.thumbnail')
-            original_image_url = urljoin(self.base_url, image_tag['src']) if image_tag else None
+            # 이미지 추출 (4번째 td)
+            image_tag = row.select_one('td:nth-of-type(4) img')
+            original_image_url = None
+            if image_tag:
+                original_image_url = image_tag.get('src')
+                # 썸네일 경로 보정 (필요시)
+                if original_image_url and not original_image_url.startswith('http'):
+                    original_image_url = urljoin(self.base_url, original_image_url)
 
             temp_deals_info.append({
                 'post_link': post_link,

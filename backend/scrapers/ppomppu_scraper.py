@@ -26,6 +26,9 @@ class PpomppuScraper(BaseScraper):
         상세 분석은 BaseScraper의 공통 처리 함수에 위임합니다.
         """
         logger.info(f"[{self.community_name}] Scraping list page...")
+        if not self.driver:
+            self._create_selenium_driver()
+            
         WebDriverWait(self.driver, 15).until(
             EC.presence_of_element_located((By.ID, "revolution_main_table"))
         )
@@ -38,10 +41,6 @@ class PpomppuScraper(BaseScraper):
 
         temp_deals_info = []
         for row in post_rows:
-            general_tag = row.select_one('small.baseList-small')
-            if general_tag and '[일반]' in general_tag.get_text(strip=True):
-                continue
-
             title_element = row.select_one('a.baseList-title')
             if not title_element:
                 continue
