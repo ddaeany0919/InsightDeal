@@ -30,8 +30,8 @@ import com.ddaeany0919.insightdeal.presentation.theme.ThemeManager
 import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
 import com.ddaeany0919.insightdeal.presentation.wishlist.*
 import com.ddaeany0919.insightdeal.presentation.settings.ThemeSettingsScreenCollapsible
-import com.ddaeany0919.insightdeal.ui.EnhancedHomeScreen_Applied
-import com.ddaeany0919.insightdeal.ui.HomeViewModel
+import com.ddaeany0919.insightdeal.feature.home.HomeScreen
+import com.ddaeany0919.insightdeal.feature.home.HomeViewModel
 import com.ddaeany0919.insightdeal.ui.theme.InsightDealTheme
 import java.util.UUID
 import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistDetailScreen
@@ -81,7 +81,7 @@ fun MainApp(deviceUserId: String) {
         NavHost(navController, startDestination = "home", Modifier.padding(innerPadding)) {
             composable("home") {
                 val vm: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-                EnhancedHomeScreen_Applied(vm, onDealClick = {}, onBookmarkClick = {}, onTrackClick = {})
+                HomeScreen(vm, onDealClick = {}, onBookmarkClick = {}, onTrackClick = {})
             }
             composable("watchlist") {
                 val wishlistViewModel: WishlistViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
@@ -119,8 +119,8 @@ fun MainApp(deviceUserId: String) {
             }
             composable("community") { com.ddaeany0919.insightdeal.presentation.community.CommunityScreen() }
             composable("settings") { com.ddaeany0919.insightdeal.presentation.settings.SettingsScreen() }
-            composable("deal_detail/{dealId}") { Box { Text("딜 상세 화면") } }
-            composable("product_detail/{productId}") { Box { Text("상품 상세 화면") } }
+            composable("deal_detail/{dealId}") { Box { Text("???�세 ?�면") } }
+            composable("product_detail/{productId}") { Box { Text("?�품 ?�세 ?�면") } }
             composable("theme_settings") { com.ddaeany0919.insightdeal.presentation.settings.ThemeSettingsScreen(onBackClick = { navController.popBackStack() }) }
         }
     }
@@ -131,10 +131,10 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val navigationItems = listOf(
-        BottomNavItem("home", "홈", Icons.Default.Home, "홈"),
-        BottomNavItem("watchlist", "관심", Icons.Default.FavoriteBorder, "내 위시리스트"),
-        BottomNavItem("community", "커뮤니티", Icons.Default.Forum, "커뮤니티 핫딜"),
-        BottomNavItem("settings", "설정", Icons.Default.Settings, "설정")
+        BottomNavItem("home", "??, Icons.Default.Home, "??),
+        BottomNavItem("watchlist", "관??, Icons.Default.FavoriteBorder, "???�시리스??),
+        BottomNavItem("community", "커�??�티", Icons.Default.Forum, "커�??�티 ?�딜"),
+        BottomNavItem("settings", "?�정", Icons.Default.Settings, "?�정")
     )
     NavigationBar {
         navigationItems.forEach { item ->
@@ -164,4 +164,4 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController) {
 
 data class BottomNavItem(val route: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val description: String)
 
-@Composable fun MatchesScreen() { /* 기존 코드 그대로 */ }
+@Composable fun MatchesScreen() { /* 기존 코드 그�?�?*/ }

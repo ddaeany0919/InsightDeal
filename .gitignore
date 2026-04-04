@@ -1,41 +1,36 @@
-# 빌드 파일들
-**/build/
-**/.gradle/
-**/intermediates/
-**/*.apk
-**/*.aab
-**/*.jar
-**/*.dex
-**/*.so
-.gradle/*.lock
-/buildOutputCleanup.lock
-/executionHistory.lock
-
-# Android Studio
-*.iml
-.idea/
-local.properties
-.DS_Store
-
-# 캐시 및 임시 파일
-.externalNativeBuild/
-.cxx/
-/captures/
-
-# 민감한 정보 (보안)
-*.json
+# 1. [Security] 보안 및 개인 설정 차단 (가장 중요)
 .env
-.env.local
-.env.production
-.env.development
-*firebase*.json
-*service-account*.json
-secrets/
-keys/
+*.env
+local.properties
+google-services.json
+*.jks
+*.keystore
 
-# Python
-__pycache__/
-*.pyc
+# 2. [bkit/Internal] 도구 내부 설정 차단
+.bkit/
+.gemini/
+.antigravity/
+.pdca-status.json
 *.log
 
+# 3. [Python/Backend] 파이썬 빌드 및 가상환경 차단
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
 backend/image_cache/
+image_cache/
+
+# 4. [Android/Frontend] 안드로이드 빌드 찌꺼기 차단
+.gradle/
+build/
+app/build/
+.idea/
+*.iml
+captures/
+
+# 5. [OS/ETC] 운영체제 임시 파일
+Thumbs.db
+.DS_Store

@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  # 1. FastAPI 애플리케이션 (API 서빙용)
+  api:
+    build: .
+    container_name: insightdeal_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - TZ=Asia/Seoul
+    restart: always
+
+  # 2. 백그라운드 스케줄러 (무한 핫딜 크롤링 엔진)
+  scheduler:
+    build: .
+    container_name: insightdeal_scheduler
+    command: ["python", "scheduler/main.py"]
+    volumes:
+      - .:/app
+    environment:
+      - TZ=Asia/Seoul
+    restart: always

@@ -82,6 +82,8 @@ services:
     restart: unless-stopped
     command: python -m scheduler.price_collector
     working_dir: /app
+    healthcheck:
+      disable: true
 
 volumes:
   postgres_data:

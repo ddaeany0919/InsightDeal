@@ -22,12 +22,17 @@ if not os.path.exists(IMAGE_CACHE_DIR):
 app.mount("/images", StaticFiles(directory=IMAGE_CACHE_DIR), name="images")
 
 # CORS 설정
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
+if not ALLOWED_ORIGINS or ALLOWED_ORIGINS == [""]:
+    # 앱(안드로이드 에뮬/실기기)과 로컬 테스트 환경만 기본 허용
+    ALLOWED_ORIGINS = ["http://localhost", "http://localhost:3000", "capacitor://localhost", "http://10.0.2.2"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 실제 운영 시에는 구체적인 도메인으로 제한하는 것이 좋습니다.
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # '*' 대신 명시적 선언
+    allow_headers=["Authorization", "Content-Type", "Accept"], # 허용되는 헤더 제한
 )
 
 # 라우터 등록

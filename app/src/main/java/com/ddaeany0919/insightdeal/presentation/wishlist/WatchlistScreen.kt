@@ -40,12 +40,12 @@ fun WatchlistDashboardHeader(items: List<WishlistItem>) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("전체 상품", style = MaterialTheme.typography.labelMedium)
+                Text("?�체 ?�품", style = MaterialTheme.typography.labelMedium)
                 Text("$totalCount", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
             }
             VerticalDivider(modifier = Modifier.height(40.dp).width(1.dp), color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("목표 달성", style = MaterialTheme.typography.labelMedium)
+                Text("목표 ?�성", style = MaterialTheme.typography.labelMedium)
                 Text(
                     "$targetReachedCount", 
                     style = MaterialTheme.typography.headlineMedium.copy(
@@ -70,7 +70,7 @@ fun WatchlistScreen(
     var expandedItemId by remember { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(Unit) { 
-        Log.d("WatchlistScreen", "LaunchedEffect: loadWishlist 호출")
+        Log.d("WatchlistScreen", "LaunchedEffect: loadWishlist ?�출")
         viewModel.loadWishlist() 
     }
 
@@ -93,7 +93,7 @@ fun WatchlistScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { 
-                    Log.d("WatchlistScreen", "FAB 클릭: 다이얼로그 표시")
+                    Log.d("WatchlistScreen", "FAB ?�릭: ?�이?�로�??�시")
                     showDialog = true 
                 },
                 containerColor = MaterialTheme.colorScheme.secondary,
@@ -102,19 +102,19 @@ fun WatchlistScreen(
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("상품 추가", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                Text("?�품 추�?", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
             }
         }
     ) { inner ->
         if (showDialog) {
-            Log.d("WatchlistScreen", "AddWishlistDialogContent 표시")
+            Log.d("WatchlistScreen", "AddWishlistDialogContent ?�시")
             AddWishlistDialogContent(
                 onDismiss = { 
-                    Log.d("WatchlistScreen", "다이얼로그 닫기")
+                    Log.d("WatchlistScreen", "?�이?�로�??�기")
                     showDialog = false 
                 },
                 onSubmit = { keyword: String, targetPrice: Int ->
-                    Log.d("WatchlistScreen", "상품 추가: keyword=$keyword, targetPrice=$targetPrice")
+                    Log.d("WatchlistScreen", "?�품 추�?: keyword=$keyword, targetPrice=$targetPrice")
                     viewModel.addItem(keyword, "", targetPrice)
                     showDialog = false
                 }
@@ -122,7 +122,7 @@ fun WatchlistScreen(
         }
 
         val currentState = state
-        Log.d("WatchlistScreen", "현재 상태: ${currentState::class.simpleName}")
+        Log.d("WatchlistScreen", "?�재 ?�태: ${currentState::class.simpleName}")
         
         when (currentState) {
             is WishlistUiState.Loading -> {
@@ -142,10 +142,10 @@ fun WatchlistScreen(
                     Text(text = currentState.message)
                     Spacer(Modifier.height(12.dp))
                     Button(onClick = { 
-                        Log.d("WatchlistScreen", "다시 시도 버튼 클릭")
+                        Log.d("WatchlistScreen", "?�시 ?�도 버튼 ?�릭")
                         viewModel.retry() 
                     }) { 
-                        Text("다시 시도") 
+                        Text("?�시 ?�도") 
                     }
                 }
             }
@@ -155,11 +155,11 @@ fun WatchlistScreen(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("관심상품이 없습니다.")
+                    Text("관?�상?�이 ?�습?�다.")
                 }
             }
             is WishlistUiState.Success -> {
-                Log.d("WatchlistScreen", "상품 목록 표시: ${currentState.items.size}개")
+                Log.d("WatchlistScreen", "?�품 목록 ?�시: ${currentState.items.size}�?)
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().padding(inner),
                     contentPadding = PaddingValues(bottom = 80.dp)
@@ -173,18 +173,18 @@ fun WatchlistScreen(
                     ) { item: WishlistItem ->
                         WishlistSwipeToDismiss(
                             onConfirmDelete = { 
-                                Log.d("WatchlistScreen", "상품 삭제: id=${item.id}")
+                                Log.d("WatchlistScreen", "?�품 ??��: id=${item.id}")
                                 viewModel.deleteItem(item) 
                             }
                         ) {
-                            WishlistCard(
+                            com.ddaeany0919.insightdeal.ui.components.StandardWishlistCard(style = com.ddaeany0919.insightdeal.ui.components.WishlistCardStyle.DETAILED,
                                 item = item,
                                 onDelete = { 
-                                    Log.d("WatchlistScreen", "상품 삭제 요청: id=${item.id}")
+                                    Log.d("WatchlistScreen", "?�품 ??�� ?�청: id=${item.id}")
                                     viewModel.deleteItem(item) 
                                 },
                                 onCheckPrice = { 
-                                    Log.d("WatchlistScreen", "가격 확인 요청: id=${item.id}")
+                                    Log.d("WatchlistScreen", "가�??�인 ?�청: id=${item.id}")
                                     viewModel.checkPrice(item) 
                                 },
                                 onClick = { onItemClick(item) },

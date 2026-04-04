@@ -35,16 +35,18 @@ class NaverShoppingScraper:
         self.client_secret = os.getenv('NAVER_CLIENT_SECRET')
         self.base_url = "https://openapi.naver.com/v1/search/shop.json"
         
+        self.is_mock_mode = False
         if not self.client_id or not self.client_secret:
-            raise ValueError("NAVER_CLIENT_ID and NAVER_CLIENT_SECRET must be set in environment variables")
+            logger.warning("⚠️ NAVER_CLIENT_ID or NAVER_CLIENT_SECRET not set. Falling back to Mock mode for Naver API.")
+            self.is_mock_mode = True
         
         self.headers = {
-            "X-Naver-Client-Id": self.client_id,
-            "X-Naver-Client-Secret": self.client_secret,
+            "X-Naver-Client-Id": self.client_id or "",
+            "X-Naver-Client-Secret": self.client_secret or "",
             "User-Agent": "InsightDeal/1.0 (compatible; price comparison service)"
         }
         
-        logger.info("✅ Naver Shopping API scraper initialized")
+        logger.info(f"✅ Naver Shopping API scraper initialized (Mock mode: {self.is_mock_mode})")
     
     def search_products(self, query: str, display: int = 20, sort: str = "sim") -> List[NaverProduct]:
         """
@@ -53,11 +55,20 @@ class NaverShoppingScraper:
         Args:
             query: 검색 키워드
             display: 검색 결과 수 (1~100)
-            sort: 정렬 방식 (sim: 정확도순, date: 날짜순, asc: 가격오름차순, dsc: 가격내림차순)
-        
-        Returns:
-            List[NaverProduct]: 검색된 상품 목록
+            sort: 정렬 방식
         """
+        if self.is_mock_mode:
+            logger.info(f"Mocking Naver API response for: {query}")
+            return [
+                NaverProduct(
+                    title=f"[모의데이터] {query} 기본형",
+                    price=50000,
+                    mall="네이버 스마트스토어",
+                    image="",
+                    url="https://shopping.naver.com/"
+                )
+            ]
+
         try:
             params = {
                 "query": query,
