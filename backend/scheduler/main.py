@@ -3,17 +3,24 @@ import logging
 import os
 import sys
 from datetime import datetime
+from dotenv import load_dotenv
 
-# 모듈 경로를 위해 추가 (상대경로 임포트 호환)
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 모듈 경로 및 환경 변수 로드 (API 서버와 동일한 DB를 바라보게 설정)
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(root_dir)
+load_dotenv(os.path.join(root_dir, '.env'))
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from backend.models.models_v2 import Base, Community
+from backend.database.models import Base, Community
 from backend.scrapers.ppomppu_scraper import PpomppuScraper
 from backend.scrapers.quasarzone_scraper import QuasarzoneScraper
+from backend.scrapers.fmkorea_scraper import FmkoreaScraper
+from backend.scrapers.ruliweb_scraper import RuliwebScraper
+from backend.scrapers.clien_scraper import ClienScraper
+from backend.scrapers.alippomppu_scraper import AlippomppuScraper
+from backend.scrapers.bbasak_domestic_scraper import BbasakDomesticScraper
+from backend.scrapers.bbasak_overseas_scraper import BbasakOverseasScraper
 from backend.services.aggregator_service import AggregatorService
 
 logger = logging.getLogger(__name__)
@@ -25,19 +32,24 @@ SCHEDULER_STATE = {
     "total_run_count": 0
 }
 
-# DB 설정 (공통 DB 설정 경로가 없다면 폴더 최상단에 sqlite 로컬 연결 생성)
-db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "insight_deal.db")
-engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-Base.metadata.create_all(bind=engine)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# 🚀 메인 API 웹서버와 완전히 동일한 데이터베이스 파이프라인(session.py) 공유
+from backend.database.session import SessionLocal, db_manager
+
+# 메인 DB 연결 및 테이블 강제 동기화 (최초 1회)
+db_manager.init_database()
 
 async def scrape_community(community_name: str, ScraperClass, aggregator: AggregatorService, db):
     """지정된 커뮤니티의 비동기 수집 파이프라인 태스크"""
     community = db.query(Community).filter(Community.name == community_name).first()
     # 데모 편의용: DB에 해당 커뮤니티 데이터가 없으면 자동 생성
     if not community:
-        display_name = "뽐뿌" if community_name == "ppomppu" else "퀘이사존"
-        base_url = f"https://{community_name}.co.kr" if community_name == "ppomppu" else "https://quasarzone.com"
+        name_map = {
+            "ppomppu": "뽐뿌", "quasarzone": "퀘이사존", "fmkorea": "펨코",
+            "ruliweb": "루리웹", "clien": "클리앙", "ali_ppomppu": "알리뽐뿌",
+            "bbasak_domestic": "빠삭국내", "bbasak_overseas": "빠삭해외"
+        }
+        display_name = name_map.get(community_name, community_name)
+        base_url = f"https://{community_name}.co.kr" if "ppomppu" in community_name else "https://알수없음"
         community = Community(name=community_name, display_name=display_name, base_url=base_url)
         db.add(community)
         db.commit()
@@ -58,6 +70,26 @@ async def scrape_community(community_name: str, ScraperClass, aggregator: Aggreg
     except Exception as e:
         logger.error(f"❌ [{community.name}] 파이프라인 크롤링 에러: {e}")
     
+    # [에픽] UI 대시보드 상태 갱신을 위한 JSON 쓰기
+    import json
+    stats_file = os.path.join(root_dir, "backend", "scraper_stats.json")
+    try:
+        if os.path.exists(stats_file):
+            with open(stats_file, 'r', encoding='utf-8') as f:
+                stats = json.load(f)
+        else:
+            stats = {}
+            
+        stats[community.display_name] = {
+            "last_count": success_count,
+            "last_run": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "Success" if success_count > 0 else "Blocked/Failed"
+        }
+        with open(stats_file, 'w', encoding='utf-8') as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        pass
+        
     return success_count
 
 async def run_pipeline_job():
@@ -71,10 +103,16 @@ async def run_pipeline_job():
     try:
         aggregator = AggregatorService(db)
         
-        # ⚡ 뽐뿌와 퀘이사존 동시 접속 (asyncio.gather를 통한 속도 극대화)
+        # ⚡ 모든 스크래핑 크롤러 동시 접속 (asyncio.gather를 통한 속도 극대화)
         tasks = [
             scrape_community("ppomppu", PpomppuScraper, aggregator, db),
-            scrape_community("quasarzone", QuasarzoneScraper, aggregator, db)
+            scrape_community("quasarzone", QuasarzoneScraper, aggregator, db),
+            scrape_community("fmkorea", FmkoreaScraper, aggregator, db),
+            scrape_community("ruliweb", RuliwebScraper, aggregator, db),
+            scrape_community("clien", ClienScraper, aggregator, db),
+            scrape_community("ali_ppomppu", AlippomppuScraper, aggregator, db),
+            scrape_community("bbasak_domestic", BbasakDomesticScraper, aggregator, db),
+            scrape_community("bbasak_overseas", BbasakOverseasScraper, aggregator, db)
         ]
         
         results = await asyncio.gather(*tasks)
@@ -108,11 +146,18 @@ if __name__ == "__main__":
     
     scheduler = start_scheduler()
     
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     # 1. 켜자마자 바로 1회 돌려보기
-    asyncio.run(run_pipeline_job())
+    loop.run_until_complete(run_pipeline_job())
+    
+    if "--one-shot" in sys.argv:
+        logger.info("👋 [One-Shot Mode] 1 사이클 수집 완료. 백그라운드 프로세스를 종료합니다.")
+        sys.exit(0)
     
     try:
-        # 무한 대기
-        asyncio.get_event_loop().run_forever()
+        loop.run_forever()
     except (KeyboardInterrupt, SystemExit):
         pass

@@ -147,6 +147,23 @@ fun StandardWishlistCard(
             }
 
             Spacer(Modifier.height(12.dp))
+            val progress = if (currentPrice > 0) {
+                (targetPrice.toFloat() / currentPrice.toFloat()).coerceIn(0f, 1f)
+            } else 0f
+            
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("목표 달성률", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = progress,
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = if (progress >= 1f) com.ddaeany0919.insightdeal.ui.theme.PriceBest else MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(Modifier.height(8.dp))
 

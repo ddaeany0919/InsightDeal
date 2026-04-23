@@ -181,7 +181,7 @@ class AdvancedSearchViewModel : ViewModel() {
                 discountRate = 30,
                 imageUrl = "https://example.com/image1.jpg",
                 siteName = "뽐뿌",
-                url = "https://example.com/deal1"
+                postUrl = "https://example.com/deal1"
             ),
             DealItem(
                 id = 2,
@@ -190,7 +190,7 @@ class AdvancedSearchViewModel : ViewModel() {
                 discountRate = 50,
                 imageUrl = "https://example.com/image2.jpg",
                 siteName = "에펨코리아",
-                url = "https://example.com/deal2"
+                postUrl = "https://example.com/deal2"
             )
         )
     }

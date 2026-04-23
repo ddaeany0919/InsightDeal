@@ -19,9 +19,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ddaeany0919.insightdeal.presentation.theme.ThemeManager
 import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
+import coil.imageLoader
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, coil.annotation.ExperimentalCoilApi::class)
 @Composable
 fun SettingsScreen() {
     val ctx = LocalContext.current
@@ -107,12 +108,57 @@ fun SettingsScreen() {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     
                     // 알림 설정 (Mock)
-                    var notificationsEnabled by remember { mutableStateOf(true) }
+                    var notificationsEnabled by remember { mutableStateOf(ctx.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("push_enabled", true)) }
                     SettingsSwitchRow(
                         icon = Icons.Default.Notifications,
-                        title = "가격 변동 알림",
+                        title = "관심 키워드 푸시 알림",
                         checked = notificationsEnabled,
-                        onCheckedChange = { notificationsEnabled = it }
+                        onCheckedChange = { 
+                            notificationsEnabled = it 
+                            ctx.getSharedPreferences("app", Context.MODE_PRIVATE).edit().putBoolean("push_enabled", it).apply()
+                        }
+                    )
+                    
+                    // 데이터 절약 모드 
+                    var dataSaverEnabled by remember { mutableStateOf(ctx.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("data_saver", false)) }
+                    SettingsSwitchRow(
+                        icon = Icons.Default.DataUsage,
+                        title = "데이터 절약 모드 (저화질 이미지)",
+                        checked = dataSaverEnabled,
+                        onCheckedChange = { 
+                            dataSaverEnabled = it 
+                            ctx.getSharedPreferences("app", Context.MODE_PRIVATE).edit().putBoolean("data_saver", it).apply()
+                        }
+                    )
+                    
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    
+                    // 캐시 지우기
+                    var cacheSize by remember { mutableStateOf("계산 중...") }
+                    
+                    LaunchedEffect(Unit) {
+                        try {
+                            val size = ctx.cacheDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+                            cacheSize = if (size > 1024 * 1024) "${size / (1024 * 1024)}MB" else "${size / 1024}KB"
+                        } catch (e: Exception) {
+                            cacheSize = "0MB"
+                        }
+                    }
+
+                    SettingsNavigationRow(
+                        icon = Icons.Default.CleaningServices, 
+                        title = "캐시 데이터 비우기", 
+                        value = cacheSize,
+                        onClick = {
+                            val imageLoader = ctx.imageLoader
+                            imageLoader.diskCache?.clear()
+                            imageLoader.memoryCache?.clear()
+                            try {
+                                ctx.cacheDir.deleteRecursively()
+                            } catch (e: Exception) {}
+                            cacheSize = "0MB"
+                            android.widget.Toast.makeText(ctx, "캐시가 정리되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                     )
                 }
             }
@@ -128,9 +174,30 @@ fun SettingsScreen() {
                 Column {
                     SettingsNavigationRow(icon = Icons.Default.Info, title = "앱 버전", value = "1.0.0")
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    SettingsNavigationRow(icon = Icons.Default.Description, title = "오픈소스 라이선스")
+                    
+                    var showLicenses by remember { mutableStateOf(false) }
+                    SettingsNavigationRow(icon = Icons.Default.Description, title = "오픈소스 라이선스", onClick = {
+                        showLicenses = true
+                    })
+                    if (showLicenses) {
+                        AlertDialog(
+                            onDismissRequest = { showLicenses = false },
+                            title = { Text("오픈소스 라이선스") },
+                            text = { Text("Jetpack Compose\nRetrofit2\nCoil\nMaterial3\n등 구글 및 오픈소스 재단의 라이선스를 준수하여 제작되었습니다.") },
+                            confirmButton = { TextButton(onClick = { showLicenses = false }) { Text("확인") } }
+                        )
+                    }
+                    
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    SettingsNavigationRow(icon = Icons.Default.Email, title = "문의하기")
+                    SettingsNavigationRow(icon = Icons.Default.Email, title = "문의하기", onClick = {
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:support@insightdeal.com"))
+                        intent.putExtra(android.content.Intent.EXTRA_SUBJECT, "[InsightDeal] 고객 문의")
+                        try {
+                            ctx.startActivity(intent)
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(ctx, "메일 앱을 찾을 수 없습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    })
                 }
             }
             

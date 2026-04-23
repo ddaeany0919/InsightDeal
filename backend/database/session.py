@@ -16,25 +16,33 @@ class DatabaseManager:
         self._create_engine()
     
     def _create_engine(self):
-        """최적화된 PostgreSQL 엔진 생성"""
-        database_url = os.getenv(
-            "DATABASE_URL", 
-            "postgresql://insightdeal:password@localhost:5432/insightdeal"
-        )
+        """엔진 생성 (앱/웹 공용)"""
+        import os
+        from dotenv import load_dotenv
         
-        logger.info(f"📊 데이터베이스 연결 시도: {database_url.split('@')[1] if '@' in database_url else 'local'}")
+        # 최상위 .env 로드
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        load_dotenv(os.path.join(base_dir, '.env'))
+        
+        # 무조건 backend/ 폴더 안의 insight_deal.db 파일을 공유하도록 절대경로 지정
+        backend_dir = os.path.join(base_dir, "backend")
+        default_db_path = os.path.join(backend_dir, "insight_deal.db")
+        
+        database_url = os.getenv("DATABASE_URL")
+        # 호스트 PC에서 도커용 postgres URL로 접속을 시도하면 연결 오류가 나므로 로컬에선 SQLite 강제 처리
+        if not database_url or "postgres:5432" in database_url:
+            database_url = f"sqlite:///{default_db_path}"
+            
+        logger.info(f"📊 데이터베이스 연결 시도: {database_url}")
+        
+        # SQLite 특화 설정 적용
+        connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {"options": "-c timezone=Asia/Seoul"}
         
         self.engine = create_engine(
             database_url,
-            poolclass=QueuePool,
-            pool_size=10,
-            max_overflow=20,
             pool_pre_ping=True,
-            pool_recycle=3600,  # 1시간
-            echo=False,  # 프록덕션에서는 False
-            connect_args={
-                "options": "-c timezone=Asia/Seoul"
-            }
+            echo=False,
+            connect_args=connect_args
         )
         
         self.SessionLocal = sessionmaker(
@@ -80,8 +88,8 @@ class DatabaseManager:
             logger.info("🗄️ 데이터베이스 테이블 생성 시작...")
             
             # 모델 import
-            from database.models import Base as CommunityBase, Community
-            from models.wishlist_models import Base as WishlistBase
+            from backend.database.models import Base as CommunityBase, Community
+            from backend.models.wishlist_models import Base as WishlistBase
             
             # 1. 커뮤니티/딩/상품 테이블 생성
             logger.info("📄 커뮤니티 관련 테이블 생성 중...")

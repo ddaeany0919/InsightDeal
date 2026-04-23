@@ -5,6 +5,11 @@ import com.google.gson.annotations.SerializedName
 /**
  * 🔥 핫딜 아이템 데이터 클래스
  */
+data class DealSource(
+    @SerializedName("site_name") val siteName: String,
+    @SerializedName("post_url") val postUrl: String
+)
+
 data class DealItem(
     @SerializedName("id")
     val id: Int,
@@ -24,11 +29,23 @@ data class DealItem(
     @SerializedName("image_url")
     val imageUrl: String? = null,
     
-    @SerializedName("url")
-    val url: String,
+    @SerializedName("ecommerce_url")
+    val ecommerceUrl: String? = null,
+
+    @SerializedName("post_url")
+    val postUrl: String? = null,
     
     @SerializedName("site_name")
     val siteName: String,
+    
+    @SerializedName("site_names")
+    val siteNames: List<String> = emptyList(),
+
+    @SerializedName("sources")
+    val sources: List<DealSource>? = emptyList(),
+
+    @SerializedName("shipping_fee")
+    val shippingFee: String? = null,
     
     @SerializedName("category")
     val category: String? = null,
@@ -49,7 +66,16 @@ data class DealItem(
     val dislikeCount: Int = 0,
 
     @SerializedName("tags")
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+
+    @SerializedName("honey_score")
+    val honeyScore: Int = 0,
+
+    @SerializedName("ai_summary")
+    val aiSummary: String? = null,
+
+    @SerializedName("is_closed")
+    val isClosed: Boolean = false
 ) {
     /**
      * 💰 할인된 가격 계산

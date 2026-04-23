@@ -23,15 +23,36 @@ class AlippomppuScraper(AsyncBaseScraper):
 
             href = title_element.get('href', '')
             if not href: continue
+            
+            full_title = title_element.get_text(strip=True)
 
             url = urljoin("https://www.ppomppu.co.kr/zboard/", href)
-            full_title = title_element.get_text(strip=True)
+            # 🖼️ 썸네일 추출 시도
+            image_url = ""
+            img_td = row.select_one('td img.thumb_border')
+            if not img_td:
+                 img_td = row.select_one('img')
+            
+            if img_td and img_td.has_attr('src'):
+                 image_url = img_td['src']
+                 if image_url.startswith('//'):
+                      image_url = "https:" + image_url
+                 elif not image_url.startswith('http'):
+                      image_url = urljoin("https://www.ppomppu.co.kr", image_url)
+
+            is_closed = False
+            if '종료' in full_title or '마감' in full_title or '품절' in full_title:
+                is_closed = True
+            if title_element.select_one('del, s, strike, font[color="#999999"]'):
+                is_closed = True
 
             deals.append({
                 "title": full_title,
                 "url": url,
                 "price": 0,
-                "shop_name": ""
+                "shop_name": "",
+                "image_url": image_url,
+                "is_closed": is_closed
             })
             
         return deals

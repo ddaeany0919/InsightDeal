@@ -121,7 +121,6 @@ class PriceHistoryRepository {
         productName: String,
         productId: Int, // Added productId
         periodDays: Int = 30,
-        platform: String? = null,
         forceRefresh: Boolean = false
     ): PriceHistory? {
         val cacheKey = "${productId}_${periodDays}"

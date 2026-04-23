@@ -133,7 +133,32 @@ interface ApiService {
     // 🌐 지원 사이트 목록
     @GET("sites")
     suspend fun getSupportedSites(): Response<List<Site>>
+
+    // ✅ [Epic 3] 핫딜 푸시 알람 키워드 관리 API
+    @GET("api/push/keywords")
+    suspend fun getPushKeywords(
+        @Query("device_uuid") deviceUuid: String
+    ): Response<KeywordListResponse>
+
+    @POST("api/push/keywords")
+    suspend fun addPushKeyword(
+        @Body request: AddKeywordRequest
+    ): Response<ApiResponse>
+
+    @HTTP(method = "DELETE", path = "api/push/keywords", hasBody = true)
+    suspend fun deletePushKeyword(
+        @Body request: AddKeywordRequest
+    ): Response<ApiResponse>
 }
+
+// [Epic 3] 키워드 응답 모델
+data class KeywordListResponse(
+    val keywords: List<String>
+)
+data class AddKeywordRequest(
+    val device_uuid: String,
+    val keyword: String
+)
 
 /**
  * 🏗️ API 클라이언트 팩토리

@@ -17,8 +17,8 @@ object NetworkModule {
     
     internal const val TAG = "NetworkModule"
     
-    // TODO: BuildConfig 또는 환경 변수로 관리
-    private const val BASE_URL = "http://192.168.0.4:8000/"
+    // TODO: BuildConfig 또는 환경 변수로 관리 (안드로이드 실기기 접속을 위해 호스트 PC의 로컬 IP 192.168.0.36 적용)
+    private const val BASE_URL = "http://192.168.0.36:8000/"
     
     // 타임아웃 설정 (AI 파서 사용 시 긴 응답 시간 고려)
     private const val CONNECT_TIMEOUT = 120L

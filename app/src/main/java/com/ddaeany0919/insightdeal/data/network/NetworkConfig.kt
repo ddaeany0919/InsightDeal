@@ -18,7 +18,8 @@ object NetworkConfig {
     
     // Potential server IP addresses to try
     private val POTENTIAL_SERVER_IPS = listOf(
-        "192.168.0.4",  // Current configured IP
+        "192.168.0.36", // Current PC IP
+        "192.168.0.4",  // Old configured IP
         "192.168.0.1",  // Router/gateway
         "192.168.1.1",  // Alternative router
         "192.168.1.100", // Common PC IP
@@ -49,7 +50,7 @@ object NetworkConfig {
         }
         
         // If nothing works, return default
-        val fallbackUrl = "http://192.168.0.4:8000/"
+        val fallbackUrl = "http://192.168.0.36:8000/"
         Log.w(TAG, "findBestServerUrl: 모든 IP 테스트 실패, 기본값 사용: $fallbackUrl")
         fallbackUrl
     }
@@ -78,7 +79,7 @@ object NetworkConfig {
             val enumeration = java.net.NetworkInterface.getNetworkInterfaces()
             for (networkInterface in enumeration) {
                 for (inetAddress in networkInterface.inetAddresses) {
-                    if (!inetAddress.isLoopbackAddress && !inetAddress.isLinkLocalAddress && inetAddress.hostAddress.indexOf(':') == -1) {
+                    if (!inetAddress.isLoopbackAddress && !inetAddress.isLinkLocalAddress && inetAddress.hostAddress?.contains(":") == false) {
                         return inetAddress.hostAddress
                     }
                 }
@@ -99,7 +100,7 @@ object NetworkConfig {
             findBestServerUrl()
         } catch (e: Exception) {
             Log.e(TAG, "getServerUrl failed, using fallback", e)
-            "http://192.168.0.4:8000/" // Safe fallback
+            "http://192.168.0.36:8000/" // Safe fallback
         }
     }
 }

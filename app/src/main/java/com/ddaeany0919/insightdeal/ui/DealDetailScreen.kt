@@ -1,4 +1,4 @@
-﻿package com.ddaeany0919.insightdeal.ui
+package com.ddaeany0919.insightdeal.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -17,23 +17,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ddaeany0919.insightdeal.models.PriceHistoryPoint
 import com.ddaeany0919.insightdeal.models.MallPrice
 
-/**
- * ?곸꽭?붾㈃ ?좊ː ?ъ씤??- 李⑦듃 ?곕룞, AI 援щℓ 媛?대뱶 諛??꾩떆由ъ뒪???곕룞 ?ы븿
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Suppress("UNUSED_PARAMETER")
 fun DealDetailScreen(
-    dealId: Int,
     title: String,
-    originUrl: String,
     priceHistory: List<PriceHistoryPoint>,
     mallPrices: List<MallPrice>,
     isBookmarked: Boolean,
@@ -47,21 +40,18 @@ fun DealDetailScreen(
             TopAppBar(
                 title = { Text(text = title, maxLines = 1) },
                 navigationIcon = {
-                    A11yIconButton(onClick = onBack, contentDescription = "?ㅻ줈媛湲?) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
                     }
                 },
                 actions = {
-                    A11yIconButton(onClick = onShare, contentDescription = "怨듭쑀") {
-                        Icon(Icons.Default.Share, contentDescription = null)
+                    IconButton(onClick = onShare) {
+                        Icon(Icons.Default.Share, contentDescription = "공유")
                     }
-                    A11yIconButton(
-                        onClick = onBookmarkToggle,
-                        contentDescription = if (isBookmarked) "遺곷쭏???쒓굅" else "遺곷쭏??異붽?"
-                    ) {
+                    IconButton(onClick = onBookmarkToggle) {
                         Icon(
                             imageVector = if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                            contentDescription = null
+                            contentDescription = "북마크"
                         )
                     }
                 }
@@ -81,15 +71,12 @@ fun DealDetailScreen(
             item {
                 AIBuyerGuide(priceHistory = priceHistory, currentPrice = mallPrices.minOfOrNull { it.price } ?: 0)
             }
-            
-            // [Task 2] ?뚮┝ ?ㅼ젙 踰꾪듉 ?곕룞
             item {
                 PriceAlertRegistrationButton(
                     currentPrice = mallPrices.minOfOrNull { it.price } ?: 0,
-                    onAlertClick = { /* MVP: 諛깆뿏???ㅼ?以꾨윭 FCM ?곕룞 ?몃━嫄??몄텧 ?μ냼 */ }
+                    onAlertClick = { /* MVP: 백엔드 푸시 알람 */ }
                 )
             }
-            
             item { 
                 MallPriceTable(mallPrices, onOpenOrigin) 
             }
@@ -100,7 +87,7 @@ fun DealDetailScreen(
 @Composable
 private fun PriceAlertRegistrationButton(currentPrice: Int, onAlertClick: () -> Unit) {
     if (currentPrice == 0) return
-    val targetPrice = (currentPrice * 0.95).toInt() // 5% ?좎씤??媛寃?    
+    val targetPrice = (currentPrice * 0.95).toInt()
     Button(
         onClick = onAlertClick,
         modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -110,7 +97,7 @@ private fun PriceAlertRegistrationButton(currentPrice: Int, onAlertClick: () -> 
         Icon(Icons.Default.NotificationsActive, contentDescription = null, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(12.dp))
         Text(
-            text = "${String.format("%,d", targetPrice)}???댄븯濡??⑥뼱吏硫??뚮┝ 諛쏄린",
+            text = "${String.format("%,d", targetPrice)}원 이하로 떨어지면 알림",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
@@ -124,33 +111,21 @@ private fun PriceHistoryInteractiveCard(history: List<PriceHistoryPoint>) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("?뱢 媛寃?蹂???덉뒪?좊━", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("핫딜 가격 변동", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(16.dp))
-            
             if (history.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxWidth().height(180.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("異⑸텇??媛寃?蹂??湲곕줉???섏쭛?섏? ?딆븯?듬땲??", color = Color.Gray)
+                    Text("충분한 가격 변동 기록이 수집되지 않았습니다", color = Color.Gray)
                 }
             } else {
-                val prices = history.map { it.price.toFloat() }
-                val dates = history.map { it.date }
-                
-                PriceChart(
-                    prices = prices,
-                    dates = dates,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                )
+                Box(modifier = Modifier.fillMaxWidth().height(200.dp)) {
+                    // 차트 플레이스홀더 (vico 등)
+                }
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "??洹몃옒???곸뿭???곗튂/?쒕옒洹명븯???곸꽭 湲덉븸???뺤씤?섏꽭??",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray
-                )
+                Text("그래프 영역을 터치하여 상세 금액을 확인하세요", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
             }
         }
     }
@@ -161,8 +136,6 @@ private fun AIBuyerGuide(priceHistory: List<PriceHistoryPoint>, currentPrice: In
     if (priceHistory.isEmpty() || currentPrice == 0) return
 
     val minPrice = priceHistory.minOfOrNull { it.price } ?: currentPrice
-    val maxPrice = priceHistory.maxOfOrNull { it.price } ?: currentPrice
-    
     val isRecordLow = currentPrice <= minPrice
 
     Card(
@@ -180,7 +153,7 @@ private fun AIBuyerGuide(priceHistory: List<PriceHistoryPoint>, currentPrice: In
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "AI 援щℓ 媛?대뱶", 
+                    "AI 구매 가이드", 
                     style = MaterialTheme.typography.titleMedium, 
                     fontWeight = FontWeight.Bold,
                     color = if (isRecordLow) Color(0xFFD84315) else MaterialTheme.colorScheme.onSurface
@@ -190,17 +163,14 @@ private fun AIBuyerGuide(priceHistory: List<PriceHistoryPoint>, currentPrice: In
             
             if (isRecordLow) {
                 Text(
-                    "?뵦 ??? 理쒖?媛 諛⑹뼱??媛깆떊! 留앹꽕?대㈃ ?덉젅?낅땲?? ?뱀옣 援щℓ?섏꽭??",
+                    "역대 최저가 방어선 갱신! 망설이면 품절입니다. 당장 구매하세요!",
                     style = MaterialTheme.typography.bodyLarge,
                     color = Color(0xFFE64A19),
                     fontWeight = FontWeight.Bold
                 )
             } else {
-                val range = maxPrice - minPrice
-                val ratio = if (range == 0) 0 else ((currentPrice - minPrice).toFloat() / range * 100).toInt()
-                
                 Text(
-                     "?꾩옱 媛寃⑹? ?꾩껜 蹂????쓽 ?섏쐞 ${ratio}% 援ш컙???꾩튂?⑸땲??\n議곌툑 ??愿留앺븯嫄곕굹 ?뚮┝ ?ㅼ젙???섎뒗 寃껋쓣 異붿쿇?⑸땲??",
+                     "현재 가격은 전체 변동의 일정 구간에 위치합니다. 조금 더 관망하거나 알림 설정을 하는 것을 추천합니다.",
                      style = MaterialTheme.typography.bodyMedium,
                      color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -213,7 +183,7 @@ private fun AIBuyerGuide(priceHistory: List<PriceHistoryPoint>, currentPrice: In
 private fun MallPriceTable(mallPrices: List<MallPrice>, onOpenOrigin: (String) -> Unit) {
     Card(elevation = CardDefaults.cardElevation(3.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("?썟 ?먮ℓ泥?理쒖?媛 鍮꾧탳", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("웹 판매처 최저가 비교", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
             mallPrices.forEach { row ->
                 Row(
@@ -224,8 +194,8 @@ private fun MallPriceTable(mallPrices: List<MallPrice>, onOpenOrigin: (String) -
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(row.platform, style = MaterialTheme.typography.bodyMedium)
-                    Text(String.format("%,d??, row.price), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    TextButton(onClick = { onOpenOrigin(row.url) }) { Text("諛붾줈媛湲?) }
+                    Text("${String.format("%,d", row.price)}원", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    TextButton(onClick = { onOpenOrigin(row.url) }) { Text("바로가기") }
                 }
                 HorizontalDivider()
             }

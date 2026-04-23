@@ -13,8 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.foundation.background
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -24,11 +24,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
-// ?�요???�이???�래?�나 기�? import???�황??맞게 추�?
-
 suspend fun SnackbarHostState.offerUndo(
     message: String,
-    actionLabel: String = "?�행 취소",
+    actionLabel: String = "실행 취소",
     onUndo: () -> Unit
 ): Boolean {
     val result = showSnackbar(
@@ -61,14 +59,14 @@ fun EmptyWishlistState(onAddItemClick: () -> Unit) {
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "?�시리스?��? 비어?�습?�다",
+            text = "위시리스트가 비어있습니다",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "관???�는 ?�품??추�??�보?�요",
+            text = "관심있는 상품을 추가해보세요",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
             textAlign = TextAlign.Center
@@ -80,7 +78,7 @@ fun EmptyWishlistState(onAddItemClick: () -> Unit) {
         ) {
             Icon(Icons.Default.Add, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("?�이??추�?")
+            Text("아이템 추가")
         }
     }
 }
@@ -105,13 +103,13 @@ fun AddWishlistDialog(
                 isError = false
                 onDismiss()
             },
-            title = { Text("?�시리스???�이??추�?") },
+            title = { Text("위시리스트 아이템 추가") },
             text = {
                 Column {
                     OutlinedTextField(
                         value = keyword,
                         onValueChange = { keyword = it },
-                        label = { Text("?�품�??�는 ?�워??) },
+                        label = { Text("상품명 또는 키워드") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -119,7 +117,7 @@ fun AddWishlistDialog(
                     OutlinedTextField(
                         value = productUrl,
                         onValueChange = { productUrl = it },
-                        label = { Text("?�품 링크(URL)") },
+                        label = { Text("상품 링크(URL)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -132,11 +130,11 @@ fun AddWishlistDialog(
                                 isError = false
                             }
                         },
-                        label = { Text("목표 가�?(??") },
+                        label = { Text("목표 가격(원)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         isError = isError,
-                        supportingText = if (isError) { { Text("?�바�?가격을 ?�력?�주?�요") } } else null
+                        supportingText = if (isError) { { Text("올바른 가격을 입력해주세요") } } else null
                     )
                 }
             },
@@ -153,7 +151,7 @@ fun AddWishlistDialog(
                         isError = true
                     }
                 }) {
-                    Text("추�?")
+                    Text("추가")
                 }
             },
             dismissButton = {
@@ -193,12 +191,12 @@ fun DashboardHeader(items: List<WishlistItem>) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("?�체 ?�품", style = MaterialTheme.typography.labelMedium)
+                Text("전체 상품", style = MaterialTheme.typography.labelMedium)
                 Text("$totalCount", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
             }
             VerticalDivider(modifier = Modifier.height(40.dp).width(1.dp), color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("목표 ?�성", style = MaterialTheme.typography.labelMedium)
+                Text("목표 달성", style = MaterialTheme.typography.labelMedium)
                 Text(
                     "$targetReachedCount", 
                     style = MaterialTheme.typography.headlineMedium.copy(
@@ -247,7 +245,7 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel()) {
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("?�품 추�?", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                Text("상품 추가", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
             }
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -267,19 +265,55 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel()) {
                     DashboardHeader(items = currentState.items)
                 }
                 items(items = currentState.items, key = { it.id }) { item ->
-                    com.ddaeany0919.insightdeal.ui.components.StandardWishlistCard(style = com.ddaeany0919.insightdeal.ui.components.WishlistCardStyle.DETAILED,
-                        item = item,
-                        onDelete = {
-                            viewModel.deleteItem(item)
-                            scope.launch {
-                                snackbarHostState.offerUndo(
-                                    message = "${item.keyword}??�? ??��?�습?�다",
-                                    onUndo = {
-                                        viewModel.restoreItem(item)
-                                    }
-                                )
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        confirmValueChange = { dismissValue ->
+                            if (dismissValue == SwipeToDismissBoxValue.EndToStart || dismissValue == SwipeToDismissBoxValue.StartToEnd) {
+                                viewModel.deleteItem(item)
+                                scope.launch {
+                                    snackbarHostState.offerUndo(
+                                        message = "${item.keyword}을(를) 삭제했습니다",
+                                        onUndo = { viewModel.restoreItem(item) }
+                                    )
+                                }
+                                true
+                            } else false
+                        }
+                    )
+
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        backgroundContent = {
+                            val color by androidx.compose.animation.animateColorAsState(
+                                targetValue = when (dismissState.targetValue) {
+                                    SwipeToDismissBoxValue.Settled -> androidx.compose.ui.graphics.Color.Transparent
+                                    else -> MaterialTheme.colorScheme.errorContainer
+                                }
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(vertical = 8.dp, horizontal = 4.dp)
+                                    .background(color, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 20.dp),
+                                contentAlignment = Alignment.CenterEnd
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onErrorContainer)
                             }
                         },
+                        content = {
+                            com.ddaeany0919.insightdeal.ui.components.StandardWishlistCard(style = com.ddaeany0919.insightdeal.ui.components.WishlistCardStyle.DETAILED,
+                                item = item,
+                                onDelete = {
+                                    viewModel.deleteItem(item)
+                                    scope.launch {
+                                        snackbarHostState.offerUndo(
+                                            message = "${item.keyword}을(를) 삭제했습니다",
+                                            onUndo = {
+                                                viewModel.restoreItem(item)
+                                            }
+                                        )
+                                    }
+                                },
                         onCheckPrice = { viewModel.checkPrice(item) },
                         isExpanded = expandedItemId == item.id,
                         onExpand = {
@@ -292,10 +326,9 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel()) {
                             }
                         },
                         priceHistory = itemPriceHistories[item.id]
+                            )
+                        }
                     )
-                    // Add Graph below card if expanded (simplified for now, just showing placeholder)
-                    // In a real app, we would fetch history for this item
-                    // PriceHistoryGraph(dataPoints = emptyList(), modifier = Modifier.height(100.dp).fillMaxWidth())
                 }
             }
             is WishlistUiState.Error -> {
@@ -305,7 +338,7 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel()) {
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "?�류가 발생?�습?�다",
+                        text = "오류가 발생했습니다",
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -316,7 +349,7 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel()) {
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { viewModel.retry() }) { Text("?�시 ?�도") }
+                    Button(onClick = { viewModel.retry() }) { Text("다시 시도") }
                 }
             }
         }
@@ -327,7 +360,7 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel()) {
                 viewModel.addItem(keyword, productUrl, targetPrice)
                 showDialog = false
                 scope.launch {
-                    snackbarHostState.showSnackbar(message = "$keyword ($productUrl) ?�시리스?�에 추�???)
+                    snackbarHostState.showSnackbar(message = "$keyword ($productUrl) 위시리스트에 추가됨")
                 }
             }
         )

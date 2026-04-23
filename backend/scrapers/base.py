@@ -31,8 +31,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 
-from database import models
-from database import session as database
+from backend.database import models
+from backend.database.session import SessionLocal as database
 
 # 환경변수 설정
 SELENIUM_TIMEOUT = int(os.getenv("SELENIUM_TIMEOUT", "5"))
@@ -368,12 +368,32 @@ class BaseScraper(ABC):
                 self.scraped_count += 1
                 
                 deal_obj = item['deal']
-                exists = self.db.query(models.Deal.id).filter(
+                exists = self.db.query(models.Deal).filter(
                     models.Deal.post_link == deal_obj.post_link
                 ).first()
 
                 if exists:
+                    # Update metrics for honey_score recalculation
+                    if hasattr(deal_obj, 'views') and deal_obj.views > exists.views:
+                        exists.views = deal_obj.views
+                    if hasattr(deal_obj, 'comments') and deal_obj.comments > exists.comments:
+                        exists.comments = deal_obj.comments
+                    if hasattr(deal_obj, 'upvotes') and deal_obj.upvotes > exists.upvotes:
+                        exists.upvotes = deal_obj.upvotes
+                        
+                    # Recalculate honey score
+                    # Recalculate honey score
+                    hc = (exists.comments * 2) + (exists.upvotes * 5) + (exists.views // 100)
+                    exists.honey_score = hc
+                    
+                    # Missing price patch
+                    if exists.price <= 0 and deal_obj.price > 0:
+                        exists.price = deal_obj.price
+                        
+                    self.db.add(exists)
                     continue
+                
+                deal_obj.category = BaseScraper._infer_category_from_title(deal_obj.title)
                 
                 # 기존 OCR 로직
                 if deal_obj.shipping_fee == '정보 없음' and deal_obj.deal_type == '일반':
@@ -606,6 +626,14 @@ class BaseScraper(ABC):
                     return f"${dollar_amount:.2f}"
             except (ValueError, TypeError):
                 pass
+                
+        # Handle '만' (e.g., 13.5만)
+        if '만' in price_str:
+            match = re.search(r'([\d,]+\.?\d*)만', price_str)
+            if match:
+                num_val = float(match.group(1).replace(',', ''))
+                return f"{int(num_val * 10000):,}원"
+
         digits = re.sub(r'[^0-9]', '', price_str)
         if not digits:
             return "정보 없음"
@@ -627,23 +655,75 @@ class BaseScraper(ABC):
     
     @staticmethod
     def _extract_shipping_from_title(title: str) -> str:
-        match = re.search(r'\(([^)]+)\)$', title)
+        # 무배, 무료배송, 택배비 포함 등 확인
+        if re.search(r'(무료\s*배송|무배|택배비\s*무료|배송비\s*포함|무료)', title):
+            return "무료"
+        match = re.search(r'\(([^)]*배송[^)]*)\)$', title)
         if match:
-            for part in match.group(1).split('/'):
-                fee = BaseScraper._clean_shipping_fee(part)
-                if fee != '정보 없음': return fee
-        if any(k in title for k in ['무배', '무료배송', '택배비 포함', '무료']): return "무료"
+            return BaseScraper._clean_shipping_fee(match.group(1))
         return "정보 없음"
 
     @staticmethod
     def _extract_price_from_title(title: str) -> str:
-        match = re.search(r'\(([^)]+)\)$', title)
+        # [0-9,]+(원|달러|\$) 정규식 추출
+        match = re.search(r'([0-9]{1,3}(?:,[0-9]{3})*|[0-9]+)\s*(원|달러)|\$([0-9]+(?:\.[0-9]+)?)', title)
         if match:
-            for part in match.group(1).split('/'):
-                price = BaseScraper._clean_price(part)
-                if price not in ["가격 상이", "정보 없음"]: return price
+            if match.group(3): return f"${match.group(3)}" # $15.99
+            return f"{match.group(1)}{match.group(2)}"
         return "정보 없음"
-    
+        
+    @staticmethod
+    def _clean_title(title: str) -> str:
+        # 뒤에 붙는 (가격/배송비) 형태 괄호 전체 삭제
+        cleaned = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:원|달러|배송|무배|무료)[^)]*\)\s*$', '', title)
+        # 앞에 붙는 [쇼핑몰] 형태 등은 유지하거나 선택적 삭제, 이번엔 뒤쪽 가격태그만 날리기
+        return cleaned.strip()        
+    @staticmethod
+    def _infer_category_from_title(title: str) -> str:
+        if not title: return "기타"
+        t = title.lower()
+        
+        # 12가지 카테고리 매핑 (동적으로도 활용되지만 스크래퍼 기본 분류기 지원)
+        mapping = {
+            "음식": ["라면", "생수", "햇반", "소고기", "밀키트", "과일", "커피", "제로", "음료", "닭가슴살", "과자", "식품", "초콜릿", "우유", "만두", "즉석밥"],
+            "SW/게임": ["닌텐도", "스위치", "플스", "ps5", "xbox", "엑스박스", "스팀", "윈도우", "마이크로소프트", "어피스", "소프트웨어", "인디게임", "콘솔", "타이틀", "오피스"],
+            "PC제품": ["노트북", "랩탑", "맥북", "태블릿", "아이패드", "스마트폰", "폰", "아이폰", "갤럭시", "모니터", "그래픽카드", "ssd", "ram", "아이맥", "맥미니", "키보드", "마우스"],
+            "가전제품": ["에어컨", "냉장고", "세탁기", "청소기", "다이슨", "건조기", "선풍기", "tv", "티비", "에어프라이어", "전자레인지", "제습기", "로봇청소기", "식기세척기"],
+            "생활용품": ["휴지", "화장지", "세제", "샴푸", "물티슈", "치약", "건전지", "면도기", "바디워시", "비누", "생리대", "마스크", "침구", "수건"],
+            "의류": ["티셔츠", "바지", "패딩", "니트", "자켓", "운동화", "신발", "스니커즈", "슬리퍼", "가방", "양말", "팬티", "아우터"],
+            "화장품": ["스킨", "로션", "선크림", "수분크림", "향수", "에센스", "립스틱", "파운데이션", "화장품", "뷰티", "헤어", "바디"],
+            "모바일/기프티콘": ["기프티콘", "스타벅스", "배민", "배달의민족", "요기요", "이디야", "맘스터치", "치킨", "피자", "카카오", "교환권", "금액권", "데이터"],
+            "상품권": ["해피머니", "컬쳐랜드", "신세계", "문화상품권", "도서문화", "상품권", "기프트카드", "백화점상", "이마트", "롯데"],
+            "패키지/이용권": ["넷플릭스", "유튜브", "프리미엄", "디즈니", "티빙", "웨이브", "음원", "멜론", "이용권", "구독", "멤버십", "스마일클럽", "요금제"],
+            "여행.해외핫딜": ["항공권", "호텔", "숙박", "여행", "투어", "패키지여행", "해외직구", "알리", "테무", "아마존", "큐텐", "직구", "관세", "배대지"]
+        }
+        
+        for category, keywords in mapping.items():
+            if any(w in t for w in keywords):
+                return category
+                
+        return "기타"
+        
+    @staticmethod
+    def _extract_price_from_title(title: str) -> str:
+        # [0-9,]+(원|달러|\$) 정규식 추출
+        match = re.search(r'((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?)\s*(원|달러)|\$([0-9]+(?:\.[0-9]+)?)', str(title))
+        if match:
+            if match.group(2) == '달러':
+                return match.group(1) + "달러"
+            elif match.group(3):
+                return "$" + match.group(3)
+            return match.group(1) + "원"
+        return "정보 없음"
+
+    @staticmethod
+    def _extract_shipping_from_title(title: str) -> str:
+        if re.search(r'무배|무료|무료배송', str(title)):
+            return "무료"
+        if re.search(r'[\s(]무[\s)]', str(title)):
+            return "무료"
+        return "정보 없음"
+
     @staticmethod
     def _clean_shop_name(shop_name_input):
         shop_name_str = str(shop_name_input).strip()
@@ -912,8 +992,13 @@ class BaseScraper(ABC):
 
                 category_from_list = deal_info.get('list_category')
                 shop_name_from_list = deal_info.get('list_shop_name', '정보 없음')
-                price_from_list = deal_info.get('list_price') or self._extract_price_from_title(full_title)
-                shipping_fee_from_list = deal_info.get('list_shipping_fee') or self._extract_shipping_from_title(full_title)
+                price_from_list = deal_info.get('list_price')
+                if not price_from_list or price_from_list == "정보 없음":
+                    price_from_list = self._extract_price_from_title(full_title)
+                    
+                shipping_fee_from_list = deal_info.get('list_shipping_fee')
+                if not shipping_fee_from_list or shipping_fee_from_list == "정보 없음":
+                    shipping_fee_from_list = self._extract_shipping_from_title(full_title)
                 
                 # [Optimization] Rule-Based Parsing First
                 from core.rule_parser import RuleBasedParser
@@ -950,9 +1035,11 @@ class BaseScraper(ABC):
                 list_image_url = deal_info.get('original_image_url')
                 valid_images_from_content = [urljoin(self.base_url, img.get('src') or '') for img in content_element.select('img') if img.get('src')]
                 
-                # 유효하지 않은 이미지(placeholder, icon 등) 필터링
-                valid_images_from_content = [img for img in valid_images_from_content if not re.search(r'icon|emoticon|expand', img)]
-
+                # 유효하지 않은 이미지(UI 아이콘, 배너, 로고 등) 강력 필터링
+                valid_images_from_content = [
+                    img for img in valid_images_from_content 
+                    if not re.search(r'icon|emoticon|expand|beautifulLine|util/|skin/|share/|btn_|footer|banner|logo|layout|bg\.', img, re.IGNORECASE)
+                ]
                 # 대표 이미지를 하나만 선택
                 post_representative_image = None
                 if list_image_url:
@@ -988,15 +1075,43 @@ class BaseScraper(ABC):
                             shop_name = inferred_shop_from_content
 
                     # 모든 딜에 동일한 대표 이미지를 할당
-                    web_path, _, _ = self._download_and_get_local_path(post_representative_image, -1, perform_ocr=False)
+                    actual_image_url = post_representative_image
                     
+                    if final_ecommerce_link and final_ecommerce_link.startswith('http'):
+                        try:
+                            import requests
+                            from bs4 import BeautifulSoup
+                            res = requests.get(final_ecommerce_link, timeout=2, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
+                            if res.status_code == 200:
+                                soup = BeautifulSoup(res.text, 'html.parser')
+                                og_image = soup.find('meta', property='og:image')
+                                if og_image and og_image.get('content') and not 'placehold.co' in og_image.get('content'):
+                                    actual_image_url = og_image['content']
+                                    logger.info(f"   - [OG:Image Fallback] Captured from ecommerce: {actual_image_url}")
+                        except Exception as og_e:
+                            logger.info(f"   - [OG:Image Fallback] Failed for {final_ecommerce_link}: {og_e}")
+
+                    web_path, _, _ = self._download_and_get_local_path(actual_image_url, -1, perform_ocr=False)
                     is_options_deal = deal_item.get('deal_type') == 'Type A: Options Deal'
                     options_data_json = json.dumps(deal_item.get('options', [])) if is_options_deal else None
                     base_product_name = deal_item.get('base_product_name') if is_options_deal else product_title
                     
+                    import re
+                    # Handle "$197.82" -> 276948, or "40,992원" -> 40992
+                    parsed_price_int = 0
+                    if final_price and final_price != "정보 없음":
+                        if "$" in final_price or "달러" in final_price:
+                            digits_dollar = re.findall(r'[\d.]+', str(final_price))
+                            if digits_dollar:
+                                parsed_price_int = int(float(digits_dollar[0]) * 1400)
+                        else:
+                            digits = re.findall(r'\d+', str(final_price))
+                            if digits:
+                                parsed_price_int = int(''.join(digits))
+                    
                     new_deal = models.Deal(
                         source_community_id=self.community_entry.id, title=product_title, post_link=post_link,
-                        ecommerce_link=final_ecommerce_link, shop_name=shop_name, price=final_price,
+                        ecommerce_link=final_ecommerce_link, shop_name=shop_name, price=parsed_price_int,
                         shipping_fee=final_shipping_fee, category=category, is_closed=deal_item.get('is_closed', False),
                         deal_type=deal_item.get('deal_type', '일반'), image_url=web_path, content_html=content_html,
                         group_id=group_id, has_options=is_options_deal, options_data=options_data_json,

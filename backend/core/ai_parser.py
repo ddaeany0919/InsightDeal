@@ -5,9 +5,12 @@ import google.generativeai as genai
 from google.generativeai.types import GenerationConfig
 from bs4 import BeautifulSoup
 
-# 환경변수에서 API 키 안전하게 로드
+# 환경 변수 및 dotenv 로드 (보안. Git 노출 방지)
+from dotenv import load_dotenv
+load_dotenv()
+
 if "GOOGLE_API_KEY" not in os.environ:
-    raise KeyError("환경 변수 'GOOGLE_API_KEY'가 설정되지 않았습니다. API 키를 설정해주세요.")
+    raise KeyError("환경 변수 'GOOGLE_API_KEY'가 설정되지 않았습니다. .env 파일에 API 키를 설정해주세요.")
 genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 
 # AI 모델 설정을 미리 정의합니다.
@@ -140,7 +143,7 @@ def parse_content_with_ai(content_html: str, post_link: str, original_title: str
             * Rule 1: Extract the main, specific product name.
             * Rule 2: Clean the title. Remove generic or promotional phrases like "초특가", "역대급", "강력 추천".
         * **`price`**:
-            * **Priority 0 (CRITICAL)**: First, check the `ORIGINAL_TITLE`. If it contains a price in parentheses like `(15,000원)` or `(299달러)`, you MUST use that price and stop.
+            * **Priority 0 (CRITICAL)**: First, check the `ORIGINAL_TITLE`. If it contains a price explicitly like `15,000원`, `(15,000원)`, or `299달러`, you MUST use that price and stop.
             * Priority 1: Find '최종가' and extract its corresponding value.
             * Priority 2: If not present, find the next most likely price (e.g., '판매가', '할인가').
             * Priority 3: If no price can be found, the value MUST be "정보 없음".
@@ -148,15 +151,15 @@ def parse_content_with_ai(content_html: str, post_link: str, original_title: str
             * Rule 1: Look for explicit shipping fee information.
             * Rule 2: If not found, the value MUST be "정보 없음".
         * **`ecommerce_link`**:
-            * Rule 1: Find the `<a>` tag related to the deal. It often follows keywords like '바로가기', '구매링크', '링크', '출처'.
-            * Rule 2: You MUST extract the URL from its `href` attribute. This is the most important rule.
-            * Rule 3: Do NOT extract the visible text of the link. For example, if you see `<a href="A.com">바로가기</a>`, you MUST extract "A.com", not "바로가기".
-            *  Rule 4: PRIORITY ORDER for link selection:
-                * First: Direct shopping links (알리익스프레스, 쿠팡, 11번가, G마켓 등)
+            * Rule 1: Find ANY link related to the deal, whether inside an `<a>` tag or written as plain `http...` text in the body.
+            * Rule 2: You MUST extract the actual absolute URL (e.g., https://gmarket.co.kr/12345).
+            * Rule 3: Do NOT extract the visible text of the link (like '바로가기').
+            * Rule 4: PRIORITY ORDER for link selection (CRITICAL):
+                * First: DIRECT SHOPPING LINKS (e.g., gmarket.co.kr, 11st.co.kr, coupang.com, aliexpress). THIS IS THE ULTIMATE PRIORITY.
                 * Second: "출처" or "원문" links (naver.me, bit.ly 등 단축링크 포함)
                 * Third: Any other http/https links
-            * Rule 5: If multiple links exist, choose the one most likely to be a product purchase page
-            * Rule 6: If you cannot find any `<a>` tag or `href` attribute for a deal, the value for `ecommerce_link` MUST be `null`.
+            * Rule 5: If multiple links exist, ALWAYS choose the one where the user can actually buy the product.
+            * Rule 6: If you cannot find any suitable URL for a deal, the value for `ecommerce_link` MUST be `null`.
         * **`is_closed`**: `true` if the title/text contains keywords like '종료', '품절', '마감', otherwise `false`.
         * **`deal_type`**: Must be "이벤트" for point rewards/events, otherwise "일반".
 

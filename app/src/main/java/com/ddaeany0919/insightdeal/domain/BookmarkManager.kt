@@ -81,7 +81,7 @@ class BookmarkManager private constructor(private val context: Context) {
             currentPrice = deal.price,
             imageUrl = deal.imageUrl ?: "",
             siteName = deal.siteName,
-            url = deal.url,
+            url = deal.postUrl ?: deal.ecommerceUrl ?: "",
             tags = finalTags,
             note = note,
             createdAt = System.currentTimeMillis(),

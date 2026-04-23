@@ -52,9 +52,6 @@ fun EnhancedPriceCard(
 ) {
     var showAlert by remember { mutableStateOf(false) }
     val savings = comparison.originalPrice - comparison.lowestPrice
-    val savingsPercentage = if (comparison.originalPrice > 0) {
-        ((savings.toFloat() / comparison.originalPrice) * 100).toInt()
-    } else 0
 
     // 역대 최저가 대비 상승/하락 폭 계산
     val recordLowDiff = comparison.recordLowPrice?.let {
@@ -127,11 +124,11 @@ fun EnhancedPriceCard(
                         )
 
                         // [Task 1] 역대 최저가 텍스트
-                        if (recordLowDiff != null) {
+                        if (recordLowDiff != null && comparison.recordLowPrice != null) {
                             Text(
                                 text = "📈 $recordLowDiff",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (comparison.lowestPrice <= comparison.recordLowPrice!!) Color(0xFFE91E63) else Color(0xFF1565C0),
+                                color = if (comparison.lowestPrice <= comparison.recordLowPrice) Color(0xFFE91E63) else Color(0xFF1565C0),
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(top = 2.dp)
                             )

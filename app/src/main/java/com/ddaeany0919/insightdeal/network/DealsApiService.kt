@@ -14,15 +14,25 @@ interface DealsApiService {
     @GET("/api/health")
     suspend fun healthCheck(): Response<HealthResponse>
 
-    @GET("/api/deals")
-    suspend fun getDeals(
+    @GET("/api/community/hot-deals")
+    suspend fun getHotDeals(
         @Query("limit") limit: Int = 20,
-        @Query("offset") offset: Int = 0
-    ): Response<DealsListResponse>
+        @Query("offset") offset: Int = 0,
+        @Query("category") category: String? = null,
+        @Query("keyword") keyword: String? = null,
+        @Query("platform") platform: String? = null
+    ): Response<HotDealsResponse>
+
+    @GET("/api/community/popular-keywords")
+    suspend fun getPopularKeywords(): Response<PopularKeywordsResponse>
 }
 
-data class DealsListResponse(
-    val deals: List<com.ddaeany0919.insightdeal.models.ApiDeal>,
-    val total: Int,
-    val has_more: Boolean
+data class PopularKeywordsResponse(
+    val keywords: List<String>
 )
+
+data class HotDealsResponse(
+    val deals: List<com.ddaeany0919.insightdeal.models.DealItem>
+)
+
+ 

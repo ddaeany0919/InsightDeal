@@ -1,4 +1,4 @@
-from scrapers.naver_shopping import NaverShoppingScraper
+from scrapers.naver_shopping_scraper import NaverShoppingScraper
 from services.ai_product_name_service import AIProductNameService
 import logging
 

@@ -12,7 +12,9 @@ class Community(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(50), unique=True, nullable=False)
+    display_name = Column(String(50), nullable=True) # 안드로이드/iOS 교차 플랫폼 호환 및 프론트엔드 노출용 한글명
     base_url = Column(String(255), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), default=func.now())
 
     deals = relationship("Deal", back_populates="community")
 
@@ -37,6 +39,8 @@ class Deal(Base):
     has_options = Column(Boolean, default=False, nullable=False)
     options_data = Column(TEXT, nullable=True)
     base_product_name = Column(String(500), nullable=True)
+    honey_score = Column(Integer, default=0) # [Phase 11] 추천도 점수
+    ai_summary = Column(String(500), nullable=True) # [Phase 11 Epic 1] AI 핵심 1줄 요약
 
     __table_args__ = (UniqueConstraint('post_link', 'title', name='_post_link_title_uc'),)
 
@@ -54,6 +58,29 @@ class PriceHistory(Base):
 
     deal = relationship("Deal", back_populates="price_history")
 
+# [Epic 3] 푸시 알람을 수신할 기기 토큰 테이블 (유저 로그인 없이 기기 기반 매칭)
+class DeviceToken(Base):
+    __tablename__ = "device_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    device_uuid = Column(String(100), unique=True, index=True, nullable=False) # 고유 앱 설치 ID
+    fcm_token = Column(String(500), nullable=True) # 파이어베이스 푸시 토큰
+    is_active = Column(Boolean, default=True)
+    registered_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    
+    keywords = relationship("PushKeyword", back_populates="device_token", cascade="all, delete-orphan")
+
+# [Epic 3] 유저가 등록한 관심 키워드 테이블
+class PushKeyword(Base):
+    __tablename__ = "push_keywords"
+
+    id = Column(Integer, primary_key=True, index=True)
+    device_token_id = Column(Integer, ForeignKey("device_tokens.id"), nullable=False)
+    keyword = Column(String(100), nullable=False, index=True) # ex: '아이패드', '에어팟'
+    is_active = Column(Boolean, default=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    device_token = relationship("DeviceToken", back_populates="keywords")
 # 새로 추가된 테이블들 (쿠팡 추적 및 FCM 지원)
 
 class Product(Base):

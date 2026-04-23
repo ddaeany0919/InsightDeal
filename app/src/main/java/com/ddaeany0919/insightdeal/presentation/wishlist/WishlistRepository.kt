@@ -1,16 +1,41 @@
 package com.ddaeany0919.insightdeal.presentation.wishlist
 
+import android.content.Context
 import android.util.Log
 import com.ddaeany0919.insightdeal.data.network.*
-import com.ddaeany0919.insightdeal.presentation.wishlist.PriceCheckResponse
+import com.ddaeany0919.insightdeal.local.db.AppDatabase
+import com.ddaeany0919.insightdeal.local.db.WishlistEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 import java.io.IOException
 import java.net.SocketTimeoutException
+import java.time.LocalDateTime
+
+fun WishlistEntity.toWishlistItem(): WishlistItem {
+    return WishlistItem(
+        id = this.id,
+        keyword = this.keyword,
+        productUrl = this.productUrl,
+        targetPrice = this.targetPrice,
+        currentLowestPrice = this.currentLowestPrice,
+        currentLowestPlatform = this.currentLowestPlatform,
+        currentLowestProductTitle = this.currentLowestProductTitle,
+        priceDropPercentage = this.priceDropPercentage,
+        isTargetReached = this.isTargetReached,
+        isActive = this.isActive,
+        alertEnabled = this.alertEnabled,
+        createdAt = this.createdAt,
+        updatedAt = this.updatedAt,
+        lastChecked = this.lastChecked
+    )
+}
 
 class WishlistRepository(
+    context: Context,
     private val apiServiceProvider: suspend () -> WishlistApiService = {
         WishlistApiService.createWithStableConfig()
     }
@@ -19,122 +44,91 @@ class WishlistRepository(
     private val MAX_RETRIES = 3
     private val RETRY_DELAY_MS = 1000L
 
+    private val dao = AppDatabase.getDatabase(context).wishlistDao()
     private var apiService: WishlistApiService? = null
+
     private suspend fun service(): WishlistApiService {
         if (apiService == null) {
-            Log.d(TAG, "service: API 서비스 생성")
             apiService = apiServiceProvider()
         }
         return apiService!!
     }
 
-    suspend fun getWishlist(userId: String) = withContext(Dispatchers.IO) {
-        Log.d(TAG, "getWishlist: start userId=$userId")
-        executeWithRetry("getWishlist") {
-            val result = service().getWishlist(userId).map { it.toWishlistItem() }
-            Log.d(TAG, "getWishlist: 성공 (${result.size}개 항목)")
-            result
+    // 로컬 DB를 구독(Flow)하여 UI단에 즉시 방출
+    fun getWishlistFlow(): Flow<List<WishlistItem>> {
+        return dao.getAllWishlistsFlow().map { entities ->
+            entities.map { it.toWishlistItem() }
         }
     }
 
     suspend fun createWishlist(
         keyword: String, 
         productUrl: String, 
-        targetPrice: Int, 
-        userId: String
+        targetPrice: Int
     ) = withContext(Dispatchers.IO) {
-        Log.d(TAG, "createWishlist: keyword=$keyword url=$productUrl target=$targetPrice userId=$userId")
-        
-        executeWithRetry("createWishlist") {
-            val isUrl = productUrl.isNotBlank() || keyword.startsWith("http://") || keyword.startsWith("https://")
-            if (isUrl) {
-                val url = if (productUrl.isNotBlank()) productUrl else keyword
-                Log.d(TAG, "createWishlist: using from-url endpoint with url=$url")
-                service().createWishlistFromUrl(
-                    WishlistCreateFromUrlRequest(
-                        productUrl = url,
-                        targetPrice = targetPrice,
-                        userId = userId
-                    )
-                ).toWishlistItem()
-            } else {
-                Log.d(TAG, "createWishlist: using from-keyword endpoint with keyword=$keyword")
-                service().createWishlistFromKeyword(
-                    WishlistCreateFromKeywordRequest(
-                        keyword = keyword,
-                        targetPrice = targetPrice,
-                        userId = userId
-                    )
-                ).toWishlistItem()
-            }
-        }
+        Log.d(TAG, "createWishlist: Local db insert -> keyword=$keyword url=$productUrl target=$targetPrice")
+        val entity = WishlistEntity(
+            keyword = keyword,
+            productUrl = productUrl,
+            targetPrice = targetPrice
+        )
+        dao.insertWishlist(entity)
     }
 
-    suspend fun deleteWishlist(wishlistId: Int, userId: String): Boolean = withContext(Dispatchers.IO) {
-        Log.d(TAG, "deleteWishlist: start id=$wishlistId userId=$userId")
-        executeWithRetry("deleteWishlist") {
-            val resp = service().deleteWithQuery(wishlistId, userId)
-            Log.d(TAG, "deleteWishlist: response code=${resp.code()}, success=${resp.isSuccessful}")
-            resp.isSuccessful
-        }
+    suspend fun updateWishlist(item: WishlistItem) = withContext(Dispatchers.IO) {
+        val entity = WishlistEntity(
+            id = item.id,
+            keyword = item.keyword,
+            productUrl = item.productUrl,
+            targetPrice = item.targetPrice,
+            currentLowestPrice = item.currentLowestPrice,
+            currentLowestPlatform = item.currentLowestPlatform,
+            currentLowestProductTitle = item.currentLowestProductTitle,
+            priceDropPercentage = item.priceDropPercentage,
+            isTargetReached = item.isTargetReached,
+            isActive = item.isActive,
+            alertEnabled = item.alertEnabled,
+            createdAt = item.createdAt,
+            updatedAt = LocalDateTime.now(),
+            lastChecked = item.lastChecked
+        )
+        dao.updateWishlist(entity)
     }
 
+    suspend fun deleteWishlist(wishlistId: Int): Boolean = withContext(Dispatchers.IO) {
+        Log.d(TAG, "deleteWishlist: start id=$wishlistId")
+        dao.deleteWishlistById(wishlistId)
+        true
+    }
+
+    // 서버 API 호출 로직은 그대로 유지 (특정 가격 갱신 등에 활용)
     suspend fun checkPrice(wishlistId: Int, userId: String): PriceCheckResponse = withContext(Dispatchers.IO) {
         Log.d(TAG, "checkPrice: start id=$wishlistId userId=$userId")
         executeWithRetry("checkPrice") {
-            val response = service().checkWishlistPrice(wishlistId, userId)
-            Log.d(TAG, "checkPrice: response=$response")
-            response
+            service().checkWishlistPrice(wishlistId, userId)
         }
     }
 
-    /**
-     * 가격 이력 조회
-     * WishlistViewModel에서 호출하는 메서드
-     */
     suspend fun getPriceHistory(userId: String): List<PriceHistoryItem> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "getPriceHistory: start userId=$userId")
         executeWithRetry("getPriceHistory") {
             try {
                 val response = service().getPriceHistory(userId)
                 if (response.isSuccessful && response.body() != null) {
-                    val items = response.body()!!.map { it.toPriceHistoryItem() }
-                    Log.d(TAG, "getPriceHistory: 성공 (${items.size}개 항목)")
-                    items
+                    response.body()!!.map { it.toPriceHistoryItem() }
                 } else {
-                    Log.e(TAG, "getPriceHistory: 실패 code=${response.code()}")
                     emptyList()
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "getPriceHistory: 예외 발생", e)
                 emptyList()
             }
         }
     }
 
-    /**
-     * 알람 상태 업데이트
-     * WishlistViewModel에서 호출하는 메서드
-     */
     suspend fun updateAlarmState(isEnabled: Boolean, userId: String): Boolean = withContext(Dispatchers.IO) {
-        Log.d(TAG, "updateAlarmState: start isEnabled=$isEnabled userId=$userId")
         executeWithRetry("updateAlarmState") {
             try {
-                val response = service().updateAlarmState(
-                    UpdateAlarmRequest(
-                        userId = userId,
-                        isEnabled = isEnabled
-                    )
-                )
-                if (response.isSuccessful) {
-                    Log.d(TAG, "updateAlarmState: 성공")
-                    true
-                } else {
-                    Log.e(TAG, "updateAlarmState: 실패 code=${response.code()}")
-                    false
-                }
+                service().updateAlarmState(UpdateAlarmRequest(userId = userId, isEnabled = isEnabled)).isSuccessful
             } catch (e: Exception) {
-                Log.e(TAG, "updateAlarmState: 예외 발생", e)
                 false
             }
         }
@@ -144,21 +138,16 @@ class WishlistRepository(
         var last: Exception? = null
         repeat(MAX_RETRIES) { attempt ->
             try {
-                Log.d(TAG, "$name: try ${attempt + 1}/$MAX_RETRIES")
                 return op()
             } catch (e: SocketTimeoutException) {
                 last = e
-                Log.w(TAG, "$name: timeout: ${e.message}")
                 if (attempt < MAX_RETRIES - 1) delay(RETRY_DELAY_MS * (attempt + 1))
             } catch (e: IOException) {
                 last = e
-                Log.w(TAG, "$name: io: ${e.message}")
                 if (attempt < MAX_RETRIES - 1) delay(RETRY_DELAY_MS)
             } catch (e: HttpException) {
-                Log.e(TAG, "$name: http ${e.code()} - ${e.message()}")
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "$name: unknown", e)
                 throw e
             }
         }

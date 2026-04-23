@@ -85,9 +85,20 @@ class RuleBasedParser:
             clean_content = re.sub(r'<[^>]+>', ' ', content_html)
             price = RuleBasedParser.extract_price(clean_content)
 
+        # 쇼핑몰 추출 로직
+        shop = ""
+        shop_match = re.search(r'\[(.*?)\]', title)
+        if shop_match:
+            shop = shop_match.group(1)
+        else:
+            shop_match_2 = re.search(r'^(.*?)\)', title) # 맨 앞에 '네이버) ' 처럼 오는 경우
+            if shop_match_2 and len(shop_match_2.group(1)) < 15:
+                shop = shop_match_2.group(1).strip()
+
         return {
             "product_title": RuleBasedParser.clean_product_title(title) or title,
             "category": category,
             "price": price,
+            "shop": shop,
             "confidence": "high" if price != "정보 없음" else "low"
         }
