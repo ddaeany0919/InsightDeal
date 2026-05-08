@@ -61,9 +61,44 @@ async def get_hot_deals(
         query = db.query(models.Deal).join(models.Community)
         
         if category and category not in ["전체", ""]:
-            query = query.filter(models.Deal.category == category)
+            # 앱 카테고리명을 스크래퍼 카테고리/키워드 배열로 매핑
+            target_keywords = []
+            if category == "음식":
+                target_keywords = ["음식", "식품", "먹거리", "간식", "식음료", "건강"]
+            elif category == "SW/게임":
+                target_keywords = ["게임", "sw", "소프트웨어", "콘솔"]
+            elif category == "PC제품":
+                target_keywords = ["pc", "하드웨어", "노트북", "컴퓨터", "데스크탑", "모니터"]
+            elif category == "가전제품":
+                target_keywords = ["가전", "디지털", "tv", "음향"]
+            elif category == "생활용품":
+                target_keywords = ["생활", "생필품", "주방", "가구", "인테리어"]
+            elif category == "의류":
+                target_keywords = ["의류", "패션", "잡화", "신발", "가방", "옷"]
+            elif category == "화장품":
+                target_keywords = ["화장품", "뷰티", "미용"]
+            elif category == "모바일/기프티콘":
+                target_keywords = ["모바일", "스마트폰", "휴대폰", "기프티콘", "쿠폰", "e쿠폰", "e-쿠폰"]
+            elif category == "상품권":
+                target_keywords = ["상품권", "컬쳐", "해피머니"]
+            elif category == "적립":
+                target_keywords = ["적립", "포인트", "페이백", "앱테크"]
+            elif category == "이벤트":
+                target_keywords = ["이벤트", "출석", "응모", "무료증정", "룰렛", "체험단", "선착순", "퀴즈", "무료배포"]
+            elif category == "패키지/이용권":
+                target_keywords = ["이용권", "패키지", "서비스", "티켓"]
+            elif category == "여행.해외핫딜":
+                target_keywords = ["여행", "해외", "알리", "아마존", "큐텐", "직구"]
+            else:
+                target_keywords = [category]
+
+            from sqlalchemy import or_
+            filter_conditions = [models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords]
+            query = query.filter(or_(*filter_conditions))
         else:
-            query = query.filter(models.Deal.category != "적립/이벤트")
+            from sqlalchemy import and_
+            # 전체 탭일 경우 '적립' 카테고리만 숨김 처리 (이벤트는 노출)
+            query = query.filter(and_(models.Deal.category != "적립", models.Deal.category != "적립/이벤트"))
             
         if keyword and keyword.strip():
             search = f"%{keyword.strip()}%"
@@ -71,10 +106,22 @@ async def get_hot_deals(
             
         if platform and platform not in ["전체", ""]:
             # DB의 communities.name 또는 display_name 필터링
-            query = query.filter(
-                (models.Community.name.ilike(f"%{platform}%")) | 
-                (models.Community.display_name.ilike(f"%{platform}%"))
-            )
+            REVERSE_COMMUNITY_MAP = {
+                "펨코": "fmkorea", "뽐뿌": "ppomppu", "루리웹": "ruliweb",
+                "클리앙": "clien", "퀘이사존": "quasarzone", "알리뽐뿌": "ali_ppomppu",
+                "빠삭국내": "bbasak_domestic", "빠삭해외": "bbasak_overseas"
+            }
+            platforms = [p.strip() for p in platform.split(',') if p.strip()]
+            from sqlalchemy import or_
+            platform_conditions = []
+            for p in platforms:
+                eng_name = REVERSE_COMMUNITY_MAP.get(p)
+                if eng_name:
+                    platform_conditions.append(models.Community.name == eng_name)
+                platform_conditions.append(models.Community.name.ilike(f"%{p}%"))
+                platform_conditions.append(models.Community.display_name.ilike(f"%{p}%"))
+            if platform_conditions:
+                query = query.filter(or_(*platform_conditions))
             
         # 넉넉하게 가져와서 파이썬 단에서 클러스터링
         deals = query.order_by(models.Deal.indexed_at.desc()).limit(300).all()
@@ -111,6 +158,11 @@ async def get_hot_deals(
                 parsed_price_int = extract_price(deal.price)
                 if parsed_price_int > 0 and (existing["price"] == 0 or parsed_price_int < existing["price"]):
                     existing["price"] = parsed_price_int
+                
+                # 병합 시 하나라도 종료되었으면 전체를 종료로 표시하거나, 반대로 짤 수 있음
+                # 보수적으로 하나라도 종료 상태면 종료로 반영
+                if getattr(deal, 'is_closed', False):
+                    existing["is_closed"] = True
             else:
                 image_url = deal.image_url
                 if image_url:
@@ -118,6 +170,15 @@ async def get_hot_deals(
                         image_url = f"{BASE_URL}{image_url}"
                     elif not image_url.startswith("http"):
                         image_url = f"{BASE_URL}/images/{image_url}"
+                else:
+                    if any(kw in deal.title for kw in ["네이버페이", "네이버 페이", "네이버 적립", "일일적립"]):
+                        # 4번째 캡쳐에 있는 실제 이미지 링크 사용
+                        image_url = "https://img2.quasarzone.com/editor/2023/12/11/49841804f3d132d75a6c11b1510af812.png"
+                    else:
+                        import urllib.parse
+                        fallback_text = (deal.community.name or "D")[0].upper()
+                        encoded_name = urllib.parse.quote(fallback_text)
+                        image_url = f"https://ui-avatars.com/api/?name={encoded_name}&background=e2e8f0&color=475569&size=200&font-size=0.5"
 
                 # UI를 위해 제목에서 가격 태그 날리기
                 clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:원|달러|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
@@ -129,6 +190,7 @@ async def get_hot_deals(
                     "id": deal.id,
                     "title": clean_title,
                     "price": parsed_price_int,
+                    "currency": getattr(deal, 'currency', 'KRW') or 'KRW',
                     "original_price": None, 
                     "discount_rate": 0,
                     "shipping_fee": deal.shipping_fee,
@@ -141,8 +203,12 @@ async def get_hot_deals(
                     "category": deal.category or "기타",
                     "honey_score": deal.honey_score or 0,
                     "ai_summary": deal.ai_summary or "",
+                    "content_html": getattr(deal, "content_html", "") or "",
+                    "is_closed": getattr(deal, 'is_closed', False),
                     "created_at": deal.indexed_at.isoformat() if deal.indexed_at else None,
-                    "view_count": 0, "comment_count": 0, "like_count": 0
+                    "view_count": 0, "comment_count": 0, "like_count": 0,
+                    "dislike_count": 0,
+                    "tags": []
                 }
                 cluster_map[norm_title] = deal_dict
                 grouped_result.append(deal_dict)
@@ -204,3 +270,79 @@ def get_popular_keywords(db: Session = Depends(get_db_session)):
         logger.error(f"Error fetching keywords: {e}", exc_info=True)
         return {"keywords": ["아이폰", "가습기", "다이슨", "제로콜라", "노트북"]}
 
+@router.get("/deals/{deal_id}")
+def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
+    deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found")
+        
+    COMMUNITY_MAP = {
+        "fmkorea": "펨코", "ppomppu": "뽐뿌", "ruliweb": "루리웹",
+        "clien": "클리앙", "quasarzone": "퀘이사존", "ali_ppomppu": "알리뽐뿌",
+        "bbasak_domestic": "빠삭국내", "bbasak_overseas": "빠삭해외"
+    }
+    
+    community_name = deal.community.display_name if deal.community and hasattr(deal.community, 'display_name') and deal.community.display_name else \
+                     (COMMUNITY_MAP.get(deal.community.name, deal.community.name) if deal.community else "Unknown")
+                     
+    return {
+        "id": deal.id,
+        "title": deal.title,
+        "price": extract_price(deal.price) if isinstance(deal.price, str) else (deal.price or 0),
+        "shipping_fee": getattr(deal, "shipping_fee", None),
+        "post_url": deal.post_link,
+        "ecommerce_url": deal.ecommerce_link or deal.post_link,
+        "image_url": getattr(deal, "image_url", None),
+        "site_name": community_name,
+        "category": getattr(deal, "category", "기타"),
+        "author": getattr(deal, "author", "익명"),
+        "views": 0,
+        "recommendations": 0,
+        "comments": 0,
+        "indexed_at": deal.indexed_at.isoformat() if deal.indexed_at else None,
+        "is_closed": getattr(deal, "is_closed", False),
+        "score": getattr(deal, "honey_score", 0),
+        "ai_summary": "이 상품은 최근 커뮤니티에서 많은 인기를 끌고 있습니다. 역대 최저가 방어선에 근접할 수 있으니 가격 추이를 확인하세요."
+    }
+
+@router.get("/deals/{deal_id}/history")
+def get_deal_history(deal_id: int, db: Session = Depends(get_db_session)):
+    deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found")
+        
+    history = db.query(models.PriceHistory).filter(models.PriceHistory.deal_id == deal_id).order_by(models.PriceHistory.checked_at.asc()).all()
+    
+    result = []
+    last_price = -1
+    for h in history:
+        try:
+            p_val = int(re.sub(r'[^\d]', '', str(h.price)))
+            if p_val > 0:
+                result.append({
+                    "price": p_val,
+                    "originalPrice": None,
+                    "discountRate": None,
+                    "recordedAt": h.checked_at.strftime("%m.%d %H:%M") if h.checked_at else ""
+                })
+                last_price = p_val
+        except:
+            pass
+            
+    # Include current price as well if history is empty or last element is different
+    current_price_int = 0
+    try:
+        current_price_int = int(re.sub(r'[^\d]', '', str(deal.price)))
+    except:
+        pass
+        
+    if current_price_int > 0:
+        if last_price != current_price_int:
+            result.append({
+                "price": current_price_int,
+                "originalPrice": None,
+                "discountRate": None,
+                "recordedAt": deal.indexed_at.strftime("%m.%d %H:%M") if deal.indexed_at else "지금"
+            })
+            
+    return result

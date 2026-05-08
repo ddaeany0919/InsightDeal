@@ -47,7 +47,7 @@ class RuliwebScraper(AsyncBaseScraper):
             if any(k in full_title for k in ['적립', '출석', '출첵', '포인트']):
                 category = "적립"
 
-            is_closed = False
+            is_closed = detail_info.get("is_closed", False)
             style = title_element.get('style', '')
             if 'line-through' in style or title_element.select_one('del, s, strike'):
                 is_closed = True
@@ -55,15 +55,29 @@ class RuliwebScraper(AsyncBaseScraper):
             if '종료' in full_title or '마감' in full_title or '품절' in full_title:
                 is_closed = True
 
+            is_super_hotdeal = False
+            if 'best' in row.get('class', []):
+                is_super_hotdeal = True
+
+            # 실제 게시글 작성 시간 추출
+            posted_at_iso = None
+            time_td = row.select_one('td.time')
+            if time_td:
+                posted_at_iso = self.parse_time_str(time_td.get_text(strip=True))
+
             return {
                 "category": category,
                 "title": full_title,
                 "url": url,
-                "price": 0,
+                "price": detail_info.get("price", 0),
                 "shop_name": "",
                 "image_url": image_url,
                 "ecommerce_link": detail_info.get("ecommerce_link", ""),
-                "is_closed": is_closed
+                "is_closed": is_closed,
+                "shipping_fee": detail_info.get("shipping_fee", ""),
+                "is_super_hotdeal": is_super_hotdeal,
+                "posted_at": posted_at_iso,
+                "content_html": detail_info.get("content_html", "")
             }
             
         tasks = [process_row(row) for row in post_rows]
@@ -87,4 +101,21 @@ class RuliwebScraper(AsyncBaseScraper):
             image_url = img_tag['src']
             if image_url.startswith('//'): image_url = "https:" + image_url
             
-        return {"ecommerce_link": ecommerce_link, "image_url": image_url}
+        price_fallback = 0
+        shipping_fee = ""
+        
+        # 본문 영역 파싱
+        content_html = ""
+        content_area = soup.select_one('.board_main_view') or soup.select_one('.view_content')
+        if content_area:
+            content_html = content_area.get_text(separator=' ', strip=True)
+            body_text = content_html
+        else:
+            body_text = soup.get_text(separator=' ')
+        
+        # 가격 휴리스틱 추출 (본문에서 추출 시 오류가 잦아 0으로 넘기고 Aggregator에서 제목 기반 추출)
+        # 배송비 휴리스틱 추출
+        if "무료배송" in body_text or "무배" in body_text:
+            shipping_fee = "무료배송"
+            
+        return {"ecommerce_link": ecommerce_link, "image_url": image_url, "price": price_fallback, "shipping_fee": shipping_fee, "content_html": content_html}

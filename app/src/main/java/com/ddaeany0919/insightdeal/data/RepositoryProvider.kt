@@ -3,7 +3,7 @@ package com.ddaeany0919.insightdeal.data
 import android.util.Log
 import com.ddaeany0919.insightdeal.BuildConfig
 import com.ddaeany0919.insightdeal.network.NetworkModule
-import com.ddaeany0919.insightdeal.network.DealsApiService
+import com.ddaeany0919.insightdeal.network.ApiService
 
 /**
  * 🏭 리포지토리 제공자 (간단한 DI 패턴)
@@ -18,7 +18,7 @@ object RepositoryProvider {
     val dealsRepository: DealsRepository by lazy {
         Log.d(TAG, "📦 DealsRepository 초기화 중...")
         // NetworkModule을 사용하여 API 서비스 생성
-        val dealsApiService = NetworkModule.createService<DealsApiService>()
+        val dealsApiService = NetworkModule.createService<ApiService>()
         Log.d(TAG, "✅ DealsRepository 생성 완료 (NetworkModule 사용)")
         RemoteDealsRepository(dealsApiService)
     }

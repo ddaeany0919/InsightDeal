@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "obsidian-mcp-tools": {
+      "command": "C:\\Users\\kth00\\OneDrive\\문서\\Obsidian Vault\\.obsidian\\plugins\\mcp-tools\\bin\\mcp-server.exe",
+      "args": [],
+      "env": {
+        "OBSIDIAN_API_KEY": "9828c0d9306134fe60aa64f9f66e9b45eb7a0ae291b875f07d47827eb3382b46"
+      }
+    }
+  }
+}

@@ -34,10 +34,7 @@ class FCMNotificationService:
             
             if os.path.exists(service_account_path):
                 cred = credentials.Certificate(service_account_path)
-                self.app = firebase_admin.initialize_app(
-                    cred, 
-                    name='insightdeal-notifications'
-                )
+                self.app = firebase_admin.initialize_app(cred)
                 self.initialized = True
                 logger.info("✅ Firebase FCM initialized successfully")
             else:
@@ -48,7 +45,7 @@ class FCMNotificationService:
         except ValueError as e:
             if "already exists" in str(e):
                 # 이미 초기화된 경우
-                self.app = firebase_admin.get_app('insightdeal-notifications')
+                self.app = firebase_admin.get_app()
                 self.initialized = True
                 logger.info("✅ Firebase FCM already initialized")
             else:
@@ -157,7 +154,8 @@ class FCMNotificationService:
         # 커뮤니티별 이모지
         community_emojis = {
             "뽐뿌": "🎯", "루리웹": "🎮", "클리앙": "💻", 
-            "퀘이사존": "⚡", "알리뽐뿌": "🛒"
+            "퀘이사존": "⚡", "알리뽐뿌": "🛒",
+            "펨코": "⚽", "빠삭국내": "📱", "빠삭해외": "✈️"
         }
         community = deal_data.get('community', '')
         emoji = community_emojis.get(community, '🔥')

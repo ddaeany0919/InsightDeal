@@ -13,8 +13,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ddaeany0919.insightdeal.models.DealItem
-import com.ddaeany0919.insightdeal.ui.A11yIconButton
-import com.ddaeany0919.insightdeal.ui.rememberSavedLazyListState
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
+import com.ddaeany0919.insightdeal.presentation.rememberSavedLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

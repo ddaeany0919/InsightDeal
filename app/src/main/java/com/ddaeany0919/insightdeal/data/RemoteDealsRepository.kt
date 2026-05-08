@@ -3,7 +3,7 @@ package com.ddaeany0919.insightdeal.data
 import android.util.Log
 import com.ddaeany0919.insightdeal.models.ApiDeal
 import com.ddaeany0919.insightdeal.models.ComparisonResponse
-import com.ddaeany0919.insightdeal.network.DealsApiService
+import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.network.HealthResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -18,7 +18,7 @@ import kotlin.system.measureTimeMillis
  * 🌐 실제 백엔드 API를 사용하는 Repository 구현
  */
 class RemoteDealsRepository(
-    private val apiService: DealsApiService
+    private val apiService: ApiService
 ) : DealsRepository {
 
     companion object {

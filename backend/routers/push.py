@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 class RegisterDeviceReq(BaseModel):
     device_uuid: str
     fcm_token: str = None
+    night_push_consent: bool = False
 
 class KeywordReq(BaseModel):
     device_uuid: str
@@ -20,10 +21,12 @@ class KeywordReq(BaseModel):
 def register_device(req: RegisterDeviceReq, db: Session = Depends(get_db_session)):
     device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == req.device_uuid).first()
     if not device:
-        device = models.DeviceToken(device_uuid=req.device_uuid, fcm_token=req.fcm_token)
+        device = models.DeviceToken(device_uuid=req.device_uuid, fcm_token=req.fcm_token, night_push_consent=req.night_push_consent)
         db.add(device)
     else:
-        device.fcm_token = req.fcm_token
+        if req.fcm_token is not None:
+            device.fcm_token = req.fcm_token
+        device.night_push_consent = req.night_push_consent
     db.commit()
     return {"message": "Device registered"}
 
@@ -52,18 +55,18 @@ def add_keyword(req: KeywordReq, db: Session = Depends(get_db_session)):
         if not existing.is_active:
             existing.is_active = True
             db.commit()
-        return {"message": "Keyword active"}
+        return {"success": True, "message": "Keyword active"}
         
     kw = models.PushKeyword(device_token_id=device.id, keyword=req.keyword)
     db.add(kw)
     db.commit()
-    return {"message": "Keyword added"}
+    return {"success": True, "message": "Keyword added"}
 
 @router.delete("/keywords")
 def delete_keyword(req: KeywordReq, db: Session = Depends(get_db_session)):
     device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == req.device_uuid).first()
     if not device:
-        return {"message": "Not found"}
+        return {"success": False, "message": "Not found"}
         
     kw = db.query(models.PushKeyword).filter(
         models.PushKeyword.device_token_id == device.id,
@@ -73,4 +76,4 @@ def delete_keyword(req: KeywordReq, db: Session = Depends(get_db_session)):
     if kw:
         db.delete(kw)
         db.commit()
-    return {"message": "Keyword removed"}
+    return {"success": True, "message": "Keyword removed"}

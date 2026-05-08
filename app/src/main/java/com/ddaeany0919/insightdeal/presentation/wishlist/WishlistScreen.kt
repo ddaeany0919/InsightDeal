@@ -201,7 +201,7 @@ fun DashboardHeader(items: List<WishlistItem>) {
                     "$targetReachedCount", 
                     style = MaterialTheme.typography.headlineMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        color = if (targetReachedCount > 0) com.ddaeany0919.insightdeal.ui.theme.PriceBest else MaterialTheme.colorScheme.onPrimaryContainer
+                        color = if (targetReachedCount > 0) com.ddaeany0919.insightdeal.presentation.theme.PriceBest else MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 )
             }
@@ -301,7 +301,7 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel()) {
                             }
                         },
                         content = {
-                            com.ddaeany0919.insightdeal.ui.components.StandardWishlistCard(style = com.ddaeany0919.insightdeal.ui.components.WishlistCardStyle.DETAILED,
+                            com.ddaeany0919.insightdeal.presentation.components.StandardWishlistCard(style = com.ddaeany0919.insightdeal.presentation.components.WishlistCardStyle.DETAILED,
                                 item = item,
                                 onDelete = {
                                     viewModel.deleteItem(item)

@@ -1,4 +1,5 @@
 import logging
+import re
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from backend.scrapers.base_scraper import AsyncBaseScraper
@@ -27,11 +28,25 @@ class PpomppuOverseasScraper(AsyncBaseScraper):
             url = urljoin("https://www.ppomppu.co.kr/zboard/", href)
             full_title = title_element.get_text(strip=True)
 
+            # 실제 게시글 작성 시간 추출
+            posted_at_iso = None
+            time_tds = row.select('nobr.eng, td.eng, td.baseList-time, time.baseList-time')
+            time_str = ""
+            for td in time_tds:
+                txt = td.get_text(strip=True)
+                if ':' in txt or '/' in txt or '-' in txt:
+                    time_str = txt
+                    break
+
+            if time_str:
+                posted_at_iso = self.parse_time_str(time_str)
+
             deals.append({
                 "title": full_title,
                 "url": url,
                 "price": 0,
-                "shop_name": ""
+                "shop_name": "",
+                "posted_at": posted_at_iso
             })
             
         return deals

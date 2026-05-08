@@ -82,14 +82,4 @@ data class NaverShoppingItem(
     fun getHighPriceAsInt(): Int = hprice.toIntOrNull() ?: 0
 }
 
-interface NaverShoppingApiService {
-    @GET("v1/search/shop.json")
-    suspend fun searchProducts(
-        @Header("X-Naver-Client-Id") clientId: String,
-        @Header("X-Naver-Client-Secret") clientSecret: String,
-        @Query("query") query: String,
-        @Query("display") display: Int = 20,
-        @Query("start") start: Int = 1,
-        @Query("sort") sort: String = "sim"
-    ): Response<NaverShoppingResponse>
-}
+// Interface moved to ApiService.kt

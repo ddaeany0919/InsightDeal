@@ -3,6 +3,7 @@ package com.ddaeany0919.insightdeal.data
 import android.util.Log
 import com.ddaeany0919.insightdeal.network.NetworkModule
 import retrofit2.http.GET
+import com.ddaeany0919.insightdeal.network.ApiService
 
 data class HotDealResponse(
     val deals: List<HotDealDto>
@@ -21,27 +22,26 @@ data class HotDealDto(
     val shippingFee: String?,
     val likeCount: Int,
     val commentCount: Int,
-    val timeAgo: String,
-    val link: String?
+    val timeAgo: String?,
+    val link: String?,
+    @com.google.gson.annotations.SerializedName("created_at") val createdAt: String? = null,
+    @com.google.gson.annotations.SerializedName("is_closed") val isClosed: Boolean = false
 )
 
-interface CommunityApi {
-    @GET("api/community/hot-deals")
-    suspend fun getHotDeals(): HotDealResponse
-}
+// ApiService interface moved to ApiService.kt
 
 class CommunityRepository {
     companion object {
         private const val TAG = "CommunityRepository"
     }
     
-    private val api: CommunityApi = NetworkModule.createService()
+    private val api: ApiService = NetworkModule.createService()
 
-    suspend fun getHotDeals(): List<HotDealDto> {
-        Log.d(TAG, "📡 Requesting hot deals from API...")
+    suspend fun getHotDeals(category: String? = null): List<HotDealDto> {
+        Log.d(TAG, "📡 Requesting hot deals from API with category=$category...")
         try {
             val startTime = System.currentTimeMillis()
-            val response = api.getHotDeals()
+            val response = api.getHotDealsDto(category = category)
             val duration = System.currentTimeMillis() - startTime
             Log.d(TAG, "✅ API Response received: ${response.deals.size} items in ${duration}ms")
             

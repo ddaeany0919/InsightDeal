@@ -11,8 +11,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.paging.compose.collectAsLazyPagingItems
-import com.ddaeany0919.insightdeal.ui.home.DealCardComposable
-import com.ddaeany0919.insightdeal.ui.home.HomeViewModel
+import com.ddaeany0919.insightdeal.presentation.home.DealCardComposable
+import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

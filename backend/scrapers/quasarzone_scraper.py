@@ -1,4 +1,5 @@
 import logging
+import re
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from backend.scrapers.base_scraper import AsyncBaseScraper
@@ -38,14 +39,25 @@ class QuasarzoneScraper(AsyncBaseScraper):
             title_span = title_element.select_one('span.ellipsis-with-reply-cnt')
             full_title = title_span.get_text(strip=True) if title_span else title_element.get_text(strip=True)
 
+            if "게시판 규정" in full_title or "이용안내" in full_title:
+                return None
+
             price = 0
+            currency = "KRW"
             price_tag = row.select_one('span.text-orange')
             if price_tag:
                 price_str = price_tag.get_text(strip=True)
                 import re
-                digits = re.sub(r'[^0-9]', '', price_str)
-                if digits:
-                    price = int(digits)
+                if '$' in price_str or 'USD' in price_str.upper() or '달러' in price_str or '불' in price_str:
+                    match = re.search(r'([0-9.]+)', price_str)
+                    if match:
+                        usd_val = float(match.group(1))
+                        price = int(usd_val * 100)
+                        currency = "USD"
+                else:
+                    digits = re.sub(r'[^0-9]', '', price_str)
+                    if digits:
+                        price = int(digits)
 
             image_url = ""
             span_img = row.select_one('span.img-background-wrap')
@@ -70,10 +82,35 @@ class QuasarzoneScraper(AsyncBaseScraper):
             if any(k in full_title for k in ['적립', '출석', '출첵', '포인트']):
                 category = "적립"
 
-            if '종료' in full_title or '마감' in full_title or '품절' in full_title:
+            if '종료' in full_title or '마감' in full_title or '품절' in full_title or '삭제' in full_title:
                 is_closed = True
 
-            # 상세 정보 Fetch
+            is_super_hotdeal = False
+            label_el = row.select_one('.label')
+            if label_el and '인기' in label_el.get_text(strip=True):
+                is_super_hotdeal = True
+
+            # 실제 게시글 작성 시간 추출
+            posted_at_iso = None
+            time_span = row.select_one('span.date')
+            if time_span:
+                posted_at_iso = self.parse_time_str(time_span.get_text(strip=True))
+                
+            # 지표 추출
+            view_count = 0
+            like_count = 0
+            comment_count = 0
+            for count_span in row.select('span.count'):
+                try:
+                    icon = count_span.select_one('i')
+                    if icon:
+                        cls = icon.get('class', [])
+                        txt = count_span.get_text(strip=True).replace(',', '')
+                        if 'fa-eye' in cls: view_count = int(txt)
+                        elif 'fa-thumbs-up' in cls: like_count = int(txt)
+                        elif 'fa-comment' in cls or 'fa-comment-dots' in cls: comment_count = int(txt)
+                except: pass
+
             detail_info = await self.get_detail(url)
             
             return {
@@ -81,10 +118,18 @@ class QuasarzoneScraper(AsyncBaseScraper):
                 "title": full_title,
                 "url": url,
                 "price": price,
+                "currency": currency,
                 "shop_name": "",
                 "image_url": image_url,
                 "ecommerce_link": detail_info.get("ecommerce_link", ""),
-                "is_closed": is_closed
+                "is_closed": is_closed or detail_info.get("is_closed", False),
+                "shipping_fee": detail_info.get("shipping_fee", ""),
+                "is_super_hotdeal": is_super_hotdeal,
+                "posted_at": posted_at_iso,
+                "view_count": view_count,
+                "like_count": like_count,
+                "comment_count": comment_count,
+                "content_html": detail_info.get("content_html", "")
             }
             
         tasks = [process_row(row) for row in post_rows]
@@ -128,5 +173,30 @@ class QuasarzoneScraper(AsyncBaseScraper):
                 if href.startswith('http') and 'clickBanner' not in href:
                     ecommerce_link = href
                     break
+        
+        # 3. 배송비 파싱
+        shipping_fee = ""
+        for tr in soup.select('table.market-info-view-table tr'):
+            th = tr.select_one('th')
+            if th and '배송비' in th.get_text():
+                td = tr.select_one('td')
+                if td:
+                    fee_text = td.get_text(strip=True)
+                    shipping_fee = fee_text
+                    break
                     
-        return {"ecommerce_link": ecommerce_link}
+        # 4. 본문 내용 (content_html) 파싱
+        content_html = ""
+        org_content = soup.find(id='org_contents')
+        if org_content:
+            from bs4 import BeautifulSoup as BS
+            # org_contents는 보통 textarea 등이며 텍스트로 HTML을 담고 있음
+            inner_soup = BS(org_content.get_text(), 'html.parser')
+            content_html = inner_soup.get_text(separator=' ', strip=True)
+            
+        if not content_html:
+            content_area = soup.select_one('.view-content')
+            if content_area:
+                content_html = content_area.get_text(separator=' ', strip=True)
+
+        return {"ecommerce_link": ecommerce_link, "shipping_fee": shipping_fee, "content_html": content_html}

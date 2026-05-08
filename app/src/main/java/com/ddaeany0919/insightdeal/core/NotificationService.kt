@@ -8,7 +8,7 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.ddaeany0919.insightdeal.network.FCMTokenRequest
+import com.ddaeany0919.insightdeal.network.RegisterDeviceReq
 import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.MainActivity
@@ -54,10 +54,13 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
                 val deviceId = getCustomDeviceId()
                 Log.d(TAG, "📱 Device ID: $deviceId")
                 
-                val request = FCMTokenRequest(
-                    token = token,
-                    deviceId = deviceId,
-                    platform = "android"
+                val prefs = getSharedPreferences("insight_deal_prefs", Context.MODE_PRIVATE)
+                val nightPushConsent = prefs.getBoolean("night_push_consent", false)
+                
+                val request = RegisterDeviceReq(
+                    fcm_token = token,
+                    device_uuid = deviceId,
+                    night_push_consent = nightPushConsent
                 )
                 
                 Log.d(TAG, "📤 FCM Token 서버 전송 중...")
@@ -232,14 +235,20 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         val intent = Intent(this, MainActivity::class.java)
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
 
+        // 모든 페이로드 데이터를 Intent extras에 추가
+        for ((key, value) in data) {
+            intent.putExtra(key, value)
+        }
+
+        // 호환성을 위해 기존 type 로직 유지
         when (data["type"]) {
             TYPE_NEW_HOTDEAL -> {
-                intent.putExtra("navigate_to", "hotdeal")
-                intent.putExtra("deal_id", data["deal_id"])
+                if (!data.containsKey("navigate_to")) intent.putExtra("navigate_to", "hotdeal")
+                if (!data.containsKey("deal_id")) intent.putExtra("deal_id", data["deal_id"])
             }
             TYPE_PRICE_DROP, TYPE_TARGET_ACHIEVED, TYPE_LOWEST_PRICE -> {
-                intent.putExtra("navigate_to", "price_tracking")
-                intent.putExtra("product_id", data["product_id"])
+                if (!data.containsKey("navigate_to")) intent.putExtra("navigate_to", "price_tracking")
+                if (!data.containsKey("product_id")) intent.putExtra("product_id", data["product_id"])
             }
         }
 

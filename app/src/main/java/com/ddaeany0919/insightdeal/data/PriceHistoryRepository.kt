@@ -90,7 +90,7 @@ sealed class HistoryState {
 class PriceHistoryRepository {
     companion object {
         private const val TAG = "PriceHistory"
-        private const val BASE_URL = "http://192.168.0.4:8000/"
+        private const val BASE_URL = "http://192.168.0.36:8000/"
         private const val CACHE_DURATION_MS = 300_000L // 5분 캐시
         private const val REQUEST_TIMEOUT_MS = 2000L // 2초 타임아웃
     }

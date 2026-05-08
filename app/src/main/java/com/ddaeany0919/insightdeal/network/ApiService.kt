@@ -2,6 +2,7 @@ package com.ddaeany0919.insightdeal.network
 
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.models.DealStats
+import com.ddaeany0919.insightdeal.models.PriceHistoryPoint
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Response
@@ -16,7 +17,7 @@ import java.util.concurrent.TimeUnit
 interface ApiService {
 
     // 🔥 핫딜 목록 조회
-    @GET("deals")
+    @GET("api/product/deals")
     suspend fun getDeals(
         @Query("page") page: Int = 1,
         @Query("limit") limit: Int = 20,
@@ -48,12 +49,12 @@ interface ApiService {
     suspend fun getDealDetail(@Path("id") dealId: Int): Response<DealDetail>
 
     // 📈 핫딜 가격 히스토리
-    @GET("deals/{dealId}/history")
-    suspend fun getDealPriceHistory(@Path("dealId") dealId: Int): Response<List<PriceHistoryItem>>
+    @GET("api/community/deals/{dealId}/history")
+    suspend fun getDealPriceHistory(@Path("dealId") dealId: Int): Response<List<PriceHistoryPoint>>
 
-    // 🎯 향상된 딜 정보
-    @GET("deals/{dealId}/enhanced-info")
-    suspend fun getEnhancedDealInfo(@Path("dealId") dealId: Int): Response<EnhancedDealInfo>
+    // 🎯 향상된 딜 정보 (임시)
+    @GET("api/community/deals/{dealId}")
+    suspend fun getEnhancedDealInfo(@Path("dealId") dealId: Int): Response<DealItem>
 
     // ✅ 쿠팡 상품 추적 API
 
@@ -96,10 +97,10 @@ interface ApiService {
 
     // ✅ FCM 토큰 관리 API
 
-    // FCM 토큰 등록
-    @POST("fcm/register")
+    // FCM 토큰 등록 (기기 익명 가입)
+    @POST("api/push/device")
     suspend fun registerFCMToken(
-        @Body request: FCMTokenRequest
+        @Body request: RegisterDeviceReq
     ): Response<ApiResponse>
 
     // 테스트 푸시 알림 전송
@@ -124,7 +125,7 @@ interface ApiService {
     @GET("keywords/popular")
     suspend fun getPopularKeywords(
         @Query("limit") limit: Int = 10
-    ): Response<List<String>>
+    ): Response<com.ddaeany0919.insightdeal.network.PopularKeywordsResponse>
 
     // 🏷️ 카테고리 목록
     @GET("categories")
@@ -149,6 +150,103 @@ interface ApiService {
     suspend fun deletePushKeyword(
         @Body request: AddKeywordRequest
     ): Response<ApiResponse>
+
+    // ==========================================
+    // 🛍️ Wishlist API (from ApiService)
+    // ==========================================
+    @POST("api/wishlist/from-keyword")
+    suspend fun createWishlistFromKeyword(@Body request: com.ddaeany0919.insightdeal.data.network.WishlistCreateFromKeywordRequest): com.ddaeany0919.insightdeal.presentation.wishlist.WishlistApiResponse
+
+    @POST("api/wishlist/from-url")
+    suspend fun createWishlistFromUrl(@Body request: com.ddaeany0919.insightdeal.data.network.WishlistCreateFromUrlRequest): com.ddaeany0919.insightdeal.presentation.wishlist.WishlistApiResponse
+
+    @GET("api/wishlist")
+    suspend fun getWishlist(
+        @Query("user_id") userId: String = "default"
+    ): List<com.ddaeany0919.insightdeal.presentation.wishlist.WishlistApiResponse>
+
+    @GET("api/wishlist/{wishlist_id}")
+    suspend fun getWishlistItem(
+        @Path("wishlist_id") wishlistId: Int,
+        @Query("user_id") userId: String = "default"
+    ): com.ddaeany0919.insightdeal.presentation.wishlist.WishlistApiResponse
+
+    @PATCH("api/wishlist/{wishlist_id}")
+    suspend fun updateWishlist(
+        @Path("wishlist_id") wishlistId: Int,
+        @Body request: com.ddaeany0919.insightdeal.data.network.WishlistUpdateRequest,
+        @Query("user_id") userId: String = "default"
+    ): com.ddaeany0919.insightdeal.presentation.wishlist.WishlistApiResponse
+
+    @DELETE("api/wishlist/{wishlist_id}")
+    suspend fun deleteWithQuery(
+        @Path("wishlist_id") wishlistId: Int,
+        @Query("user_id") userId: String
+    ): Response<com.ddaeany0919.insightdeal.presentation.wishlist.DeleteResponse>
+
+    @POST("api/wishlist/{wishlist_id}/check-price")
+    suspend fun checkWishlistPrice(
+        @Path("wishlist_id") wishlistId: Int,
+        @Query("user_id") userId: String = "default"
+    ): com.ddaeany0919.insightdeal.presentation.wishlist.PriceCheckResponse
+
+    @GET("api/wishlist/{wishlist_id}/history")
+    suspend fun getWishlistPriceHistory(
+        @Path("wishlist_id") wishlistId: Int,
+        @Query("user_id") userId: String = "default",
+        @Query("days") days: Int = 30
+    ): List<com.ddaeany0919.insightdeal.presentation.wishlist.PriceHistoryApiResponse>
+
+    @GET("api/wishlist/price-history")
+    suspend fun getPriceHistory(
+        @Query("user_id") userId: String
+    ): Response<List<com.ddaeany0919.insightdeal.presentation.wishlist.PriceHistoryApiResponse>>
+
+    @POST("api/wishlist/alarm")
+    suspend fun updateAlarmState(
+        @Body request: com.ddaeany0919.insightdeal.presentation.wishlist.UpdateAlarmRequest
+    ): Response<Unit>
+
+    @POST("api/product/analyze-link")
+    suspend fun analyzeLink(@Body request: com.ddaeany0919.insightdeal.data.network.AnalyzeLinkRequest): com.ddaeany0919.insightdeal.data.network.ProductAnalysisResponse
+
+    // ==========================================
+    // 🤝 Community API (from ApiService / ApiService)
+    // ==========================================
+    @GET("/api/compare")
+    suspend fun comparePrice(
+        @Query("query") query: String
+    ): Response<com.ddaeany0919.insightdeal.models.ComparisonResponse>
+
+    @GET("/api/health")
+    suspend fun healthCheck(): Response<HealthResponse>
+
+    @GET("/api/community/hot-deals")
+    suspend fun getCommunityHotDeals(
+        @Query("limit") limit: Int = 20,
+        @Query("offset") offset: Int = 0,
+        @Query("category") category: String? = null,
+        @Query("keyword") keyword: String? = null,
+        @Query("platform") platform: String? = null
+    ): Response<HotDealsResponse>
+    
+    @GET("api/community/hot-deals")
+    suspend fun getHotDealsDto(
+        @Query("category") category: String? = null
+    ): com.ddaeany0919.insightdeal.data.HotDealResponse
+
+    // ==========================================
+    // 🛍️ Naver Shopping API
+    // ==========================================
+    @GET("v1/search/shop.json")
+    suspend fun searchNaverProducts(
+        @Header("X-Naver-Client-Id") clientId: String,
+        @Header("X-Naver-Client-Secret") clientSecret: String,
+        @Query("query") query: String,
+        @Query("display") display: Int = 20,
+        @Query("start") start: Int = 1,
+        @Query("sort") sort: String = "sim"
+    ): Response<NaverShoppingResponse>
 }
 
 // [Epic 3] 키워드 응답 모델
@@ -160,42 +258,7 @@ data class AddKeywordRequest(
     val keyword: String
 )
 
-/**
- * 🏗️ API 클라이언트 팩토리
- */
-object ApiClient {
-    private const val BASE_URL = "http://192.168.0.4:8000/"
-
-    private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY
-    }
-
-    private val httpClient = OkHttpClient.Builder()
-        .addInterceptor(loggingInterceptor)
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
-
-    private val retrofit = Retrofit.Builder()
-        .baseUrl(BASE_URL)
-        .client(httpClient)
-        .addConverterFactory(GsonConverterFactory.create())
-        .build()
-
-    // ✅ 다양한 API 서비스 제공
-    val apiService: ApiService by lazy { retrofit.create(ApiService::class.java) }
-    val dealsApiService: DealsApiService by lazy { retrofit.create(DealsApiService::class.java) }
-
-    // ✅ create() 함수 추가 (제네릭 버전)
-    fun <T> create(serviceClass: Class<T>): T {
-        return retrofit.create(serviceClass)
-    }
-
-    // ✅ create() 함수 (ApiService 전용)
-    fun create(): ApiService {
-        return apiService
-    }
-}
+// ApiClient has been removed. Use NetworkModule.createService<ApiService>() instead.
 
 // 📋 API 응답 데이터 모델들
 
@@ -289,12 +352,12 @@ data class EnhancedDealInfo(
 )
 
 /**
- * FCM 토큰 등록 요청
+ * FCM 토큰 등록 요청 (익명 가입)
  */
-data class FCMTokenRequest(
-    val token: String,
-    val deviceId: String,
-    val platform: String = "android"
+data class RegisterDeviceReq(
+    val device_uuid: String,
+    val fcm_token: String,
+    val night_push_consent: Boolean = false
 )
 
 /**

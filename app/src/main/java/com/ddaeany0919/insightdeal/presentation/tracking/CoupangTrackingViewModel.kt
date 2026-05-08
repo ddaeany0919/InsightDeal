@@ -3,7 +3,6 @@ package com.ddaeany0919.insightdeal.presentation.tracking
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ddaeany0919.insightdeal.network.ApiClient
 import com.ddaeany0919.insightdeal.network.ApiProduct
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
+import com.ddaeany0919.insightdeal.network.ApiService
 
 class CoupangTrackingViewModel : ViewModel() {
 
@@ -18,7 +18,7 @@ class CoupangTrackingViewModel : ViewModel() {
         private const val TAG = "CoupangTrackingVM"
     }
 
-    private val apiService = ApiClient.create()
+    private val apiService = com.ddaeany0919.insightdeal.network.NetworkModule.createService<ApiService>()
 
     // UI 상태
     private val _products = MutableStateFlow<List<ProductData>>(emptyList())

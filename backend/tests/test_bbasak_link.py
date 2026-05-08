@@ -1,0 +1,21 @@
+import asyncio
+import os
+import sys
+
+from backend.scrapers.bbasak_domestic_scraper import BbasakDomesticScraper
+
+async def test():
+    scraper = BbasakDomesticScraper(community_id=1)
+    async with scraper:
+        html = await scraper.fetch_html("https://bbasak.com/bbs/board.php?bo_table=bbasak1&wr_id=113821&device=pc")
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        for a in soup.select('#board_view a'):
+            href = a.get('href')
+            print(f"Link: {href}")
+
+if __name__ == "__main__":
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.run(test())

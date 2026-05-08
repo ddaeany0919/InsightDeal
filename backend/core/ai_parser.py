@@ -61,7 +61,7 @@ def parse_title_with_ai(raw_title: str):
     - 'shop_name' is the name of the online store. Standardize common names (e.g., "11마존" -> "11번가", "G9" -> "G마켓", "스스" -> "스마트스토어").
     - 'product_title' MUST be the pure product name, excluding all other info.
     - 'category' MUST be one of the following options only:
-      ["디지털/가전", "PC/하드웨어", "음식/식품", "의류/패션", "생활/잡화", "모바일/상품권", "패키지/이용권", "적립/이벤트", "기타", "해외핫딜", "알리익스프레스"]
+      ["디지털/가전", "PC/하드웨어", "음식/식품", "의류/패션", "생활/잡화", "모바일/상품권", "패키지/이용권", "적립", "이벤트", "기타", "해외핫딜", "알리익스프레스"]
 
     - If the product is from AliExpress, the category is "알리익스프레스".
     - If it is clearly an overseas deal but not AliExpress, use "해외핫딜".

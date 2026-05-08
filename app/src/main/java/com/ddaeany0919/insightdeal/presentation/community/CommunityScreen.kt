@@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import com.ddaeany0919.insightdeal.data.HotDealDto
 import coil.compose.AsyncImage
+import com.ddaeany0919.insightdeal.presentation.rememberRelativeTime
 
 
 
@@ -37,7 +38,7 @@ import coil.compose.AsyncImage
 fun CommunityScreen(viewModel: CommunityViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTabIndex by remember { mutableIntStateOf(0) }
-    val communities = listOf("전체", "뽐뿌", "펨코", "클리앙")
+    val tabs = listOf("전체보기", "🔥 핫딜만", "💰 앱테크만")
 
     Scaffold(
         topBar = {
@@ -69,7 +70,7 @@ fun CommunityScreen(viewModel: CommunityViewModel = androidx.lifecycle.viewmodel
                     )
                 }
             ) {
-                communities.forEachIndexed { index, title ->
+                tabs.forEachIndexed { index, title ->
                     Tab(
                         selected = selectedTabIndex == index,
                         onClick = { selectedTabIndex = index },
@@ -98,11 +99,11 @@ fun CommunityScreen(viewModel: CommunityViewModel = androidx.lifecycle.viewmodel
                     }
                     is CommunityUiState.Success -> {
                         // 필터링 로직
-                        val filteredDeals = if (selectedTabIndex == 0) {
-                            state.deals
-                        } else {
-                            val targetCommunity = communities[selectedTabIndex]
-                            state.deals.filter { it.communityName == targetCommunity }
+                        val filteredDeals = when (selectedTabIndex) {
+                            0 -> state.deals // 전체보기
+                            1 -> state.deals.filter { it.category != "적립" && it.category != "이벤트" } // 핫딜만
+                            2 -> state.deals.filter { it.category == "적립" || it.category == "이벤트" } // 앱테크만
+                            else -> state.deals
                         }
 
                         if (filteredDeals.isEmpty()) {
@@ -170,6 +171,23 @@ fun HotDealCard(deal: HotDealDto) {
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
+
+                // 종료된 딜 오버레이
+                if (deal.isClosed) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.6f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "종료됨",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -199,7 +217,11 @@ fun HotDealCard(deal: HotDealDto) {
                 // 제목
                 Text(
                     text = deal.title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        textDecoration = if (deal.isClosed) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                        color = if (deal.isClosed) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface
+                    ),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -209,8 +231,13 @@ fun HotDealCard(deal: HotDealDto) {
                 // 가격 및 배송/시간 정보
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        val priceText = if (deal.price == "0" || deal.price == "0원") {
+                            if (deal.category == "이벤트" || deal.title.contains("무료") || deal.title.contains("쿠폰")) "무료 (쿠폰/이벤트)"
+                            else "정보 확인필요"
+                        } else deal.price
+                        
                         Text(
-                            text = deal.price,
+                            text = priceText,
                             style = MaterialTheme.typography.titleLarge.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.error
@@ -221,16 +248,25 @@ fun HotDealCard(deal: HotDealDto) {
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (!deal.shippingFee.isNullOrEmpty()) {
-                            Text(
-                                text = deal.shippingFee,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
+                        if (!deal.shippingFee.isNullOrEmpty() && deal.category != "이벤트" && deal.category != "적립") {
+                            val trimmed = deal.shippingFee.trim()
+                            val displayShipping = when {
+                                trimmed == "0" || trimmed == "0원" -> "무료배송"
+                                trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료배송 ")
+                                trimmed == "유료" -> "" // "유료" 글자만 있는 경우 숨김 처리
+                                else -> deal.shippingFee
+                            }
+                            if (displayShipping.isNotEmpty()) {
+                                Text(
+                                    text = displayShipping,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
                         }
                         Text(
-                            text = deal.timeAgo,
+                            text = rememberRelativeTime(deal.createdAt ?: deal.timeAgo),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )

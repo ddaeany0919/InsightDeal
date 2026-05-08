@@ -4,10 +4,11 @@ import com.google.gson.annotations.SerializedName
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import android.util.Log
+import com.ddaeany0919.insightdeal.network.ApiService
 
 // Gson snake_case → camelCase 매핑을 위해 @SerializedName 추가
 
-// ❌ 제거: WishlistCreateRequest는 이제 WishlistApiService.kt에서 분리됨
+// ❌ 제거: WishlistCreateRequest는 이제 ApiService.kt에서 분리됨
 // - WishlistCreateFromKeywordRequest
 // - WishlistCreateFromUrlRequest
 

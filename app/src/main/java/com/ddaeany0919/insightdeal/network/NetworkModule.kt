@@ -17,7 +17,7 @@ object NetworkModule {
     
     internal const val TAG = "NetworkModule"
     
-    // TODO: BuildConfig 또는 환경 변수로 관리 (안드로이드 실기기 접속을 위해 호스트 PC의 로컬 IP 192.168.0.36 적용)
+    // PC 로컬 IP 주소로 변경하여 모바일 기기에서 원격으로 접속할 수 있도록 설정
     private const val BASE_URL = "http://192.168.0.36:8000/"
     
     // 타임아웃 설정 (AI 파서 사용 시 긴 응답 시간 고려)

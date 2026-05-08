@@ -34,3 +34,10 @@ captures/
 # 5. [OS/ETC] 운영체제 임시 파일
 Thumbs.db
 .DS_Store
+
+# 6. [Security] 추가 보안 파일 및 데이터베이스
+*.db
+*.sqlite
+*.sqlite3
+firebase-service-account.json
+.mcp.json

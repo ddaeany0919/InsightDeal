@@ -24,13 +24,16 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.paging.compose.collectAsLazyPagingItems
-import com.ddaeany0919.insightdeal.ui.home.DealCardComposable
-import com.ddaeany0919.insightdeal.ui.home.HomeViewModel
+import com.ddaeany0919.insightdeal.presentation.home.DealCardComposable
+import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.FlowPreview
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, FlowPreview::class)
 @Composable
 fun AdvancedSearchScreen(navController: NavController, viewModel: HomeViewModel = viewModel()) {
-    var searchQuery by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
     var isSearching by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -47,11 +50,26 @@ fun AdvancedSearchScreen(navController: NavController, viewModel: HomeViewModel 
 
     fun performSearch(query: String) {
         if (query.isNotBlank()) {
-            searchQuery = query
+            searchQuery = androidx.compose.ui.text.input.TextFieldValue(query)
             isSearching = true
             keyboardController?.hide()
             viewModel.searchDeals(query)
         }
+    }
+
+    // ✨ 실시간 검색 (Debounce 적용) - snapshotFlow와 TextFieldValue 사용으로 한글 조합 중 끊김 현상 방지
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { searchQuery.text }
+            .debounce(300L) // 300ms로 단축하여 더 빠르고 부드러운 반응
+            .collectLatest { query ->
+                if (query.isNotBlank()) {
+                    isSearching = true
+                    viewModel.searchDeals(query)
+                } else {
+                    isSearching = false
+                    viewModel.searchDeals("")
+                }
+            }
     }
 
     Scaffold(
@@ -75,15 +93,15 @@ fun AdvancedSearchScreen(navController: NavController, viewModel: HomeViewModel 
                             unfocusedIndicatorColor = Color.Transparent
                         ),
                         trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
+                            if (searchQuery.text.isNotEmpty()) {
                                 IconButton(onClick = { 
-                                    searchQuery = "" 
+                                    searchQuery = androidx.compose.ui.text.input.TextFieldValue("") 
                                     isSearching = false
                                 }) {
                                     Icon(Icons.Default.Clear, contentDescription = "지우기")
                                 }
                             } else {
-                                IconButton(onClick = { performSearch(searchQuery) }) {
+                                IconButton(onClick = { performSearch(searchQuery.text) }) {
                                     Icon(Icons.Default.Search, contentDescription = "검색")
                                 }
                             }
@@ -92,7 +110,7 @@ fun AdvancedSearchScreen(navController: NavController, viewModel: HomeViewModel 
                             imeAction = androidx.compose.ui.text.input.ImeAction.Search
                         ),
                         keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                            onSearch = { performSearch(searchQuery) }
+                            onSearch = { performSearch(searchQuery.text) }
                         )
                     )
                 },
@@ -109,7 +127,7 @@ fun AdvancedSearchScreen(navController: NavController, viewModel: HomeViewModel 
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            if (!isSearching && searchQuery.isEmpty()) {
+            if (!isSearching && searchQuery.text.isEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = "🔥 실시간 급상승 검색어", 

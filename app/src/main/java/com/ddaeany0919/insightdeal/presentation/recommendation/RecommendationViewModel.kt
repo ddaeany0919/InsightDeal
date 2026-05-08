@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ddaeany0919.insightdeal.models.DealItem
-import com.ddaeany0919.insightdeal.network.ApiClient
 import com.ddaeany0919.insightdeal.domain.PersonalizationEngine
 import com.ddaeany0919.insightdeal.domain.PersonalizationInsights
 import com.ddaeany0919.insightdeal.domain.UserInteraction
@@ -16,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
+import com.ddaeany0919.insightdeal.network.ApiService
 
 /**
  * 🎯 AI 추천 시스템 ViewModel
@@ -30,7 +30,7 @@ class RecommendationViewModel(
     }
 
     private val personalizationEngine = PersonalizationEngine.getInstance(application)
-    private val apiService = ApiClient.create()
+    private val apiService = com.ddaeany0919.insightdeal.network.NetworkModule.createService<ApiService>()
 
     // UI 상태
     private val _recommendations = MutableStateFlow<List<DealItem>>(emptyList())
@@ -68,10 +68,9 @@ class RecommendationViewModel(
                 Log.d(TAG, "🔄 개인화 추천 데이터 로드 시작")
                 
                 // 1. 전체 딜 데이터 로드
-                val dealsResponse = apiService.getDeals(
-                    page = 1,
+                val dealsResponse = apiService.getCommunityHotDeals(
                     limit = 100,
-                    sort = "latest"
+                    offset = 0
                 )
                 
                 if (dealsResponse.isSuccessful) {

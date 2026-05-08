@@ -52,7 +52,11 @@ fun SettingsScreen() {
             // 사용자 계정 섹션
             SettingsSectionTitle("사용자 계정")
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -96,7 +100,11 @@ fun SettingsScreen() {
             // 앱 설정 섹션
             SettingsSectionTitle("앱 설정")
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column {
@@ -165,10 +173,91 @@ fun SettingsScreen() {
             
             Spacer(modifier = Modifier.height(24.dp))
             
+            // 플랫폼(스크래퍼) 필터링 섹션
+            SettingsSectionTitle("플랫폼(출처) 필터링")
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                var expanded by remember { mutableStateOf(false) }
+                
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { expanded = !expanded }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FilterList, 
+                            contentDescription = null, 
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            text = "표시할 커뮤니티 선택", 
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), 
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = expanded,
+                        enter = androidx.compose.animation.expandVertically(),
+                        exit = androidx.compose.animation.shrinkVertically()
+                    ) {
+                        val allPlatforms = listOf("뽐뿌", "퀘이사존", "펨코", "루리웹", "클리앙", "알리뽐뿌", "빠삭국내", "빠삭해외")
+                        var disabledPlatforms by remember { 
+                            mutableStateOf(ctx.getSharedPreferences("app", Context.MODE_PRIVATE).getStringSet("disabled_platforms", emptySet()) ?: emptySet()) 
+                        }
+                        
+                        Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                            allPlatforms.forEachIndexed { index, platform ->
+                                SettingsSwitchRow(
+                                    icon = Icons.Default.CheckCircle,
+                                    title = "$platform",
+                                    checked = !disabledPlatforms.contains(platform),
+                                    onCheckedChange = { isEnabled ->
+                                        val newSet = disabledPlatforms.toMutableSet()
+                                        if (isEnabled) {
+                                            newSet.remove(platform)
+                                        } else {
+                                            newSet.add(platform)
+                                        }
+                                        disabledPlatforms = newSet
+                                        ctx.getSharedPreferences("app", Context.MODE_PRIVATE)
+                                            .edit().putStringSet("disabled_platforms", newSet).apply()
+                                    }
+                                )
+                                if (index < allPlatforms.size - 1) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
             // 정보 섹션
             SettingsSectionTitle("정보")
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column {
@@ -237,7 +326,7 @@ fun SettingsSwitchRow(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.width(16.dp))
         Text(text = title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
@@ -258,7 +347,7 @@ fun SettingsNavigationRow(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.width(16.dp))
         Text(text = title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         if (value != null) {
@@ -289,7 +378,7 @@ fun ExpandableThemeSetting(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(imageVector = Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(imageVector = Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.width(16.dp))
             Text(text = "테마 설정", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             Text(
@@ -300,11 +389,21 @@ fun ExpandableThemeSetting(
                     ThemeMode.AMOLED -> "블랙(AMOLED)"
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         
-        if (expanded) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = expanded,
+            enter = androidx.compose.animation.expandVertically(),
+            exit = androidx.compose.animation.shrinkVertically()
+        ) {
             Column(modifier = Modifier.padding(start = 56.dp, end = 16.dp, bottom = 16.dp)) {
                 ThemeOptionRow("시스템 기본", ThemeMode.SYSTEM, currentMode, onModeSelected)
                 ThemeOptionRow("라이트 모드", ThemeMode.LIGHT, currentMode, onModeSelected)

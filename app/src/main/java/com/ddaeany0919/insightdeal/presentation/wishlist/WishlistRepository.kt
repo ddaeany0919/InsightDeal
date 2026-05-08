@@ -2,6 +2,7 @@ package com.ddaeany0919.insightdeal.presentation.wishlist
 
 import android.content.Context
 import android.util.Log
+import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.data.network.*
 import com.ddaeany0919.insightdeal.local.db.AppDatabase
 import com.ddaeany0919.insightdeal.local.db.WishlistEntity
@@ -36,8 +37,8 @@ fun WishlistEntity.toWishlistItem(): WishlistItem {
 
 class WishlistRepository(
     context: Context,
-    private val apiServiceProvider: suspend () -> WishlistApiService = {
-        WishlistApiService.createWithStableConfig()
+    private val apiServiceProvider: suspend () -> ApiService = {
+        com.ddaeany0919.insightdeal.network.NetworkModule.createService<ApiService>()
     }
 ) {
     private val TAG = "WishlistRepo"
@@ -45,9 +46,9 @@ class WishlistRepository(
     private val RETRY_DELAY_MS = 1000L
 
     private val dao = AppDatabase.getDatabase(context).wishlistDao()
-    private var apiService: WishlistApiService? = null
+    private var apiService: ApiService? = null
 
-    private suspend fun service(): WishlistApiService {
+    private suspend fun service(): ApiService {
         if (apiService == null) {
             apiService = apiServiceProvider()
         }

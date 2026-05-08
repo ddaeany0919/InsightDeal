@@ -25,12 +25,12 @@ class CommunityViewModel : ViewModel() {
         loadHotDeals()
     }
 
-    fun loadHotDeals() {
+    fun loadHotDeals(category: String? = null) {
         viewModelScope.launch {
             _uiState.value = CommunityUiState.Loading
             try {
-                Log.d("CommunityViewModel", "Fetching hot deals...")
-                val deals = repository.getHotDeals()
+                Log.d("CommunityViewModel", "Fetching hot deals with category=$category...")
+                val deals = repository.getHotDeals(category)
                 _uiState.value = CommunityUiState.Success(deals)
                 Log.d("CommunityViewModel", "Fetched ${deals.size} deals successfully. Updating UI state to Success.")
             } catch (e: Exception) {

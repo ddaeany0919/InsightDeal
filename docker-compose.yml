@@ -36,7 +36,7 @@ services:
       - FCM_SERVER_KEY=${FCM_SERVER_KEY}
       - NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
       - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
-      - PYTHONPATH=/app
+      - PYTHONPATH=/:/app
       - BASE_URL=http://192.168.0.4:8000
       - HEADLESS=true
     shm_size: '2gb'
@@ -44,6 +44,7 @@ services:
       - "0.0.0.0:8000:8000"
     volumes:
       - ./backend:/app
+      - ./backend:/backend
       - ./backend/image_cache:/app/image_cache
       - ./backend/logs:/app/logs
     networks:
@@ -74,9 +75,10 @@ services:
       - FIREBASE_CREDENTIALS=${FIREBASE_CREDENTIALS}
       - NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
       - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
-      - PYTHONPATH=/app
+      - PYTHONPATH=/:/app
     volumes:
       - ./backend:/app
+      - ./backend:/backend
     networks:
       - insightdeal-network
     restart: unless-stopped
@@ -87,7 +89,6 @@ services:
 
 volumes:
   postgres_data:
-
 
 networks:
   insightdeal-network:

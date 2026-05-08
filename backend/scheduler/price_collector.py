@@ -21,7 +21,7 @@ except Exception as e:
 # ✅ 수정된 import 경로 (backend. 제거)
 from core.notifications import notification_service
 from database.session import get_db_session, create_db_session
-from database.models import Deal, Product, PriceHistory, ProductPriceHistory, PriceAlert, FCMToken
+from database.models import Deal, Product, PriceHistory, ProductPriceHistory, PriceAlert, FCMToken, Community
 
 logging.basicConfig(
     level=logging.INFO,
@@ -223,46 +223,69 @@ class PriceCollectionScheduler:
         logger.info("🔍 Scraping new deals from all communities...")
         
         try:
-            # ✅ 수정된 스크래퍼 import 경로 (backend. 제거)
             from scrapers.ppomppu_scraper import PpomppuScraper
             from scrapers.ruliweb_scraper import RuliwebScraper
             from scrapers.clien_scraper import ClienScraper
             from scrapers.quasarzone_scraper import QuasarzoneScraper
             from scrapers.alippomppu_scraper import AlippomppuScraper
             from scrapers.fmkorea_scraper import FmkoreaScraper
+            from scrapers.bbasak_domestic_scraper import BbasakDomesticScraper
+            from scrapers.bbasak_overseas_scraper import BbasakOverseasScraper
+            from scrapers.ppomppu_overseas_scraper import PpomppuOverseasScraper
+            from services.aggregator_service import AggregatorService
             
-            # DB 세션 생성
             db_session = create_db_session()
+            aggregator = AggregatorService(db_session)
             
+            # Fetch existing communities or create them if missing
+            community_map = {c.name: c.id for c in db_session.query(Community).all()}
+            
+            def get_or_create_community(name, display_name, base_url):
+                if name not in community_map:
+                    c = Community(name=name, display_name=display_name, base_url=base_url)
+                    db_session.add(c)
+                    db_session.commit()
+                    db_session.refresh(c)
+                    community_map[name] = c.id
+                return community_map[name]
+
             scrapers = [
-                PpomppuScraper(db_session),
-                RuliwebScraper(db_session),
-                ClienScraper(db_session),
-                QuasarzoneScraper(db_session),
-                AlippomppuScraper(db_session),
-                FmkoreaScraper(db_session)
+                PpomppuScraper(community_id=get_or_create_community("ppomppu", "뽐뿌", "https://www.ppomppu.co.kr")),
+                RuliwebScraper(community_id=get_or_create_community("ruliweb", "루리웹", "https://bbs.ruliweb.com")),
+                ClienScraper(community_id=get_or_create_community("clien", "클리앙", "https://www.clien.net")),
+                QuasarzoneScraper(community_id=get_or_create_community("quasarzone", "퀘이사존", "https://quasarzone.com")),
+                AlippomppuScraper(community_id=get_or_create_community("ali_ppomppu", "알리뽐뿌", "https://www.ppomppu.co.kr")),
+                FmkoreaScraper(community_id=get_or_create_community("fmkorea", "펨코", "https://www.fmkorea.com")),
+                BbasakDomesticScraper(community_id=get_or_create_community("bbasak_domestic", "빠삭국내", "https://bbasak.com")),
+                BbasakOverseasScraper(community_id=get_or_create_community("bbasak_overseas", "빠삭해외", "https://bbasak.com")),
+                PpomppuOverseasScraper(community_id=get_or_create_community("ppomppu_overseas", "뽐뿌해외", "https://www.ppomppu.co.kr"))
             ]
             
             total_new_deals = 0
             
             for scraper in scrapers:
                 try:
-                    # 기존 scrape 메서드 활용 (비동기 대신 동기 호출)
-                    with scraper:
-                        new_deals = scraper.run(limit=20)
+                    async with scraper:
+                        scraped_items = await scraper.run(scraper.list_url)
                         
-                        if new_deals:
-                            total_new_deals += 1
-                            logger.info(f"✅ {scraper.community_name}: Found new deals")
+                        community_new_deals = 0
+                        for item in scraped_items:
+                            # DB 병합 및 가격 갱신 (AggregatorService 활용)
+                            deal = await aggregator.process_scraped_deal(scraper.community_id, item)
+                            if deal:
+                                community_new_deals += 1
+                                total_new_deals += 1
+                        
+                        if community_new_deals > 0:
+                            logger.info(f"✅ {scraper.platform_name}: Found {community_new_deals} new deals")
                             
                 except Exception as e:
                     logger.error(f"❌ Scraper {scraper.__class__.__name__} failed: {e}")
             
-            # DB 세션 정리
             db_session.close()
             
             if total_new_deals > 0:
-                logger.info(f"✅ Scraping completed: {total_new_deals}/6 scrapers successful")
+                logger.info(f"✅ Scraping completed: {total_new_deals} total new deals saved")
             else:
                 logger.info("📋 No new deals found from any community")
                 

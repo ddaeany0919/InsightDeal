@@ -103,12 +103,14 @@ class DatabaseManager:
             session = self.get_session()  # 컨텍스트 매니저 대신 직접 생성/닫기
             try:
                 communities = [
-                    Community(name="뿐뿐", base_url="https://www.ppomppu.co.kr"),
-                    Community(name="루리웹", base_url="https://bbs.ruliweb.com"),
-                    Community(name="클리앙", base_url="https://www.clien.net"),
-                    Community(name="알리뿐뿐", base_url="https://www.ppomppu.co.kr"),
-                    Community(name="퀘이사존", base_url="https://quasarzone.com"),
-                    Community(name="페던코리아", base_url="https://www.fmkorea.com")
+                    Community(name="ppomppu", display_name="뽐뿌", base_url="https://www.ppomppu.co.kr"),
+                    Community(name="ruliweb", display_name="루리웹", base_url="https://bbs.ruliweb.com"),
+                    Community(name="clien", display_name="클리앙", base_url="https://www.clien.net"),
+                    Community(name="ali_ppomppu", display_name="알리뽐뿌", base_url="https://www.ppomppu.co.kr"),
+                    Community(name="quasarzone", display_name="퀘이사존", base_url="https://quasarzone.com"),
+                    Community(name="fmkorea", display_name="펨코", base_url="https://www.fmkorea.com"),
+                    Community(name="bbasak_domestic", display_name="빠삭국내", base_url="https://bbasak.com"),
+                    Community(name="bbasak_overseas", display_name="빠삭해외", base_url="https://bbasak.com")
                 ]
                 for community in communities:
                     existing = session.query(Community).filter(

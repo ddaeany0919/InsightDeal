@@ -29,6 +29,7 @@ class Deal(Base):
     shop_name = Column(String(100))
     price = Column(String(100))
     shipping_fee = Column(String(100))
+    currency = Column(String(10), default="KRW")
     image_url = Column(String(2048))
     category = Column(String(100), default="기타")
     indexed_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
@@ -41,6 +42,9 @@ class Deal(Base):
     base_product_name = Column(String(500), nullable=True)
     honey_score = Column(Integer, default=0) # [Phase 11] 추천도 점수
     ai_summary = Column(String(500), nullable=True) # [Phase 11 Epic 1] AI 핵심 1줄 요약
+    view_count = Column(Integer, default=0)
+    like_count = Column(Integer, default=0)
+    comment_count = Column(Integer, default=0)
 
     __table_args__ = (UniqueConstraint('post_link', 'title', name='_post_link_title_uc'),)
 
@@ -66,6 +70,7 @@ class DeviceToken(Base):
     device_uuid = Column(String(100), unique=True, index=True, nullable=False) # 고유 앱 설치 ID
     fcm_token = Column(String(500), nullable=True) # 파이어베이스 푸시 토큰
     is_active = Column(Boolean, default=True)
+    night_push_consent = Column(Boolean, default=False) # 야간 푸시 수신 동의 여부
     registered_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     
     keywords = relationship("PushKeyword", back_populates="device_token", cascade="all, delete-orphan")

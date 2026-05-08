@@ -9,6 +9,7 @@ data class PriceHistoryPoint(
 data class MallPrice(
     val platform: String,
     val price: Int,
+    val currency: String? = "KRW",
     val url: String,
     val isLowest: Boolean = false
 )

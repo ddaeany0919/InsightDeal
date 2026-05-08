@@ -20,6 +20,9 @@ data class DealItem(
     @SerializedName("price")
     val price: Int,
     
+    @SerializedName("currency")
+    val currency: String = "KRW",
+    
     @SerializedName("original_price")
     val originalPrice: Int? = null,
     
@@ -73,6 +76,9 @@ data class DealItem(
 
     @SerializedName("ai_summary")
     val aiSummary: String? = null,
+
+    @SerializedName("content_html")
+    val contentHtml: String? = null,
 
     @SerializedName("is_closed")
     val isClosed: Boolean = false

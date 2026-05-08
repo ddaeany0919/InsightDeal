@@ -33,11 +33,21 @@ import com.ddaeany0919.insightdeal.presentation.theme.ThemeManager
 import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
 import com.ddaeany0919.insightdeal.presentation.wishlist.*
 import com.ddaeany0919.insightdeal.presentation.settings.ThemeSettingsScreenCollapsible
-import com.ddaeany0919.insightdeal.ui.home.HomeScreen
-import com.ddaeany0919.insightdeal.ui.home.HomeViewModel
-import com.ddaeany0919.insightdeal.ui.theme.InsightDealTheme
+import com.ddaeany0919.insightdeal.presentation.home.HomeScreen
+import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
+import com.ddaeany0919.insightdeal.presentation.theme.InsightDealTheme
 import java.util.UUID
 import androidx.compose.foundation.clickable
+import com.google.firebase.messaging.FirebaseMessaging
+import com.ddaeany0919.insightdeal.network.NetworkModule
+import com.ddaeany0919.insightdeal.network.ApiService
+import com.ddaeany0919.insightdeal.network.RegisterDeviceReq
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import retrofit2.HttpException
+
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 private const val TAG_UI = "MainActivity"
 
@@ -61,14 +71,58 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private var currentIntent by mutableStateOf<android.content.Intent?>(null)
+
+    override fun onNewIntent(intent: android.content.Intent?) {
+        super.onNewIntent(intent)
+        currentIntent = intent
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // SplashScreen 적용
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val deviceUserId = generateDeviceUserId(this)
+        currentIntent = intent
         
         // Android 13 이상에서 알림 권한 요청
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        // 앱 시작 시 FCM 토큰 가져와서 서버에 익명 가입(등록)
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (!task.isSuccessful) {
+                Log.w(TAG_UI, "Fetching FCM registration token failed", task.exception)
+                return@addOnCompleteListener
+            }
+
+            val token = task.result
+            Log.d(TAG_UI, "📱 FCM Token 가져오기 성공: ${token.take(20)}...")
+
+            val prefs = getSharedPreferences("insight_deal_prefs", Context.MODE_PRIVATE)
+            val nightPushConsent = prefs.getBoolean("night_push_consent", false)
+            
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val apiService = NetworkModule.createService<ApiService>()
+                    val request = RegisterDeviceReq(
+                        device_uuid = deviceUserId,
+                        fcm_token = token,
+                        night_push_consent = nightPushConsent
+                    )
+                    
+                    val response = apiService.registerFCMToken(request)
+                    if (response.isSuccessful) {
+                        Log.d(TAG_UI, "✅ FCM Token 서버 등록 (익명 가입) 성공")
+                    } else {
+                        Log.e(TAG_UI, "❌ FCM Token 서버 등록 실패: ${response.code()}")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG_UI, "❌ FCM Token 서버 등록 에러: ${e.message}", e)
+                }
+            }
         }
 
         setContent {
@@ -83,19 +137,32 @@ class MainActivity : ComponentActivity() {
                 themeMode = mode,
                 amoledMode = amoledMode
             ) {
-                MainApp(deviceUserId)
+                MainApp(deviceUserId, currentIntent)
             }
         }
     }
 }
 
 @Composable
-fun MainApp(deviceUserId: String) {
+fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
     val navController = rememberNavController()
-    Scaffold(bottomBar = { BottomNavigationBar(navController) }) { innerPadding ->
+    val homeViewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    
+    LaunchedEffect(currentIntent) {
+        currentIntent?.let { intent ->
+            val navigateTo = intent.getStringExtra("navigate_to")
+            val dealId = intent.getStringExtra("deal_id")
+            if (navigateTo == "hotdeal" && dealId != null) {
+                Log.d(TAG_UI, "🚀 Deep Linking to deal_detail/$dealId")
+                navController.navigate("deal_detail/$dealId")
+            }
+        }
+    }
+    
+    Scaffold(bottomBar = { BottomNavigationBar(navController, homeViewModel) }) { innerPadding ->
         NavHost(navController, startDestination = "home", Modifier.padding(innerPadding)) {
             composable("home") {
-                HomeScreen(navController = navController)
+                HomeScreen(navController = navController, viewModel = homeViewModel)
             }
             composable("watchlist") {
                 val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
@@ -130,25 +197,59 @@ fun MainApp(deviceUserId: String) {
                 val itemId = backStackEntry.arguments?.getString("itemId")?.toIntOrNull() ?: -1
                 WishlistDetailScreen(itemId = itemId, onBack = { navController.popBackStack() }, viewModel = wishlistViewModel)
             }
-            composable("platform") { com.ddaeany0919.insightdeal.presentation.platform.PlatformScreen() }
-            composable("settings") { com.ddaeany0919.insightdeal.presentation.settings.SettingsScreen() }
             composable("advanced_search") { com.ddaeany0919.insightdeal.presentation.search.AdvancedSearchScreen(navController) }
-            composable("deal_detail/{dealId}") { Box { Text("핫딜 상세 화면") } }
+            composable("category") { com.ddaeany0919.insightdeal.presentation.category.CategoryScreen() }
+            composable("community") { com.ddaeany0919.insightdeal.presentation.community.CommunityScreen() }
+            composable("alerts") { com.ddaeany0919.insightdeal.presentation.alerts.AlertsScreen(deviceUserId = deviceUserId) }
+            composable("mypage") { 
+                com.ddaeany0919.insightdeal.presentation.mypage.MyPageScreen(
+                    onNavigateToSettings = { navController.navigate("settings") },
+                    onNavigateToWatchlist = { navController.navigate("watchlist") }
+                ) 
+            }
+            composable("settings") { com.ddaeany0919.insightdeal.presentation.settings.SettingsScreen() }
+            composable("platform") { com.ddaeany0919.insightdeal.presentation.platform.PlatformScreen() }
+            composable("deal_detail/{dealId}") { backStackEntry ->
+                val dealId = backStackEntry.arguments?.getString("dealId")?.toIntOrNull() ?: -1
+                val viewModel: com.ddaeany0919.insightdeal.presentation.DealDetailViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+                val localContext = androidx.compose.ui.platform.LocalContext.current
+                com.ddaeany0919.insightdeal.presentation.DealDetailRoute(
+                    dealId = dealId,
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onOpenUrl = { url ->
+                        val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")
+                        navController.navigate("webview/$encodedUrl")
+                    }
+                )
+            }
             composable("product_detail/{productId}") { Box { Text("상품 상세 화면") } }
             composable("theme_settings") { com.ddaeany0919.insightdeal.presentation.settings.ThemeSettingsScreen(onBackClick = { navController.popBackStack() }) }
+            composable(
+                route = "webview/{url}",
+                arguments = listOf(androidx.navigation.navArgument("url") { type = androidx.navigation.NavType.StringType })
+            ) { backStackEntry ->
+                val encodedUrl = backStackEntry.arguments?.getString("url") ?: ""
+                val url = java.net.URLDecoder.decode(encodedUrl, "UTF-8")
+                com.ddaeany0919.insightdeal.presentation.webview.DealWebViewScreen(
+                    url = url,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
 
 @Composable
-fun BottomNavigationBar(navController: androidx.navigation.NavController) {
+fun BottomNavigationBar(navController: androidx.navigation.NavController, homeViewModel: HomeViewModel? = null) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val navigationItems = listOf(
         BottomNavItem("home", "홈", Icons.Default.Home, "홈"),
-        BottomNavItem("watchlist", "관심", Icons.Default.FavoriteBorder, "관심 위시리스트"),
-        BottomNavItem("platform", "플랫폼", Icons.Default.Forum, "출처별 플랫폼 모아보기"),
-        BottomNavItem("settings", "설정", Icons.Default.Settings, "설정")
+        BottomNavItem("advanced_search", "검색", Icons.Default.Search, "검색"),
+        BottomNavItem("category", "카테고리", Icons.Default.Dashboard, "카테고리"),
+        BottomNavItem("community", "커뮤니티", Icons.Default.Forum, "커뮤니티"),
+        BottomNavItem("mypage", "내정보", Icons.Default.Person, "내정보 (마이페이지)")
     )
     NavigationBar {
         navigationItems.forEach { item ->
@@ -156,9 +257,7 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController) {
             NavigationBarItem(
                 icon = { 
                     Icon(
-                        if (item.route == "watchlist" && selected) Icons.Default.Favorite 
-                        else if (item.route == "platform" && selected) Icons.Default.Forum
-                        else item.icon, 
+                        item.icon, 
                         contentDescription = item.description
                     ) 
                 },
@@ -167,6 +266,7 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController) {
                 onClick = {
                     if (item.route == "home") {
                         // 홈 진입 시 무조건 백스택 날려서 검색화면 등 닫기
+                        homeViewModel?.selectCategory("전체")
                         navController.navigate("home") {
                             popUpTo(navController.graph.id) {
                                 inclusive = true

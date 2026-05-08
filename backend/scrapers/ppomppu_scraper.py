@@ -1,4 +1,5 @@
 import logging
+import re
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from backend.scrapers.base_scraper import AsyncBaseScraper
@@ -44,10 +45,10 @@ class PpomppuScraper(AsyncBaseScraper):
                  if image_url.startswith('//'): image_url = "https:" + image_url
                  elif not image_url.startswith('http'): image_url = urljoin("https://www.ppomppu.co.kr", image_url)
 
-            # 제목에서 가격 추출 시도 (예: 15,900원, 3만9천원, $15.9)
+            # 제목에서 가격 추출 시도 (예: 15,900원, 3만9천원)
             import re
             extracted_price = 0
-            price_match = re.search(r'([\d,]+(?:원|달러|\$|만원))', full_title)
+            price_match = re.search(r'([\d,]+(?:원|만원))', full_title)
             if price_match:
                 price_str = price_match.group(1).replace(',', '')
                 if '만원' in price_str:
@@ -62,11 +63,50 @@ class PpomppuScraper(AsyncBaseScraper):
             if extracted_price == 0 and detail_info.get("price", 0) > 0:
                 extracted_price = detail_info.get("price")
 
-            is_closed = False
+            is_closed = detail_info.get("is_closed", False)
             if '종료' in full_title or '마감' in full_title or '품절' in full_title:
                 is_closed = True
             if title_el.select_one('del, s, strike, font[color="#999999"]'):
                 is_closed = True
+            if 'end' in title_el.get('class', []) or 'end2' in title_el.get('class', []):
+                is_closed = True
+            if row.select_one('img[src*="end_icon"]'):
+                is_closed = True
+
+            is_super_hotdeal = False
+            if row.select_one('img[src*="hot_icon"]') or row.select_one('img[src*="icon_hot"]'):
+                is_super_hotdeal = True
+
+            view_count = 0
+            like_count = 0
+            for td in row.select('td.eng, td.baseList-space'):
+                txt = td.get_text(strip=True).replace(',', '')
+                if '-' in txt and len(txt) < 10: # 추천수 포맷 (예: 11 - 0)
+                    parts = txt.split('-')
+                    if parts[0].strip().isdigit():
+                        like_count = int(parts[0].strip())
+                        if like_count >= 15: is_super_hotdeal = True
+                elif txt.isdigit() and int(txt) > 100: # 조회수는 보통 큰 숫자
+                    view_count = int(txt)
+                    
+            comment_count = 0
+            cmt_span = row.select_one('.list_comment2 span, .list_comment2, .comment_count')
+            if cmt_span:
+                cmt_txt = cmt_span.get_text(strip=True).replace('[', '').replace(']', '')
+                if cmt_txt.isdigit(): comment_count = int(cmt_txt)
+
+            # 실제 게시글 작성 시간 추출
+            posted_at_iso = None
+            time_tds = row.select('nobr.eng, td.eng, td.baseList-time, time.baseList-time')
+            time_str = ""
+            for td in time_tds:
+                txt = td.get_text(strip=True)
+                if ':' in txt or '/' in txt or '-' in txt:
+                    time_str = txt
+                    break
+
+            if time_str:
+                posted_at_iso = self.parse_time_str(time_str)
 
             return {
                 "title": full_title,
@@ -76,7 +116,13 @@ class PpomppuScraper(AsyncBaseScraper):
                 "image_url": image_url,
                 "ecommerce_link": detail_info.get("ecommerce_link", ""),
                 "content_html": detail_info.get("content_html", ""),
-                "is_closed": is_closed
+                "is_closed": is_closed,
+                "shipping_fee": detail_info.get("shipping_fee", ""),
+                "is_super_hotdeal": is_super_hotdeal,
+                "posted_at": posted_at_iso,
+                "view_count": view_count,
+                "like_count": like_count,
+                "comment_count": comment_count
             }
             
         tasks = [process_row(row) for row in post_rows]
@@ -117,11 +163,35 @@ class PpomppuScraper(AsyncBaseScraper):
         # 가격 파싱 폴백 (게시글 본문에서 가격 추출 시도)
         price_fallback = 0
         import re
-        body_text = soup.get_text(separator=' ')
+        
+        content_element = soup.select_one('td.board-contents') or soup.select_one('table.pic_bg td') or soup.select_one('td.han')
+        if content_element:
+            import urllib.parse
+            import base64
+            # 링크 보존
+            for a in content_element.find_all('a'):
+                href = a.get('href', '')
+                if "s.ppomppu.co.kr" in href:
+                    try:
+                        parsed_url = urllib.parse.urlparse(href)
+                        if 'target' in parsed_url.query:
+                            query_params = urllib.parse.parse_qs(parsed_url.query)
+                            encoded_target = query_params.get("target", [None])[0]
+                            if encoded_target:
+                                encoded_target += '=' * (-len(encoded_target) % 4)
+                                decoded = base64.b64decode(encoded_target).decode('utf-8')
+                                if decoded: href = decoded
+                    except: pass
+                # a 태그 내용을 "[텍스트](링크)" 형태로 변경
+                new_text = f"{a.get_text()} (링크: {href})"
+                a.string = new_text
+            body_text = content_element.get_text(separator=' \n ', strip=True)
+        else:
+            body_text = soup.get_text(separator=' ')
         
         # 이미지 태그 추출해서 본문에 덧붙이기 (Gemini 매칭용)
         images = []
-        for img in soup.select('.board-contents img'):
+        for img in soup.select('.board-contents img, table.pic_bg img, .han img'):
             src = img.get('src')
             if src and src.startswith('//'): src = 'https:' + src
             if src and 'http' in src and 'icon' not in src:
@@ -129,14 +199,36 @@ class PpomppuScraper(AsyncBaseScraper):
         if images:
             body_text += f"\n[첨부된 이미지 링크들]: {', '.join(images)}"
             
-        # 예: 15,000원, 23,500 원 등
-        price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+)\s*원', body_text)
+        # 예: 15,000원, 23,500 원, 49900원 등
+        price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', body_text)
         if price_matches:
             try:
                 # 본문에서 찾은 가격 중 가장 합리적인 첫 번째 금액
-                price_fallback = int(price_matches[0].replace(',', ''))
+                price_fallback = int(price_matches[0].replace(',', '').replace('.', ''))
             except:
                 pass
+                
+        shipping_fee = ""
+        # 1. 명시적인 테이블 정보(배송비/택배비) 확인
+        for tr in soup.select('table tr'):
+            th = tr.select_one('th, td.han')
+            td = tr.select_one('td:not(.han)')
+            if th and td:
+                th_text = th.get_text(strip=True)
+                if '배송비' in th_text or '택배비' in th_text:
+                    fee_text = td.get_text(strip=True)
+                    if fee_text:
+                        shipping_fee = fee_text
+                        break
         
+        # 2. 본문 휴리스틱
+        if not shipping_fee:
+            if "무료배송" in body_text or "무배" in body_text:
+                shipping_fee = "무료배송"
+        
+        is_closed = False
+        if "종결" in body_text and "취소된 게시물" in body_text:
+            is_closed = True
+            
         # [CEO 피드백: 모음전 분할을 위해 텍스트 길이 충분한 본문을 content_html로 반환]
-        return {"ecommerce_link": ecommerce_link, "price": price_fallback, "content_html": body_text}
+        return {"ecommerce_link": ecommerce_link, "price": price_fallback, "shipping_fee": shipping_fee, "content_html": body_text, "is_closed": is_closed}

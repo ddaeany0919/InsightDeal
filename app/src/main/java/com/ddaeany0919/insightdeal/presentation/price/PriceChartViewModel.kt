@@ -3,7 +3,6 @@ package com.ddaeany0919.insightdeal.presentation.price
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ddaeany0919.insightdeal.network.ApiClient
 import com.ddaeany0919.insightdeal.network.ApiProduct
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,6 +12,7 @@ import kotlinx.coroutines.launch
 import retrofit2.HttpException
 import kotlin.math.pow
 import kotlin.math.sqrt
+import com.ddaeany0919.insightdeal.network.ApiService
 
 class PriceChartViewModel : ViewModel() {
 
@@ -20,7 +20,7 @@ class PriceChartViewModel : ViewModel() {
         private const val TAG = "PriceChartVM"
     }
 
-    private val apiService = ApiClient.create()
+    private val apiService = com.ddaeany0919.insightdeal.network.NetworkModule.createService<ApiService>()
 
     // UI 상태
     private val _product = MutableStateFlow<ProductData?>(null)
