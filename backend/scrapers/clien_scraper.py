@@ -10,7 +10,7 @@ class ClienScraper(AsyncBaseScraper):
     def __init__(self, community_id: int):
         super().__init__("클리앙", max_concurrent_requests=5)
         self.community_id = community_id
-        self.list_url = "https://www.clien.net/service/board/jirum"
+        self.list_url = "https://www.clien.net/service/board/jirum?od=T31&category=0"
 
     async def parse_list(self, html: str) -> list[dict]:
         """클리앙 알뜰구매 게시판 데이터 추출 (비동기 처리)"""
@@ -34,7 +34,8 @@ class ClienScraper(AsyncBaseScraper):
             if not title_element:
                 continue
 
-            url = urljoin("https://www.clien.net", title_element.get('href', ''))
+            raw_url = title_element.get('href', '')
+            url = urljoin("https://www.clien.net", raw_url.split('?')[0])
             full_title = title_element.get_text(strip=True)
             
             if '종료' in full_title or '마감' in full_title or '품절' in full_title:
@@ -43,6 +44,10 @@ class ClienScraper(AsyncBaseScraper):
             style = title_element.get('style', '')
             if 'line-through' in style or title_element.select_one('del, s, strike'):
                 is_closed = True
+                
+            icon_info = item.select_one('.icon_info')
+            if icon_info and ('품절' in icon_info.get_text() or '종료' in icon_info.get_text()):
+                is_closed = True
             
             is_super_hotdeal = False
             symph_el = item.select_one('.list_symph')
@@ -50,7 +55,7 @@ class ClienScraper(AsyncBaseScraper):
             symph = int(symph_el.get_text(strip=True)) if symph_el and symph_el.get_text(strip=True).isdigit() else 0
             hit_txt = hit_el.get_text(strip=True).replace(',', '') if hit_el else '0'
             hit = int(hit_txt) if hit_txt.isdigit() else 0
-            if symph >= 10 or hit >= 10000:
+            if symph >= 10:
                 is_super_hotdeal = True
 
             image_url = ""
@@ -74,7 +79,10 @@ class ClienScraper(AsyncBaseScraper):
                 "image_url": image_url,
                 "is_closed": is_closed,
                 "is_super_hotdeal": is_super_hotdeal,
-                "posted_at": posted_at_iso
+                "posted_at": posted_at_iso,
+                "view_count": hit,
+                "like_count": symph,
+                "comment_count": 0
             })
             
         import asyncio
@@ -119,8 +127,14 @@ class ClienScraper(AsyncBaseScraper):
         link_elem = soup.select_one('.outlink a')
         if not link_elem:
             link_elem = soup.select_one('.attached_link a')
+        if not link_elem:
+            link_elem = soup.select_one('.post_article a')
         if link_elem and link_elem.get('href'):
             ecommerce_link = link_elem['href']
+            
+        # 클리앙 자체 링크가 캡처되는 것을 방지
+        if "clien.net" in ecommerce_link:
+            ecommerce_link = ""
             
         price_fallback = 0
         shipping_fee = ""

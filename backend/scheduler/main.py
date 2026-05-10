@@ -279,7 +279,7 @@ async def run_pipeline_job():
             scrape_community("quasarzone", QuasarzoneScraper, pages_to_scrape),
             scrape_community("fmkorea", FmkoreaScraper, pages_to_scrape),
             scrape_community("ruliweb", RuliwebScraper, pages_to_scrape),
-            scrape_community("clien", ClienScraper, pages_to_scrape),
+            scrape_community("clien", ClienScraper, min(pages_to_scrape, 2)),
             scrape_community("ali_ppomppu", AlippomppuScraper, pages_to_scrape),
             scrape_community("bbasak_domestic", BbasakDomesticScraper, pages_to_scrape),
             scrape_community("bbasak_overseas", BbasakOverseasScraper, pages_to_scrape),

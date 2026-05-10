@@ -55,6 +55,33 @@ def extract_shipping_fee(fee_str):
     if nums: return int(''.join(nums))
     return 0
 
+def get_cluster_key(deal):
+    if getattr(deal, 'ecommerce_link', None):
+        link = deal.ecommerce_link
+        # Strip scheme
+        link = re.sub(r'^https?://', '', link)
+        # Strip www.
+        link = re.sub(r'^www\.', '', link)
+        # Strip query params
+        link = link.split('?')[0]
+        link = link.rstrip('/')
+        if len(link) > 5:
+            return f"url:{link}"
+            
+    if deal.base_product_name:
+        base_str = deal.base_product_name
+        is_ai_parsed = True
+    else:
+        base_str = re.sub(r'\[.*?\]|\(.*?\)', '', deal.title)
+        is_ai_parsed = False
+        
+    clean_cluster = re.sub(r'(삼성|samsung|엘지|lg|애플|apple|소니|sony|닌텐도|nintendo|레노버|lenovo|에이수스|아수스|asus|롯데|농심|오리온|특가|무료배송|무배)', '', base_str, flags=re.IGNORECASE)
+    clean_cluster = re.sub(r'(통|병|개|박스|팩|매|장|봉|봉지|캔|페트|입)', '', clean_cluster)
+    norm_title = re.sub(r'[^가-힣a-zA-Z0-9]', '', clean_cluster).lower()
+    if not is_ai_parsed and len(norm_title) > 15:
+        norm_title = norm_title[:15]
+    return f"title:{norm_title}"
+
 @router.get("/top-hot-deals")
 async def get_top_hot_deals(db: Session = Depends(get_db_session)):
     try:
@@ -88,21 +115,10 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
             parsed_shipping_fee = extract_shipping_fee(deal.shipping_fee)
             total_price = parsed_price_int + parsed_shipping_fee if parsed_price_int > 0 else 0
             
-            if deal.base_product_name:
-                base_str = deal.base_product_name
-                is_ai_parsed = True
-            else:
-                base_str = re.sub(r'\[.*?\]|\(.*?\)', '', deal.title)
-                is_ai_parsed = False
-                
-            clean_cluster = re.sub(r'(삼성|samsung|엘지|lg|애플|apple|소니|sony|닌텐도|nintendo|레노버|lenovo|에이수스|아수스|asus|롯데|농심|오리온|특가|무료배송|무배)', '', base_str, flags=re.IGNORECASE)
-            clean_cluster = re.sub(r'(통|병|개|박스|팩|매|장|봉|봉지|캔|페트|입)', '', clean_cluster)
-            norm_title = re.sub(r'[^가-힣a-zA-Z0-9]', '', clean_cluster).lower()
-            if not is_ai_parsed and len(norm_title) > 15:
-                norm_title = norm_title[:15]
+            cluster_key = get_cluster_key(deal)
             
-            if norm_title in cluster_map:
-                existing = cluster_map[norm_title]
+            if cluster_key in cluster_map:
+                existing = cluster_map[cluster_key]
                 if total_price > 0:
                     if existing.get("total_price", 0) == 0 or total_price < existing["total_price"]:
                         # 더 싼 딜이 발견되면 비싼 딜의 출처를 지우고 새로운 최저가 출처로 덮어씀
@@ -177,7 +193,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     "honey_score": deal.honey_score or 0,
                     "ai_summary": ai_sum,
                 }
-                cluster_map[norm_title] = deal_dict
+                cluster_map[cluster_key] = deal_dict
                 grouped_result.append(deal_dict)
         
         return {"deals": grouped_result}
@@ -273,24 +289,11 @@ async def get_hot_deals(
         grouped_result = []
 
         for deal in deals:
-            # 제목 클러스터링 정규화 (base_product_name 우선 사용)
-            if deal.base_product_name:
-                base_str = deal.base_product_name
-                is_ai_parsed = True
-            else:
-                base_str = re.sub(r'\[.*?\]|\(.*?\)', '', deal.title)
-                is_ai_parsed = False
-                
-            clean_cluster = re.sub(r'(삼성|samsung|엘지|lg|애플|apple|소니|sony|닌텐도|nintendo|레노버|lenovo|에이수스|아수스|asus|롯데|농심|오리온|특가|무료배송|무배)', '', base_str, flags=re.IGNORECASE)
-            clean_cluster = re.sub(r'(통|병|개|박스|팩|매|장|봉|봉지|캔|페트|입)', '', clean_cluster)
-            norm_title = re.sub(r'[^가-힣a-zA-Z0-9]', '', clean_cluster).lower()
-            if not is_ai_parsed and len(norm_title) > 15:
-                norm_title = norm_title[:15]
-            
+            cluster_key = get_cluster_key(deal)
             comp_name = getattr(deal.community, 'display_name', None) or COMMUNITY_MAP.get(deal.community.name, deal.community.name)
 
-            if norm_title in cluster_map:
-                existing = cluster_map[norm_title]
+            if cluster_key in cluster_map:
+                existing = cluster_map[cluster_key]
                 parsed_price_int = extract_price(deal.price)
                 parsed_shipping_fee = extract_shipping_fee(deal.shipping_fee)
                 total_price = parsed_price_int + parsed_shipping_fee if parsed_price_int > 0 else 0
@@ -387,7 +390,7 @@ async def get_hot_deals(
                     "dislike_count": getattr(deal, 'dislike_count', 0) or 0,
                     "tags": []
                 }
-                cluster_map[norm_title] = deal_dict
+                cluster_map[cluster_key] = deal_dict
                 grouped_result.append(deal_dict)
 
         # 그룹핑된 결과에서 페이지네이션 수행

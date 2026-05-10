@@ -69,7 +69,7 @@ class BbasakBaseScraper(AsyncBaseScraper):
             if len(tds) > 4:
                 hit_txt = tds[-1].get_text(strip=True).replace(',', '')
                 view_count = int(hit_txt) if hit_txt.isdigit() else 0
-                if view_count >= 1500:
+                if view_count >= 2500:
                     is_super_hotdeal = True
                     
             # 댓글수 추출 (보통 제목 옆에 [3] 또는 span 태그)

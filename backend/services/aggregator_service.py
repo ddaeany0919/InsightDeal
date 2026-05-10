@@ -179,11 +179,12 @@ class AggregatorService:
             if price == 0:
                 is_event = True
             
-        # 루리웹, 퀘이사존 등에서 걸러진 적립 또는 이벤트로 뺌
-        if is_point:
-            final_category = "적립"
-        elif is_event:
-            final_category = "이벤트"
+        # 루리웹(10), 퀘이사존(8) 등에서만 적립 또는 이벤트로 강제 보정 적용
+        if community_id in [8, 10]:
+            if is_point:
+                final_category = "적립"
+            elif is_event:
+                final_category = "이벤트"
 
         # [Phase 12] 실제 게시글 작성 시간 반영 (스크래핑 시점이 아닌 실제 업로드 시점)
         posted_at_iso = scraped_data.get("posted_at")
