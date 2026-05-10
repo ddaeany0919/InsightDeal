@@ -184,6 +184,11 @@ class QuasarzoneScraper(AsyncBaseScraper):
                     fee_text = td.get_text(strip=True)
                     shipping_fee = fee_text
                     break
+        
+        if not shipping_fee:
+            body_text = soup.get_text(separator=' ')
+            if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):
+                shipping_fee = "무료배송"
                     
         # 4. 본문 내용 (content_html) 파싱
         content_html = ""

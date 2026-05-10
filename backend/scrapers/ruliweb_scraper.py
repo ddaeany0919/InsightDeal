@@ -45,7 +45,7 @@ class RuliwebScraper(AsyncBaseScraper):
             full_title_raw = title_element.get_text(strip=True)
             full_title = re.sub(r'\s*\(\d+\)$', '', full_title_raw).strip()
 
-            detail_info = await self.get_detail(url)
+            detail_info = await self.get_detail(url, full_title)
             
             image_url = detail_info.get("image_url", "")
             if not image_url:
@@ -96,7 +96,7 @@ class RuliwebScraper(AsyncBaseScraper):
         results = await asyncio.gather(*tasks)
         return [r for r in results if r]
 
-    async def get_detail(self, url: str) -> dict:
+    async def get_detail(self, url: str, full_title: str = "") -> dict:
         """상세 페이지 데이터 파싱 로직"""
         html = await self.fetch_html(url)
         if not html: return {}
@@ -127,7 +127,8 @@ class RuliwebScraper(AsyncBaseScraper):
         
         # 가격 휴리스틱 추출 (본문에서 추출 시 오류가 잦아 0으로 넘기고 Aggregator에서 제목 기반 추출)
         # 배송비 휴리스틱 추출
-        if "무료배송" in body_text or "무배" in body_text:
+        search_text = full_title + " " + body_text
+        if re.search(r'(무료배송|무배|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', search_text):
             shipping_fee = "무료배송"
             
         return {"ecommerce_link": ecommerce_link, "image_url": image_url, "price": price_fallback, "shipping_fee": shipping_fee, "content_html": content_html}

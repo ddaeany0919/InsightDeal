@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -248,23 +249,23 @@ fun HotDealCard(deal: HotDealDto) {
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (!deal.shippingFee.isNullOrEmpty() && deal.category != "이벤트" && deal.category != "적립") {
-                            val trimmed = deal.shippingFee.trim()
-                                val displayShipping = when {
-                                    trimmed == "정보 없음" -> "확인필요"
-                                    trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료배송"
-                                    trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료배송 ")
-                                    trimmed == "유료" || trimmed == "유료배송" -> "유료배송"
-                                    else -> trimmed
-                                }
-                                if (displayShipping.isNotEmpty() && displayShipping != "확인필요") {
-                                    Text(
-                                        text = "택배비 : $displayShipping",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                Spacer(modifier = Modifier.width(8.dp))
+                        val digitalCategories = listOf("적립", "이벤트", "모바일/기프티콘", "상품권", "패키지/이용권")
+                        val isDigitalTitle = deal.title.contains("요금제") || deal.title.contains("데이터")
+                        val hideShipping = deal.category in digitalCategories || isDigitalTitle
+                        
+                        if (!hideShipping) {
+                            val trimmed = deal.shippingFee?.trim() ?: "정보 없음"
+                            val displayShipping = when {
+                                trimmed == "정보 없음" || trimmed.isEmpty() -> "확인 필요"
+                                trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
+                                trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료 ")
+                                trimmed == "유료" || trimmed == "유료배송" -> "유료"
+                                else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
                             }
+                            Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                                Text(text = " 배송비: $displayShipping ", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier=Modifier.padding(vertical=2.dp))
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
                         }
                         Text(
                             text = rememberRelativeTime(deal.createdAt ?: deal.timeAgo),

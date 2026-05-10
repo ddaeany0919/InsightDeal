@@ -32,15 +32,20 @@ import com.ddaeany0919.insightdeal.models.PriceHistoryPoint
 import com.ddaeany0919.insightdeal.models.MallPrice
 import java.util.Locale
 
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistViewModel
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistUiState
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DealDetailRoute(
     dealId: Int,
     viewModel: DealDetailViewModel,
+    wishlistViewModel: WishlistViewModel,
     onBack: () -> Unit,
     onOpenUrl: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val wishlistState by wishlistViewModel.uiState.collectAsState()
 
     LaunchedEffect(dealId) {
         viewModel.loadDealData(dealId)
@@ -69,14 +74,29 @@ fun DealDetailRoute(
     }
 
     val currentPriceInt = deal.price
+    val targetUrl = deal.ecommerceUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl ?: ""
+    val isBookmarked = (wishlistState as? WishlistUiState.Success)?.items?.any { it.productUrl == targetUrl } ?: false
 
     DealDetailScreen(
         deal = deal,
         priceHistory = uiState.priceHistory,
-        mallPrices = listOf(MallPrice(platform = deal.siteName, price = currentPriceInt, url = deal.ecommerceUrl ?: deal.postUrl ?: "", currency = "KRW")),
-        isBookmarked = false,
+        mallPrices = listOf(MallPrice(platform = deal.siteName, price = currentPriceInt, url = targetUrl, currency = "KRW")),
+        isBookmarked = isBookmarked,
         onBack = onBack,
-        onBookmarkToggle = { /* Todo */ },
+        onBookmarkToggle = {
+            if (isBookmarked) {
+                val itemToDelete = (wishlistState as? WishlistUiState.Success)?.items?.find { it.productUrl == targetUrl }
+                if (itemToDelete != null) {
+                    wishlistViewModel.deleteItem(itemToDelete)
+                }
+            } else {
+                wishlistViewModel.addItem(
+                    keyword = deal.title,
+                    productUrl = targetUrl,
+                    targetPrice = deal.price
+                )
+            }
+        },
         onShare = { /* Todo */ },
         onOpenOrigin = onOpenUrl
     )
@@ -96,7 +116,9 @@ fun DealDetailScreen(
 ) {
     Scaffold(
         bottomBar = {
-            val targetUrl = mallPrices.firstOrNull()?.url ?: deal.sources?.firstOrNull()?.postUrl
+            val targetUrl = deal.ecommerceUrl?.takeIf { it.isNotBlank() } 
+                ?: mallPrices.firstOrNull()?.url 
+                ?: deal.sources?.firstOrNull()?.postUrl
             if (targetUrl != null) {
                 androidx.compose.material3.Surface(
                     color = MaterialTheme.colorScheme.surface,
@@ -158,7 +180,7 @@ fun DealDetailScreen(
             item {
                 PriceAlertRegistrationButton(
                     currentPrice = mallPrices.minOfOrNull { it.price } ?: 0,
-                    onAlertClick = { targetPrice -> /* MVP: 백엔드 푸시 알람 등록 */ }
+                    onAlertClick = { _ -> /* MVP: 백엔드 푸시 알람 등록 */ }
                 )
             }
             item { 
@@ -445,10 +467,21 @@ fun DealHeader(deal: DealItem) {
                         .background(bgColor, RoundedCornerShape(4.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
+                val digitalCategories = listOf("적립", "이벤트", "모바일/기프티콘", "상품권", "패키지/이용권")
+                val isDigitalTitle = deal.title.contains("요금제") || deal.title.contains("데이터")
+                val hideShipping = deal.category in digitalCategories || isDigitalTitle
                 
-                if (deal.shippingFee != null) {
+                if (!hideShipping) {
+                    val trimmed = deal.shippingFee?.trim() ?: "정보 없음"
+                    val displayShipping = when {
+                        trimmed == "정보 없음" || trimmed.isEmpty() -> "확인 필요"
+                        trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
+                        trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료 ")
+                        trimmed == "유료" || trimmed == "유료배송" -> "유료"
+                        else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
+                    }
                     Text(
-                        text = deal.shippingFee,
+                        text = "배송비: $displayShipping",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.Gray
                     )
@@ -479,7 +512,7 @@ fun DealHeader(deal: DealItem) {
                 }
                 
                 Text(
-                    text = "${formatPrice(deal.price, deal.currency ?: "KRW")}",
+                    text = "${formatPrice(deal.price, deal.currency)}",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary

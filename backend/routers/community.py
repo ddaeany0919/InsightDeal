@@ -56,15 +56,20 @@ def extract_shipping_fee(fee_str):
     return 0
 
 def get_cluster_key(deal):
-    if getattr(deal, 'ecommerce_link', None):
-        link = deal.ecommerce_link
-        # Strip scheme
+    ecommerce_link = getattr(deal, 'ecommerce_link', None)
+    post_link = getattr(deal, 'post_link', None)
+    
+    # ecommerce_link가 존재하고, 단순 게시판 링크(post_link)와 다를 때만 URL 기반 클러스터링 적용
+    if ecommerce_link and ecommerce_link != post_link:
+        link = ecommerce_link
+        # Strip scheme and www
         link = re.sub(r'^https?://', '', link)
-        # Strip www.
         link = re.sub(r'^www\.', '', link)
-        # Strip query params
-        link = link.split('?')[0]
+        
+        # 쇼핑몰 별로 불필요한 트래킹 파라미터만 제거 (전체 쿼리를 날리면 G마켓 등 식별 불가)
+        link = re.sub(r'[?&](utm_source|utm_medium|utm_campaign)=[^&]+', '', link)
         link = link.rstrip('/')
+        
         if len(link) > 5:
             return f"url:{link}"
             

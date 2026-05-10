@@ -66,6 +66,12 @@ class PpomppuScraper(AsyncBaseScraper):
             from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
             parsed_href = urlparse(href)
             qs = parse_qs(parsed_href.query)
+            
+            # [HOTFIX] 핫딜 게시판이 아닌 다른 포럼(예: 해외포럼 id=oversea) 게시글이 핫딜 리스트에 추천글로 섞이는 현상 방지
+            board_id = qs.get('id', [''])[0]
+            if board_id not in ['ppomppu', 'ppomppu4', 'ppomppu8', 'pmarket']:
+                return None
+                
             qs.pop('page', None)
             qs.pop('divpage', None)
             clean_query = urlencode(qs, doseq=True)
@@ -96,7 +102,7 @@ class PpomppuScraper(AsyncBaseScraper):
                     nums = re.findall(r'\d+', price_str)
                     if nums: extracted_price = int(''.join(nums))
 
-            detail_info = await self.get_detail(url)
+            detail_info = await self.get_detail(url, full_title)
             
             if extracted_price == 0 and detail_info.get("price", 0) > 0:
                 extracted_price = detail_info.get("price")
@@ -182,8 +188,10 @@ class PpomppuScraper(AsyncBaseScraper):
         results = await asyncio.gather(*tasks)
         return [r for r in results if r]
 
-    async def get_detail(self, url: str) -> dict:
-        """상세 페이지 데이터 파싱 로직"""
+    async def get_detail(self, url: str, full_title: str = "") -> dict:
+        """
+        상세 페이지에 접속하여 본문(HTML)과 추가 추출 정보(예: 쿠폰, 배송비)를 가져옵니다.
+        """
         html = await self.fetch_html(url)
         if not html: return {}
         soup = BeautifulSoup(html, 'html.parser')
@@ -276,7 +284,9 @@ class PpomppuScraper(AsyncBaseScraper):
         
         # 2. 본문 휴리스틱
         if not shipping_fee:
-            if "무료배송" in body_text or "무배" in body_text:
+            search_text = full_title + " " + body_text
+            import re
+            if re.search(r'(무료배송|무배|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', search_text):
                 shipping_fee = "무료배송"
         
         is_closed = False

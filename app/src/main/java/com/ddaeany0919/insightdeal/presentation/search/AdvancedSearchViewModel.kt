@@ -9,10 +9,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import com.ddaeany0919.insightdeal.models.SortOption
 
+import com.ddaeany0919.insightdeal.network.NetworkModule
+import com.ddaeany0919.insightdeal.network.ApiService
+
 /**
  * 🔍 고급 검색 ViewModel
  */
 class AdvancedSearchViewModel : ViewModel() {
+    private val apiService = NetworkModule.createService<ApiService>()
     
     // 검색 쿼리
     private val _searchQuery = MutableStateFlow("")
@@ -133,12 +137,12 @@ class AdvancedSearchViewModel : ViewModel() {
     fun loadPopularKeywords() {
         viewModelScope.launch {
             try {
-                // 실제로는 서버에서 가져오지만, 현재는 로컬 데이터
-                val keywords = listOf(
-                    "갤럭시", "아이폰", "맥북", "에어팟", "다이슨",
-                    "그래픽카드", "모니터", "무선이어폰", "운동화", "가방"
-                )
-                _popularKeywords.value = keywords
+                val response = apiService.getPopularKeywords()
+                if (response.isSuccessful) {
+                    _popularKeywords.value = response.body()?.keywords ?: emptyList()
+                } else {
+                    _popularKeywords.value = emptyList()
+                }
             } catch (e: Exception) {
                 _popularKeywords.value = emptyList()
             }

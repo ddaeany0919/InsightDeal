@@ -214,6 +214,7 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                 com.ddaeany0919.insightdeal.presentation.DealDetailRoute(
                     dealId = dealId,
                     viewModel = viewModel,
+                    wishlistViewModel = wishlistViewModel,
                     onBack = { navController.popBackStack() },
                     onOpenUrl = { url ->
                         val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")

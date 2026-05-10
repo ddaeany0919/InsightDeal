@@ -415,7 +415,7 @@ class FmkoreaScraper(AsyncBaseScraper):
                             pass
                     
                 if not shipping_fee:
-                    if "무료배송" in body_text or "무배" in body_text:
+                    if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):
                         shipping_fee = "무료배송"
 
         posted_at_iso = ""

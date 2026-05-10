@@ -150,7 +150,7 @@ class ClienScraper(AsyncBaseScraper):
                 pass
                 
         # 배송비 휴리스틱 추출
-        if "무료배송" in body_text or "무배" in body_text:
+        if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):
             shipping_fee = "무료배송"
             
         content_html = ""

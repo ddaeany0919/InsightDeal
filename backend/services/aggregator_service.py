@@ -219,23 +219,56 @@ class AggregatorService:
 
         content_html = scraped_data.get("content_html", scraped_data.get("content", ""))
 
-        # 2. URL 중복 체크 (Upsert 로직의 핵심)
+        # 2. 중복 및 롤링 윈도우 클러스터링 체크 (Upsert 로직의 핵심)
         existing_deals = self.db.query(Deal).filter(Deal.post_link == url).all()
         
+        # [24시간 롤링 윈도우 클러스터링]: 동일 URL이 아니더라도 24시간 내 동일 상품이면 병합 시도
+        if not existing_deals:
+            from datetime import timedelta
+            query = self.db.query(Deal).filter(
+                Deal.indexed_at >= datetime.now() - timedelta(hours=24)
+            )
+            target_deals = []
+            
+            # 1. 쇼핑몰 링크(ecommerce_url) 기준 매칭 (확실한 고유 링크일 경우, 너무 짧은 링크 제외)
+            target_url = scraped_data.get("ecommerce_link")
+            if target_url and len(target_url) > 20 and 'coupang' not in target_url:
+                target_deals = query.filter(Deal.ecommerce_link == target_url).all()
+            
+            # 2. 정규화된 상품명(base_product_name) 기준 매칭 (링크가 없거나 달라도 상품명이 같으면)
+            if not target_deals and normalized.name and len(normalized.name) > 4:
+                target_deals = query.filter(Deal.base_product_name == normalized.name).all()
+                
+            if target_deals:
+                # 롤링 윈도우 병합 발생! 가장 최근(마지막) 딜을 대상으로 갱신을 수행하여 윈도우를 연장시킴
+                logger.info(f"🔄 [롤링 윈도우 클러스터링] 타 게시글({url})이지만 동일 상품으로 판단하여 병합 시도: {normalized.name}")
+                existing_deals = [max(target_deals, key=lambda d: d.indexed_at if d.indexed_at else datetime.min)]
+        
         if existing_deals:
-             # 이미 수집했던 글이라면 가격 등 메타정보 갱신 (Upsert)
+             # 이미 수집했던 글이거나, 클러스터링으로 묶인 글이라면 가격 등 메타정보 갱신 (Upsert)
              # 만약 AI가 다중 분할한 상품들이라면, 모든 split deal에 대해 종료 상태 등을 일괄 갱신합니다.
              for existing_deal in existing_deals:
                  price_changed = False
                  
-                 # 제목은 원래 파생된 제목을 유지해야 하므로, 단일 상품일 때만 원본 제목으로 갱신
+                 # 제목 갱신: 단일 상품일 때
+                 # 클러스터링(롤링 윈도우)된 경우, 새 핫딜 가격이 더 싸거나 동일 URL일 때만 원본 제목 갱신
+                 old_price = int(existing_deal.price) if str(existing_deal.price).isdigit() else float('inf')
                  if len(existing_deals) == 1 and existing_deal.title != raw_title:
-                     existing_deal.title = raw_title
-                     
-                 # 가격 갱신도 단일 상품이거나 가격 변동이 명확할 때만 (분할된 가격은 덮어쓰지 않도록 주의)
-                 if len(existing_deals) == 1 and str(existing_deal.price) != str(price) and price != 0:
-                     existing_deal.price = str(price)
-                     price_changed = True
+                     if existing_deal.post_link == url:
+                         existing_deal.title = raw_title
+                     elif price > 0 and price < old_price:
+                         existing_deal.title = raw_title # 더 싼 새로운 게시글의 제목으로 교체
+                         
+                 # 가격 갱신: 더 저렴한 가격이 등장했을 때 (최저가 갱신) 또는 동일 URL 게시글이 수정되었을 때
+                 if len(existing_deals) == 1 and price > 0:
+                     if price < old_price:
+                         logger.info(f"💸 [최저가 갱신!] 기존 {old_price}원 -> 새 핫딜 {price}원 (URL 교체: {url})")
+                         existing_deal.price = str(price)
+                         existing_deal.post_link = url # 유저가 구매하러 갈 링크도 더 싼 곳으로 교체
+                         price_changed = True
+                     elif existing_deal.post_link == url and str(existing_deal.price) != str(price):
+                         existing_deal.price = str(price)
+                         price_changed = True
                      
                  if image_url and not existing_deal.image_url:
                      existing_deal.image_url = image_url
