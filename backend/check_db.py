@@ -1,9 +1,13 @@
-from database.session import db_manager
-from database.models import Deal, Community
+import asyncio
+from database import SessionLocal
+from models import Deal
 
-session = db_manager.get_session()
-deals = session.query(Deal, Community).join(Community).filter(Deal.title.like('%삼양%')).all()
+def main():
+    db = SessionLocal()
+    # Get top 5 deals to see what the data looks like
+    deals = db.query(Deal).order_by(Deal.id.desc()).limit(10).all()
+    for d in deals:
+        print(f"ID: {d.id}, Title: {d.title}, Price: {d.price}, Post Link: {d.post_link}, Ecom Link: {d.ecommerce_link}")
 
-for deal, comm in deals:
-    if deal.honey_score >= 100:
-        print(f"[{comm.name}] {deal.title} | Closed: {deal.is_closed} | Score: {deal.honey_score} | Indexed: {deal.indexed_at}")
+if __name__ == "__main__":
+    main()

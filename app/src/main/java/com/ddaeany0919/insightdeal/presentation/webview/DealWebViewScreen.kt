@@ -26,6 +26,61 @@ fun DealWebViewScreen(
 ) {
     val context = LocalContext.current
     var webView: WebView? by remember { mutableStateOf(null) }
+    var pendingIntent: Intent? by remember { mutableStateOf(null) }
+    var pendingFallbackUrl: String? by remember { mutableStateOf(null) }
+
+    if (pendingIntent != null) {
+        AlertDialog(
+            onDismissRequest = { 
+                pendingIntent = null
+                pendingFallbackUrl = null
+            },
+            title = { Text("쇼핑몰 연결", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+            text = { Text("해당 쇼핑몰 앱으로 열면 더 편리하게 구매하실 수 있습니다.\n어떻게 이동하시겠습니까?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        try {
+                            context.startActivity(pendingIntent!!)
+                        } catch (e: Exception) {
+                            val packageName = pendingIntent!!.`package`
+                            if (packageName != null) {
+                                try {
+                                    val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName"))
+                                    context.startActivity(playStoreIntent)
+                                } catch (e2: Exception) {
+                                    e2.printStackTrace()
+                                }
+                            }
+                        }
+                        pendingIntent = null
+                        pendingFallbackUrl = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFFFF6D00))
+                ) {
+                    Text("App에서 보기")
+                }
+            },
+            dismissButton = {
+                if (pendingFallbackUrl != null) {
+                    OutlinedButton(onClick = {
+                        webView?.loadUrl(pendingFallbackUrl!!)
+                        pendingIntent = null
+                        pendingFallbackUrl = null
+                    }) {
+                        Text("웹에서 보기")
+                    }
+                } else {
+                    OutlinedButton(onClick = {
+                        pendingIntent = null
+                        pendingFallbackUrl = null
+                    }) {
+                        Text("취소")
+                    }
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -70,24 +125,28 @@ fun DealWebViewScreen(
                             if (requestUrl.startsWith("intent://")) {
                                 try {
                                     val intent = Intent.parseUri(requestUrl, Intent.URI_INTENT_SCHEME)
-                                    // 1. 앱이 설치되어 있으면 앱 실행
-                                    if (intent.resolveActivity(context.packageManager) != null) {
-                                        context.startActivity(intent)
-                                        return true
-                                    }
-                                    // 2. 앱이 없으면 fallback URL로 이동 (웹페이지)
                                     val fallbackUrl = intent.getStringExtra("browser_fallback_url")
+                                    
                                     if (fallbackUrl != null) {
-                                        view?.loadUrl(fallbackUrl)
+                                        // 1. fallback URL(웹)이 있다면 다이얼로그를 띄워 물어본다
+                                        pendingIntent = intent
+                                        pendingFallbackUrl = fallbackUrl
                                         return true
-                                    }
-                                    // 3. fallback URL도 없으면 플레이스토어로 이동
-                                    val packageName = intent.`package`
-                                    if (packageName != null) {
-                                        val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName"))
-                                        if (playStoreIntent.resolveActivity(context.packageManager) != null) {
-                                            context.startActivity(playStoreIntent)
+                                    } else {
+                                        // 2. fallback URL이 없다면 선택의 여지가 없으므로 바로 앱 실행
+                                        try {
+                                            context.startActivity(intent)
                                             return true
+                                        } catch (e: Exception) {
+                                            val packageName = intent.`package`
+                                            if (packageName != null) {
+                                                try {
+                                                    val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName"))
+                                                    context.startActivity(playStoreIntent)
+                                                } catch (e2: Exception) {
+                                                    e2.printStackTrace()
+                                                }
+                                            }
                                         }
                                     }
                                 } catch (e: Exception) {
@@ -96,13 +155,10 @@ fun DealWebViewScreen(
                                 // 앱 스키마 오류 시 웹뷰 기본 에러(ERR_UNKNOWN_URL_SCHEME) 방지
                                 return true
                             } else if (!requestUrl.startsWith("http://") && !requestUrl.startsWith("https://")) {
-                                // 일반적인 외부 앱 스키마 (market:// 등)
+                                // 일반적인 외부 앱 스키마 (market://, kakaotalk://, toss:// 등)
                                 try {
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(requestUrl))
-                                    if (intent.resolveActivity(context.packageManager) != null) {
-                                        context.startActivity(intent)
-                                        return true
-                                    }
+                                    context.startActivity(intent)
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                 }

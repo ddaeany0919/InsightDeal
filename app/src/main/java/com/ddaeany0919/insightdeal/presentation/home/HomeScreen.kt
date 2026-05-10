@@ -732,10 +732,10 @@ fun DealCardComposable(
                     Button(
                         onClick = onDetailClick,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F2937)),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("📈 역대 가격 추이 & AI 분석 보기", fontWeight = FontWeight.Bold)
+                        Text("🔥 AI 가격 분석 & 상세정보 보기", fontWeight = FontWeight.ExtraBold, color = Color.White)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     
@@ -773,10 +773,10 @@ fun DealCardComposable(
                                 }
                             },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722)),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6D00)),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("상세 구매처로 바로 이동 🚀", fontWeight = FontWeight.Bold)
+                        Text("구매하기 🚀", fontWeight = FontWeight.ExtraBold, color = Color.White)
                     }
                 }
             }

@@ -138,7 +138,7 @@ fun DealDetailScreen(
                     ) {
                         Icon(Icons.Default.ShoppingCart, contentDescription = null, tint = Color.White)
                         Spacer(Modifier.width(8.dp))
-                        Text("최저가로 구매하기", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = Color.White)
+                        Text("구매하기 🚀", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = Color.White)
                     }
                 }
             }
@@ -179,7 +179,9 @@ fun DealDetailScreen(
                 PriceHistoryInteractiveCard(priceHistory) 
             }
             item {
-                AIBuyerGuide(deal = deal, priceHistory = priceHistory, currentPrice = mallPrices.minOfOrNull { it.price } ?: 0)
+                if (priceHistory.size > 2 || deal.honeyScore > 0) {
+                    AIBuyerGuide(deal = deal, priceHistory = priceHistory, currentPrice = mallPrices.minOfOrNull { it.price } ?: 0)
+                }
             }
             item {
                 PriceAlertRegistrationButton(
@@ -422,7 +424,7 @@ private fun MallPriceTable(mallPrices: List<MallPrice>, onOpenOrigin: (String) -
                         else -> "${formatPrice(row.price, row.currency ?: "KRW")}"
                     }
                     Text(priceText, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    TextButton(onClick = { onOpenOrigin(row.url) }) { Text("바로가기") }
+                    TextButton(onClick = { onOpenOrigin(row.url) }) { Text("구매하기 🚀", fontWeight = FontWeight.Bold) }
                 }
                 HorizontalDivider()
             }
@@ -439,9 +441,10 @@ fun DealHeader(deal: DealItem) {
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(250.dp)
-                    .background(Color.LightGray.copy(alpha = 0.2f)),
-                contentScale = ContentScale.Crop
+                    .heightIn(max = 300.dp)
+                    .background(androidx.compose.ui.graphics.Color.White),
+                contentScale = ContentScale.Fit,
+                alpha = 1.0f
             )
         }
         
