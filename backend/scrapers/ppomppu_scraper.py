@@ -60,8 +60,16 @@ class PpomppuScraper(AsyncBaseScraper):
                 
             href = link_el.get('href')
             if href.startswith('javascript'): return None
+            
+            from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+            parsed_href = urlparse(href)
+            qs = parse_qs(parsed_href.query)
+            qs.pop('page', None)
+            qs.pop('divpage', None)
+            clean_query = urlencode(qs, doseq=True)
+            clean_href = urlunparse(parsed_href._replace(query=clean_query))
                 
-            url = urljoin("https://www.ppomppu.co.kr/zboard/", href)
+            url = urljoin("https://www.ppomppu.co.kr/zboard/", clean_href)
             
             # 🖼️ 썸네일 추출 시도 
             image_url = ""

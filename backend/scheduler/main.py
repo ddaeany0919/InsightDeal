@@ -104,6 +104,7 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
             
             # 5개의 워커(Consumer) 생성 (커뮤니티당 동시 5개 처리)
             workers = [asyncio.create_task(worker()) for _ in range(5)]
+            global_seen_urls = set()
 
             # Producer: 리스트 페이지를 긁어서 Queue에 삽입
             for page in range(1, pages + 1):
@@ -125,22 +126,27 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                         if not items:
                             break
                             
-                        # [최적화] 현재 페이지의 딜이 전부 기존 DB에 있는지 확인 (조기 종료)
+                        # [최적화] 현재 페이지의 딜이 전부 기존 DB에 있는지 확인 (조기 종료) 및 페이지 내 큐 중복 방지
                         duplicate_count = 0
                         check_db = SessionLocal()
+                        unique_items = []
                         try:
                             from backend.database.models import Deal
                             for item in items:
+                                if item['url'] in global_seen_urls:
+                                    continue
+                                global_seen_urls.add(item['url'])
+                                unique_items.append(item)
                                 if check_db.query(Deal).filter(Deal.post_link == item['url']).first():
                                     duplicate_count += 1
                         finally:
                             check_db.close()
                             
-                        for item in items:
+                        for item in unique_items:
                             await queue.put(item)
                             
                         # 펨코(인기순 정렬)를 제외한 일반(최신순) 게시판은 페이지 전체가 중복이면 다음 페이지 조회 스킵
-                        if items and duplicate_count >= len(items) - 1: # 1개 정도 오차 허용
+                        if unique_items and duplicate_count >= len(unique_items) - 1: # 1개 정도 오차 허용
                             if "fmkorea" not in community_name:
                                 logger.info(f"⏭️ [{community_display_name}] {page}페이지 대부분({duplicate_count}/{len(items)})이 기존 딜이므로 조기 종료 (Skip)!")
                                 break

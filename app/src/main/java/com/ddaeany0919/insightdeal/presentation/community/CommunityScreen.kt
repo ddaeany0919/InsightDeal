@@ -254,10 +254,10 @@ fun HotDealCard(deal: HotDealDto) {
                                     trimmed == "정보 없음" -> "확인필요"
                                     trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료배송"
                                     trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료배송 ")
-                                    trimmed == "유료" -> "유료배송"
-                                    else -> deal.shippingFee
+                                    trimmed == "유료" || trimmed == "유료배송" -> "유료배송"
+                                    else -> trimmed
                                 }
-                                if (displayShipping.isNotEmpty()) {
+                                if (displayShipping.isNotEmpty() && displayShipping != "확인필요") {
                                     Text(
                                         text = "택배비 : $displayShipping",
                                         style = MaterialTheme.typography.labelSmall,

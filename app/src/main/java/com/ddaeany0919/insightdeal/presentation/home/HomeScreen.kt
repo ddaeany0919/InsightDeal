@@ -528,8 +528,8 @@ fun DealCardComposable(deal: DealItem, onDetailClick: () -> Unit = {}, onOpenUrl
                                 val displayShipping = when {
                                     trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료배송"
                                     trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료배송 ")
-                                    trimmed == "유료" -> "유료배송"
-                                    else -> it
+                                    trimmed == "유료" || trimmed == "유료배송" -> "유료배송"
+                                    else -> trimmed
                                 }
                                 Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.align(Alignment.CenterVertically)) {
                                     Text(text = " 택배비 : $displayShipping ", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier=Modifier.padding(vertical=2.dp))

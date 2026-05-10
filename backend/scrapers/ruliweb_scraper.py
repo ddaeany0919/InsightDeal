@@ -28,7 +28,13 @@ class RuliwebScraper(AsyncBaseScraper):
             link_element = row.select_one('a.subject_link, a.board_list_item')
             if not link_element: return None
 
-            url = urljoin("https://bbs.ruliweb.com", link_element['href'])
+            from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+            raw_url = urljoin("https://bbs.ruliweb.com", link_element['href'])
+            parsed_href = urlparse(raw_url)
+            qs = parse_qs(parsed_href.query)
+            qs.pop('page', None)
+            clean_query = urlencode(qs, doseq=True)
+            url = urlunparse(parsed_href._replace(query=clean_query))
 
             title_element = row.select_one('a.subject_link, span.subject')
             if not title_element: return None

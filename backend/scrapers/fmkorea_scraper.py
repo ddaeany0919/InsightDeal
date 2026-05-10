@@ -87,7 +87,11 @@ class FmkoreaScraper(AsyncBaseScraper):
                     hot_soup = BeautifulSoup(hot_html, 'html.parser')
                     for r in hot_soup.select('li.li, div.list_item'):
                         # 인기글 중에서도 '포텐' 뱃지가 달린 것만 진짜 포텐 핫딜로 간주
-                        is_poten = r.select_one('span.STAR-BEST') is not None
+                        is_poten = False
+                        poten_span = r.select_one('span.STAR-BEST')
+                        if poten_span and '포텐' in poten_span.get_text(strip=True):
+                            is_poten = True
+                            
                         if is_poten:
                             a = r.select_one('a.hotdeal_var8, a.hotdeal_var8Y, a.title, h3.title a')
                             if a and a.get('href'):

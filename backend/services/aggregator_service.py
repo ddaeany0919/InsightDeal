@@ -283,7 +283,10 @@ class AggregatorService:
                          existing_deal.ai_summary = "🔥 [커뮤니티 인증 핫딜] "
                      elif "🔥" not in existing_deal.ai_summary:
                          existing_deal.ai_summary = "🔥 [커뮤니티 인증 핫딜] " + existing_deal.ai_summary
-                 existing_deal.honey_score = min(100, max(calc_score, existing_deal.honey_score or 0))
+                 else:
+                     calc_score = min(99, calc_score)
+                     
+                 existing_deal.honey_score = max(calc_score, existing_deal.honey_score or 0)
                  
                  if price_changed and price > 0:
                      self._insert_price_history(existing_deal.id, price)
@@ -305,7 +308,8 @@ class AggregatorService:
             import random
             honey_score = random.randint(50, 70)  # 최소 점수 보장
         
-        honey_score = min(100, honey_score)
+        # 일반 딜은 최대 99점까지만 허용
+        honey_score = min(99, honey_score)
 
         # 커뮤니티 추천수/조회수/인기마크 기반 슈퍼 핫딜 판별
         if scraped_data.get("is_super_hotdeal"):
