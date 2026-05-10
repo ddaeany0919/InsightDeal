@@ -646,13 +646,13 @@ fun DealCardComposable(
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     val percentileText = when {
-                        deal.honeyScore >= 95 -> "상위 1%"
+                        deal.honeyScore >= 95 -> "최상위 1% 급"
                         deal.honeyScore >= 90 -> "상위 5%"
                         deal.honeyScore >= 80 -> "상위 10%"
                         deal.honeyScore >= 70 -> "상위 20%"
-                        else -> "추천"
+                        else -> "평이"
                     }
-                    val badgeText = if (percentileText == "추천") "🍯 꿀딜 추천도 (${deal.honeyScore}점)" else "🍯 카테고리 내 $percentileText 추천도 (${deal.honeyScore}점)"
+                    val badgeText = if (percentileText == "평이") "📊 AI 가격 메리트 (${deal.honeyScore}점)" else "💡 AI 가격 메리트: $percentileText 저렴! (${deal.honeyScore}점)"
                     
                     Surface(
                         shape = RoundedCornerShape(8.dp),

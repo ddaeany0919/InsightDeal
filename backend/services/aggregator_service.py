@@ -305,20 +305,52 @@ class AggregatorService:
         comment_count = int(scraped_data.get("comment_count", 0))
         
         honey_score = int((view_count / 100) + (like_count * 10) + (comment_count * 5))
+        
+        # [DB 평균치 기반 세밀한 점수화 로직 추가]
+        try:
+            from sqlalchemy import func
+            from backend.database.models import DealItem
+            if price > 0 and normalized.category:
+                query = self.db.query(func.avg(DealItem.price)).filter(
+                    DealItem.category == normalized.category,
+                    DealItem.price > 0
+                )
+                if normalized.brand:
+                    query = query.filter(DealItem.brand == normalized.brand)
+                avg_price = query.scalar()
+                
+                if avg_price:
+                    avg_price = float(avg_price)
+                    if price < avg_price * 0.5:
+                        honey_score += 40
+                    elif price < avg_price * 0.7:
+                        honey_score += 25
+                    elif price < avg_price * 0.9:
+                        honey_score += 10
+                    elif price > avg_price * 1.1:
+                        honey_score -= 20
+        except Exception as e:
+            logger.error(f"DB 평균가 계산 에러: {e}")
+            
         if honey_score < 50 and price > 0:
             import random
             honey_score = random.randint(50, 70)  # 최소 점수 보장
         
         # 일반 딜은 최대 99점까지만 허용
-        honey_score = min(99, honey_score)
+        honey_score = min(99, max(0, honey_score))
 
         # 커뮤니티 추천수/조회수/인기마크 기반 슈퍼 핫딜 판별
         if scraped_data.get("is_super_hotdeal"):
-            honey_score = 100
+            # 무조건 100점이 아니라, 가격이 평균치보다 비싸서 점수가 까였다면 핫딜 마크를 부여하되 100점은 주지 않음
+            if honey_score < 80:
+                honey_score = max(honey_score, 85)
+            else:
+                honey_score = 100
+                
             if ai_summary is None:
-                ai_summary = "🔥 [커뮤니티 인증 핫딜] "
+                ai_summary = "🔥 [커뮤니티 인기] "
             elif "🔥" not in ai_summary:
-                ai_summary = "🔥 [커뮤니티 인증 핫딜] " + ai_summary
+                ai_summary = "🔥 [커뮤니티 인기] " + ai_summary
 
         # [다중 상품 자동 분할 - Phase 5.1 토큰 최적화 (CEO 피드백)]
         # 1. 제목 기반으로 상품 갯수 추정 (예: 상품명.상품명.상품명 -> 점이 2개면 상품 3개)

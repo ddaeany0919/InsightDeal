@@ -153,7 +153,7 @@ fun DealDetailScreen(
                 PriceHistoryInteractiveCard(priceHistory) 
             }
             item {
-                AIBuyerGuide(priceHistory = priceHistory, currentPrice = mallPrices.minOfOrNull { it.price } ?: 0)
+                AIBuyerGuide(deal = deal, priceHistory = priceHistory, currentPrice = mallPrices.minOfOrNull { it.price } ?: 0)
             }
             item {
                 PriceAlertRegistrationButton(
@@ -232,15 +232,18 @@ private fun PriceHistoryInteractiveCard(history: List<PriceHistoryPoint>) {
     // UI 최소화를 위해 데이터가 2개 이하인 경우 차트 대신 간략한 텍스트만 표시
     if (history.size <= 2) {
         Card(
-            elevation = CardDefaults.cardElevation(0.dp),
+            elevation = CardDefaults.cardElevation(2.dp),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+            border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text("핫딜 가격 변동", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.padding(20.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.Insights, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(32.dp))
+                Spacer(Modifier.height(12.dp))
+                Text("차트를 생성하기 위한 데이터 수집 중입니다", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
                 Spacer(Modifier.height(8.dp))
-                Text("아직 충분한 가격 데이터가 모이지 않았습니다.", color = Color.Gray, style = MaterialTheme.typography.bodyMedium)
+                Text("이 상품의 역대 가격 변동 추이가 곧 제공됩니다.", color = Color(0xFF64748B), style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }
     } else {
@@ -268,17 +271,18 @@ private fun PriceHistoryInteractiveCard(history: List<PriceHistoryPoint>) {
 }
 
 @Composable
-private fun AIBuyerGuide(priceHistory: List<PriceHistoryPoint>, currentPrice: Int) {
-    if (priceHistory.size <= 2 || currentPrice == 0) return
+private fun AIBuyerGuide(deal: DealItem, priceHistory: List<PriceHistoryPoint>, currentPrice: Int) {
+    if (currentPrice == 0) return
 
     val minPrice = priceHistory.minOfOrNull { it.price } ?: currentPrice
     val maxPrice = priceHistory.maxOfOrNull { it.price } ?: currentPrice
-    val isRecordLow = currentPrice <= minPrice
-    val diffFromMax = maxPrice - currentPrice
-
-    val containerColor = if (isRecordLow) Color(0xFFF0FDF4) else Color(0xFFF8FAFC)
-    val borderColor = if (isRecordLow) Color(0xFF4ADE80) else Color(0xFFE2E8F0)
-    val titleColor = if (isRecordLow) Color(0xFF166534) else Color(0xFF334155)
+    val isRecordLow = currentPrice <= minPrice && priceHistory.size > 2
+    
+    // 이력이 부족할 때는 deal의 honeyScore나 aiSummary를 활용하여 안내 제공
+    val isGoodDeal = deal.honeyScore >= 80
+    val titleColor = if (isRecordLow || isGoodDeal) Color(0xFF166534) else Color(0xFF334155)
+    val containerColor = if (isRecordLow || isGoodDeal) Color(0xFFF0FDF4) else Color(0xFFF8FAFC)
+    val borderColor = if (isRecordLow || isGoodDeal) Color(0xFF4ADE80) else Color(0xFFE2E8F0)
 
     Card(
         elevation = CardDefaults.cardElevation(2.dp),
@@ -291,7 +295,7 @@ private fun AIBuyerGuide(priceHistory: List<PriceHistoryPoint>, currentPrice: In
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = if (isRecordLow) Color(0xFFDCFCE7) else Color(0xFFE2E8F0),
+                    color = if (isRecordLow || isGoodDeal) Color(0xFFDCFCE7) else Color(0xFFE2E8F0),
                     modifier = Modifier.size(36.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -312,9 +316,9 @@ private fun AIBuyerGuide(priceHistory: List<PriceHistoryPoint>, currentPrice: In
                         color = titleColor
                     )
                     Text(
-                        if (isRecordLow) "강력 매수 권장" else "관망 또는 목표가 대기",
+                        if (isRecordLow || isGoodDeal) "강력 매수 권장" else "관망 또는 목표가 대기",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (isRecordLow) Color(0xFF22C55E) else Color(0xFF64748B),
+                        color = if (isRecordLow || isGoodDeal) Color(0xFF22C55E) else Color(0xFF64748B),
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -323,7 +327,27 @@ private fun AIBuyerGuide(priceHistory: List<PriceHistoryPoint>, currentPrice: In
             HorizontalDivider(color = borderColor.copy(alpha = 0.5f))
             Spacer(Modifier.height(16.dp))
             
-            if (isRecordLow) {
+            if (priceHistory.size <= 2) {
+                // 데이터 부족 시 DB 기반 추천도 활용 안내
+                Text(
+                    "💡 AI가 분석한 카테고리 내 가치 점수: ${deal.honeyScore}점",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isGoodDeal) Color(0xFF059669) else Color(0xFF334155),
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(Modifier.height(8.dp))
+                val message = if (isGoodDeal) {
+                    "과거 데이터가 충분하지 않지만, 현재 데이터베이스의 유사 카테고리 평균 가격보다 저렴할 확률이 높습니다. 품절 전 확인을 추천합니다!"
+                } else {
+                    "현재 유사 카테고리 평균가 대비 평이한 수준이거나 아직 가격 메리트가 확실하지 않습니다. 알림을 설정해 두세요."
+                }
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF334155),
+                    lineHeight = 22.sp
+                )
+            } else if (isRecordLow) {
                 Text(
                     "🔥 역대 최저가 갱신!",
                     style = MaterialTheme.typography.titleMedium,
@@ -331,6 +355,7 @@ private fun AIBuyerGuide(priceHistory: List<PriceHistoryPoint>, currentPrice: In
                     fontWeight = FontWeight.ExtraBold
                 )
                 Spacer(Modifier.height(8.dp))
+                val diffFromMax = maxPrice - currentPrice
                 Text(
                     "현재 가격은 수집된 역사상 가장 낮은 가격입니다. 고점 대비 ${String.format("%,d", diffFromMax)}원 저렴하며, 품절되기 전에 구매하는 것을 강력히 추천합니다.",
                     style = MaterialTheme.typography.bodyMedium,
