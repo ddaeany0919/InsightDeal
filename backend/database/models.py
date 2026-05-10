@@ -32,6 +32,7 @@ class Deal(Base):
     currency = Column(String(10), default="KRW")
     image_url = Column(String(2048))
     category = Column(String(100), default="기타")
+    search_keywords = Column(TEXT, nullable=True) # Contains Chosung and Eng typo for search
     indexed_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     is_closed = Column(Boolean, default=False, nullable=False)
     deal_type = Column(String(50), default='일반', nullable=False)

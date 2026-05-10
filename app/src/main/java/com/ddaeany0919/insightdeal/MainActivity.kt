@@ -160,45 +160,43 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
     }
     
     Scaffold(bottomBar = { BottomNavigationBar(navController, homeViewModel) }) { innerPadding ->
+        val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+        val wishlistViewModel: WishlistViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+            factory = object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    return WishlistViewModel(
+                        wishlistRepository = WishlistRepository(context = context),
+                        userIdProvider = { deviceUserId }
+                    ) as T
+                }
+            }
+        )
         NavHost(navController, startDestination = "home", Modifier.padding(innerPadding)) {
             composable("home") {
-                HomeScreen(navController = navController, viewModel = homeViewModel)
+                HomeScreen(navController = navController, viewModel = homeViewModel, wishlistViewModel = wishlistViewModel)
             }
             composable("watchlist") {
-                val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
-                val wishlistViewModel: WishlistViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                    factory = object : ViewModelProvider.Factory {
-                        @Suppress("UNCHECKED_CAST")
-                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                            return WishlistViewModel(
-                                wishlistRepository = WishlistRepository(context = context),
-                                userIdProvider = { deviceUserId }
-                            ) as T
-                        }
-                    }
-                )
                 WishlistScreen(
                     viewModel = wishlistViewModel
                 )
             }
             composable("watchlist/detail/{itemId}") { backStackEntry ->
-                val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
-                val wishlistViewModel: WishlistViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                    factory = object : ViewModelProvider.Factory {
-                        @Suppress("UNCHECKED_CAST")
-                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                            return WishlistViewModel(
-                                wishlistRepository = WishlistRepository(context = context),
-                                userIdProvider = { deviceUserId }
-                            ) as T
-                        }
-                    }
-                )
                 val itemId = backStackEntry.arguments?.getString("itemId")?.toIntOrNull() ?: -1
                 WishlistDetailScreen(itemId = itemId, onBack = { navController.popBackStack() }, viewModel = wishlistViewModel)
             }
             composable("advanced_search") { com.ddaeany0919.insightdeal.presentation.search.AdvancedSearchScreen(navController) }
             composable("category") { com.ddaeany0919.insightdeal.presentation.category.CategoryScreen(navController = navController, homeViewModel = homeViewModel) }
+            composable("category_detail/{categoryName}") { backStackEntry ->
+                val encodedCategoryName = backStackEntry.arguments?.getString("categoryName") ?: "기타"
+                val categoryName = java.net.URLDecoder.decode(encodedCategoryName, "UTF-8")
+                val viewModel: com.ddaeany0919.insightdeal.presentation.home.HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+                com.ddaeany0919.insightdeal.presentation.category.CategoryDetailScreen(
+                    categoryName = categoryName,
+                    viewModel = viewModel,
+                    navController = navController
+                )
+            }
             composable("community") { com.ddaeany0919.insightdeal.presentation.community.CommunityScreen() }
             composable("alerts") { com.ddaeany0919.insightdeal.presentation.alerts.AlertsScreen(deviceUserId = deviceUserId) }
             composable("mypage") { 

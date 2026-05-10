@@ -42,14 +42,16 @@ fun CategoryScreen(navController: NavController? = null, homeViewModel: HomeView
             "상품권" to "💳",
             "패키지/이용권" to "🎟",
             "여행.해외핫딜" to "✈️",
+            "적립" to "💰",
+            "이벤트" to "🎉",
             "기타" to "📦"
         )
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
@@ -58,18 +60,13 @@ fun CategoryScreen(navController: NavController? = null, homeViewModel: HomeView
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(1f),
+                        .aspectRatio(1.2f),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                    shape = RoundedCornerShape(12.dp),
                     onClick = {
-                        homeViewModel?.selectCategory(name)
-                        navController?.navigate("home") {
-                            popUpTo(navController.graph.id) {
-                                inclusive = true
-                            }
-                            launchSingleTop = true
-                        }
+                        val encodedName = java.net.URLEncoder.encode(name, "UTF-8")
+                        navController?.navigate("category_detail/$encodedName")
                     }
                 ) {
                     Column(
@@ -79,12 +76,12 @@ fun CategoryScreen(navController: NavController? = null, homeViewModel: HomeView
                     ) {
                         Text(
                             text = emoji,
-                            fontSize = 32.sp,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            fontSize = 28.sp,
+                            modifier = Modifier.padding(bottom = 6.dp)
                         )
                         Text(
                             text = name,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
                         )

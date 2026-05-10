@@ -41,11 +41,25 @@ import java.util.Locale
 import java.util.TimeZone
 import com.ddaeany0919.insightdeal.network.ApiService
 
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistViewModel
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistUiState
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewModel()) {
+fun HomeScreen(
+    navController: NavController, 
+    viewModel: HomeViewModel = viewModel(),
+    wishlistViewModel: WishlistViewModel? = null
+) {
     val filterState by viewModel.filterState.collectAsState()
     val selectedCategory = filterState.category
+    
+    val wishlistState by wishlistViewModel?.uiState?.collectAsState(initial = WishlistUiState.Loading) ?: mutableStateOf(WishlistUiState.Loading)
+    val wishlistedUrls = remember(wishlistState) {
+        if (wishlistState is WishlistUiState.Success) {
+            (wishlistState as WishlistUiState.Success).items.map { it.productUrl }.toSet()
+        } else emptySet()
+    }
     
     val context = LocalContext.current
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
@@ -130,7 +144,6 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                 }
             },
             actions = {
-                IconButton(onClick = { navController.navigate("advanced_search") }) { Icon(Icons.Default.Search, "검색") }
                 IconButton(onClick = { showCoupangDialog = true }) { Icon(Icons.Default.ShoppingCart, "쿠팡 연동") }
                 IconButton(onClick = { showKeywordDialog = true }) { Icon(Icons.Default.NotificationsActive, "키워드 알림") }
             }
@@ -266,6 +279,17 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                                     onOpenUrl = { url ->
                                         val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")
                                         navController.navigate("webview/$encodedUrl")
+                                    },
+                                    isWishlisted = wishlistedUrls.contains(deal.postUrl ?: deal.ecommerceUrl ?: ""),
+                                    onToggleWishlist = { 
+                                        wishlistViewModel?.let { vm ->
+                                            if (wishlistedUrls.contains(deal.postUrl ?: deal.ecommerceUrl ?: "")) {
+                                                val item = (wishlistState as? WishlistUiState.Success)?.items?.find { it.productUrl == (deal.postUrl ?: deal.ecommerceUrl) }
+                                                if (item != null) vm.deleteItem(item)
+                                            } else {
+                                                vm.addItem(deal.title, deal.postUrl ?: deal.ecommerceUrl ?: "", deal.price)
+                                            }
+                                        }
                                     }
                                 )
                             }
@@ -322,7 +346,13 @@ fun HomeDealCardSkeleton() {
 // Removed getTimeAgo (use rememberRelativeTime from StringUtils.kt instead)
 
 @Composable
-fun DealCardComposable(deal: DealItem, onDetailClick: () -> Unit = {}, onOpenUrl: (String) -> Unit = {}) {
+fun DealCardComposable(
+    deal: DealItem, 
+    onDetailClick: () -> Unit = {}, 
+    onOpenUrl: (String) -> Unit = {},
+    isWishlisted: Boolean = false,
+    onToggleWishlist: () -> Unit = {}
+) {
     var isExpanded by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
 
@@ -469,9 +499,19 @@ fun DealCardComposable(deal: DealItem, onDetailClick: () -> Unit = {}, onOpenUrl
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).padding(end = 8.dp),
                             textDecoration = if (deal.isClosed) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
                         )
+                        IconButton(
+                            onClick = onToggleWishlist,
+                            modifier = Modifier.size(24.dp).padding(end = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isWishlisted) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                contentDescription = "관심목록 추가/제거",
+                                tint = if (isWishlisted) Color(0xFFE91E63) else Color.Gray
+                            )
+                        }
                         val timeAgo = rememberRelativeTime(deal.createdAt)
                         if (timeAgo.isNotEmpty()) {
                             Surface(

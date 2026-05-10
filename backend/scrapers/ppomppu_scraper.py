@@ -55,7 +55,9 @@ class PpomppuScraper(AsyncBaseScraper):
             full_title = title_el.get_text(strip=True)
             if not full_title or "공지" in full_title or "질문" in full_title or "문의" in full_title: return None
                  
-            link_el = row.select_one('a') if not title_el.has_attr('href') else title_el
+            link_el = title_el if title_el.has_attr('href') else title_el.find_parent('a')
+            if not link_el or not link_el.get('href'):
+                link_el = row.select_one('a')
             if not link_el or not link_el.get('href'): return None
                 
             href = link_el.get('href')

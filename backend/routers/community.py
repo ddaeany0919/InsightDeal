@@ -255,7 +255,13 @@ async def get_hot_deals(
             
         if keyword and keyword.strip():
             search = f"%{keyword.strip()}%"
-            query = query.filter(models.Deal.title.ilike(search))
+            from sqlalchemy import or_
+            query = query.filter(
+                or_(
+                    models.Deal.title.ilike(search),
+                    models.Deal.search_keywords.ilike(search)
+                )
+            )
             
         if platform and platform not in ["전체", ""]:
             # DB의 communities.name 또는 display_name 필터링
