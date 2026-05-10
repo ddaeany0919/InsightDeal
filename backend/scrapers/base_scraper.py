@@ -134,21 +134,33 @@ class AsyncBaseScraper(ABC):
                     h, m = int(parts[0]), int(parts[1])
                     s = int(parts[2]) if len(parts) > 2 else 0
                     posted_dt_kst = now_kst.replace(hour=h, minute=m, second=s, microsecond=0)
-                    if posted_dt_kst > now_kst:
+                    # 만약 미래 시간이면 (서버 시간 오차 고려하여 1시간 이상 미래일 때만) 작년/어제로 간주
+                    if posted_dt_kst > now_kst + timedelta(hours=1):
                         posted_dt_kst -= timedelta(days=1)
             else:
                 # 2024.04.28 or 04.28 or 24/04/28 12:34:56
-                date_match = re.search(r'(\d{2,4})[/.-](\d{1,2})[/.-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?', time_str)
+                # Must match strict date separators to prevent grabbing "11 - 0"
+                date_match = re.search(r'(?:(\d{2,4})[/.-])?(\d{1,2})[/.-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?', time_str)
                 if date_match:
-                    y, month, d = int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3))
-                    if y < 100: y += 2000
-                    h = int(date_match.group(4)) if date_match.group(4) else 0
-                    m_val = int(date_match.group(5)) if date_match.group(5) else 0
-                    s_val = int(date_match.group(6)) if date_match.group(6) else 0
-                    posted_dt_kst = datetime(y, month, d, h, m_val, s_val, tzinfo=kst)
-                    # 만약 미래 시간이면 작년으로 간주
-                    if posted_dt_kst and posted_dt_kst > now_kst:
-                        posted_dt_kst = posted_dt_kst.replace(year=posted_dt_kst.year - 1)
+                    y_str = date_match.group(1)
+                    if not y_str:
+                        y = now_kst.year
+                    else:
+                        y = int(y_str)
+                        if y < 100: y += 2000
+                    month, d = int(date_match.group(2)), int(date_match.group(3))
+                    
+                    if 1 <= month <= 12 and 1 <= d <= 31:
+                        h = int(date_match.group(4)) if date_match.group(4) else 0
+                        m_val = int(date_match.group(5)) if date_match.group(5) else 0
+                        s_val = int(date_match.group(6)) if date_match.group(6) else 0
+                        try:
+                            posted_dt_kst = datetime(y, month, d, h, m_val, s_val, tzinfo=kst)
+                            # 만약 미래 시간이면 작년으로 간주
+                            if posted_dt_kst and posted_dt_kst > now_kst:
+                                posted_dt_kst = posted_dt_kst.replace(year=posted_dt_kst.year - 1)
+                        except ValueError:
+                            pass
             
             if posted_dt_kst:
                 utc_dt = posted_dt_kst.astimezone(timezone.utc)

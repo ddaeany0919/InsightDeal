@@ -3,8 +3,8 @@ import requests
 import json
 import logging
 
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent'
+# Removed global GOOGLE_API_KEY
+GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1/models/gemini-flash-latest:generateContent'
 
 class AIProductNameService:
     @staticmethod
@@ -19,8 +19,10 @@ class AIProductNameService:
         Returns:
             dict: {'1': '정상', '2': '비정상(낱개)', ...}
         """
-        if not GOOGLE_API_KEY:
-            logging.error("[AI] GOOGLE_API_KEY가 설정되지 않았습니다. 모든 상품을 정상으로 처리합니다.")
+        from backend.core.ai_utils import get_random_gemini_key
+        api_key = get_random_gemini_key()
+        if not api_key:
+            logging.error("[AI] API Key가 설정되지 않았습니다. 모든 상품을 정상으로 처리합니다.")
             return {str(item['index']): "정상" for item in items}
         
         prompt = f"""
@@ -57,37 +59,55 @@ key는 상품 번호(문자열), value는 '정상' 또는 '비정상(사유)'로
             "Content-Type": "application/json"
         }
         
-        try:
-            url = f"{GEMINI_ENDPOINT}?key={GOOGLE_API_KEY}"
-            logging.info(f"[AI] Gemini API 호출 중... (상품 {len(items)}개)")
-            
-            response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
-            
-            if response.status_code != 200:
-                logging.error(f"[AI] Gemini API 오류: {response.status_code} - {response.text}")
+        max_retries = 3
+        for attempt in range(max_retries):
+            from backend.core.ai_utils import get_random_gemini_key
+            import time
+            api_key = get_random_gemini_key()
+            if not api_key:
+                logging.error("[AI] API Key가 설정되지 않았습니다. 모든 상품을 정상으로 처리합니다.")
                 return {str(item['index']): "정상" for item in items}
-            
-            content = response.json()
-            text = content['candidates'][0]['content']['parts'][0]['text']
-            logging.info(f"[AI] Gemini 응답: {text[:200]}...")
-            
-            # JSON 부분만 추출
-            start = text.find('{')
-            end = text.rfind('}')
-            
-            if start == -1 or end == -1:
-                logging.error("[AI] JSON을 찾을 수 없습니다. 모든 상품을 정상으로 처리합니다.")
+                
+            try:
+                url = f"{GEMINI_ENDPOINT}?key={api_key}"
+                logging.info(f"[AI] Gemini API 호출 중... (상품 {len(items)}개, attempt {attempt+1})")
+                
+                response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
+                
+                if response.status_code != 200:
+                    if response.status_code == 429 and attempt < max_retries - 1:
+                        logging.warning("Gemini 429 Error in ProductService. Rotating key...")
+                        time.sleep(1)
+                        continue
+                    logging.error(f"[AI] Gemini API 오류: {response.status_code} - {response.text}")
+                    return {str(item['index']): "정상" for item in items}
+                
+                content = response.json()
+                text = content['candidates'][0]['content']['parts'][0]['text']
+                logging.info(f"[AI] Gemini 응답: {text[:200]}...")
+                
+                # JSON 부분만 추출
+                start = text.find('{')
+                end = text.rfind('}')
+                
+                if start == -1 or end == -1:
+                    logging.error("[AI] JSON을 찾을 수 없습니다. 모든 상품을 정상으로 처리합니다.")
+                    return {str(item['index']): "정상" for item in items}
+                
+                json_str = text[start:end+1]
+                judgment = json.loads(json_str)
+                
+                logging.info(f"[AI] 판단 결과: {judgment}")
+                return judgment
+                
+            except Exception as e:
+                if "429" in str(e) and attempt < max_retries - 1:
+                    time.sleep(1)
+                    continue
+                logging.error(f"[AI] 예외 발생: {str(e)}", exc_info=True)
                 return {str(item['index']): "정상" for item in items}
-            
-            json_str = text[start:end+1]
-            judgment = json.loads(json_str)
-            
-            logging.info(f"[AI] 판단 결과: {judgment}")
-            return judgment
-            
-        except Exception as e:
-            logging.error(f"[AI] 예외 발생: {str(e)}", exc_info=True)
-            return {str(item['index']): "정상" for item in items}
+                
+        return {str(item['index']): "정상" for item in items}
     
     @staticmethod
     def extract_core_keyword(product_title: str) -> str:
@@ -95,41 +115,54 @@ key는 상품 번호(문자열), value는 '정상' 또는 '비정상(사유)'로
         상품명에서 핵심 키워드만 추출 (Gemini AI 활용)
         예: '삼성전자 갤럭시버즈3 프로 SM-R630 정품 국내정식 새상품' -> '갤럽시버즈3 프로'
         """
-        if not GOOGLE_API_KEY:
-            logging.error("[AI] GOOGLE_API_KEY가 설정되지 않았습니다.")
-            return product_title[:30]  # 기본: 앞 30자
-        
-        prompt = f"""
-다음 상품명에서 핵심 키워드만 추출해주세요.
-불필요한 단어(새상품, 정품, 국내정식, SM-XXX, 색상, 용량 등)는 제거하고, 
-제품명과 모델명만 간결하게 추출해주세요.
-
-상품명: {product_title}
-
-키워드만 텍스트로 답변하세요. JSON 형식이나 다른 설명 없이 키워드만 반환하세요.
-"""
-        
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}]
-        }
-        headers = {
-            "Content-Type": "application/json"
-        }
-        
-        try:
-            url = f"{GEMINI_ENDPOINT}?key={GOOGLE_API_KEY}"
-            response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
+        max_retries = 3
+        for attempt in range(max_retries):
+            from backend.core.ai_utils import get_random_gemini_key
+            import time
+            api_key = get_random_gemini_key()
+            if not api_key:
+                logging.error("[AI] GOOGLE_API_KEY가 설정되지 않았습니다.")
+                return product_title[:30]  # 기본: 앞 30자
             
-            if response.status_code != 200:
-                logging.error(f"[AI_KEYWORD] Gemini API 오류: {response.status_code}")
+            prompt = f"""
+    다음 상품명에서 핵심 키워드만 추출해주세요.
+    불필요한 단어(새상품, 정품, 국내정식, SM-XXX, 색상, 용량 등)는 제거하고, 
+    제품명과 모델명만 간결하게 추출해주세요.
+    
+    상품명: {product_title}
+    
+    키워드만 텍스트로 답변하세요. JSON 형식이나 다른 설명 없이 키워드만 반환하세요.
+    """
+            
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}]
+            }
+            headers = {
+                "Content-Type": "application/json"
+            }
+            
+            try:
+                url = f"{GEMINI_ENDPOINT}?key={api_key}"
+                response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
+                
+                if response.status_code != 200:
+                    if response.status_code == 429 and attempt < max_retries - 1:
+                        time.sleep(1)
+                        continue
+                    logging.error(f"[AI_KEYWORD] Gemini API 오류: {response.status_code}")
+                    return product_title[:30]
+                
+                content = response.json()
+                keyword = content['candidates'][0]['content']['parts'][0]['text'].strip()
+                
+                logging.info(f"[AI_KEYWORD] 추출 결과: '{product_title}' -> '{keyword}'")
+                return keyword
+                
+            except Exception as e:
+                if "429" in str(e) and attempt < max_retries - 1:
+                    time.sleep(1)
+                    continue
+                logging.error(f"[AI_KEYWORD] 예외 발생: {str(e)}")
                 return product_title[:30]
-            
-            content = response.json()
-            keyword = content['candidates'][0]['content']['parts'][0]['text'].strip()
-            
-            logging.info(f"[AI_KEYWORD] 추출 결과: '{product_title}' -> '{keyword}'")
-            return keyword
-            
-        except Exception as e:
-            logging.error(f"[AI_KEYWORD] 예외 발생: {str(e)}")
-            return product_title[:30]
+                
+        return product_title[:30]

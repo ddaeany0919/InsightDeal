@@ -13,9 +13,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import androidx.navigation.NavController
+import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CategoryScreen() {
+fun CategoryScreen(navController: NavController? = null, homeViewModel: HomeViewModel? = null) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -28,17 +31,17 @@ fun CategoryScreen() {
         }
     ) { paddingValues ->
         val categories = listOf(
-            "디지털/가전" to "💻",
-            "식품/배달" to "🍔",
-            "게임/SW" to "🎮",
-            "패션/의류" to "👕",
-            "뷰티/미용" to "💄",
-            "생활/주방" to "🍳",
-            "가구/인테리어" to "🛏️",
-            "도서/교육" to "📚",
-            "스포츠/레저" to "⚽",
-            "반려동물" to "🐶",
-            "여행/숙박" to "✈️",
+            "음식" to "🍔",
+            "SW/게임" to "🎮",
+            "PC제품" to "💻",
+            "가전제품" to "📺",
+            "생활용품" to "🧻",
+            "의류" to "👕",
+            "화장품" to "💄",
+            "모바일/기프티콘" to "📱",
+            "상품권" to "💳",
+            "패키지/이용권" to "🎟",
+            "여행.해외핫딜" to "✈️",
             "기타" to "📦"
         )
 
@@ -59,7 +62,15 @@ fun CategoryScreen() {
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                     shape = RoundedCornerShape(16.dp),
-                    onClick = { /* TODO: 카테고리 필터 적용 */ }
+                    onClick = {
+                        homeViewModel?.selectCategory(name)
+                        navController?.navigate("home") {
+                            popUpTo(navController.graph.id) {
+                                inclusive = true
+                            }
+                            launchSingleTop = true
+                        }
+                    }
                 ) {
                     Column(
                         modifier = Modifier.fillMaxSize(),

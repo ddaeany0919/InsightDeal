@@ -221,7 +221,7 @@ interface ApiService {
     @GET("/api/health")
     suspend fun healthCheck(): Response<HealthResponse>
 
-    @GET("/api/community/hot-deals")
+    @GET("api/community/hot-deals")
     suspend fun getCommunityHotDeals(
         @Query("limit") limit: Int = 20,
         @Query("offset") offset: Int = 0,
@@ -229,6 +229,9 @@ interface ApiService {
         @Query("keyword") keyword: String? = null,
         @Query("platform") platform: String? = null
     ): Response<HotDealsResponse>
+    
+    @GET("api/community/top-hot-deals")
+    suspend fun getTopHotDeals(): Response<HotDealsResponse>
     
     @GET("api/community/hot-deals")
     suspend fun getHotDealsDto(

@@ -2,6 +2,7 @@ package com.ddaeany0919.insightdeal.presentation
 
 import com.ddaeany0919.insightdeal.presentation.formatPrice
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -268,49 +269,81 @@ private fun PriceHistoryInteractiveCard(history: List<PriceHistoryPoint>) {
 
 @Composable
 private fun AIBuyerGuide(priceHistory: List<PriceHistoryPoint>, currentPrice: Int) {
-    // 데이터가 2개 이하이면 유의미한 분석이 불가능하므로 가이드를 숨기거나 간단한 안내만 제공합니다.
     if (priceHistory.size <= 2 || currentPrice == 0) return
 
     val minPrice = priceHistory.minOfOrNull { it.price } ?: currentPrice
+    val maxPrice = priceHistory.maxOfOrNull { it.price } ?: currentPrice
     val isRecordLow = currentPrice <= minPrice
+    val diffFromMax = maxPrice - currentPrice
+
+    val containerColor = if (isRecordLow) Color(0xFFF0FDF4) else Color(0xFFF8FAFC)
+    val borderColor = if (isRecordLow) Color(0xFF4ADE80) else Color(0xFFE2E8F0)
+    val titleColor = if (isRecordLow) Color(0xFF166534) else Color(0xFF334155)
 
     Card(
-        elevation = CardDefaults.cardElevation(0.dp),
+        elevation = CardDefaults.cardElevation(2.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isRecordLow) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-        ),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = BorderStroke(1.dp, borderColor),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.Insights, 
-                    contentDescription = null, 
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "AI 구매 가이드", 
-                    style = MaterialTheme.typography.titleMedium, 
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isRecordLow) Color(0xFFDCFCE7) else Color(0xFFE2E8F0),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.Insights, 
+                            contentDescription = "AI", 
+                            tint = titleColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "AI 구매 타점 분석", 
+                        style = MaterialTheme.typography.titleMedium, 
+                        fontWeight = FontWeight.ExtraBold,
+                        color = titleColor
+                    )
+                    Text(
+                        if (isRecordLow) "강력 매수 권장" else "관망 또는 목표가 대기",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isRecordLow) Color(0xFF22C55E) else Color(0xFF64748B),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = borderColor.copy(alpha = 0.5f))
+            Spacer(Modifier.height(16.dp))
             
             if (isRecordLow) {
                 Text(
-                    "역대 최저가 방어선 갱신! 훌륭한 구매 타이밍입니다.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold
+                    "🔥 역대 최저가 갱신!",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color(0xFFDC2626),
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "현재 가격은 수집된 역사상 가장 낮은 가격입니다. 고점 대비 ${String.format("%,d", diffFromMax)}원 저렴하며, 품절되기 전에 구매하는 것을 강력히 추천합니다.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF334155),
+                    lineHeight = 22.sp
                 )
             } else {
+                val percentage = if (maxPrice > 0) ((currentPrice.toFloat() - minPrice.toFloat()) / (maxPrice.toFloat() - minPrice.toFloat()) * 100).toInt() else 50
                 Text(
-                     "현재 가격은 전체 변동의 일정 구간에 위치합니다. 조금 더 관망하거나 알림 설정을 하는 것을 추천합니다.",
+                     "현재 가격은 변동 구간의 상위 ${percentage}%에 위치합니다. 급하지 않다면 '목표가 알림'을 설정하여 더 저렴해질 때 구매하세요.",
                      style = MaterialTheme.typography.bodyMedium,
-                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                     color = Color(0xFF475569),
+                     lineHeight = 22.sp
                 )
             }
         }
@@ -467,10 +500,12 @@ fun DealHeader(deal: DealItem) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = deal.contentHtml.replace(Regex("<[^>]*>"), "").trim(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(16.dp),
-                        lineHeight = 22.sp
+                        text = deal.contentHtml,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 22.sp
+                        ),
+                        modifier = Modifier.padding(16.dp)
                     )
                 }
             }

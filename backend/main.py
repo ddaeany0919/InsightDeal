@@ -55,6 +55,10 @@ app.include_router(community.router, prefix="/api/community", tags=["community"]
 app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(push.router, prefix="/api/push", tags=["push"])
 
+# 관리자 페이지 라우터 등록
+from routers import admin
+app.include_router(admin.router, prefix="/admin", tags=["admin"])
+
 from fastapi.responses import Response
 import httpx
 

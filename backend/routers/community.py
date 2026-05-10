@@ -48,6 +48,143 @@ def extract_price(price_str):
     if nums: return int(''.join(nums))
     return 0
 
+def extract_shipping_fee(fee_str):
+    if not fee_str: return 0
+    if '무료' in str(fee_str) or '무배' in str(fee_str): return 0
+    nums = re.findall(r'\d+', str(fee_str))
+    if nums: return int(''.join(nums))
+    return 0
+
+@router.get("/top-hot-deals")
+async def get_top_hot_deals(db: Session = Depends(get_db_session)):
+    try:
+        from sqlalchemy import and_
+        query = db.query(models.Deal).join(models.Community)
+        time_limit = datetime.now() - timedelta(hours=24)
+        
+        deals = query.filter(
+            and_(
+                models.Deal.honey_score >= 100,
+                models.Deal.indexed_at >= time_limit,
+                models.Deal.is_closed == False,
+                models.Deal.category != "적립",
+                models.Deal.category != "이벤트",
+                models.Deal.category != "적립/이벤트"
+            )
+        ).order_by(models.Deal.indexed_at.desc()).limit(200).all()
+
+        COMMUNITY_MAP = {
+            "fmkorea": "펨코", "ppomppu": "뽐뿌", "ruliweb": "루리웹",
+            "clien": "클리앙", "quasarzone": "퀘이사존", "ali_ppomppu": "알리뽐뿌",
+            "bbasak_domestic": "빠삭국내", "bbasak_overseas": "빠삭해외"
+        }
+
+        cluster_map = {}
+        grouped_result = []
+
+        for deal in deals:
+            comp_name = getattr(deal.community, 'display_name', None) or COMMUNITY_MAP.get(deal.community.name, deal.community.name)
+            parsed_price_int = extract_price(deal.price)
+            parsed_shipping_fee = extract_shipping_fee(deal.shipping_fee)
+            total_price = parsed_price_int + parsed_shipping_fee if parsed_price_int > 0 else 0
+            
+            if deal.base_product_name:
+                base_str = deal.base_product_name
+                is_ai_parsed = True
+            else:
+                base_str = re.sub(r'\[.*?\]|\(.*?\)', '', deal.title)
+                is_ai_parsed = False
+                
+            clean_cluster = re.sub(r'(삼성|samsung|엘지|lg|애플|apple|소니|sony|닌텐도|nintendo|레노버|lenovo|에이수스|아수스|asus|롯데|농심|오리온|특가|무료배송|무배)', '', base_str, flags=re.IGNORECASE)
+            clean_cluster = re.sub(r'(통|병|개|박스|팩|매|장|봉|봉지|캔|페트|입)', '', clean_cluster)
+            norm_title = re.sub(r'[^가-힣a-zA-Z0-9]', '', clean_cluster).lower()
+            if not is_ai_parsed and len(norm_title) > 15:
+                norm_title = norm_title[:15]
+            
+            if norm_title in cluster_map:
+                existing = cluster_map[norm_title]
+                if total_price > 0:
+                    if existing.get("total_price", 0) == 0 or total_price < existing["total_price"]:
+                        # 더 싼 딜이 발견되면 비싼 딜의 출처를 지우고 새로운 최저가 출처로 덮어씀
+                        existing["price"] = parsed_price_int
+                        existing["shipping_fee"] = deal.shipping_fee or ""
+                        existing["total_price"] = total_price
+                        existing["site_names"] = [comp_name]
+                        existing["site_name"] = comp_name
+                        existing["sources"] = [{"site_name": comp_name, "post_url": deal.post_link or ""}]
+                        existing["is_closed"] = getattr(deal, 'is_closed', False)
+                    elif total_price == existing["total_price"]:
+                        # 최저가와 가격이 동일할 때만 출처 배지 추가
+                        if not any(s['site_name'] == comp_name for s in existing.get("sources", [])):
+                            existing["site_names"].append(comp_name)
+                            existing["site_name"] = ", ".join(existing["site_names"])
+                            existing.setdefault("sources", []).append({
+                                "site_name": comp_name, 
+                                "post_url": deal.post_link or ""
+                            })
+                        # 최저가 동일 그룹 중 하나라도 살아있다면 전체 딜은 살아있는 것으로 처리
+                        if not getattr(deal, 'is_closed', False):
+                            existing["is_closed"] = False
+                else:
+                    if existing.get("total_price", 0) == 0:
+                        if not any(s['site_name'] == comp_name for s in existing.get("sources", [])):
+                            existing["site_names"].append(comp_name)
+                            existing["site_name"] = ", ".join(existing["site_names"])
+                            existing.setdefault("sources", []).append({
+                                "site_name": comp_name, 
+                                "post_url": deal.post_link or ""
+                            })
+                        if not getattr(deal, 'is_closed', False):
+                            existing["is_closed"] = False
+                    
+                # 다수의 중복 딜 중 하나라도 핫딜이면 핫딜 상태 병합
+                if getattr(deal, 'honey_score', 0) >= 100:
+                    existing["honey_score"] = max(existing.get("honey_score", 0), 100)
+                if deal.ai_summary and "🔥" in deal.ai_summary:
+                    if not existing.get("ai_summary"):
+                        existing["ai_summary"] = "🔥 [커뮤니티 인증 핫딜] "
+                    elif "🔥" not in existing["ai_summary"]:
+                        existing["ai_summary"] = "🔥 [커뮤니티 인증 핫딜] " + existing["ai_summary"]
+            else:
+                ai_sum = deal.ai_summary
+                # Clean title for display
+                clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:원|달러|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
+                
+                deal_dict = {
+                    "id": deal.id,
+                    "title": clean_title,
+                    "price": parsed_price_int,
+                    "shipping_fee": deal.shipping_fee or "",
+                    "total_price": total_price,
+                    "currency": getattr(deal, 'currency', 'KRW') or 'KRW',
+                    "original_price": None,
+                    "discount_rate": 0,
+                    "image_url": deal.image_url,
+                    "ecommerce_url": deal.ecommerce_link or "",
+                    "post_url": deal.post_link or "",
+                    "site_name": comp_name,
+                    "site_names": [comp_name],
+                    "sources": [{"site_name": comp_name, "post_url": deal.post_link or ""}],
+                    "shipping_fee": deal.shipping_fee or "",
+                    "category": deal.category or "기타",
+                    "created_at": deal.indexed_at.isoformat() if deal.indexed_at else None,
+                    "view_count": deal.view_count or 0,
+                    "like_count": deal.like_count or 0,
+                    "comment_count": deal.comment_count or 0,
+                    "dislike_count": 0,
+                    "tags": [],
+                    "is_closed": deal.is_closed,
+                    "honey_score": deal.honey_score or 0,
+                    "ai_summary": ai_sum,
+                }
+                cluster_map[norm_title] = deal_dict
+                grouped_result.append(deal_dict)
+        
+        return {"deals": grouped_result}
+    except Exception as e:
+        logger.error(f"Error fetching top hot deals: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
 @router.get("/hot-deals")
 async def get_hot_deals(
     limit: int = 20,
@@ -97,8 +234,8 @@ async def get_hot_deals(
             query = query.filter(or_(*filter_conditions))
         else:
             from sqlalchemy import and_
-            # 전체 탭일 경우 '적립' 카테고리만 숨김 처리 (이벤트는 노출)
-            query = query.filter(and_(models.Deal.category != "적립", models.Deal.category != "적립/이벤트"))
+            # 전체 탭일 경우 '적립' 및 '이벤트' 카테고리 숨김 처리 (순수 핫딜만 노출)
+            query = query.filter(and_(models.Deal.category != "적립", models.Deal.category != "적립/이벤트", models.Deal.category != "이벤트"))
             
         if keyword and keyword.strip():
             search = f"%{keyword.strip()}%"
@@ -136,33 +273,70 @@ async def get_hot_deals(
         grouped_result = []
 
         for deal in deals:
-            # 제목 클러스터링 정규화 (쇼핑몰 태그, 괄호 내용, 단위 제거)
-            clean_cluster = re.sub(r'\[.*?\]|\(.*?\)', '', deal.title)
-            clean_cluster = re.sub(r'(통|병|개|박스|팩|매|장|봉|봉지|캔|페트)', '', clean_cluster)
+            # 제목 클러스터링 정규화 (base_product_name 우선 사용)
+            if deal.base_product_name:
+                base_str = deal.base_product_name
+                is_ai_parsed = True
+            else:
+                base_str = re.sub(r'\[.*?\]|\(.*?\)', '', deal.title)
+                is_ai_parsed = False
+                
+            clean_cluster = re.sub(r'(삼성|samsung|엘지|lg|애플|apple|소니|sony|닌텐도|nintendo|레노버|lenovo|에이수스|아수스|asus|롯데|농심|오리온|특가|무료배송|무배)', '', base_str, flags=re.IGNORECASE)
+            clean_cluster = re.sub(r'(통|병|개|박스|팩|매|장|봉|봉지|캔|페트|입)', '', clean_cluster)
             norm_title = re.sub(r'[^가-힣a-zA-Z0-9]', '', clean_cluster).lower()
-            if len(norm_title) > 8: norm_title = norm_title[:15]
+            if not is_ai_parsed and len(norm_title) > 15:
+                norm_title = norm_title[:15]
             
             comp_name = getattr(deal.community, 'display_name', None) or COMMUNITY_MAP.get(deal.community.name, deal.community.name)
 
             if norm_title in cluster_map:
                 existing = cluster_map[norm_title]
-                if not any(s['site_name'] == comp_name for s in existing.get("sources", [])):
-                    existing["site_names"].append(comp_name)
-                    existing["site_name"] = ", ".join(existing["site_names"])
-                    existing.setdefault("sources", []).append({
-                        "site_name": comp_name, 
-                        "post_url": deal.post_link or ""
-                    })
-                
-                # 병합 시 여러 커뮤니티 중 "가장 저렴한 가격"으로 노출 (0원 제외)
                 parsed_price_int = extract_price(deal.price)
-                if parsed_price_int > 0 and (existing["price"] == 0 or parsed_price_int < existing["price"]):
-                    existing["price"] = parsed_price_int
+                parsed_shipping_fee = extract_shipping_fee(deal.shipping_fee)
+                total_price = parsed_price_int + parsed_shipping_fee if parsed_price_int > 0 else 0
                 
-                # 병합 시 하나라도 종료되었으면 전체를 종료로 표시하거나, 반대로 짤 수 있음
-                # 보수적으로 하나라도 종료 상태면 종료로 반영
-                if getattr(deal, 'is_closed', False):
-                    existing["is_closed"] = True
+                if total_price > 0:
+                    if existing.get("total_price", 0) == 0 or total_price < existing["total_price"]:
+                        # 더 싼 딜이 발견되면 비싼 딜의 출처를 지우고 새로운 최저가 출처로 덮어씀
+                        existing["price"] = parsed_price_int
+                        existing["shipping_fee"] = deal.shipping_fee or ""
+                        existing["total_price"] = total_price
+                        existing["site_names"] = [comp_name]
+                        existing["site_name"] = comp_name
+                        existing["sources"] = [{"site_name": comp_name, "post_url": deal.post_link or ""}]
+                        existing["is_closed"] = getattr(deal, 'is_closed', False)
+                    elif total_price == existing["total_price"]:
+                        # 최저가와 가격이 동일할 때만 출처 배지 추가
+                        if not any(s['site_name'] == comp_name for s in existing.get("sources", [])):
+                            existing["site_names"].append(comp_name)
+                            existing["site_name"] = ", ".join(existing["site_names"])
+                            existing.setdefault("sources", []).append({
+                                "site_name": comp_name, 
+                                "post_url": deal.post_link or ""
+                            })
+                        # 최저가 동일 그룹 중 하나라도 살아있다면 전체 딜은 살아있는 것으로 처리
+                        if not getattr(deal, 'is_closed', False):
+                            existing["is_closed"] = False
+                else:
+                    if existing.get("total_price", 0) == 0:
+                        if not any(s['site_name'] == comp_name for s in existing.get("sources", [])):
+                            existing["site_names"].append(comp_name)
+                            existing["site_name"] = ", ".join(existing["site_names"])
+                            existing.setdefault("sources", []).append({
+                                "site_name": comp_name, 
+                                "post_url": deal.post_link or ""
+                            })
+                        if not getattr(deal, 'is_closed', False):
+                            existing["is_closed"] = False
+                
+                # 다수의 중복 딜 중 하나라도 핫딜이면 핫딜 상태 병합
+                if getattr(deal, 'honey_score', 0) >= 100:
+                    existing["honey_score"] = max(existing.get("honey_score", 0), 100)
+                if deal.ai_summary and "🔥" in deal.ai_summary:
+                    if not existing.get("ai_summary"):
+                        existing["ai_summary"] = "🔥 [커뮤니티 인증 핫딜] "
+                    elif "🔥" not in existing["ai_summary"]:
+                        existing["ai_summary"] = "🔥 [커뮤니티 인증 핫딜] " + existing["ai_summary"]
             else:
                 image_url = deal.image_url
                 if image_url:
@@ -185,15 +359,16 @@ async def get_hot_deals(
                 
                 # 원본 가격 유지 (Int 포맷터에 넘기기 전)
                 parsed_price_int = extract_price(deal.price)
+                parsed_shipping_fee = extract_shipping_fee(deal.shipping_fee)
+                total_price = parsed_price_int + parsed_shipping_fee if parsed_price_int > 0 else 0
 
                 deal_dict = {
                     "id": deal.id,
                     "title": clean_title,
                     "price": parsed_price_int,
+                    "shipping_fee": deal.shipping_fee or "",
+                    "total_price": total_price,
                     "currency": getattr(deal, 'currency', 'KRW') or 'KRW',
-                    "original_price": None, 
-                    "discount_rate": 0,
-                    "shipping_fee": deal.shipping_fee,
                     "image_url": image_url,
                     "ecommerce_url": deal.ecommerce_link or "",
                     "post_url": deal.post_link or "",
@@ -206,8 +381,10 @@ async def get_hot_deals(
                     "content_html": getattr(deal, "content_html", "") or "",
                     "is_closed": getattr(deal, 'is_closed', False),
                     "created_at": deal.indexed_at.isoformat() if deal.indexed_at else None,
-                    "view_count": 0, "comment_count": 0, "like_count": 0,
-                    "dislike_count": 0,
+                    "view_count": deal.view_count or 0,
+                    "comment_count": deal.comment_count or 0,
+                    "like_count": deal.like_count or 0,
+                    "dislike_count": getattr(deal, 'dislike_count', 0) or 0,
                     "tags": []
                 }
                 cluster_map[norm_title] = deal_dict

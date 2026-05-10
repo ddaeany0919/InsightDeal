@@ -198,7 +198,7 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                 WishlistDetailScreen(itemId = itemId, onBack = { navController.popBackStack() }, viewModel = wishlistViewModel)
             }
             composable("advanced_search") { com.ddaeany0919.insightdeal.presentation.search.AdvancedSearchScreen(navController) }
-            composable("category") { com.ddaeany0919.insightdeal.presentation.category.CategoryScreen() }
+            composable("category") { com.ddaeany0919.insightdeal.presentation.category.CategoryScreen(navController = navController, homeViewModel = homeViewModel) }
             composable("community") { com.ddaeany0919.insightdeal.presentation.community.CommunityScreen() }
             composable("alerts") { com.ddaeany0919.insightdeal.presentation.alerts.AlertsScreen(deviceUserId = deviceUserId) }
             composable("mypage") { 

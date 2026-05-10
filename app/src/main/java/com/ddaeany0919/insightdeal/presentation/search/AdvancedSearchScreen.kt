@@ -167,7 +167,7 @@ fun AdvancedSearchScreen(navController: NavController, viewModel: HomeViewModel 
                     }
                 } else if (dealsPagingItems.itemCount == 0) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("'$searchQuery'에 해당하는 핫딜이 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("'${searchQuery.text}'에 해당하는 핫딜이 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     Text(
@@ -184,7 +184,14 @@ fun AdvancedSearchScreen(navController: NavController, viewModel: HomeViewModel 
                         items(dealsPagingItems.itemCount) { index ->
                             val deal = dealsPagingItems[index]
                             if (deal != null) {
-                                DealCardComposable(deal = deal)
+                                DealCardComposable(
+                                    deal = deal,
+                                    onDetailClick = { navController.navigate("deal_detail/${deal.id}") },
+                                    onOpenUrl = { url ->
+                                        val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")
+                                        navController.navigate("webview/$encodedUrl")
+                                    }
+                                )
                             }
                         }
                     }

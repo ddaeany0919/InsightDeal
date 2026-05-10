@@ -12,6 +12,12 @@ class RuliwebScraper(AsyncBaseScraper):
         self.community_id = community_id
         self.list_url = "https://bbs.ruliweb.com/market/board/1020"
 
+    async def __aenter__(self):
+        # 루리웹은 IP 차단 시 타임아웃이 길게 발생하므로, 빠른 실패를 위해 timeout 단축
+        from curl_cffi.requests import AsyncSession
+        self.client = AsyncSession(impersonate='chrome124', timeout=10.0)
+        return self
+
     async def parse_list(self, html: str) -> list[dict]:
         """루리웹 핫딜/예판 게시판 데이터 추출 (비동기 처리)"""
         soup = BeautifulSoup(html, 'html.parser')

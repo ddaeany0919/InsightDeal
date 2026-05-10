@@ -86,6 +86,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
     if (pullRefreshState.isRefreshing) {
         LaunchedEffect(true) {
             dealsPagingItems.refresh()
+            viewModel.fetchTopHotDeals()
         }
     }
     LaunchedEffect(dealsPagingItems.loadState.refresh) {
@@ -135,47 +136,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
             }
         )
 
-        LazyRow(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            val categories = listOf(
-                "전체" to "🔥", 
-                "음식" to "🍔", 
-                "SW/게임" to "🎮", 
-                "PC제품" to "💻", 
-                "가전제품" to "📺", 
-                "생활용품" to "🧻", 
-                "의류" to "👕", 
-                "화장품" to "💄", 
-                "모바일/기프티콘" to "📱",
-                "상품권" to "💳", 
-                "적립" to "💰",
-                "이벤트" to "🎉",
-                "패키지/이용권" to "🎟", 
-                "여행.해외핫딜" to "✈️", 
-                "기타" to "📦"
-            )
-            items(categories.size) { index ->
-                val (category, emoji) = categories[index]
-                FilterChip(
-                    onClick = { viewModel.selectCategory(category) },
-                    label = { Text("$emoji $category", fontWeight = if (selectedCategory == category) FontWeight.Bold else FontWeight.Normal) },
-                    selected = selectedCategory == category,
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true, selected = selectedCategory == category,
-                        borderColor = Color.Transparent, selectedBorderColor = Color.Transparent
-                    ),
-                    shape = RoundedCornerShape(20.dp)
-                )
-            }
-        }
+
 
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -205,15 +166,20 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                         // [Phase 11 Epic 2] 안드로이드 상단 '투데이 픽' 캐러셀 UI 도입
                         if (selectedCategory == "전체") {
                             item {
-                                val activeDeals = dealsPagingItems.itemSnapshotList.items.filter { !it.isClosed }
-                                val topPicks = activeDeals
-                                    .filter { it.honeyScore >= 80 || it.aiSummary?.contains("🔥") == true }
-                                    .sortedByDescending { it.honeyScore }
-                                    .take(3)
-                                    .ifEmpty { activeDeals.take(3) }
+                                val topHotDeals by viewModel.topHotDeals.collectAsState()
+                                val topPicks = topHotDeals
+                                    .filter { deal ->
+                                        // 백엔드에서 honeyScore가 100 이상이면 포텐/인기글(is_super_hotdeal)로 판단합니다.
+                                        val isSuperHot = deal.honeyScore >= 100
+                                        !deal.isClosed && isSuperHot
+                                    }
+                                    .sortedByDescending { it.createdAt ?: "" }
+                                
+                                android.util.Log.d("HomeScreen", "topHotDeals size: ${topHotDeals.size}, topPicks size: ${topPicks.size}")
+
                                 if (topPicks.isNotEmpty()) {
                                 Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                                    Text("🔥 오늘의 미친 핫딜 TOP", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 12.dp, start = 4.dp))
+                                    Text("오늘의 미친 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 12.dp, start = 4.dp))
                                     LazyRow(
                                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                                         contentPadding = PaddingValues(horizontal = 4.dp)
@@ -223,8 +189,8 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                                             val localCtx = LocalContext.current
                                             Card(
                                                 modifier = Modifier
-                                                    .width(260.dp)
-                                                    .height(220.dp)
+                                                    .width(200.dp)
+                                                    .height(210.dp)
                                                     .clickable {
                                                         val targetUrl = pick.ecommerceUrl?.takeIf { it.isNotBlank() } ?: pick.postUrl ?: "https://insightdeal.com"
                                                         var finalUrl = if (targetUrl.startsWith("http")) targetUrl else "https://$targetUrl"
@@ -257,7 +223,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                                                         model = imageRequest,
                                                         contentDescription = "Carousel Image",
                                                         modifier = Modifier
-                                                            .height(130.dp)
+                                                            .height(120.dp)
                                                             .fillMaxWidth()
                                                             .background(Color.White)
                                                             .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
@@ -280,7 +246,9 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = viewMode
                                         }
                                     }
                                     Spacer(Modifier.height(24.dp))
-                                    Text("📱 최신 실시간 등록", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    androidx.compose.material3.HorizontalDivider(thickness = 1.dp, color = Color.LightGray, modifier = Modifier.padding(horizontal = 4.dp))
+                                    Spacer(Modifier.height(16.dp))
+                                    Text("실시간 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp), color = MaterialTheme.colorScheme.onSurface)
                                 }
                             }
                         }
@@ -367,8 +335,11 @@ fun DealCardComposable(deal: DealItem, onDetailClick: () -> Unit = {}, onOpenUrl
         elevation = CardDefaults.cardElevation(2.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
-        Column {
-            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+        val isSuperHot = deal.aiSummary?.contains("🔥") == true
+
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
                 // 서브 Thumbnail
                 val context = LocalContext.current
                 val rawUrl = deal.imageUrl
@@ -555,26 +526,18 @@ fun DealCardComposable(deal: DealItem, onDetailClick: () -> Unit = {}, onOpenUrl
                             if (it != "정보 없음" && !hideShipping) {
                                 val trimmed = it.trim()
                                 val displayShipping = when {
-                                    trimmed == "0" || trimmed == "0원" -> "무료배송"
+                                    trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료배송"
                                     trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료배송 ")
+                                    trimmed == "유료" -> "유료배송"
                                     else -> it
                                 }
                                 Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.align(Alignment.CenterVertically)) {
-                                    Text(text = " $displayShipping ", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier=Modifier.padding(vertical=2.dp))
+                                    Text(text = " 택배비 : $displayShipping ", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier=Modifier.padding(vertical=2.dp))
                                 }
                             }
                         }
                         
-                        // 역대급 특가 뱃지 (FOMO 폭발)
-                        val isSuperHot = deal.honeyScore >= 85 || deal.aiSummary?.contains("최저가") == true || deal.aiSummary?.contains("역대가") == true
-                        if (isSuperHot) {
-                            Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFFFFEBEB), modifier = Modifier.align(Alignment.CenterVertically)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
-                                    Text("🔥", fontSize = 10.sp)
-                                    Text("핫딜", fontSize = 10.sp, color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
+                        // 핫딜 뱃지는 카드 우측 최상단으로 이동됨
                         
                         if (deal.isClosed) {
                             Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.align(Alignment.CenterVertically)) {
@@ -729,6 +692,25 @@ fun DealCardComposable(deal: DealItem, onDetailClick: () -> Unit = {}, onOpenUrl
                 }
             }
         }
+        
+        // 핫딜 뱃지를 우측 최상단에 고정
+        if (isSuperHot) {
+            Surface(
+                shape = RoundedCornerShape(bottomStart = 12.dp, topEnd = 12.dp),
+                color = Color(0xFFFFEBEB),
+                modifier = Modifier.align(Alignment.TopEnd)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("🔥", fontSize = 12.sp)
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("핫딜", fontSize = 11.sp, color = Color(0xFFD32F2F), fontWeight = FontWeight.ExtraBold)
+                }
+            }
+        }
+    }
     }
 }
 

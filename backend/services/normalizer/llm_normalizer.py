@@ -13,14 +13,15 @@ class LlmNormalizer(ProductNormalizer):
     API 키가 없거나 할당량 초과 시 자동으로 RegexNormalizer(정규식)로 Fallback 됩니다.
     """
     def __init__(self):
-        self.api_key = os.getenv("GEMINI_API_KEY")
+        from backend.core.ai_utils import get_random_gemini_key
+        self.api_key = get_random_gemini_key()
         self.fallback_normalizer = RegexNormalizer()
         self.is_active = False
 
         if self.api_key:
             try:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                self.model = genai.GenerativeModel('gemini-flash-latest')
                 self.is_active = True
                 logger.info("🤖 LlmNormalizer initialized with Gemini API.")
             except Exception as e:
@@ -56,21 +57,49 @@ class LlmNormalizer(ProductNormalizer):
         
         진짜 분석할 제목: "{title}"
         """
-        try:
-            response = self.model.generate_content(prompt)
-            text = response.text.replace('```json', '').replace('```', '').strip()
-            data = json.loads(text)
-            
-            # AI가 결과를 제대로 뱉지 않았을 경우 방어
-            if not data.get("name"):
-                 return await self.fallback_normalizer.normalize(title)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                from backend.core.ai_utils import get_random_gemini_key
+                import google.generativeai as genai
+                import time
+                
+                api_key = get_random_gemini_key()
+                if not api_key:
+                    break
+                    
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel('gemini-flash-latest')
+                
+                response = model.generate_content(prompt)
+                text = response.text.replace('```json', '').replace('```', '').strip()
+                data = json.loads(text)
+                
+                # AI가 결과를 제대로 뱉지 않았을 경우 방어
+                if not data.get("name"):
+                     return await self.fallback_normalizer.normalize(title)
 
-            return NormalizedProduct(
-                name=data["name"][:255],
-                brand=data.get("brand", "원석"),
-                category=data.get("category", "기타"),
-                raw_title=title
-            )
-        except Exception as e:
-            logger.error(f"🔥 LLM Normalization failed for '{title}': {e}. Falling back to Regex.")
-            return await self.fallback_normalizer.normalize(title)
+                return NormalizedProduct(
+                    name=data["name"][:255],
+                    brand=data.get("brand", "원석"),
+                    category=data.get("category", "기타"),
+                    raw_title=title
+                )
+            except Exception as e:
+                if "429" in str(e):
+                    if "spending cap" in str(e).lower():
+                        from backend.core.ai_utils import mark_key_dead
+                        mark_key_dead(api_key)
+                    if attempt < max_retries - 1:
+                        import re
+                        wait_time = 1
+                        match = re.search(r'retry in ([\d\.]+)s', str(e))
+                        if match:
+                            wait_time = int(float(match.group(1))) + 2
+                        logger.warning(f"LlmNormalizer 429 Error. Rotating key/Waiting {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                        time.sleep(wait_time)
+                        continue
+                logger.error(f"🔥 LLM Normalization failed for '{title}': {e}. Falling back to Regex.")
+                return await self.fallback_normalizer.normalize(title)
+                    
+        return await self.fallback_normalizer.normalize(title)

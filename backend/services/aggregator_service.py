@@ -2,7 +2,7 @@ import os
 import logging
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
-from datetime import datetime
+from datetime import datetime, timezone
 from backend.database.models import Deal, PriceHistory, Community
 from backend.services.normalizer.llm_normalizer import LlmNormalizer
 import re
@@ -94,10 +94,14 @@ class AggregatorService:
         
         if shipping_fee:
             sf_str = str(shipping_fee).strip()
-            if sf_str in ["0", "0원"]:
+            # 텍스트 내의 다중 공백, 탭, 줄바꿈 등을 하나의 공백으로 압축하여 프론트엔드 UI 깨짐 방지
+            sf_str = re.sub(r'\s+', ' ', sf_str)
+            if sf_str in ["0", "0원", "무료"]:
                 shipping_fee = "무료배송"
-            elif re.match(r'^0(원)?\s*(/|\+)', sf_str):
-                shipping_fee = re.sub(r'^0(원)?\s*', '무료배송 ', sf_str)
+            elif re.match(r'^(0원?|무료)\s*(/|\+)', sf_str):
+                shipping_fee = re.sub(r'^(0원?|무료)\s*', '무료배송 ', sf_str)
+            else:
+                shipping_fee = sf_str
         
         # [Phase 6] 하이브리드 파이프라인 Step 2: 쇼핑몰 메타태그 직공 (WAF 우회 및 정가 추출)
         import urllib.request
@@ -187,8 +191,30 @@ class AggregatorService:
         if posted_at_iso:
             try:
                 posted_dt = datetime.fromisoformat(posted_at_iso)
+                # Ensure datetime has UTC timezone info before storing
+                if posted_dt.tzinfo is None:
+                    posted_dt = posted_dt.replace(tzinfo=timezone.utc)
             except Exception:
                 pass
+
+        # [Phase 6.5] 💡 글로벌 쇼핑몰 링크 캐싱 (CEO 피드백: 중복 핫딜 AI 호출 방지)
+        cached_ai_summary = None
+        ecommerce_url = scraped_data.get("ecommerce_link")
+        if ecommerce_url and len(ecommerce_url) > 15:
+            from datetime import timedelta
+            recent_duplicate = self.db.query(Deal).filter(
+                Deal.ecommerce_link == ecommerce_url,
+                Deal.indexed_at >= datetime.now() - timedelta(days=2)
+            ).first()
+            
+            if recent_duplicate and recent_duplicate.ai_summary:
+                logger.info(f"♻️ 글로벌 캐싱 적중! 중복 핫딜의 AI 분석을 복사합니다: {ecommerce_url}")
+                cached_ai_summary = recent_duplicate.ai_summary
+                if final_price == 0 and recent_duplicate.price and recent_duplicate.price != "0":
+                    price = int(recent_duplicate.price)
+                    final_price = price
+                if not final_category:
+                    final_category = recent_duplicate.category
 
         content_html = scraped_data.get("content_html", scraped_data.get("content", ""))
 
@@ -229,6 +255,14 @@ class AggregatorService:
                  existing_deal.is_closed = is_closed
                  existing_deal.shipping_fee = shipping_fee
                  
+                 # 새로 수집된 날짜 정보가 존재하면 시간 정보가 더 구체적일 때만 업데이트
+                 if posted_dt:
+                     current_idx = existing_deal.indexed_at
+                     if not current_idx:
+                         existing_deal.indexed_at = posted_dt
+                     elif (current_idx.hour == 0 and current_idx.minute == 0) and (posted_dt.hour != 0 or posted_dt.minute != 0):
+                         existing_deal.indexed_at = posted_dt
+                 
                  # 지표 업데이트 (Continuous Upsert)
                  view_count = int(scraped_data.get("view_count", 0))
                  like_count = int(scraped_data.get("like_count", 0))
@@ -245,11 +279,12 @@ class AggregatorService:
                  calc_score = int((existing_deal.view_count / 100) + (existing_deal.like_count * 10) + (existing_deal.comment_count * 5))
                  if scraped_data.get("is_super_hotdeal"):
                      calc_score = 100
+                     if not existing_deal.ai_summary:
+                         existing_deal.ai_summary = "🔥 [커뮤니티 인증 핫딜] "
+                     elif "🔥" not in existing_deal.ai_summary:
+                         existing_deal.ai_summary = "🔥 [커뮤니티 인증 핫딜] " + existing_deal.ai_summary
                  existing_deal.honey_score = min(100, max(calc_score, existing_deal.honey_score or 0))
                  
-                 if posted_dt:
-                     existing_deal.indexed_at = posted_dt
-                     
                  if price_changed and price > 0:
                      self._insert_price_history(existing_deal.id, price)
 
@@ -258,7 +293,7 @@ class AggregatorService:
              
              return existing_deals[0]
 
-        ai_summary = None
+        ai_summary = cached_ai_summary
         
         # 동적 꿀딜 점수 초기 계산
         view_count = int(scraped_data.get("view_count", 0))
@@ -275,7 +310,10 @@ class AggregatorService:
         # 커뮤니티 추천수/조회수/인기마크 기반 슈퍼 핫딜 판별
         if scraped_data.get("is_super_hotdeal"):
             honey_score = 100
-            # ai_summary가 None이므로 여기서 문자열 처리를 피합니다. 나중에 배치에서 처리.
+            if ai_summary is None:
+                ai_summary = "🔥 [커뮤니티 인증 핫딜] "
+            elif "🔥" not in ai_summary:
+                ai_summary = "🔥 [커뮤니티 인증 핫딜] " + ai_summary
 
         # [다중 상품 자동 분할 - Phase 5.1 토큰 최적화 (CEO 피드백)]
         # 1. 제목 기반으로 상품 갯수 추정 (예: 상품명.상품명.상품명 -> 점이 2개면 상품 3개)
@@ -283,69 +321,89 @@ class AggregatorService:
         # 2. 본문 텍스트 내에서 정규식으로 '원' 단위 숫자 패턴 갯수 추출
         price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+)\s*원', content_html) if content_html else []
         
-        is_multi_item = ("(" in raw_title and "다양" in raw_title) or raw_title.count(".") >= 2
+        is_multi_item = ("(" in raw_title and "다양" in raw_title) or raw_title.count(".") >= 2 or "모음" in raw_title or "선택" in raw_title or "," in raw_title
         is_missing_price = (price == 0)
         
-        # [핵심 로직] 추출된 가격 갯수가 상품 갯수보다 적거나, 스크래퍼가 아예 가격(0)을 못 찾은 경우 AI 가동
-        token_saving_trigger = (is_multi_item and (len(price_matches) < estimated_item_count)) or is_missing_price
+        # [핵심 로직] 가격이 아예 없거나(0원), 다중 상품일 가능성이 높으면 AI를 가동하여 분할(Split) 및 가격 추출을 시도합니다.
+        # 글로벌 캐싱으로 이미 ai_summary를 가져왔다면 불필요한 AI 가동을 스킵합니다.
+        token_saving_trigger = (is_multi_item or is_missing_price) and not cached_ai_summary
+
         
         logger.info(f"DEBUG: price={price}, is_missing_price={is_missing_price}, token_saving_trigger={token_saving_trigger}")
         
         split_items = []
         if token_saving_trigger and (len(content_html) > 50 or raw_title):
-            api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-            if not api_key:
-                from dotenv import load_dotenv
-                # 루트 디렉토리의 .env 로드 시도
-                root_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
-                load_dotenv(root_env)
-                api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-                
-            if api_key:
-                import asyncio
-                import google.generativeai as genai
-                logger.info(f"🤖 가격 누락 또는 모음전 감지! Gemini 2.5로 정밀 파싱 시작... (원제: {raw_title})")
-                genai.configure(api_key=api_key)
-                model = genai.GenerativeModel('gemini-2.5-flash')
-                prompt = f"""
-                넌 쇼핑몰 핫딜 데이터 추출 AI야. 다음 게시글 내용(HTML)과 제목을 읽고, 판매 중인 상품의 이름과 가격을 정확히 뽑아서 순수 JSON 배열만 반환해.
-                만약 여러 개의 상품이 포함된 벌크 핫딜이면 배열에 여러 객체를 넣고, 단일 상품이면 1개만 넣어. 다른 말은 절대 하지마.
-                
-                [가격 추출 필수 규칙]
-                1. '59요금제' 같은 휴대폰 요금제의 경우 월 요금인 59000 처럼 계산해서 적어줘.
-                2. 달러($)나 유로(€) 같은 외화면 대략적인 원화(KRW)로 환산해서 정수로 적어줘.
-                3. 본문에 정가(원래 가격)와 할인율(예: 75% SALE)만 명시되어 있다면, 반드시 (정가 * (100 - 할인율) / 100)으로 계산해서 최종 할인된 가격을 정수로 적어. (예: 40000원 75% 할인 -> 10000)
-                4. 할인율, 쿠폰가, 청구할인가 등이 명시되어 있으면 무조건 최종 할인가를 적어.
-                5. 가격은 반드시 정수형 숫자만 들어가야 하고, 본문에 가격 정보가 아예 없고 완전 무료(나눔 등)인 경우에만 0을 적어.
-                만약 본문 텍스트 주변에 이미지 URL 링크가 보이면 각 상품 객체에 'image_url' 속성으로 연결해주고, 없으면 null 처리해.
-                만약 텍스트 내에 (링크: http...) 형식으로 각 상품별 스토어 주소가 있다면 추출해서 'ecommerce_link' 속성에 넣어줘. 없으면 null 처리해.
-                [양식]: [{{"name": "...", "price": 10000, "image_url": "http...", "ecommerce_link": "http..."}}]
-                
-                게시글 제목: {raw_title}
-                게시글 내용: {content_html[:1500]}
-                """
-                max_retries = 3
-                for attempt in range(max_retries):
-                    try:
-                        response = await model.generate_content_async(prompt)
-                        import json
-                        text_resp = response.text.replace("```json", "").replace("```", "").strip()
-                        parsed = json.loads(text_resp)
-                        if isinstance(parsed, list) and len(parsed) > 0:
-                            split_items = parsed
-                            logger.info(f"✅ Gemini 자동 분할 성공! {len(split_items)}개 상품 추출됨")
+            from backend.core.ai_utils import get_random_gemini_key
+            import asyncio
+            import google.generativeai as genai
+            
+            print(f"🤖 가격 누락 또는 모음전 감지! Gemini 1.5/2.0(최신)으로 정밀 파싱 시작... (원제: {raw_title})")
+            logger.info(f"🤖 가격 누락 또는 모음전 감지! Gemini 1.5/2.0(최신)으로 정밀 파싱 시작... (원제: {raw_title})")
+            
+            prompt = f"""
+            넌 쇼핑몰 핫딜 데이터 추출 AI야. 다음 게시글 내용(HTML)과 제목을 읽고, 판매 중인 상품의 이름과 가격을 정확히 뽑아서 순수 JSON 배열만 반환해.
+            만약 여러 개의 상품이 포함된 벌크 핫딜이면 배열에 여러 객체를 넣고, 단일 상품이면 1개만 넣어. 다른 말은 절대 하지마.
+            
+            🚨 [아주 중요한 단일화 예외 규칙] 🚨
+            만약 게시글 본문에 각 상품별 구매 링크가 개별적으로 존재하지 않고, 오직 1개의 대표 구매 링크만 존재하는 '모음전(옵션 선택형)'이라면, 절대 상품을 여러 개로 분리하지 마! 
+            무조건 전체를 대표하는 이름으로 단일 객체(1개)만 반환해. (예: "무파마 삼겹살 외 14종 모음전")
+            대신 이 경우, 포함된 세부 상품들의 목록(마니커, 하림 등)이나 특징을 'ai_summary' 속성에 3줄 요약으로 보기 좋게 작성해줘.
+            
+            [가격 추출 필수 규칙]
+            1. '59요금제' 같은 휴대폰 요금제의 경우 월 요금인 59000 처럼 계산해서 적어줘.
+            2. 달러($)나 유로(€) 같은 외화면 대략적인 원화(KRW)로 환산해서 정수로 적어줘.
+            3. 본문에 정가(원래 가격)와 할인율(예: 75% SALE)만 명시되어 있다면, 반드시 (정가 * (100 - 할인율) / 100)으로 계산해서 최종 할인된 가격을 정수로 적어. (예: 40000원 75% 할인 -> 10000)
+            4. 할인율, 쿠폰가, 청구할인가 등이 명시되어 있으면 무조건 최종 할인가를 적어.
+            5. 가격은 반드시 정수형 숫자만 들어가야 하고, 본문에 가격 정보가 아예 없고 완전 무료(나눔 등)이거나, 옵션별로 가격이 다양해서 알 수 없으면 0을 적어.
+            6. 💡 [중요] 여러 상품이 병렬로 나열되고 괄호 안에 개별 가격이 있다면(예: 키위 (27000원)), 각 분할된 객체의 'price'에 해당 개별 금액을 정확히 추출해 매핑해.
+            
+            [다중 옵션 및 메타정보 매핑 규칙]
+            1. [이미지 매핑]: 본문 끝 `[첨부된 이미지 링크들]`을 꼼꼼히 분석해, 분리된 각 옵션(예: 망고, 키위)과 문맥상 가장 매칭되는 이미지 URL을 찾아 각 객체의 'image_url'에 연결해. 매칭 안되면 null 처리. 🚨절대 부모(대표) 이미지를 모든 분할 객체에 똑같이 복사하지 마!
+            2. [배송비]: 원문 제목 끝의 '/ 무료' 혹은 본문의 배송비 정보를 파악해, 모든 생성된 객체의 'shipping_fee' 속성에 '무료배송' 등 값을 일괄 복사해 넣어줘.
+            3. 만약 텍스트 내에 (링크: http...) 형식으로 각 상품별 스토어 주소가 있다면 추출해서 'ecommerce_link' 속성에 넣어줘. 없으면 null 처리해.
+            
+            [양식]: [{{"name": "...", "price": 10000, "image_url": "http...", "shipping_fee": "무료배송", "ecommerce_link": "http...", "ai_summary": "옵션별 요약 내용..."}}]
+            
+            게시글 제목: {raw_title}
+            게시글 내용: {content_html[:2000]}
+            """
+            
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    api_key = get_random_gemini_key()
+                    if not api_key:
+                        logger.info("⚠️ API 키 없음. 상품 자동 분리를 건너뜁니다.")
                         break
-                    except Exception as e:
-                        if "429" in str(e) and attempt < max_retries - 1:
+                        
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel('gemini-flash-latest')
+                    
+                    response = await model.generate_content_async(prompt)
+                    import json
+                    text_resp = response.text.replace("```json", "").replace("```", "").strip()
+                    parsed = json.loads(text_resp)
+                    if isinstance(parsed, list) and len(parsed) > 0:
+                        split_items = parsed
+                        print(f"✅ Gemini 자동 분할/단일화 성공! {len(split_items)}개 상품 추출됨")
+                        logger.info(f"✅ Gemini 자동 분할/단일화 성공! {len(split_items)}개 상품 추출됨")
+                    break
+                except Exception as e:
+                    if "429" in str(e):
+                        if "spending cap" in str(e).lower():
+                            from backend.core.ai_utils import mark_key_dead
+                            mark_key_dead(api_key)
+                        if attempt < max_retries - 1:
                             wait_time = 15
                             match = re.search(r'retry in ([\d\.]+)s', str(e))
                             if match:
                                 wait_time = int(float(match.group(1))) + 2
                             logger.warning(f"Gemini Rate Limit Hit (Split). Waiting {wait_time}s... (Attempt {attempt+1}/{max_retries})")
                             await asyncio.sleep(wait_time)
-                        else:
-                            logger.error(f"Gemini 분할 실패: {e}")
-                            break
+                            continue
+                    print(f"Gemini 분할 실패: {e}")
+                    logger.error(f"Gemini 분할 실패: {e}")
+                    break
             else:
                 logger.info("⚠️ API 키 없음. 상품 자동 분리를 건너뜁니다.")
                 split_items = []
@@ -364,12 +422,29 @@ class AggregatorService:
                 except Exception:
                     item_price = 0
                     
-                # 고유 식별을 위해 파생 상품명 조합
-                derived_title = f"{raw_title.split(']')[0] + ']' if ']' in raw_title else ''} {item.get('name', '')}"
+                # 고유 식별을 위해 파생 상품명 조합 (모음전 단일화일 경우 raw_title 포맷 유지)
+                if len(split_items) == 1:
+                    derived_title = f"{raw_title.split(']')[0] + ']' if ']' in raw_title else ''} {item.get('name', raw_title)}"
+                else:
+                    derived_title = f"{raw_title.split(']')[0] + ']' if ']' in raw_title else ''} {item.get('name', '')}"
                 
                 item_ecommerce_link = item.get("ecommerce_link") or scraped_data.get("ecommerce_link")
                 
+                # ai_summary가 있으면 사용, 없으면 디폴트 문자열
+                default_summary = f"✅ {item_price:,}원! AI가 자동 분리해낸 핫딜입니다.\n✅ 분할된 옵션 상품으로 정확한 내용은 본문을 참고하세요.\n✅ 세부 스펙은 상품 페이지를 확인해주세요."
+                final_ai_summary = item.get("ai_summary") or default_summary
+                if honey_score >= 100 and "🔥" not in final_ai_summary:
+                    final_ai_summary = "🔥 [커뮤니티 인증 핫딜] " + final_ai_summary
+                
                 try:
+                    # 본문 내 첨부된 이미지 추출 (Gemini가 빈 문자열 반환 시 대비)
+                    extracted_img = ""
+                    if content_html:
+                        img_matches = re.findall(r'https?://[^\s,]+(?:jpg|jpeg|png|gif)', content_html, re.IGNORECASE)
+                        if img_matches:
+                            # 인덱스에 맞춰 이미지 매핑 시도, 없으면 첫 번째 이미지
+                            extracted_img = img_matches[idx] if idx < len(img_matches) else img_matches[0]
+                            
                     new_deal = Deal(
                         source_community_id=community_id,
                         title=derived_title[:255],
@@ -378,12 +453,12 @@ class AggregatorService:
                         post_link=url,
                         ecommerce_link=item_ecommerce_link or url,
                         shop_name=shop_name,
-                        shipping_fee=shipping_fee,
+                        shipping_fee=item.get("shipping_fee") or shipping_fee,
                         is_closed=is_closed,
                         category=final_category,
                         base_product_name=item.get("name", normalized.name),
-                        image_url=item.get("image_url") or (image_url if idx == 0 else ""), # 💡 [CEO 피드백: 다중 이미지가 없으면 빈 문자열 반환, 안드로이드에서 처리]
-                        ai_summary=f"✅ {item_price:,}원! AI가 자동 분리해낸 핫딜입니다.\n✅ 분할된 옵션 상품으로 정확한 내용은 본문을 참고하세요.\n✅ 세부 스펙은 상품 페이지를 확인해주세요.",
+                        image_url=item.get("image_url") or extracted_img or (image_url if idx == 0 else ""), # 💡 [CEO 피드백 변형: 다중 이미지 추출 시도 후 안드로이드 처리]
+                        ai_summary=final_ai_summary,
                         content_html=content_html,
                         honey_score=honey_score,
                         view_count=view_count,

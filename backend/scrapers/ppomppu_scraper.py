@@ -10,22 +10,50 @@ class PpomppuScraper(AsyncBaseScraper):
     def __init__(self, community_id: int):
         super().__init__("뽐뿌", max_concurrent_requests=5)
         self.community_id = community_id
+        # CEO 피드백: 뽐뿌 전체 핫딜을 수집하되, 추천수(like_count)로 인기 마크를 판별
         self.list_url = "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu"
 
     async def parse_list(self, html: str) -> list[dict]:
         """뽐뿌 게시판 리스트에서 제목과 URL (그리고 가능하면 가격) 추출"""
         soup = BeautifulSoup(html, 'html.parser')
         
+        # 쇼핑포럼 (관련 없는 게시글/광고) 제거
+        forum_header = soup.find(lambda tag: tag.name == 'tr' and '더 많은 쇼핑 정보와' in tag.get_text())
+        if forum_header:
+            for sibling in forum_header.find_next_siblings():
+                sibling.decompose()
+            forum_header.decompose()
+
         # 뽐뿌 핫딜 게시판 리스트 행
         post_rows = soup.select('tr.baseList, tr.list1, tr.list0')
         
+        # 핫딜 마크를 정확히 달기 위해 1페이지의 hotlist_flag=999 를 조회하여 게시글 ID 수집
+        if getattr(self, "hot_ids", None) is None:
+            self.hot_ids = set()
+            try:
+                import urllib.parse
+                parsed = urllib.parse.urlparse(self.list_url)
+                qs = urllib.parse.parse_qs(parsed.query)
+                board_id = qs.get("id", ["ppomppu"])[0]
+                
+                hot_html = await self.fetch_html(f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board_id}&hotlist_flag=999")
+                if hot_html:
+                    hot_soup = BeautifulSoup(hot_html, 'html.parser')
+                    for a in hot_soup.select('tr.baseList a.baseList-title, tr.list1 a, tr.list0 a'):
+                        if a.get('href'):
+                            match = re.search(r'no=([0-9]+)', a.get('href'))
+                            if match:
+                                self.hot_ids.add(match.group(1))
+            except Exception as e:
+                logger.warning(f"[{self.platform_name}] 핫딜 목록 조회 실패: {e}")
+                
         import asyncio
         async def process_row(row):
             title_el = row.select_one('a.baseList-title') or row.select_one('.list_title') or row.select_one('font')
             if not title_el: return None
                 
             full_title = title_el.get_text(strip=True)
-            if not full_title or "공지" in full_title: return None
+            if not full_title or "공지" in full_title or "질문" in full_title or "문의" in full_title: return None
                  
             link_el = row.select_one('a') if not title_el.has_attr('href') else title_el
             if not link_el or not link_el.get('href'): return None
@@ -73,22 +101,29 @@ class PpomppuScraper(AsyncBaseScraper):
             if row.select_one('img[src*="end_icon"]'):
                 is_closed = True
 
+            doc_id = ""
             is_super_hotdeal = False
-            if row.select_one('img[src*="hot_icon"]') or row.select_one('img[src*="icon_hot"]'):
-                is_super_hotdeal = True
-
+            doc_id_match = re.search(r'no=([0-9]+)', href)
+            if doc_id_match:
+                doc_id = doc_id_match.group(1)
+                if getattr(self, "hot_ids", None) is not None:
+                    is_super_hotdeal = doc_id in self.hot_ids
+            
             view_count = 0
             like_count = 0
             for td in row.select('td.eng, td.baseList-space'):
                 txt = td.get_text(strip=True).replace(',', '')
+                if txt == doc_id:
+                    continue # 게시글 번호(ID)는 건너뜀
+                
                 if '-' in txt and len(txt) < 10: # 추천수 포맷 (예: 11 - 0)
                     parts = txt.split('-')
                     if parts[0].strip().isdigit():
                         like_count = int(parts[0].strip())
-                        if like_count >= 15: is_super_hotdeal = True
-                elif txt.isdigit() and int(txt) > 100: # 조회수는 보통 큰 숫자
+                elif txt.isdigit(): # 조회수 (게시글 번호를 제외한 숫자)
                     view_count = int(txt)
-                    
+
+            # 인기/HOT 여부(is_super_hotdeal)는 프론트엔드 UI의 뱃지(마크) 표시용으로 사용됨
             comment_count = 0
             cmt_span = row.select_one('.list_comment2 span, .list_comment2, .comment_count')
             if cmt_span:
@@ -102,11 +137,19 @@ class PpomppuScraper(AsyncBaseScraper):
             for td in time_tds:
                 txt = td.get_text(strip=True)
                 if ':' in txt or '/' in txt or '-' in txt:
+                    # 추천수(11 - 0) 필터링
+                    if re.search(r'\d+\s*-\s*\d+', txt) and not re.search(r'\d{4}-\d{2}-\d{2}', txt):
+                        continue
                     time_str = txt
                     break
 
             if time_str:
                 posted_at_iso = self.parse_time_str(time_str)
+
+            detail_posted_at = detail_info.get("posted_at")
+            if detail_posted_at:
+                posted_at_iso = detail_posted_at
+
 
             return {
                 "title": full_title,
@@ -164,7 +207,7 @@ class PpomppuScraper(AsyncBaseScraper):
         price_fallback = 0
         import re
         
-        content_element = soup.select_one('td.board-contents') or soup.select_one('table.pic_bg td') or soup.select_one('td.han')
+        content_element = soup.select_one('td.board-contents') or soup.select_one('table.pic_bg td') or soup.select_one('td.han') or soup.select_one('.cont')
         if content_element:
             import urllib.parse
             import base64
@@ -191,7 +234,7 @@ class PpomppuScraper(AsyncBaseScraper):
         
         # 이미지 태그 추출해서 본문에 덧붙이기 (Gemini 매칭용)
         images = []
-        for img in soup.select('.board-contents img, table.pic_bg img, .han img'):
+        for img in soup.select('.board-contents img, table.pic_bg img, .han img, .cont img'):
             src = img.get('src')
             if src and src.startswith('//'): src = 'https:' + src
             if src and 'http' in src and 'icon' not in src:
@@ -230,5 +273,18 @@ class PpomppuScraper(AsyncBaseScraper):
         if "종결" in body_text and "취소된 게시물" in body_text:
             is_closed = True
             
+        posted_at_iso = None
+        html_text = soup.get_text(separator=' ', strip=True)
+        dates = re.findall(r'등록일\s*[:\s]*(\d{4}-\d{2}-\d{2}\s*\d{2}:\d{2}(?::\d{2})?)', html_text)
+        if dates:
+            posted_at_iso = self.parse_time_str(dates[0])
+            
         # [CEO 피드백: 모음전 분할을 위해 텍스트 길이 충분한 본문을 content_html로 반환]
-        return {"ecommerce_link": ecommerce_link, "price": price_fallback, "shipping_fee": shipping_fee, "content_html": body_text, "is_closed": is_closed}
+        return {
+            "ecommerce_link": ecommerce_link, 
+            "price": price_fallback, 
+            "shipping_fee": shipping_fee, 
+            "content_html": body_text, 
+            "is_closed": is_closed,
+            "posted_at": posted_at_iso
+        }

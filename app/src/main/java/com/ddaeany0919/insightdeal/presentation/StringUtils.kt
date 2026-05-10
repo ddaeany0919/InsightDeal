@@ -100,13 +100,16 @@ fun getPlatformDisplayName(platform: String?): String {
  * 앱 전체에서 딱 1개의 코루틴만 돌아서 1분마다 신호를 보내도록 최적화합니다.
  */
 object GlobalTimeTicker {
-    private val _tick = MutableStateFlow(0L)
+    private val _tick = MutableStateFlow(System.currentTimeMillis())
     val tick = _tick.asStateFlow()
 
     init {
         CoroutineScope(Dispatchers.Default).launch {
             while (true) {
-                delay(60_000L) // 1분마다 한 번씩 갱신
+                // 현재 시간 기준 다음 분의 0초까지 대기하여 정확히 분 단위로 갱신
+                val now = Calendar.getInstance()
+                val millisUntilNextMinute = 60_000L - (now.get(Calendar.SECOND) * 1000 + now.get(Calendar.MILLISECOND))
+                delay(millisUntilNextMinute)
                 _tick.value = System.currentTimeMillis()
             }
         }

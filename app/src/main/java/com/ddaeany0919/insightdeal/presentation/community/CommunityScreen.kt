@@ -250,18 +250,19 @@ fun HotDealCard(deal: HotDealDto) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (!deal.shippingFee.isNullOrEmpty() && deal.category != "이벤트" && deal.category != "적립") {
                             val trimmed = deal.shippingFee.trim()
-                            val displayShipping = when {
-                                trimmed == "0" || trimmed == "0원" -> "무료배송"
-                                trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료배송 ")
-                                trimmed == "유료" -> "" // "유료" 글자만 있는 경우 숨김 처리
-                                else -> deal.shippingFee
-                            }
-                            if (displayShipping.isNotEmpty()) {
-                                Text(
-                                    text = displayShipping,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                val displayShipping = when {
+                                    trimmed == "정보 없음" -> "확인필요"
+                                    trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료배송"
+                                    trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료배송 ")
+                                    trimmed == "유료" -> "유료배송"
+                                    else -> deal.shippingFee
+                                }
+                                if (displayShipping.isNotEmpty()) {
+                                    Text(
+                                        text = "택배비 : $displayShipping",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 Spacer(modifier = Modifier.width(8.dp))
                             }
                         }

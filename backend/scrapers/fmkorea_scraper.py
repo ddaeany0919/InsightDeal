@@ -11,7 +11,9 @@ class FmkoreaScraper(AsyncBaseScraper):
         # 펨코는 Cloudflare 방어가 강하므로 딜레이를 늘리고 동시성을 낮춥니다.
         super().__init__("펨코", max_concurrent_requests=2)
         self.community_id = community_id
-        self.list_url = "https://www.fmkorea.com/hotdeal?listStyle=webzine"
+        # 일반 핫딜 게시판에서 전체 게시글 수집
+        self.list_url = "https://www.fmkorea.com/index.php?mid=hotdeal&listStyle=webzine"
+        self.pop_url = None
 
     def _get_headers(self) -> dict:
         """펨코리아 전용 (Cloudflare 430 차단 우회를 위한 특수 헤더 추가)"""
@@ -76,6 +78,28 @@ class FmkoreaScraper(AsyncBaseScraper):
         """펨코리아 게시판 리스트에서 타겟 데이터 추출 (비동기 처리)"""
         soup = BeautifulSoup(html, 'html.parser')
         
+        # 포텐 핫딜 마크를 달기 위해 백그라운드에서 인기글(pop) 목록 조회하여 URL 수집
+        if getattr(self, "hot_urls", None) is None:
+            self.hot_urls = set()
+            try:
+                hot_html = await self.fetch_html("https://www.fmkorea.com/index.php?mid=hotdeal&sort_index=pop&order_type=desc&listStyle=webzine")
+                if hot_html:
+                    hot_soup = BeautifulSoup(hot_html, 'html.parser')
+                    for r in hot_soup.select('li.li, div.list_item'):
+                        # 인기글 중에서도 '포텐' 뱃지가 달린 것만 진짜 포텐 핫딜로 간주
+                        is_poten = r.select_one('span.STAR-BEST') is not None
+                        if is_poten:
+                            a = r.select_one('a.hotdeal_var8, a.hotdeal_var8Y, a.title, h3.title a')
+                            if a and a.get('href'):
+                                doc_match = re.search(r'document_srl=([0-9]+)', a.get('href'))
+                                if doc_match:
+                                    self.hot_urls.add(f"https://www.fmkorea.com/{doc_match.group(1)}")
+                                else:
+                                    clean_href = a.get('href').split('?')[0]
+                                    self.hot_urls.add(urljoin("https://www.fmkorea.com/", clean_href))
+            except Exception as e:
+                logger.warning(f"[{self.platform_name}] 인기 핫딜 목록 조회 실패: {e}")
+
         post_rows = soup.select('li.li:not(.notice), div.list_item:not(.notice)')
         if not post_rows:
             post_rows = soup.select('table.bd_lst tbody tr')
@@ -91,9 +115,9 @@ class FmkoreaScraper(AsyncBaseScraper):
             if no_tag and no_tag.get_text(strip=True) in ['공지', '인기', 'AD', '광고']:
                 return None
 
-            title_element = row.select_one('td.title a, h3.title a, a.title')
+            title_element = row.select_one('td.title a, h3.title a, a.title, a.hotdeal_var8, a.hotdeal_var8Y')
             if not title_element:
-                if row.name == 'a' and 'title' in (row.get('class') or []):
+                if row.name == 'a' and ('title' in (row.get('class') or []) or 'hotdeal_var' in str(row.get('class'))):
                     title_element = row
                 else:
                     return None
@@ -130,9 +154,11 @@ class FmkoreaScraper(AsyncBaseScraper):
             # 상세 페이지에서 ecommerce_link와 본문 파싱
             detail_info = await self.get_detail(url)
             
-            # 펨코리아 아이콘이 잡힌 경우, 상세 페이지의 이미지로 덮어쓰기
-            if 'icons/fmkorea' in image_url or 'transparent.gif' in image_url or not image_url:
-                image_url = detail_info.get("image_url", image_url)
+            # 고화질 본문 이미지가 있으면 무조건 덮어쓰기 (썸네일 흐림 방지)
+            if detail_info.get("image_url"):
+                image_url = detail_info.get("image_url")
+            elif 'icons/fmkorea' in image_url or 'transparent.gif' in image_url or not image_url:
+                image_url = ""
                 
             # 가격 및 배송비 파싱 (hotdeal_info)
             extracted_price = 0
@@ -191,31 +217,54 @@ class FmkoreaScraper(AsyncBaseScraper):
                     is_closed = True
                     break
 
-            is_super_hotdeal = False
-            html_str = str(row).lower()
-            pc_voted = row.select_one('.pc_voted_count')
-            like_count = 0
-            if pc_voted:
-                 v_match = re.search(r'\d+', pc_voted.get_text())
-                 if v_match:
-                      like_count = int(v_match.group())
-                      if like_count >= 15:
-                          is_super_hotdeal = True
-            if 'poten' in html_str or 'li_best2_pop0' in html_str:
-                 is_super_hotdeal = True
-                 
-            # 조회수 파싱
+            # [엄격한 핫딜 검증]
+            # 핫딜 게시판의 정상적인 핫딜은 반드시 .hotdeal_info 구조를 가집니다.
+            # 만약 이게 없다면 다른 게시판(예: 국내축구, 유머 등)에서 핫딜 게시판에 주입된 인기글(포텐글)이므로 차단합니다.
+            if not info_div:
+                logger.info(f"[펨코] 핫딜 정보(.hotdeal_info)가 없어 스킵 (타 게시판 인기글로 추정): {full_title}")
+                return None
+
+            # 조회수 및 추천수(포텐) 파싱
             view_count = 0
+            like_count = 0
             m_no = row.select_one('td.m_no, .m_no_voted, td.hit')
             if m_no:
                 v_txt = m_no.get_text(strip=True).replace(',', '')
                 if v_txt.isdigit(): view_count = int(v_txt)
+                
+            voted_el = row.select_one('.pc_voted_count, .m_voted_count')
+            if voted_el:
+                l_txt = voted_el.get_text(strip=True).replace('추천', '').replace(',', '').strip()
+                if l_txt.isdigit(): like_count = int(l_txt)
+                
+            # 일반 핫딜 게시판에서 수집된 글 중, 백그라운드에서 수집한 '포텐' 목록에 포함되어 있으면 핫딜 마크 부여
+            is_poten = url in getattr(self, "hot_urls", set())
 
             # 실제 게시글 작성 시간 추출 (KST 기준을 UTC로 변환하여 저장)
             posted_at_iso = None
             time_td = row.select_one('td.time, .regdate')
             if time_td:
                 posted_at_iso = self.parse_time_str(time_td.get_text(strip=True))
+
+            # 상세페이지에서 가져온 정확한 시간이 있다면 우선 적용
+            if detail_info.get("posted_at"):
+                posted_at_iso = detail_info.get("posted_at")
+
+            category_span = row.select_one('span.category')
+            cat_text = ""
+            if category_span:
+                cat_text = category_span.get_text(strip=True).replace('/', '').replace(' ', '')
+            elif detail_info.get("category"):
+                cat_text = detail_info.get("category").replace('/', '').replace(' ', '')
+
+            extracted_category = None
+            if cat_text:
+                # 펨코 카테고리 매핑
+                if '먹거리' in cat_text or '음식' in cat_text: extracted_category = '음식'
+                elif '의류' in cat_text or '패션' in cat_text: extracted_category = '의류'
+                elif '기프티콘' in cat_text or '모바일' in cat_text: extracted_category = '모바일/기프티콘'
+                elif '이용권' in cat_text or '패키지' in cat_text: extracted_category = '패키지/이용권'
+                else: extracted_category = cat_text # PC제품, 가전제품, 생활용품 등은 텍스트가 거의 일치함
 
             return {
                 "title": full_title,
@@ -226,11 +275,12 @@ class FmkoreaScraper(AsyncBaseScraper):
                 "ecommerce_link": detail_info.get("ecommerce_link", ""),
                 "is_closed": is_closed,
                 "shipping_fee": shipping_fee,
-                "is_super_hotdeal": is_super_hotdeal,
+                "is_super_hotdeal": is_poten,
                 "posted_at": posted_at_iso,
                 "view_count": view_count,
                 "like_count": like_count,
                 "comment_count": comment_count,
+                "category": extracted_category,
                 "content_html": detail_info.get("content_html", "")
             }
 
@@ -364,11 +414,27 @@ class FmkoreaScraper(AsyncBaseScraper):
                     if "무료배송" in body_text or "무배" in body_text:
                         shipping_fee = "무료배송"
 
+        posted_at_iso = ""
+        date_el = soup.select_one('.date')
+        if date_el:
+            date_text = date_el.get_text(strip=True)
+            # Fmkorea date format: 2026.05.08 14:04
+            parsed = self.parse_time_str(date_text)
+            if parsed:
+                posted_at_iso = parsed
+
+        category_text = ""
+        cat_el = soup.select_one('.bd_nav .cat, .category, .cat_name')
+        if cat_el:
+            category_text = cat_el.get_text(strip=True)
+
         return {
             "ecommerce_link": ecommerce_link,
             "image_url": image_url,
             "price": price_fallback,
             "shop_name": shop_name,
             "shipping_fee": shipping_fee,
-            "content_html": body_text
+            "content_html": body_text,
+            "posted_at": posted_at_iso,
+            "category": category_text
         }

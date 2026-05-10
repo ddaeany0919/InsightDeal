@@ -23,6 +23,9 @@ class HomeViewModel : ViewModel() {
 
     private val _popularKeywords = MutableStateFlow<List<String>>(emptyList())
     val popularKeywords: StateFlow<List<String>> = _popularKeywords.asStateFlow()
+    
+    private val _topHotDeals = MutableStateFlow<List<DealItem>>(emptyList())
+    val topHotDeals: StateFlow<List<DealItem>> = _topHotDeals.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -33,6 +36,25 @@ class HomeViewModel : ViewModel() {
                 }
             } catch (e: Exception) {
                 // Ignore failure and fallback to empty keywords
+            }
+        }
+        
+        fetchTopHotDeals()
+    }
+
+    fun fetchTopHotDeals() {
+        viewModelScope.launch {
+            try {
+                val response = apiService.getTopHotDeals()
+                if (response.isSuccessful) {
+                    val deals = response.body()?.deals ?: emptyList()
+                    android.util.Log.d("HomeViewModel", "getTopHotDeals success, count: ${deals.size}")
+                    _topHotDeals.value = deals
+                } else {
+                    android.util.Log.e("HomeViewModel", "getTopHotDeals failed: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("HomeViewModel", "getTopHotDeals error", e)
             }
         }
     }

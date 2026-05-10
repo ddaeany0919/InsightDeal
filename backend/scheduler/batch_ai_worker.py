@@ -36,14 +36,6 @@ def process_ai_batch():
 
         logger.info(f"🚀 {len(deals_to_process)}개의 항목에 대해 일괄 AI 분석을 시작합니다...")
         
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            logger.error("GEMINI_API_KEY가 설정되지 않았습니다.")
-            return 0
-            
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        
         # JSON 입력 배열 구성
         input_data = []
         for d in deals_to_process:
@@ -84,6 +76,17 @@ def process_ai_batch():
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                from backend.core.ai_utils import get_random_gemini_key
+                import google.generativeai as genai
+                
+                api_key = get_random_gemini_key()
+                if not api_key:
+                    logger.error("GEMINI_API_KEY가 설정되지 않았습니다.")
+                    return 0
+                    
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel('gemini-flash-latest')
+                
                 response = model.generate_content(prompt)
                 text_resp = response.text.replace("```json", "").replace("```", "").strip()
                 parsed = json.loads(text_resp)
@@ -106,17 +109,32 @@ def process_ai_batch():
                 return success_count
                 
             except Exception as e:
-                if "429" in str(e) and attempt < max_retries - 1:
-                    wait_time = 15
-                    match = re.search(r'retry in ([\d\.]+)s', str(e))
-                    if match:
-                        wait_time = int(float(match.group(1))) + 2
-                    logger.warning(f"Gemini Rate Limit Hit (Batch). Waiting {wait_time}s... (Attempt {attempt+1}/{max_retries})")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"AI Batch 처리 중 에러 발생: {e}")
-                    break
-        return 0
+                if "429" in str(e):
+                    if "spending cap" in str(e).lower():
+                        from backend.core.ai_utils import mark_key_dead
+                        mark_key_dead(api_key)
+                    if attempt < max_retries - 1:
+                        import re
+                        wait_time = 1
+                        match = re.search(r'retry in ([\d\.]+)s', str(e))
+                        if match:
+                            wait_time = int(float(match.group(1))) + 2
+                        logger.warning(f"Gemini Rate Limit Hit (Batch). Waiting {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                        time.sleep(wait_time)
+                        continue
+                logger.error(f"AI Batch 처리 중 에러 발생 (Fallback 적용): {e}")
+                # API 한도 초과 시 Fallback 요약 적용
+                for d in deals_to_process:
+                    d.ai_summary = f"✅ (AI 요약 대체) {d.title}\n✅ 가격: {d.price}\n✅ 상세 내용은 본문 참조"
+                db.commit()
+                return len(deals_to_process)
+        
+        # 만약 루프를 다 돌았는데도 실패했다면 (이론상 else 블록에서 처리되지만 혹시 모를 대비)
+        for d in deals_to_process:
+            if not d.ai_summary:
+                d.ai_summary = f"✅ (AI 요약 대체) {d.title}\n✅ 가격: {d.price}\n✅ 상세 내용은 본문 참조"
+        db.commit()
+        return len(deals_to_process)
     finally:
         db.close()
 

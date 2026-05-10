@@ -66,11 +66,39 @@ fun DealWebViewScreen(
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                             val requestUrl = request?.url?.toString() ?: ""
-                            // 앱 스키마 처리 (Intent 등) - 일반 브라우저로 열기
-                            if (requestUrl.startsWith("intent://") || 
-                                (!requestUrl.startsWith("http://") && !requestUrl.startsWith("https://"))) {
+                            
+                            if (requestUrl.startsWith("intent://")) {
                                 try {
                                     val intent = Intent.parseUri(requestUrl, Intent.URI_INTENT_SCHEME)
+                                    // 1. 앱이 설치되어 있으면 앱 실행
+                                    if (intent.resolveActivity(context.packageManager) != null) {
+                                        context.startActivity(intent)
+                                        return true
+                                    }
+                                    // 2. 앱이 없으면 fallback URL로 이동 (웹페이지)
+                                    val fallbackUrl = intent.getStringExtra("browser_fallback_url")
+                                    if (fallbackUrl != null) {
+                                        view?.loadUrl(fallbackUrl)
+                                        return true
+                                    }
+                                    // 3. fallback URL도 없으면 플레이스토어로 이동
+                                    val packageName = intent.`package`
+                                    if (packageName != null) {
+                                        val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName"))
+                                        if (playStoreIntent.resolveActivity(context.packageManager) != null) {
+                                            context.startActivity(playStoreIntent)
+                                            return true
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                                // 앱 스키마 오류 시 웹뷰 기본 에러(ERR_UNKNOWN_URL_SCHEME) 방지
+                                return true
+                            } else if (!requestUrl.startsWith("http://") && !requestUrl.startsWith("https://")) {
+                                // 일반적인 외부 앱 스키마 (market:// 등)
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(requestUrl))
                                     if (intent.resolveActivity(context.packageManager) != null) {
                                         context.startActivity(intent)
                                         return true
@@ -78,7 +106,9 @@ fun DealWebViewScreen(
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                 }
+                                return true
                             }
+                            
                             return super.shouldOverrideUrlLoading(view, request)
                         }
                     }
