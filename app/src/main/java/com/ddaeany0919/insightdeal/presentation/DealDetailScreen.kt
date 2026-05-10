@@ -130,11 +130,15 @@ fun DealDetailScreen(
                             .fillMaxWidth()
                             .padding(16.dp)
                             .height(56.dp),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFF6D00),
+                            contentColor = Color.White
+                        )
                     ) {
-                        Icon(Icons.Default.ShoppingCart, contentDescription = null)
+                        Icon(Icons.Default.ShoppingCart, contentDescription = null, tint = Color.White)
                         Spacer(Modifier.width(8.dp))
-                        Text("최저가로 구매하기", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        Text("최저가로 구매하기", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = Color.White)
                     }
                 }
             }
@@ -480,15 +484,22 @@ fun DealHeader(deal: DealItem) {
                         trimmed == "유료" || trimmed == "유료배송" -> "유료"
                         else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
                     }
-                    Text(
-                        text = "배송비: $displayShipping",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.Gray
-                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Text(
+                            text = "배송비: $displayShipping",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                 }
             }
             
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             
             Text(
                 text = deal.title,
@@ -498,7 +509,7 @@ fun DealHeader(deal: DealItem) {
                 overflow = TextOverflow.Ellipsis
             )
             
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             
             Row(verticalAlignment = Alignment.Bottom) {
                 if (deal.discountRate != null && deal.discountRate > 0) {
@@ -511,12 +522,23 @@ fun DealHeader(deal: DealItem) {
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 
+                val priceText = formatPrice(deal.price, deal.currency)
                 Text(
-                    text = "${formatPrice(deal.price, deal.currency)}",
-                    style = MaterialTheme.typography.headlineLarge,
+                    text = priceText,
+                    style = if (priceText == "본문 참조") MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = if (priceText == "본문 참조") Color.Gray else MaterialTheme.colorScheme.primary
                 )
+                
+                if (priceText == "본문 참조") {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        tint = Color.Gray,
+                        modifier = Modifier.size(20.dp).padding(bottom = 2.dp)
+                    )
+                }
             }
             
             if (deal.aiSummary != null && deal.aiSummary.isNotEmpty()) {
