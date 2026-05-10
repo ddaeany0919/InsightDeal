@@ -14,9 +14,10 @@ import kotlinx.coroutines.launch
 /**
  * 💰 가격 포매터
  */
-fun formatPrice(price: Int?, currency: String = "KRW"): String {
+fun formatPrice(price: Int?, currency: String? = "KRW"): String {
     return if (price != null && price > 0) {
-        when (currency.uppercase()) {
+        val safeCurrency = currency ?: "KRW"
+        when (safeCurrency.uppercase()) {
             "USD" -> String.format(Locale.getDefault(), "$%.2f", price / 100.0)
             "EUR" -> String.format(Locale.getDefault(), "€%.2f", price / 100.0)
             else -> String.format(Locale.getDefault(), "%,d원", price)
