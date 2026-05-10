@@ -428,6 +428,17 @@ def force_scrape_deals(background_tasks: BackgroundTasks):
 @router.get("/popular-keywords")
 def get_popular_keywords(db: Session = Depends(get_db_session)):
     try:
+        # 1. 펨코 실시간 급상승 검색어 JSON 확인
+        data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+        file_path = os.path.join(data_dir, "fmkorea_trending.json")
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                keywords = data.get("keywords", [])
+                if keywords:
+                    return {"keywords": keywords[:10]}
+                    
+        # 2. 캐시된 JSON이 없을 경우 기존 백업 로직 (핫딜 제목 분석)
         deals = db.query(models.Deal.title).order_by(models.Deal.indexed_at.desc()).limit(1000).all()
         words_count = {}
         stop_words = ["특가", "할인", "무료배송", "무배", "체감가", "역대급", "최저가", "핫딜", "쿠폰", "카드", "할인", "적립", "스마일캐시", "원"]

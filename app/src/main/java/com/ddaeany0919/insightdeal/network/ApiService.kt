@@ -122,7 +122,7 @@ interface ApiService {
     ): Response<ApiResponse>
 
     // 📈 인기 키워드 목록
-    @GET("keywords/popular")
+    @GET("api/community/popular-keywords")
     suspend fun getPopularKeywords(
         @Query("limit") limit: Int = 10
     ): Response<com.ddaeany0919.insightdeal.network.PopularKeywordsResponse>

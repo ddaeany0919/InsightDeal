@@ -22,6 +22,7 @@ from backend.scrapers.alippomppu_scraper import AlippomppuScraper
 from backend.scrapers.bbasak_domestic_scraper import BbasakDomesticScraper
 from backend.scrapers.bbasak_overseas_scraper import BbasakOverseasScraper
 from backend.scrapers.bbasak_parenting_scraper import BbasakParentingScraper
+from backend.scrapers.fmkorea_trending_scraper import update_fmkorea_trending_keywords
 from backend.services.aggregator_service import AggregatorService
 
 logger = logging.getLogger(__name__)
@@ -306,6 +307,8 @@ def start_scheduler():
     scheduler.add_job(run_pipeline_job, 'interval', minutes=5, id='hotdeal_pipeline')
     # 과거 딜 품절 검증 데몬 (7분 주기)
     scheduler.add_job(validate_closed_deals, 'interval', minutes=7, id='hotdeal_validator')
+    # 펨코 실시간 급상승 검색어 수집 (1시간 주기, 정각 실행)
+    scheduler.add_job(update_fmkorea_trending_keywords, 'cron', minute=0, id='fmkorea_trending')
     scheduler.start()
     logger.info("⏰ [System] 투트랙 스케줄러 & 상태 검증 데몬 시동 완료")
     return scheduler
