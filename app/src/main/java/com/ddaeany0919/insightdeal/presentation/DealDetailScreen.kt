@@ -77,10 +77,21 @@ fun DealDetailRoute(
     val targetUrl = deal.ecommerceUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl ?: ""
     val isBookmarked = (wishlistState as? WishlistUiState.Success)?.items?.any { it.productUrl == targetUrl } ?: false
 
+    val pricesList = deal.sources?.map { source ->
+        MallPrice(
+            platform = source.siteName,
+            price = currentPriceInt,
+            url = source.postUrl ?: targetUrl,
+            currency = deal.currency
+        )
+    }?.takeIf { it.isNotEmpty() } ?: listOf(
+        MallPrice(platform = deal.siteName, price = currentPriceInt, url = targetUrl, currency = deal.currency)
+    )
+
     DealDetailScreen(
         deal = deal,
         priceHistory = uiState.priceHistory,
-        mallPrices = listOf(MallPrice(platform = deal.siteName, price = currentPriceInt, url = targetUrl, currency = "KRW")),
+        mallPrices = pricesList,
         isBookmarked = isBookmarked,
         onBack = onBack,
         onBookmarkToggle = {
@@ -179,7 +190,7 @@ fun DealDetailScreen(
                 PriceHistoryInteractiveCard(priceHistory) 
             }
             item {
-                if (priceHistory.size > 2 || deal.honeyScore > 0) {
+                if (priceHistory.size > 1 || deal.honeyScore > 0) {
                     AIBuyerGuide(deal = deal, priceHistory = priceHistory, currentPrice = mallPrices.minOfOrNull { it.price } ?: 0)
                 }
             }
@@ -203,10 +214,11 @@ private fun PriceAlertRegistrationButton(currentPrice: Int, onAlertClick: (Int) 
     var showDialog by remember { mutableStateOf(false) }
     var inputPrice by remember { mutableStateOf((currentPrice * 0.95).toInt().toString()) }
 
-    Button(
+    OutlinedButton(
         onClick = { showDialog = true },
         modifier = Modifier.fillMaxWidth().height(48.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1F2937)),
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
         shape = RoundedCornerShape(12.dp)
     ) {
         Icon(Icons.Default.NotificationsActive, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -257,8 +269,8 @@ private fun PriceAlertRegistrationButton(currentPrice: Int, onAlertClick: (Int) 
 
 @Composable
 private fun PriceHistoryInteractiveCard(history: List<PriceHistoryPoint>) {
-    // UI 최소화를 위해 데이터가 2개 이하인 경우 차트 대신 간략한 텍스트만 표시
-    if (history.size <= 2) {
+    // UI 최소화를 위해 데이터가 1개 이하인 경우 차트 대신 간략한 텍스트만 표시
+    if (history.size <= 1) {
         Card(
             elevation = CardDefaults.cardElevation(2.dp),
             shape = RoundedCornerShape(16.dp),
@@ -304,7 +316,7 @@ private fun AIBuyerGuide(deal: DealItem, priceHistory: List<PriceHistoryPoint>, 
 
     val minPrice = priceHistory.minOfOrNull { it.price } ?: currentPrice
     val maxPrice = priceHistory.maxOfOrNull { it.price } ?: currentPrice
-    val isRecordLow = currentPrice <= minPrice && priceHistory.size > 2
+    val isRecordLow = currentPrice <= minPrice && priceHistory.size > 1
     
     // 이력이 부족할 때는 deal의 honeyScore나 aiSummary를 활용하여 안내 제공
     val isGoodDeal = deal.honeyScore >= 80
@@ -355,7 +367,7 @@ private fun AIBuyerGuide(deal: DealItem, priceHistory: List<PriceHistoryPoint>, 
             HorizontalDivider(color = borderColor.copy(alpha = 0.5f))
             Spacer(Modifier.height(16.dp))
             
-            if (priceHistory.size <= 2) {
+            if (priceHistory.size <= 1) {
                 // 데이터 부족 시 DB 기반 추천도 활용 안내
                 Text(
                     "💡 AI가 분석한 카테고리 내 가치 점수: ${deal.honeyScore}점",
@@ -424,7 +436,14 @@ private fun MallPriceTable(mallPrices: List<MallPrice>, onOpenOrigin: (String) -
                         else -> "${formatPrice(row.price, row.currency ?: "KRW")}"
                     }
                     Text(priceText, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    TextButton(onClick = { onOpenOrigin(row.url) }) { Text("구매하기 🚀", fontWeight = FontWeight.Bold) }
+                    Button(
+                        onClick = { onOpenOrigin(row.url) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6D00)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    ) { 
+                        Text("구매하기 🚀", fontWeight = FontWeight.Bold, color = Color.White) 
+                    }
                 }
                 HorizontalDivider()
             }
@@ -454,26 +473,32 @@ fun DealHeader(deal: DealItem) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                val siteNameLower = deal.siteName.lowercase(java.util.Locale.getDefault())
-                val (bgColor, textColor) = when {
-                    siteNameLower.contains("뽐뿌") -> androidx.compose.ui.graphics.Color(0xFF1565C0) to androidx.compose.ui.graphics.Color.White
-                    siteNameLower.contains("퀘이사존") -> androidx.compose.ui.graphics.Color(0xFFE65100) to androidx.compose.ui.graphics.Color.White
-                    siteNameLower.contains("루리웹") -> androidx.compose.ui.graphics.Color(0xFF0D47A1) to androidx.compose.ui.graphics.Color.White
-                    siteNameLower.contains("펨코") || siteNameLower.contains("에펨코리아") -> androidx.compose.ui.graphics.Color(0xFF0288D1) to androidx.compose.ui.graphics.Color.White
-                    siteNameLower.contains("빠삭") -> androidx.compose.ui.graphics.Color(0xFFC2185B) to androidx.compose.ui.graphics.Color.White
-                    siteNameLower.contains("클리앙") -> androidx.compose.ui.graphics.Color(0xFF37474F) to androidx.compose.ui.graphics.Color.White
-                    else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
-                }
+                val siteNamesList = if (deal.siteNames.isNotEmpty()) deal.siteNames else deal.siteName.split(",").map { it.trim() }
+                
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    siteNamesList.forEach { sName ->
+                        val siteNameLower = sName.lowercase(java.util.Locale.getDefault())
+                        val (bgColor, textColor) = when {
+                            siteNameLower.contains("뽐뿌") -> androidx.compose.ui.graphics.Color(0xFF1565C0) to androidx.compose.ui.graphics.Color.White
+                            siteNameLower.contains("퀘이사존") -> androidx.compose.ui.graphics.Color(0xFFE65100) to androidx.compose.ui.graphics.Color.White
+                            siteNameLower.contains("루리웹") -> androidx.compose.ui.graphics.Color(0xFF0D47A1) to androidx.compose.ui.graphics.Color.White
+                            siteNameLower.contains("펨코") || siteNameLower.contains("에펨코리아") -> androidx.compose.ui.graphics.Color(0xFF0288D1) to androidx.compose.ui.graphics.Color.White
+                            siteNameLower.contains("빠삭") -> androidx.compose.ui.graphics.Color(0xFFC2185B) to androidx.compose.ui.graphics.Color.White
+                            siteNameLower.contains("클리앙") -> androidx.compose.ui.graphics.Color(0xFF37474F) to androidx.compose.ui.graphics.Color.White
+                            else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+                        }
 
-                Text(
-                    text = deal.siteName,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = textColor,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .background(bgColor, RoundedCornerShape(4.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+                        Text(
+                            text = sName,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = textColor,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .background(bgColor, RoundedCornerShape(4.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
                 val digitalCategories = listOf("적립", "이벤트", "모바일/기프티콘", "상품권", "패키지/이용권")
                 val isDigitalTitle = deal.title.contains("요금제") || deal.title.contains("데이터")
                 val hideShipping = deal.category in digitalCategories || isDigitalTitle
@@ -485,6 +510,7 @@ fun DealHeader(deal: DealItem) {
                         trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
                         trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료 ")
                         trimmed == "유료" || trimmed == "유료배송" -> "유료"
+                        trimmed.matches(Regex("^[0-9,]+$")) -> "${trimmed}원"
                         else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
                     }
                     Surface(

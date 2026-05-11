@@ -268,6 +268,7 @@ fun HomeScreen(
                                                                         trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
                                                                         trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료 ")
                                                                         trimmed == "유료" || trimmed == "유료배송" -> "유료"
+                                                                        trimmed.matches(Regex("^[0-9,]+$")) -> "${trimmed}원"
                                                                         else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
                                                                     }
                                                                     Spacer(Modifier.width(2.dp))
@@ -608,6 +609,7 @@ fun DealCardComposable(
                                     trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
                                     trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료 ")
                                     trimmed == "유료" || trimmed == "유료배송" -> "유료"
+                                    trimmed.matches(Regex("^[0-9,]+$")) -> "${trimmed}원"
                                     else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
                                 }
                                 Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.align(Alignment.CenterVertically)) {
