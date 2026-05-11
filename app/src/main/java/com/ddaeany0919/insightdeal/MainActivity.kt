@@ -242,7 +242,8 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
 @Composable
 fun BottomNavigationBar(navController: androidx.navigation.NavController, homeViewModel: HomeViewModel? = null) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry?.destination
+    val currentRoute = navBackStackEntry?.destination?.route?.substringBefore("/")
+    
     val navigationItems = listOf(
         BottomNavItem("home", "홈", Icons.Default.Home, "홈"),
         BottomNavItem("advanced_search", "검색", Icons.Default.Search, "검색"),
@@ -252,7 +253,11 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController, homeVi
     )
     NavigationBar {
         navigationItems.forEach { item ->
-            val selected = currentDestination?.hierarchy?.any { dest -> dest.route == item.route } == true
+            val selected = when (item.route) {
+                "category" -> currentRoute == "category" || currentRoute == "category_detail"
+                else -> currentRoute == item.route
+            }
+            
             NavigationBarItem(
                 icon = { 
                     Icon(
@@ -273,10 +278,16 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController, homeVi
                             launchSingleTop = true
                         }
                     } else {
-                        navController.navigate(item.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
+                        if (selected) {
+                            // 이미 활성화된 탭을 다시 누른 경우 -> 해당 탭의 최상위 화면으로 이동 (Pop to Root)
+                            navController.popBackStack(item.route, inclusive = false)
+                        } else {
+                            // 다른 탭으로 이동
+                            navController.navigate(item.route) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
                         }
                     }
                 }
