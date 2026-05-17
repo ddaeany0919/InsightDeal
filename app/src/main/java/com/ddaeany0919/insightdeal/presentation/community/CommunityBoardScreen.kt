@@ -181,43 +181,37 @@ fun CommunityBoardScreen(
 
     Scaffold(
         topBar = {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 2.dp
-            ) {
-                Column {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Outlined.Forum,
-                                contentDescription = null,
-                                tint = AccentOrange,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                "살까말까 고민방",
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = NeutralGray900
-                            )
-                        }
-                        IconButton(onClick = { viewModel.loadPosts() }) {
-                            Icon(
-                                Icons.Default.Refresh, 
-                                contentDescription = "새로고침",
-                                tint = NeutralGray500
-                            )
-                        }
+            TopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Outlined.Forum,
+                            contentDescription = null,
+                            tint = AccentOrange,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "살까말까 고민방",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeutralGray900
+                        )
                     }
-                }
-            }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.loadPosts() }) {
+                        Icon(
+                            Icons.Default.Refresh, 
+                            contentDescription = "새로고침",
+                            tint = NeutralGray500
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
         },
         floatingActionButton = {
             FloatingActionButton(
