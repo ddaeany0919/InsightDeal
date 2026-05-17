@@ -15,14 +15,16 @@ import androidx.compose.material.icons.outlined.HeadsetMic
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,6 +32,9 @@ fun MyPageScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToWatchlist: () -> Unit
 ) {
+    val context = LocalContext.current
+    val username by AuthManager.getUsername(context).collectAsState(initial = "admin")
+    
     Scaffold(
         topBar = {
             TopAppBar(
@@ -80,7 +85,7 @@ fun MyPageScreen(
                     Spacer(modifier = Modifier.width(20.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "사용자 님", 
+                            text = "$username 님", 
                             style = MaterialTheme.typography.titleLarge, 
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onBackground
@@ -109,9 +114,28 @@ fun MyPageScreen(
                     .padding(bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                QuickStatCard(modifier = Modifier.weight(1f), title = "포인트", value = "0 P")
-                QuickStatCard(modifier = Modifier.weight(1f), title = "쿠폰", value = "0 장")
-                QuickStatCard(modifier = Modifier.weight(1f), title = "작성글", value = "0 건")
+                QuickStatCard(
+                    modifier = Modifier.weight(1f), 
+                    title = "포인트", 
+                    value = "0 P",
+                    onClick = {
+                        android.widget.Toast.makeText(context, "포인트는 향후 커뮤니티 리워드 및 상품 교환에 활용될 예정입니다.", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                )
+                QuickStatCard(
+                    modifier = Modifier.weight(1f), 
+                    title = "쿠폰", 
+                    value = "0 장",
+                    onClick = {
+                        android.widget.Toast.makeText(context, "쿠폰은 파트너사 제휴 할인 및 특별 이벤트에 사용됩니다.", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                )
+                QuickStatCard(
+                    modifier = Modifier.weight(1f), 
+                    title = "작성글", 
+                    value = "0 건",
+                    onClick = { /* TODO */ }
+                )
             }
             
             // 구분선
@@ -161,7 +185,15 @@ fun MyPageScreen(
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
                 
-                MyPageMenuItem(icon = Icons.Outlined.HeadsetMic, title = "고객센터", onClick = { /* TODO */ })
+                MyPageMenuItem(icon = Icons.Outlined.HeadsetMic, title = "고객센터", onClick = { 
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:kth0000919@gmail.com"))
+                    intent.putExtra(android.content.Intent.EXTRA_SUBJECT, "[InsightDeal] 앱 문의사항")
+                    try {
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        android.widget.Toast.makeText(context, "메일 앱을 찾을 수 없습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                })
                 MyPageMenuItem(icon = Icons.Outlined.Info, title = "버전 정보", value = "v1.0.0", onClick = { /* TODO */ })
             }
         }
@@ -169,9 +201,9 @@ fun MyPageScreen(
 }
 
 @Composable
-fun QuickStatCard(modifier: Modifier = Modifier, title: String, value: String) {
+fun QuickStatCard(modifier: Modifier = Modifier, title: String, value: String, onClick: () -> Unit = {}) {
     Card(
-        modifier = modifier,
+        modifier = modifier.clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)

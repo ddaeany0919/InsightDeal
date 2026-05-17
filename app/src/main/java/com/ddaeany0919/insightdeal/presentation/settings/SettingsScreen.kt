@@ -21,6 +21,7 @@ import com.ddaeany0919.insightdeal.presentation.theme.ThemeManager
 import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
 import coil.imageLoader
 import kotlinx.coroutines.launch
+import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
 
 @OptIn(ExperimentalMaterial3Api::class, coil.annotation.ExperimentalCoilApi::class)
 @Composable
@@ -28,8 +29,11 @@ fun SettingsScreen() {
     val ctx = LocalContext.current
     val tm = remember { ThemeManager.getInstance(ctx) }
     val mode by tm.themeMode.collectAsState()
-    rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
+
+    val savedUsername by AuthManager.getUsername(ctx).collectAsState(initial = "admin")
+    val savedNickname by AuthManager.getNickname(ctx).collectAsState(initial = "admin")
 
     Scaffold(
         topBar = {
@@ -60,10 +64,7 @@ fun SettingsScreen() {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    var currentUserId by remember {
-                        val prefs = ctx.getSharedPreferences("app", Context.MODE_PRIVATE)
-                        mutableStateOf(prefs.getString("user_id", "guest") ?: "guest")
-                    }
+                    var currentUserId by remember(savedUsername) { mutableStateOf(savedUsername ?: "admin") }
                     
                     Text("User ID", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(4.dp))
@@ -80,8 +81,10 @@ fun SettingsScreen() {
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Button(onClick = {
-                            ctx.getSharedPreferences("app", Context.MODE_PRIVATE)
-                                .edit().putString("user_id", currentUserId).apply()
+                            scope.launch {
+                                AuthManager.saveUser(ctx, currentUserId, savedNickname ?: "admin")
+                                android.widget.Toast.makeText(ctx, "저장되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         }) {
                             Text("저장")
                         }
