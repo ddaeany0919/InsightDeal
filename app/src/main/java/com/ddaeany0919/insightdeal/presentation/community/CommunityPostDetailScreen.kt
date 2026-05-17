@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.outlined.ThumbsUpDown
@@ -216,6 +217,7 @@ fun CommunityPostDetailScreen(
     }
     
     Scaffold(
+        modifier = Modifier.fillMaxSize().imePadding(),
         topBar = {
             TopAppBar(
                 title = { Text("살까말까 고민 상세", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
@@ -272,6 +274,15 @@ fun CommunityPostDetailScreen(
                         verticalAlignment = Alignment.Bottom,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        IconButton(
+                            onClick = {
+                                android.widget.Toast.makeText(context, "이미지 첨부 기능은 준비 중입니다.", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(imageVector = Icons.Outlined.Image, contentDescription = "이미지 첨부", tint = NeutralGray500)
+                        }
+                        
                         Box(
                             modifier = Modifier
                                 .weight(1f)

@@ -159,7 +159,17 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
         }
     }
     
-    Scaffold(bottomBar = { BottomNavigationBar(navController, homeViewModel) }) { innerPadding ->
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route?.substringBefore("/")
+    val showBottomNav = currentRoute in listOf("home", "advanced_search", "category", "community", "mypage", "watchlist")
+
+    Scaffold(
+        bottomBar = { 
+            if (showBottomNav) {
+                BottomNavigationBar(navController, homeViewModel)
+            }
+        }
+    ) { innerPadding ->
         val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
         val wishlistViewModel: WishlistViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
             factory = object : ViewModelProvider.Factory {
@@ -172,7 +182,7 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                 }
             }
         )
-        NavHost(navController, startDestination = "home", Modifier.padding(innerPadding)) {
+        NavHost(navController, startDestination = "home", Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)) {
             composable("home") {
                 HomeScreen(navController = navController, viewModel = homeViewModel, wishlistViewModel = wishlistViewModel)
             }
