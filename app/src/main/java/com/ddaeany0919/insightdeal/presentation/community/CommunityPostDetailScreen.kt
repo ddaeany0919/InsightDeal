@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -147,6 +149,44 @@ class CommunityPostDetailViewModel : ViewModel() {
             }
         }
     }
+    
+    fun updateComment(postId: Int, commentId: Int, userId: String, nickname: String, content: String, dealUrl: String? = null, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            _isCommentSubmitting.value = true
+            try {
+                val req = com.ddaeany0919.insightdeal.data.network.CommunityCommentCreateReq(
+                    userId = userId,
+                    nickname = nickname,
+                    content = content,
+                    dealUrl = dealUrl,
+                    parentId = null
+                )
+                val response = api.updateCommunityComment(postId, commentId, req)
+                if (response.isSuccessful) {
+                    loadPostDetail(postId, showLoading = false)
+                    onComplete()
+                }
+            } catch (e: Exception) {
+                // Ignore
+            } finally {
+                _isCommentSubmitting.value = false
+            }
+        }
+    }
+    
+    fun deleteComment(postId: Int, commentId: Int, userId: String, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = api.deleteCommunityComment(postId, commentId, userId)
+                if (response.isSuccessful) {
+                    loadPostDetail(postId, showLoading = false)
+                    onComplete()
+                }
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -157,6 +197,7 @@ fun CommunityPostDetailScreen(
     viewModel: CommunityPostDetailViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val post by viewModel.post.collectAsState()
     val linkedDeal by viewModel.linkedDeal.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -166,10 +207,9 @@ fun CommunityPostDetailScreen(
     val currentUserNickname by AuthManager.getNickname(context).collectAsState(initial = "익명")
     
     var commentText by remember { mutableStateOf("") }
-    var referenceUrl by remember { mutableStateOf("") }
-    var showUrlInput by remember { mutableStateOf(false) }
     var replyingToCommentId by remember { mutableStateOf<Int?>(null) }
     var replyingToNickname by remember { mutableStateOf<String?>(null) }
+    var editingCommentId by remember { mutableStateOf<Int?>(null) }
     
     LaunchedEffect(postId) {
         viewModel.loadPostDetail(postId)
@@ -194,22 +234,21 @@ fun CommunityPostDetailScreen(
         bottomBar = {
             Surface(
                 tonalElevation = 8.dp,
-                color = Color.White,
-                modifier = Modifier.imePadding()
+                color = Color.White
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                    if (replyingToNickname != null) {
+                    if (replyingToNickname != null || editingCommentId != null) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = "↳ $replyingToNickname 님에게 답글 작성 중...",
+                                text = if (editingCommentId != null) "✏️ 댓글 수정 중..." else "↳ $replyingToNickname 님에게 답글 작성 중...",
                                 fontSize = 12.sp,
                                 color = AccentOrange,
                                 fontWeight = FontWeight.SemiBold
@@ -218,6 +257,8 @@ fun CommunityPostDetailScreen(
                                 onClick = { 
                                     replyingToCommentId = null
                                     replyingToNickname = null
+                                    editingCommentId = null
+                                    commentText = ""
                                 },
                                 modifier = Modifier.size(24.dp)
                             ) {
@@ -225,78 +266,71 @@ fun CommunityPostDetailScreen(
                             }
                         }
                     }
-                    if (showUrlInput) {
-                        OutlinedTextField(
-                            value = referenceUrl,
-                            onValueChange = { referenceUrl = it },
-                            placeholder = { Text("참고할 핫딜/상품 링크 (선택)", fontSize = 13.sp, color = NeutralGray500) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp)
-                                .padding(bottom = 6.dp),
-                            singleLine = true,
-                            shape = RoundedCornerShape(8.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = AccentOrange,
-                                focusedLabelColor = AccentOrange
-                            )
-                        )
-                    }
                     
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        IconButton(
-                            onClick = { showUrlInput = !showUrlInput },
-                            modifier = Modifier.size(36.dp),
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = if (showUrlInput) AccentOrangeSoft else NeutralGray50
-                            )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 40.dp, max = 100.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(NeutralGray50)
+                                .border(1.dp, NeutralGray200, RoundedCornerShape(20.dp))
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            contentAlignment = Alignment.CenterStart
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Link,
-                                contentDescription = "링크 첨부",
-                                tint = if (showUrlInput) AccentOrange else NeutralGray500,
-                                modifier = Modifier.size(18.dp)
+                            if (commentText.isEmpty()) {
+                                Text("조언이나 피드백을 남겨주세요...", color = NeutralGray500, fontSize = 13.sp)
+                            }
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = commentText,
+                                onValueChange = { commentText = it },
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    fontSize = 14.sp,
+                                    color = NeutralGray900
+                                ),
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
-                        
-                        OutlinedTextField(
-                            value = commentText,
-                            onValueChange = { commentText = it },
-                            placeholder = { Text("조언이나 피드백을 남겨주세요...", fontSize = 13.sp) },
-                            modifier = Modifier.weight(1f).heightIn(min = 40.dp, max = 80.dp),
-                            maxLines = 3,
-                            shape = RoundedCornerShape(20.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = AccentOrange,
-                                focusedLabelColor = AccentOrange
-                            )
-                        )
                         
                         IconButton(
                             onClick = {
                                 if (commentText.isNotBlank()) {
-                                    viewModel.submitComment(
-                                        postId = postId,
-                                        userId = currentUserId ?: "admin",
-                                        nickname = currentUserNickname ?: "익명 고수",
-                                        content = commentText,
-                                        dealUrl = referenceUrl.takeIf { it.isNotBlank() },
-                                        parentId = replyingToCommentId
-                                    ) {
-                                        commentText = ""
-                                        referenceUrl = ""
-                                        showUrlInput = false
-                                        replyingToCommentId = null
-                                        replyingToNickname = null
+                                    if (editingCommentId != null) {
+                                        viewModel.updateComment(
+                                            postId = postId,
+                                            commentId = editingCommentId!!,
+                                            userId = currentUserId ?: "admin",
+                                            nickname = currentUserNickname ?: "익명 고수",
+                                            content = commentText,
+                                            dealUrl = null
+                                        ) {
+                                            commentText = ""
+                                            editingCommentId = null
+                                            keyboardController?.hide()
+                                        }
+                                    } else {
+                                        viewModel.submitComment(
+                                            postId = postId,
+                                            userId = currentUserId ?: "admin",
+                                            nickname = currentUserNickname ?: "익명 고수",
+                                            content = commentText,
+                                            dealUrl = null,
+                                            parentId = replyingToCommentId
+                                        ) {
+                                            commentText = ""
+                                            replyingToCommentId = null
+                                            replyingToNickname = null
+                                            keyboardController?.hide()
+                                        }
                                     }
                                 }
                             },
                             enabled = commentText.isNotBlank() && !isCommentSubmitting,
-                            modifier = Modifier.size(36.dp),
+                            modifier = Modifier.size(40.dp),
                             colors = IconButtonDefaults.iconButtonColors(
                                 containerColor = AccentOrange,
                                 contentColor = Color.White,
@@ -669,6 +703,27 @@ fun CommunityPostDetailScreen(
                                             fontSize = 10.sp,
                                             color = NeutralGray500
                                         )
+                                        if (comment.userId == currentUserId) {
+                                            Text(
+                                                text = "수정",
+                                                fontSize = 10.sp,
+                                                color = NeutralGray500,
+                                                modifier = Modifier.clickable {
+                                                    editingCommentId = comment.id
+                                                    commentText = comment.content
+                                                    replyingToCommentId = null
+                                                    replyingToNickname = null
+                                                }
+                                            )
+                                            Text(
+                                                text = "삭제",
+                                                fontSize = 10.sp,
+                                                color = NeutralGray500,
+                                                modifier = Modifier.clickable {
+                                                    viewModel.deleteComment(postId, comment.id, currentUserId ?: "admin") {}
+                                                }
+                                            )
+                                        }
                                         Text(
                                             text = "답글달기",
                                             fontSize = 10.sp,
@@ -677,6 +732,7 @@ fun CommunityPostDetailScreen(
                                             modifier = Modifier.clickable {
                                                 replyingToCommentId = comment.parentId ?: comment.id
                                                 replyingToNickname = comment.nickname
+                                                editingCommentId = null
                                             }
                                         )
                                     }

@@ -1324,6 +1324,67 @@ def create_community_post_comment(
         "created_at": new_comment.created_at.isoformat() if new_comment.created_at else None
     }
 
+@router.put("/posts/{post_id}/comments/{comment_id}")
+def update_community_post_comment(
+    post_id: int, 
+    comment_id: int,
+    comment_data: CommunityPostCommentCreate, 
+    db: Session = Depends(get_db_session)
+):
+    comment = db.query(models.CommunityPostComment).filter(
+        models.CommunityPostComment.id == comment_id,
+        models.CommunityPostComment.post_id == post_id
+    ).first()
+    
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+        
+    if comment.user_id != comment_data.user_id:
+        raise HTTPException(status_code=403, detail="Only the comment creator can edit")
+        
+    comment.content = comment_data.content
+    if comment_data.deal_url is not None:
+        comment.deal_url = comment_data.deal_url
+        
+    db.commit()
+    db.refresh(comment)
+    
+    return {
+        "id": comment.id,
+        "user_id": comment.user_id,
+        "nickname": comment.nickname,
+        "content": comment.content,
+        "deal_url": comment.deal_url,
+        "is_accepted": comment.is_accepted,
+        "parent_id": comment.parent_id,
+        "created_at": comment.created_at.isoformat() if comment.created_at else None
+    }
+
+@router.delete("/posts/{post_id}/comments/{comment_id}")
+def delete_community_post_comment(
+    post_id: int, 
+    comment_id: int,
+    user_id: str = Query(...),
+    db: Session = Depends(get_db_session)
+):
+    comment = db.query(models.CommunityPostComment).filter(
+        models.CommunityPostComment.id == comment_id,
+        models.CommunityPostComment.post_id == post_id
+    ).first()
+    
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+        
+    if comment.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Only the comment creator can delete")
+        
+    # 만약 자식 댓글이 있으면 삭제 상태로만 마킹 (또는 내용만 변경)
+    # 여기서는 간단히 삭제 처리
+    db.delete(comment)
+    db.commit()
+    
+    return {"message": "Comment deleted successfully"}
+
 @router.post("/posts/{post_id}/comments/{comment_id}/accept")
 def accept_community_post_comment(
     post_id: int, 

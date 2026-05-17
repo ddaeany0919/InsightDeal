@@ -280,6 +280,20 @@ interface ApiService {
         @Query("user_id") userId: String
     ): Response<Unit>
 
+    @PUT("api/community/posts/{post_id}/comments/{comment_id}")
+    suspend fun updateCommunityComment(
+        @Path("post_id") postId: Int,
+        @Path("comment_id") commentId: Int,
+        @Body request: com.ddaeany0919.insightdeal.data.network.CommunityCommentCreateReq
+    ): Response<com.ddaeany0919.insightdeal.data.network.CommunityCommentDto>
+
+    @DELETE("api/community/posts/{post_id}/comments/{comment_id}")
+    suspend fun deleteCommunityComment(
+        @Path("post_id") postId: Int,
+        @Path("comment_id") commentId: Int,
+        @Query("user_id") userId: String
+    ): Response<Unit>
+
     // Deal Detail enhancements
     @GET("api/product/deals/{id}/comments")
     suspend fun getDealComments(@Path("id") dealId: Int): Response<List<ApiDealComment>>
