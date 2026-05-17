@@ -3,6 +3,7 @@ package com.ddaeany0919.insightdeal.presentation
 import com.ddaeany0919.insightdeal.presentation.formatPrice
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,11 +12,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Insights
-import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,6 +36,7 @@ import java.util.Locale
 
 import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistViewModel
 import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistUiState
+import com.ddaeany0919.insightdeal.network.ApiDealVotes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,7 +45,8 @@ fun DealDetailRoute(
     viewModel: DealDetailViewModel,
     wishlistViewModel: WishlistViewModel,
     onBack: () -> Unit,
-    onOpenUrl: (String) -> Unit
+    onOpenUrl: (String) -> Unit,
+    onNavigateToCommunity: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val wishlistState by wishlistViewModel.uiState.collectAsState()
@@ -73,7 +77,7 @@ fun DealDetailRoute(
         return
     }
 
-    val currentPriceInt = deal.price
+    val currentPriceInt = deal.price.toInt()
     val targetUrl = deal.ecommerceUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl ?: ""
     val isBookmarked = (wishlistState as? WishlistUiState.Success)?.items?.any { it.productUrl == targetUrl } ?: false
 
@@ -93,6 +97,7 @@ fun DealDetailRoute(
         priceHistory = uiState.priceHistory,
         mallPrices = pricesList,
         isBookmarked = isBookmarked,
+        votes = uiState.votes,
         onBack = onBack,
         onBookmarkToggle = {
             if (isBookmarked) {
@@ -104,12 +109,13 @@ fun DealDetailRoute(
                 wishlistViewModel.addItem(
                     keyword = deal.title,
                     productUrl = targetUrl,
-                    targetPrice = deal.price
+                    targetPrice = deal.price.toInt()
                 )
             }
         },
         onShare = { /* Todo */ },
-        onOpenOrigin = onOpenUrl
+        onOpenOrigin = onOpenUrl,
+        onNavigateToCommunity = onNavigateToCommunity
     )
 }
 
@@ -120,10 +126,12 @@ fun DealDetailScreen(
     priceHistory: List<PriceHistoryPoint>,
     mallPrices: List<MallPrice>,
     isBookmarked: Boolean,
+    votes: ApiDealVotes?,
     onBack: () -> Unit,
     onBookmarkToggle: () -> Unit,
     onShare: () -> Unit,
-    onOpenOrigin: (String) -> Unit
+    onOpenOrigin: (String) -> Unit,
+    onNavigateToCommunity: () -> Unit
 ) {
     Scaffold(
         bottomBar = {
@@ -200,8 +208,89 @@ fun DealDetailScreen(
                     onAlertClick = { _ -> /* MVP: 백엔드 푸시 알람 등록 */ }
                 )
             }
+            item {
+                CommunityGominBanner(
+                    votes = votes,
+                    onClick = onNavigateToCommunity
+                )
+            }
             item { 
                 MallPriceTable(mallPrices, onOpenOrigin) 
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommunityGominBanner(
+    votes: ApiDealVotes?,
+    onClick: () -> Unit
+) {
+    val totalVotes = (votes?.buy_count ?: 0) + (votes?.pass_count ?: 0)
+    val hasVotes = totalVotes > 0
+    val buyRatio = if (hasVotes) {
+        ((votes!!.buy_count.toFloat() / totalVotes) * 100).toInt()
+    } else {
+        0
+    }
+
+    val statusText = if (hasVotes) {
+        "지름 지수 $buyRatio% 🔥 (${totalVotes}명 투표 중! 살까 ${votes?.buy_count ?: 0} | 말까 ${votes?.pass_count ?: 0})"
+    } else {
+        "지름 고수들의 투표를 보고 실패 없는 쇼핑을 시작하세요!"
+    }
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+    ) {
+        Box(
+            modifier = Modifier
+                .background(
+                    brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        colors = listOf(Color(0xFFFF8E53), Color(0xFFFE6B8B))
+                    )
+                )
+                .clickable(onClick = onClick)
+                .padding(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.White.copy(alpha = 0.25f),
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("⚖️", fontSize = 20.sp)
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "이 특가 핫딜, 살까 말까 고민되시나요?",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.9f)
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
     }
@@ -221,7 +310,7 @@ private fun PriceAlertRegistrationButton(currentPrice: Int, onAlertClick: (Int) 
         border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Icon(Icons.Default.NotificationsActive, contentDescription = null, modifier = Modifier.size(20.dp))
+        Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
         Text(
             text = "목표가 도달 시 알림 설정",
@@ -279,7 +368,7 @@ private fun PriceHistoryInteractiveCard(history: List<PriceHistoryPoint>) {
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Insights, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(32.dp))
+                Icon(Icons.Default.Star, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(32.dp))
                 Spacer(Modifier.height(12.dp))
                 Text("차트를 생성하기 위한 데이터 수집 중입니다", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
                 Spacer(Modifier.height(8.dp))
@@ -340,7 +429,7 @@ private fun AIBuyerGuide(deal: DealItem, priceHistory: List<PriceHistoryPoint>, 
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            Icons.Default.Insights, 
+                            Icons.Default.Star, 
                             contentDescription = "AI", 
                             tint = titleColor,
                             modifier = Modifier.size(20.dp)
@@ -433,7 +522,7 @@ private fun MallPriceTable(mallPrices: List<MallPrice>, onOpenOrigin: (String) -
                     val priceText = when (row.currency?.uppercase()) {
                         "USD" -> "$${String.format(Locale.US, "%.2f", row.price.toDouble() / 100)}"
                         "EUR" -> "€${String.format(Locale.US, "%.2f", row.price.toDouble() / 100)}"
-                        else -> "${formatPrice(row.price, row.currency ?: "KRW")}"
+                        else -> "${formatPrice(row.price.toLong(), row.currency ?: "KRW")}"
                     }
                     Text(priceText, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Button(
@@ -562,7 +651,7 @@ fun DealHeader(deal: DealItem) {
                 if (priceText == "본문 참조") {
                     Spacer(modifier = Modifier.width(6.dp))
                     Icon(
-                        Icons.Default.Info,
+                        Icons.Default.Warning,
                         contentDescription = null,
                         tint = Color.Gray,
                         modifier = Modifier.size(20.dp).padding(bottom = 2.dp)
@@ -579,7 +668,7 @@ fun DealHeader(deal: DealItem) {
                 ) {
                     Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
                         Icon(
-                            Icons.Default.Info, 
+                            Icons.Default.Warning, 
                             contentDescription = "AI 요약", 
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 2.dp)

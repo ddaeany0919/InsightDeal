@@ -50,8 +50,10 @@ interface ApiService {
 
     // 📈 핫딜 가격 히스토리
     @GET("api/community/deals/{dealId}/history")
-    suspend fun getDealPriceHistory(@Path("dealId") dealId: Int): Response<List<PriceHistoryPoint>>
-
+    suspend fun getDealPriceHistory(
+        @Path("dealId") dealId: Int,
+        @Query("period") period: String = "7d"
+    ): Response<List<PriceHistoryPoint>>
     // 🎯 향상된 딜 정보 (임시)
     @GET("api/community/deals/{dealId}")
     suspend fun getEnhancedDealInfo(@Path("dealId") dealId: Int): Response<DealItem>
@@ -250,7 +252,79 @@ interface ApiService {
         @Query("start") start: Int = 1,
         @Query("sort") sort: String = "sim"
     ): Response<NaverShoppingResponse>
+
+    @GET("api/community/posts")
+    suspend fun getCommunityPosts(
+        @Query("post_type") postType: String? = null
+    ): Response<List<com.ddaeany0919.insightdeal.data.network.CommunityPostDto>>
+
+    @GET("api/community/posts/{post_id}")
+    suspend fun getCommunityPost(@Path("post_id") postId: Int): Response<com.ddaeany0919.insightdeal.data.network.CommunityPostDto>
+
+    @POST("api/community/posts")
+    suspend fun createCommunityPost(@Body request: com.ddaeany0919.insightdeal.data.network.CommunityPostCreateReq): Response<com.ddaeany0919.insightdeal.data.network.CommunityPostDto>
+
+    @PUT("api/community/posts/{post_id}")
+    suspend fun updateCommunityPost(@Path("post_id") postId: Int, @Body request: com.ddaeany0919.insightdeal.data.network.CommunityPostCreateReq): Response<com.ddaeany0919.insightdeal.data.network.CommunityPostDto>
+
+    @POST("api/community/posts/{post_id}/comments")
+    suspend fun createCommunityComment(
+        @Path("post_id") postId: Int,
+        @Body request: com.ddaeany0919.insightdeal.data.network.CommunityCommentCreateReq
+    ): Response<com.ddaeany0919.insightdeal.data.network.CommunityCommentDto>
+
+    @POST("api/community/posts/{post_id}/comments/{comment_id}/accept")
+    suspend fun acceptCommunityComment(
+        @Path("post_id") postId: Int,
+        @Path("comment_id") commentId: Int,
+        @Query("user_id") userId: String
+    ): Response<Unit>
+
+    // Deal Detail enhancements
+    @GET("api/product/deals/{id}/comments")
+    suspend fun getDealComments(@Path("id") dealId: Int): Response<List<ApiDealComment>>
+
+    @GET("api/product/deals/{id}/votes")
+    suspend fun getDealVotes(
+        @Path("id") dealId: Int,
+        @Query("user_id") userId: String
+    ): Response<ApiDealVotes>
+
+    @POST("api/product/deals/{id}/comments")
+    suspend fun addDealComment(
+        @Path("id") dealId: Int,
+        @Body req: ApiCommentCreate
+    ): Response<ApiDealComment>
+
+    @POST("api/product/deals/{id}/votes")
+    suspend fun addDealVote(
+        @Path("id") dealId: Int,
+        @Body req: ApiVoteCreate
+    ): Response<ApiDealVotes>
 }
+
+data class ApiDealComment(
+    val id: Int,
+    val user_id: String,
+    val content: String,
+    val created_at: String
+)
+
+data class ApiDealVotes(
+    val buy_count: Int,
+    val pass_count: Int,
+    val user_vote: String? = null
+)
+
+data class ApiCommentCreate(
+    val user_id: String,
+    val content: String
+)
+
+data class ApiVoteCreate(
+    val user_id: String,
+    val vote_type: String
+)
 
 // [Epic 3] 키워드 응답 모델
 data class KeywordListResponse(

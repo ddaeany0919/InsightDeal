@@ -372,3 +372,73 @@ def create_all_tables():
     Base.metadata.create_all(engine)
     print("✅ 모든 데이터베이스 테이블이 생성되었습니다.")
     return engine
+class CommunityPost(Base):
+    """
+    유저 생성 콘텐츠(UGC) 커뮤니티 게시글 테이블
+    (핫딜 역경매, 오프라인 핫딜 등)
+    """
+    __tablename__ = "community_posts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    post_type = Column(String(50), nullable=False, index=True) # 'REQUEST' (역경매), 'OFFLINE' (오프라인 핫딜) 등
+    user_id = Column(String(50), nullable=False, index=True)
+    nickname = Column(String(50), nullable=False, default="익명의 사냥꾼")
+    
+    title = Column(String(200), nullable=False)
+    content = Column(TEXT, nullable=False)
+    
+    # 핫딜 역경매 (REQUEST) 전용 필드
+    target_price = Column(Integer, nullable=True)
+    bounty_points = Column(Integer, default=0)
+    is_resolved = Column(Boolean, default=False)
+    
+    # 오프라인 핫딜 (OFFLINE) 전용 필드
+    location = Column(String(100), nullable=True) # 예: "코스트코 양재점"
+    
+    # 메타 및 통계
+    view_count = Column(Integer, default=0)
+    like_count = Column(Integer, default=0)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # 관계 설정
+    comments = relationship("CommunityPostComment", back_populates="post", cascade="all, delete-orphan")
+
+
+class CommunityPostComment(Base):
+    """
+    UGC 커뮤니티 게시글의 댓글 및 제안 테이블
+    """
+    __tablename__ = "community_post_comments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("community_posts.id"), nullable=False)
+    user_id = Column(String(50), nullable=False)
+    nickname = Column(String(50), nullable=False, default="익명의 제보자")
+    
+    content = Column(TEXT, nullable=False)
+    
+    # 핫딜 역경매 답변용 (제보 URL)
+    deal_url = Column(String(2048), nullable=True)
+    is_accepted = Column(Boolean, default=False) # 채택 여부
+    
+    # 대댓글 (댓글의 댓글) 지원
+    parent_id = Column(Integer, ForeignKey("community_post_comments.id"), nullable=True)
+    
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    
+    # 관계 설정
+    post = relationship("CommunityPost", back_populates="comments")
+    replies = relationship("CommunityPostComment", back_populates="parent", cascade="all, delete-orphan")
+    parent = relationship("CommunityPostComment", back_populates="replies", remote_side=[id])
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, index=True, nullable=False) # 로그인 ID
+    password_hash = Column(String(255), nullable=False)
+    nickname = Column(String(50), unique=True, nullable=False)
+    honey_points = Column(Integer, default=0) # 활동 내공 (채택되면 증가)
+    
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

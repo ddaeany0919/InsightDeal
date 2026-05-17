@@ -12,7 +12,7 @@ load_dotenv(os.path.join(root_dir, '.env'))
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from backend.database.models import Base, Community
+from backend.database.models import Base, Community, Deal
 from backend.scrapers.ppomppu_scraper import PpomppuScraper
 from backend.scrapers.quasarzone_scraper import QuasarzoneScraper
 from backend.scrapers.fmkorea_scraper import FmkoreaScraper
@@ -65,12 +65,13 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
 
     try:
         success_count = 0
+        update_count = 0
         scraper = ScraperClass(community_id=community_id)
         queue = asyncio.Queue()
 
         # [Phase 13] Async Queue 기반 Consumer Worker 정의 (병렬 스크래핑 및 DB 저장)
         async def worker():
-            nonlocal success_count
+            nonlocal success_count, update_count
             while True:
                 item = await queue.get()
                 if item is None:
@@ -80,7 +81,6 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                 # 각 워커별 독립적인 DB 세션 생성 (동시성 데드락 및 세션 오염 완벽 차단)
                 local_db = SessionLocal()
                 try:
-                    from backend.database.models import Deal
                     existing_deal = local_db.query(Deal).filter(Deal.post_link == item['url']).first()
                     
                     if not existing_deal:
@@ -91,8 +91,11 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                     
                     aggregator = AggregatorService(local_db)
                     deal = await aggregator.process_scraped_deal(community_id, item)
-                    if deal and not existing_deal:
-                        success_count += 1
+                    if deal:
+                        if not existing_deal:
+                            success_count += 1
+                        else:
+                            update_count += 1
                 except Exception as e:
                     local_db.rollback()
                     logger.error(f"[{community_display_name}] 데이터 처리 중 에러: {e}")
@@ -132,7 +135,6 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                         check_db = SessionLocal()
                         unique_items = []
                         try:
-                            from backend.database.models import Deal
                             for item in items:
                                 if item['url'] in global_seen_urls:
                                     continue
@@ -146,11 +148,9 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                         for item in unique_items:
                             await queue.put(item)
                             
-                        # 펨코(인기순 정렬)를 제외한 일반(최신순) 게시판은 페이지 전체가 중복이면 다음 페이지 조회 스킵
-                        if unique_items and duplicate_count >= len(unique_items) - 1: # 1개 정도 오차 허용
-                            if "fmkorea" not in community_name:
-                                logger.info(f"⏭️ [{community_display_name}] {page}페이지 대부분({duplicate_count}/{len(items)})이 기존 딜이므로 조기 종료 (Skip)!")
-                                break
+                        # 핫딜 종료/점수 강등 상태 업데이트를 위해 페이지 조기 종료 스킵 (1~3페이지 모두 스캔 보장)
+                        if unique_items and duplicate_count >= len(unique_items) - 1:
+                            logger.info(f"ℹ️ [{community_display_name}] {page}페이지 대부분({duplicate_count}/{len(items)})이 기존 딜이지만, 상태 갱신을 위해 스캔을 계속합니다.")
                 except Exception as e:
                     logger.error(f"[{community_display_name}] 리스트 페이지 {page} 파싱 에러: {e}")
                     # 타임아웃/차단 등 심각한 에러 발생 시 다음 페이지 조회를 중단하여 파이프라인 지연 방지
@@ -160,13 +160,16 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
             if hasattr(scraper, 'pop_url') and getattr(scraper, 'pop_url'):
                 try:
                     logger.info(f"▶ [{community_display_name}] 핫딜 승격 감지용 인기글 페이지 스크래핑 추가 실행")
+                    scraper.parsing_pop = True
                     raw_html = await scraper.fetch_html(scraper.pop_url)
                     if raw_html:
                         items = await scraper.parse_list(raw_html)
                         for item in items:
                             await queue.put(item)
+                    scraper.parsing_pop = False
                 except Exception as e:
                     logger.error(f"[{community_display_name}] 인기글 페이지 파싱 에러: {e}")
+                    scraper.parsing_pop = False
                     
             # 모든 아이템이 처리될 때까지 대기
             await queue.join()
@@ -177,7 +180,7 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
             
             await asyncio.gather(*workers)
             
-            logger.info(f"✅ [{community_display_name}] 스크래핑 성공 (신규 수집건수: {success_count}건)")
+            logger.info(f"✅ [{community_display_name}] 스크래핑 성공 (신규: {success_count}건, 갱신(중복): {update_count}건)")
                 
             # 통계 JSON 쓰기 (동시성 보호를 위해 try/except 사용)
             import json
@@ -212,7 +215,7 @@ async def validate_closed_deals():
     db = SessionLocal()
     try:
         logger.info("🔍 [Background] 과거 핫딜(3일 이내) 품절 상태 검증 데몬 가동")
-        target_date = datetime.now() - timedelta(days=3)
+        target_date = datetime.utcnow() - timedelta(days=3)
         deals = db.query(Deal).filter(
             Deal.is_closed == False, 
             Deal.indexed_at >= target_date

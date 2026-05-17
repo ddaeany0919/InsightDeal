@@ -77,8 +77,8 @@ class BookmarkManager private constructor(private val context: Context) {
             id = generateBookmarkId(),
             dealId = deal.id,
             title = deal.title,
-            originalPrice = deal.price,
-            currentPrice = deal.price,
+            originalPrice = deal.price.toInt(),
+            currentPrice = deal.price.toInt(),
             imageUrl = deal.imageUrl ?: "",
             siteName = deal.siteName,
             url = deal.postUrl ?: deal.ecommerceUrl ?: "",
@@ -151,11 +151,11 @@ class BookmarkManager private constructor(private val context: Context) {
                 val bookmark = existingBookmarks[index]
                 val newPrice = deal.price
 
-                if (newPrice != bookmark.currentPrice) {
+                if (newPrice.toInt() != bookmark.currentPrice) {
                     existingBookmarks[index] = bookmark.copy(
-                        currentPrice = newPrice,
+                        currentPrice = newPrice.toInt(),
                         priceHistory = bookmark.priceHistory + PricePoint(
-                            price = newPrice,
+                            price = newPrice.toInt(),
                             timestamp = System.currentTimeMillis()
                         ),
                         updatedAt = System.currentTimeMillis()

@@ -59,6 +59,8 @@ fun PriceChart(
         lineProgress.snapTo(0f)
         lineProgress.animateTo(1f, animationSpec = tween(1200))
     }
+    
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     Box(modifier = modifier) {
         Canvas(
@@ -81,7 +83,7 @@ fun PriceChart(
                 }
         ) {
             val width = size.width
-            val height = size.height
+            val height = size.height - 24.dp.toPx() // 하단 텍스트 영역 24dp 확보
             val xStep = if (prices.size > 1) width / (prices.size - 1) else width
             val yRange = chartMax - chartMin
 
@@ -133,6 +135,42 @@ fun PriceChart(
                 )
             }
 
+            // X축 라벨 렌더링
+            val axisTextSize = 12.dp.toPx()
+            val axisPaint = Paint().apply {
+                color = onSurfaceColor.toArgb()
+                textSize = axisTextSize
+                isAntiAlias = true
+                textAlign = Paint.Align.CENTER
+            }
+            val indicesToDraw = mutableListOf<Int>()
+            if (dates.isNotEmpty()) {
+                indicesToDraw.add(dates.lastIndex)
+                var lastAddedLeftEdge = width - axisPaint.measureText(dates.last() ?: "")
+                
+                for (i in dates.lastIndex - 1 downTo 0) {
+                    val safeDate = dates[i] ?: ""
+                    val x = i * xStep
+                    val textWidth = axisPaint.measureText(safeDate)
+                    val safeX = x.coerceIn(textWidth / 2f, width - textWidth / 2f)
+                    val rightEdge = safeX + textWidth / 2f
+                    
+                    if (rightEdge + 30f < lastAddedLeftEdge) {
+                        indicesToDraw.add(i)
+                        lastAddedLeftEdge = safeX - textWidth / 2f
+                    }
+                }
+            }
+            indicesToDraw.reverse()
+
+            indicesToDraw.forEach { i ->
+                val safeDate = dates[i] ?: ""
+                val x = i * xStep
+                val textWidth = axisPaint.measureText(safeDate)
+                val safeX = x.coerceIn(textWidth / 2f, width - textWidth / 2f)
+                drawContext.canvas.nativeCanvas.drawText(safeDate, safeX, size.height - 5.dp.toPx(), axisPaint)
+            }
+
             // 툴팁 렌더링 (Selection)
             selectedIndex?.let { index ->
                 val point = points[index]
@@ -173,12 +211,9 @@ fun PriceChart(
                 
                 // 텍스트가 좌우로 잘리지 않게 x 좌표 보정
                 val priceTextWidth = textPaint.measureText(priceText)
-                val dateTextWidth = datePaint.measureText(dateText)
-                val maxTextWidth = max(priceTextWidth, dateTextWidth)
-                val textX = point.x.coerceIn(maxTextWidth / 2f + 10f, width - maxTextWidth / 2f - 10f)
+                val textX = point.x.coerceIn(priceTextWidth / 2f + 10f, width - priceTextWidth / 2f - 10f)
 
                 drawContext.canvas.nativeCanvas.drawText(priceText, textX, tooltipY, textPaint)
-                drawContext.canvas.nativeCanvas.drawText(dateText, textX, tooltipY + 40f, datePaint)
             }
         }
     }

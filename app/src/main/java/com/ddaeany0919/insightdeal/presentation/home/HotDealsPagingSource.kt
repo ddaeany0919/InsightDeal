@@ -17,6 +17,7 @@ class HotDealsPagingSource(
         val limit = params.loadSize
         
         return try {
+            android.util.Log.d("HotDealsPagingSource", "Calling getCommunityHotDeals: limit=$limit, offset=$offset, category=$category, keyword=$keyword, platform=$platform")
             val response = apiService.getCommunityHotDeals(
                 limit = limit, 
                 offset = offset, 
@@ -26,15 +27,18 @@ class HotDealsPagingSource(
             )
             if (response.isSuccessful) {
                 val data = response.body()?.deals ?: emptyList()
+                android.util.Log.d("HotDealsPagingSource", "getCommunityHotDeals success, count: ${data.size}")
                 LoadResult.Page(
                     data = data,
                     prevKey = if (offset == 0) null else offset - limit,
                     nextKey = if (data.isEmpty() || data.size < limit) null else offset + limit
                 )
             } else {
+                android.util.Log.e("HotDealsPagingSource", "getCommunityHotDeals failed: ${response.code()} ${response.message()}")
                 LoadResult.Error(Exception("API Error: ${response.code()}"))
             }
         } catch (e: Exception) {
+            android.util.Log.e("HotDealsPagingSource", "Exception in load()", e)
             LoadResult.Error(e)
         }
     }

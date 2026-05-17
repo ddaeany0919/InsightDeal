@@ -1,15 +1,21 @@
 package com.ddaeany0919.insightdeal.models
 
 import com.google.gson.annotations.SerializedName
+import androidx.compose.runtime.Stable
 
 /**
  * 🔥 핫딜 아이템 데이터 클래스
  */
+@Stable
 data class DealSource(
     @SerializedName("site_name") val siteName: String,
-    @SerializedName("post_url") val postUrl: String
+    @SerializedName("post_url") val postUrl: String,
+    @SerializedName("ecommerce_url") val ecommerceUrl: String? = null,
+    @SerializedName("price") val price: Long? = null,
+    @SerializedName("currency") val currency: String? = null
 )
 
+@Stable
 data class DealItem(
     @SerializedName("id")
     val id: Int,
@@ -18,13 +24,13 @@ data class DealItem(
     val title: String,
     
     @SerializedName("price")
-    val price: Int,
+    val price: Long,
     
     @SerializedName("currency")
     val currency: String = "KRW",
     
     @SerializedName("original_price")
-    val originalPrice: Int? = null,
+    val originalPrice: Long? = null,
     
     @SerializedName("discount_rate")
     val discountRate: Int? = null,
@@ -86,7 +92,7 @@ data class DealItem(
     /**
      * 💰 할인된 가격 계산
      */
-    val discountedPrice: Int
+    val discountedPrice: Long
         get() = originalPrice?.let { original ->
             discountRate?.let { rate ->
                 (original * (100 - rate) / 100)

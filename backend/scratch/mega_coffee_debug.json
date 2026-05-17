@@ -1,0 +1,35 @@
+{
+  "deal1": {
+    "title": "메가커피 아이스아메리카노",
+    "clean_title": "메가커피_아이스아메리카노",
+    "words": [
+      "메가커피",
+      "아이스아메리카노"
+    ],
+    "url": "http://m.11st.co.kr/products/ma/9327330905"
+  },
+  "deal2": {
+    "title": "[11번가] 메가커피 아이스 아메리카노 1500원",
+    "clean_title": "메가커피_아이스_아메리카노_1500",
+    "words": [
+      "메가커피",
+      "아메리카노",
+      "아이스",
+      "1500"
+    ],
+    "url": "https://www.11st.co.kr/products/9318571253?&trTypeCd=05&trCtgrNo=585021&checkCtlgPrd=true"
+  },
+  "intersection": [
+    "메가커피"
+  ],
+  "union": [
+    "1500",
+    "메가커피",
+    "아메리카노",
+    "아이스",
+    "아이스아메리카노"
+  ],
+  "jaccard": 0.2,
+  "quantity_conflict": false,
+  "model_conflict": false
+}

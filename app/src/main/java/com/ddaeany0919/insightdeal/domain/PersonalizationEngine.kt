@@ -136,10 +136,10 @@ class PersonalizationEngine private constructor(private val context: Context) {
         val price = deal.price
 
         return when {
-            price <= 50000 && profile.preferredPriceRange.contains("low") -> 80.0
-            price in 50001..200000 && profile.preferredPriceRange.contains("medium") -> 85.0
-            price in 200001..1000000 && profile.preferredPriceRange.contains("high") -> 75.0
-            price > 1000000 && profile.preferredPriceRange.contains("premium") -> 60.0
+            price <= 50000L && profile.preferredPriceRange.contains("low") -> 80.0
+            price in 50001L..200000L && profile.preferredPriceRange.contains("medium") -> 85.0
+            price in 200001L..1000000L && profile.preferredPriceRange.contains("high") -> 75.0
+            price > 1000000L && profile.preferredPriceRange.contains("premium") -> 60.0
             else -> 40.0
         }
     }
@@ -439,7 +439,7 @@ data class UserInteraction(
     val title: String,
     val category: String,
     val brand: String,
-    val price: Int?,
+    val price: Long?,
     val timestamp: Long = System.currentTimeMillis(),
     val sessionDuration: Long = 0L // 밀리초
 )

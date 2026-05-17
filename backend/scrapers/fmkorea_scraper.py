@@ -11,9 +11,9 @@ class FmkoreaScraper(AsyncBaseScraper):
         # 펨코는 Cloudflare 방어가 강하므로 딜레이를 늘리고 동시성을 낮춥니다.
         super().__init__("펨코", max_concurrent_requests=2)
         self.community_id = community_id
-        # 일반 핫딜 게시판에서 전체 게시글 수집
-        self.list_url = "https://www.fmkorea.com/index.php?mid=hotdeal&listStyle=webzine"
-        self.pop_url = None
+        self.list_url = "https://www.fmkorea.com/hotdeal"
+        self.pop_url = "https://www.fmkorea.com/index.php?mid=hotdeal&sort_index=pop&order_type=desc"
+        self.parsing_pop = False
 
     def _get_headers(self) -> dict:
         """펨코리아 전용 (Cloudflare 430 차단 우회를 위한 특수 헤더 추가)"""
@@ -200,14 +200,13 @@ class FmkoreaScraper(AsyncBaseScraper):
 
             # 종료 여부 확인 (취소선이 그어져 있는지 또는 종료 키워드)
             is_closed = detail_info.get("is_closed", False)
-            # 펨코 전용: 핫딜 종료 시 <td class="title"> 태그에 'hotdeal_var8Y' 클래스가 붙음
-            title_td = row.select_one('td.title')
-            if title_td:
-                td_classes = title_td.get('class', [])
-                if isinstance(td_classes, list) and 'hotdeal_var8Y' in td_classes:
-                    is_closed = True
-                elif isinstance(td_classes, str) and 'hotdeal_var8Y' in td_classes:
-                    is_closed = True
+            
+            # 펨코 전용: 핫딜 종료 시 a 태그(title_element)에 'hotdeal_var8Y' 클래스가 붙음
+            a_classes = title_element.get('class', [])
+            if isinstance(a_classes, list) and 'hotdeal_var8Y' in a_classes:
+                is_closed = True
+            elif isinstance(a_classes, str) and 'hotdeal_var8Y' in a_classes:
+                is_closed = True
 
             style = title_element.get('style', '')
             if 'line-through' in style or title_element.select_one('del, s, strike'):
@@ -241,8 +240,14 @@ class FmkoreaScraper(AsyncBaseScraper):
                 l_txt = voted_el.get_text(strip=True).replace('추천', '').replace(',', '').strip()
                 if l_txt.isdigit(): like_count = int(l_txt)
                 
-            # 일반 핫딜 게시판에서 수집된 글 중, 백그라운드에서 수집한 '포텐' 목록에 포함되어 있으면 핫딜 마크 부여
-            is_poten = url in getattr(self, "hot_urls", set())
+            # 펨코 핫딜 게시판 목록 자체에 '포텐' 뱃지가 있는 경우 우선 반영
+            is_poten = False
+            poten_span = row.select_one('span.STAR-BEST')
+            if poten_span and '포텐' in poten_span.get_text(strip=True):
+                is_poten = True
+            elif getattr(self, "parsing_pop", False):
+                # 인기(포텐) 게시판에서 긁어오면 모두 포텐으로 인정
+                is_poten = True
 
             # 실제 게시글 작성 시간 추출 (KST 기준을 UTC로 변환하여 저장)
             posted_at_iso = None
@@ -398,10 +403,22 @@ class FmkoreaScraper(AsyncBaseScraper):
                         shop_name = span_text.replace('쇼핑몰:', '').replace('쇼핑몰 :', '').strip()
         
         body_text = ""
-        # 본문 콘텐츠 영역에서 탐색 (사이드바/광고 제외)
-        content_area = soup.select_one('.xe_content') or soup.select_one('.rd_body')
-        if content_area:
-            body_text = content_area.get_text(separator=' ', strip=True)
+        content_areas = soup.select('.xe_content')
+        if not content_areas:
+            content_areas = soup.select('.rd_body')
+            
+        body_parts = []
+        for area in content_areas:
+            # a 태그 내용을 "[텍스트](링크)" 형태로 변경하여 내용과 링크 모두 추출
+            for a in area.select('a'):
+                href = a.get('href', '')
+                if href and not href.startswith('javascript'):
+                    new_text = f"{a.get_text(strip=True)} (링크: {href})"
+                    a.string = new_text
+            body_parts.append(area.get_text(separator=' ', strip=True))
+            
+        if body_parts:
+            body_text = " \n ".join(body_parts)
             
             if price_fallback == 0:
                 if "(0원)" in body_text or "나눔" in body_text:
@@ -431,6 +448,11 @@ class FmkoreaScraper(AsyncBaseScraper):
         cat_el = soup.select_one('.bd_nav .cat, .category, .cat_name')
         if cat_el:
             category_text = cat_el.get_text(strip=True)
+            
+        is_closed = False
+        # 본문 단순 언급(예: '어제 품절됨') 오탐지를 방지하기 위해 명확한 시스템 메시지나 종료 알림만 체크
+        if soup.find(string=re.compile(r'종료된 핫딜입니다')):
+            is_closed = True
 
         return {
             "ecommerce_link": ecommerce_link,
@@ -440,5 +462,6 @@ class FmkoreaScraper(AsyncBaseScraper):
             "shipping_fee": shipping_fee,
             "content_html": body_text,
             "posted_at": posted_at_iso,
-            "category": category_text
+            "category": category_text,
+            "is_closed": is_closed
         }

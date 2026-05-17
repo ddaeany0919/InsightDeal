@@ -182,8 +182,11 @@ fun HomeScreen(
                                 val topHotDeals by viewModel.topHotDeals.collectAsState()
                                 val topPicks = topHotDeals
                                     .filter { deal ->
-                                        // 백엔드에서 honeyScore가 100 이상이면 포텐/인기글(is_super_hotdeal)로 판단합니다.
-                                        val isSuperHot = deal.honeyScore >= 100
+                                        // 🔥 뱃지 조건을 카드와 동일하게: aiSummary에 커뮤니티 인기/인증 태그 AND honeyScore == 100
+                                        // honeyScore >= 100 단독 조건으로는 일반 생활용품도 핫딜로 오분류됨
+                                        val hasHotTag = deal.aiSummary?.contains("🔥 [커뮤니티 인기]") == true
+                                                || deal.aiSummary?.contains("🔥 [커뮤니티 인증 핫딜]") == true
+                                        val isSuperHot = hasHotTag && deal.honeyScore >= 100
                                         !deal.isClosed && isSuperHot
                                     }
                                     .sortedByDescending { it.createdAt ?: "" }
@@ -191,112 +194,113 @@ fun HomeScreen(
                                 android.util.Log.d("HomeScreen", "topHotDeals size: ${topHotDeals.size}, topPicks size: ${topPicks.size}")
 
                                 if (topPicks.isNotEmpty()) {
-                                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                                    Text("오늘의 미친 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 12.dp, start = 4.dp))
-                                    LazyRow(
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                        contentPadding = PaddingValues(horizontal = 4.dp)
-                                    ) {
-                                        items(topPicks.size) { index ->
-                                            val pick = topPicks[index]
-                                            Card(
-                                                modifier = Modifier
-                                                    .width(200.dp)
-                                                    .height(210.dp)
-                                                    .clickable {
-                                                        val targetUrl = pick.ecommerceUrl?.takeIf { it.isNotBlank() } ?: pick.postUrl ?: "https://insightdeal.com"
-                                                        var finalUrl = if (targetUrl.startsWith("http")) targetUrl else "https://$targetUrl"
-                                                        if (finalUrl.contains("bbasak.com") && !finalUrl.contains("device=pc")) {
-                                                            finalUrl += if (finalUrl.contains("?")) "&device=pc" else "?device=pc"
+                                    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                                        Text("오늘의 미친 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 12.dp, start = 4.dp))
+                                        LazyRow(
+                                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                            contentPadding = PaddingValues(horizontal = 4.dp)
+                                        ) {
+                                            items(topPicks.size) { index ->
+                                                val pick = topPicks[index]
+                                                Card(
+                                                    modifier = Modifier
+                                                        .width(200.dp)
+                                                        .height(210.dp)
+                                                        .clickable {
+                                                            val targetUrl = pick.ecommerceUrl?.takeIf { it.isNotBlank() } ?: pick.postUrl ?: "https://insightdeal.com"
+                                                            var finalUrl = if (targetUrl.startsWith("http")) targetUrl else "https://$targetUrl"
+                                                            if (finalUrl.contains("bbasak.com") && !finalUrl.contains("device=pc")) {
+                                                                finalUrl += if (finalUrl.contains("?")) "&device=pc" else "?device=pc"
+                                                            }
+                                                            val encodedUrl = java.net.URLEncoder.encode(finalUrl, "UTF-8")
+                                                            navController.navigate("webview/$encodedUrl")
+                                                        },
+                                                    shape = RoundedCornerShape(16.dp),
+                                                    elevation = CardDefaults.cardElevation(2.dp),
+                                                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                                                ) {
+                                                    Column {
+                                                        val fallbackPickImg = "https://placehold.co/400x300/E2E8F0/A0AEC0?text=Deal"
+                                                        val rawPickUrl = pick.imageUrl.takeIf { !it.isNullOrBlank() } ?: fallbackPickImg
+                                                        val proxiedPickUrl = if (rawPickUrl.contains("bbasak.com") || rawPickUrl.contains("ppomppu.co.kr") || rawPickUrl.contains("fmkorea.com")) {
+                                                            "http://192.168.0.36:8000/api/proxy-image?url=${java.net.URLEncoder.encode(rawPickUrl, "UTF-8")}"
+                                                        } else rawPickUrl
+    
+                                                        val imageRequest = remember(proxiedPickUrl, pick.postUrl) {
+                                                            coil.request.ImageRequest.Builder(context)
+                                                                .data(proxiedPickUrl)
+                                                                .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
+                                                                .setHeader("Referer", pick.postUrl ?: "https://insightdeal.com/")
+                                                                .crossfade(true).build()
                                                         }
-                                                        val encodedUrl = java.net.URLEncoder.encode(finalUrl, "UTF-8")
-                                                        navController.navigate("webview/$encodedUrl")
-                                                    },
-                                                shape = RoundedCornerShape(16.dp),
-                                                elevation = CardDefaults.cardElevation(2.dp),
-                                                colors = CardDefaults.cardColors(containerColor = Color.White)
-                                            ) {
-                                                Column {
-                                                    val fallbackPickImg = "https://placehold.co/400x300/E2E8F0/A0AEC0?text=Deal"
-                                                    val rawPickUrl = pick.imageUrl.takeIf { !it.isNullOrBlank() } ?: fallbackPickImg
-                                                    val proxiedPickUrl = if (rawPickUrl.contains("bbasak.com") || rawPickUrl.contains("ppomppu.co.kr") || rawPickUrl.contains("fmkorea.com")) {
-                                                        "http://192.168.0.36:8000/api/proxy-image?url=${java.net.URLEncoder.encode(rawPickUrl, "UTF-8")}"
-                                                    } else rawPickUrl
-
-                                                    val imageRequest = remember(proxiedPickUrl, pick.postUrl) {
-                                                        coil.request.ImageRequest.Builder(context)
-                                                            .data(proxiedPickUrl)
-                                                            .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
-                                                            .setHeader("Referer", pick.postUrl ?: "https://insightdeal.com/")
-                                                            .crossfade(true).build()
-                                                    }
-
-                                                    AsyncImage(
-                                                        model = imageRequest,
-                                                        contentDescription = "Carousel Image",
-                                                        modifier = Modifier
-                                                            .height(120.dp)
-                                                            .fillMaxWidth()
-                                                            .background(Color.White)
-                                                            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
-                                                        contentScale = ContentScale.Crop
-                                                    )
-                                                    Column(Modifier.padding(12.dp)) {
-                                                        Text(pick.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 18.sp)
-                                                        Spacer(Modifier.weight(1f))
-                                                        val priceText = if (pick.price > 0) {
-                                                            when (pick.currency.uppercase()) {
-                                                                "USD" -> "$${String.format(Locale.US, "%.2f", pick.price.toDouble() / 100)}"
-                                                                "EUR" -> "€${String.format(Locale.US, "%.2f", pick.price.toDouble() / 100)}"
-                                                                else -> "${formatPrice(pick.price, pick.currency)}"
-                                                            }
-                                                        } else "확인필요"
-                                                        
-                                                        val isBookmarked = wishlistedUrls.contains(pick.postUrl)
-                                                        val digitalCategories = listOf("적립", "이벤트", "모바일/기프티콘", "상품권", "패키지/이용권")
-                                                        val isDigitalTitle = pick.title.contains("요금제") || pick.title.contains("데이터")
-                                                        val hideShipping = pick.category in digitalCategories || isDigitalTitle
-                                                        
-                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                                                val priceFontSize = if (priceText.length >= 9) 13.sp else 16.sp
-                                                                Text(priceText, color = Color(0xFFFF3B30), fontSize = priceFontSize, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                if (!hideShipping) {
-                                                                    val trimmed = pick.shippingFee?.trim() ?: "정보 없음"
-                                                                    val displayShipping = when {
-                                                                        trimmed == "정보 없음" || trimmed.isEmpty() -> "확인 필요"
-                                                                        trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
-                                                                        trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료 ")
-                                                                        trimmed == "유료" || trimmed == "유료배송" -> "유료"
-                                                                        trimmed.matches(Regex("^[0-9,]+$")) -> "${trimmed}원"
-                                                                        else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
-                                                                    }
-                                                                    Spacer(Modifier.width(2.dp))
-                                                                    Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                                                                        Text(text = "배송비: $displayShipping", fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 3.dp, vertical = 2.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                    }
+    
+                                                        AsyncImage(
+                                                            model = imageRequest,
+                                                            contentDescription = "Carousel Image",
+                                                            modifier = Modifier
+                                                                .height(120.dp)
+                                                                .fillMaxWidth()
+                                                                .background(Color.White)
+                                                                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                        Column(Modifier.padding(12.dp)) {
+                                                            Text(pick.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 18.sp)
+                                                            Spacer(Modifier.weight(1f))
+                                                            val priceText = if (pick.price > 0) {
+                                                                when (pick.currency.uppercase()) {
+                                                                    "USD" -> "$${String.format(Locale.US, "%.2f", pick.price.toDouble() / 100)}"
+                                                                    "EUR" -> "€${String.format(Locale.US, "%.2f", pick.price.toDouble() / 100)}"
+                                                                    else -> "${formatPrice(pick.price, pick.currency)}"
                                                                 }
-                                                            }
-                                                            androidx.compose.material3.IconButton(
-                                                                onClick = { 
-                                                                    wishlistViewModel?.let { vm ->
-                                                                        val targetUrl = pick.ecommerceUrl?.takeIf { it.isNotBlank() } ?: pick.postUrl ?: ""
-                                                                        if (wishlistedUrls.contains(targetUrl)) {
-                                                                            val item = (wishlistState as? WishlistUiState.Success)?.items?.find { it.productUrl == targetUrl }
-                                                                            if (item != null) vm.deleteItem(item)
-                                                                        } else {
-                                                                            vm.addItem(pick.title, targetUrl, pick.price)
+                                                            } else "확인필요"
+                                                            
+                                                            val isBookmarked = wishlistedUrls.contains(pick.postUrl)
+                                                            val digitalCategories = listOf("적립", "이벤트", "모바일/기프티콘", "상품권", "패키지/이용권")
+                                                            val isDigitalTitle = pick.title.contains("요금제") || pick.title.contains("데이터")
+                                                            val hideShipping = pick.category in digitalCategories || isDigitalTitle
+                                                            
+                                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                                                    val priceFontSize = if (priceText.length >= 9) 13.sp else 16.sp
+                                                                    Text(priceText, color = Color(0xFFFF3B30), fontSize = priceFontSize, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                    if (!hideShipping) {
+                                                                        val trimmed = pick.shippingFee?.trim() ?: "정보 없음"
+                                                                        val displayShipping = when {
+                                                                            trimmed == "정보 없음" || trimmed.isEmpty() -> "확인 필요"
+                                                                            trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
+                                                                            trimmed.startsWith("0원/") || trimmed.startsWith("0원+") || trimmed.startsWith("0/") || trimmed.startsWith("0+") -> trimmed.replaceFirst(Regex("^0(원)?\\s*"), "무료 ")
+                                                                            trimmed == "유료" || trimmed == "유료배송" -> "유료"
+                                                                            trimmed.all { it.isDigit() || it == ',' } -> "${trimmed}원"
+                                                                            else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
+                                                                        }
+                                                                        Spacer(Modifier.width(2.dp))
+                                                                        Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                                                                            Text(text = "배송비: $displayShipping", fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 3.dp, vertical = 2.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                                         }
                                                                     }
-                                                                },
-                                                                modifier = Modifier.size(22.dp)
-                                                            ) {
-                                                                androidx.compose.material3.Icon(
-                                                                    imageVector = if (isBookmarked) androidx.compose.material.icons.Icons.Filled.Favorite else androidx.compose.material.icons.Icons.Outlined.FavoriteBorder,
-                                                                    contentDescription = "Bookmark",
-                                                                    tint = if (isBookmarked) Color.Red else Color.Gray,
-                                                                    modifier = Modifier.size(18.dp)
-                                                                )
+                                                                }
+                                                                androidx.compose.material3.IconButton(
+                                                                    onClick = { 
+                                                                        wishlistViewModel?.let { vm ->
+                                                                            val targetUrl = pick.ecommerceUrl?.takeIf { it.isNotBlank() } ?: pick.postUrl ?: ""
+                                                                            if (wishlistedUrls.contains(targetUrl)) {
+                                                                                val item = (wishlistState as? WishlistUiState.Success)?.items?.find { it.productUrl == targetUrl }
+                                                                                if (item != null) vm.deleteItem(item)
+                                                                            } else {
+                                                                                vm.addItem(pick.title, targetUrl, pick.price.toInt())
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    modifier = Modifier.size(22.dp)
+                                                                ) {
+                                                                    androidx.compose.material3.Icon(
+                                                                        imageVector = if (isBookmarked) androidx.compose.material.icons.Icons.Filled.Favorite else androidx.compose.material.icons.Icons.Outlined.FavoriteBorder,
+                                                                        contentDescription = "Bookmark",
+                                                                        tint = if (isBookmarked) Color.Red else Color.Gray,
+                                                                        modifier = Modifier.size(18.dp)
+                                                                    )
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -304,18 +308,37 @@ fun HomeScreen(
                                             }
                                         }
                                     }
-                                    Spacer(Modifier.height(24.dp))
-                                    androidx.compose.material3.HorizontalDivider(thickness = 1.dp, color = Color.LightGray, modifier = Modifier.padding(horizontal = 4.dp))
-                                    Spacer(Modifier.height(16.dp))
-                                    Text("실시간 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp), color = MaterialTheme.colorScheme.onSurface)
+                                } else {
+                                    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp, top = 8.dp)) {
+                                        Text("오늘의 미친 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 12.dp, start = 4.dp))
+                                        Card(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                            shape = RoundedCornerShape(12.dp),
+                                            elevation = CardDefaults.cardElevation(0.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        ) {
+                                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 36.dp), contentAlignment = Alignment.Center) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Text("😢", fontSize = 42.sp, modifier = Modifier.padding(bottom = 12.dp))
+                                                    Text("현재 진행 중인 핫딜이 없습니다.", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    Text("조금 뒤에 다시 확인해 보세요!", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp))
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
+                                Spacer(Modifier.height(24.dp))
+                                androidx.compose.material3.HorizontalDivider(thickness = 1.dp, color = Color.LightGray, modifier = Modifier.padding(horizontal = 4.dp))
+                                Spacer(Modifier.height(16.dp))
+                                Text("실시간 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp), color = MaterialTheme.colorScheme.onSurface)
                             }
                         }
                     }
 
                     // ✨ itemKey 제공으로 Recomposition 최소화 보장
                     items(
-                            count = dealsPagingItems.itemCount
+                            count = dealsPagingItems.itemCount,
+                            key = dealsPagingItems.itemKey { it.id }
                         ) { index ->
                             val deal = dealsPagingItems[index]
                             if (deal != null) {
@@ -334,7 +357,7 @@ fun HomeScreen(
                                                 val item = (wishlistState as? WishlistUiState.Success)?.items?.find { it.productUrl == targetUrl }
                                                 if (item != null) vm.deleteItem(item)
                                             } else {
-                                                vm.addItem(deal.title, targetUrl, deal.price)
+                                                vm.addItem(deal.title, targetUrl, deal.price.toInt())
                                             }
                                         }
                                     }
@@ -349,7 +372,6 @@ fun HomeScreen(
                     }
                 }
             }
-        }
         }
 
         // ✨ PullToRefresh Indicator
@@ -412,7 +434,10 @@ fun DealCardComposable(
         elevation = CardDefaults.cardElevation(2.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
-        val isSuperHot = deal.aiSummary?.contains("🔥") == true
+        // 🔥 뱃지는 서버가 명시적으로 커뮤니티 인기/인증 태그를 달거나, honey_score=100(뽐뿌 hot_icon2 확인)인 경우에만 표시
+        val isSuperHot = (deal.aiSummary?.contains("🔥 [커뮤니티 인기]") == true
+                || deal.aiSummary?.contains("🔥 [커뮤니티 인증 핫딜]") == true)
+                && deal.honeyScore >= 100
 
         Box(modifier = Modifier.fillMaxWidth()) {
             Column {
@@ -458,8 +483,7 @@ fun DealCardComposable(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(Color.White, RoundedCornerShape(8.dp))
-                                .clip(RoundedCornerShape(8.dp))
-                                .then(if (deal.isClosed) Modifier.blur(2.dp) else Modifier),
+                                .clip(RoundedCornerShape(8.dp)),
                             colorFilter = if (deal.isClosed) {
                                 remember { androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) }) }
                             } else null,
@@ -496,7 +520,8 @@ fun DealCardComposable(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        val sourcesToRender = if (!deal.sources.isNullOrEmpty()) deal.sources else listOf(com.ddaeany0919.insightdeal.models.DealSource(deal.siteName, deal.postUrl ?: ""))
+                        val rawSources = if (!deal.sources.isNullOrEmpty()) deal.sources else listOf(com.ddaeany0919.insightdeal.models.DealSource(deal.siteName, deal.postUrl ?: ""))
+                        val sourcesToRender = rawSources.distinctBy { it.siteName }
                         
                         sourcesToRender.forEach { source ->
                             val siteNameLower = source.siteName.lowercase(java.util.Locale.getDefault())
@@ -607,9 +632,9 @@ fun DealCardComposable(
                                 val displayShipping = when {
                                     trimmed == "정보 없음" || trimmed.isEmpty() -> "확인 필요"
                                     trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
-                                    trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료 ")
+                                    trimmed.startsWith("0원/") || trimmed.startsWith("0원+") || trimmed.startsWith("0/") || trimmed.startsWith("0+") -> trimmed.replaceFirst(Regex("^0(원)?\\s*"), "무료 ")
                                     trimmed == "유료" || trimmed == "유료배송" -> "유료"
-                                    trimmed.matches(Regex("^[0-9,]+$")) -> "${trimmed}원"
+                                    trimmed.all { it.isDigit() || it == ',' } -> "${trimmed}원"
                                     else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
                                 }
                                 Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.align(Alignment.CenterVertically)) {

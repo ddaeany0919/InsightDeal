@@ -27,30 +27,13 @@ class PpomppuScraper(AsyncBaseScraper):
         # 뽐뿌 핫딜 게시판 리스트 행
         post_rows = soup.select('tr.baseList, tr.list1, tr.list0')
         
-        # 핫딜 마크를 정확히 달기 위해 1페이지의 hotlist_flag=999 를 조회하여 게시글 ID 수집
-        if getattr(self, "hot_ids", None) is None:
-            self.hot_ids = set()
-            try:
-                import urllib.parse
-                parsed = urllib.parse.urlparse(self.list_url)
-                qs = urllib.parse.parse_qs(parsed.query)
-                board_id = qs.get("id", ["ppomppu"])[0]
-                
-                hot_html = await self.fetch_html(f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board_id}&hotlist_flag=999")
-                if hot_html:
-                    hot_soup = BeautifulSoup(hot_html, 'html.parser')
-                    for a in hot_soup.select('tr.baseList a.baseList-title, tr.list1 a, tr.list0 a'):
-                        if a.get('href'):
-                            match = re.search(r'no=([0-9]+)', a.get('href'))
-                            if match:
-                                self.hot_ids.add(match.group(1))
-            except Exception as e:
-                logger.warning(f"[{self.platform_name}] 핫딜 목록 조회 실패: {e}")
-                
         import asyncio
         async def process_row(row):
             title_el = row.select_one('a.baseList-title') or row.select_one('.list_title') or row.select_one('font')
             if not title_el: return None
+            
+            # [CEO 피드백] 뽐뿌의 핫딜 마크(is_super_hotdeal)는 hot_icon2.jpg 가 있을 때만 True로 설정
+            hot_icon = row.select_one('img[src*="hot_icon2.jpg"]')
                 
             full_title = title_el.get_text(strip=True)
             if not full_title or "공지" in full_title or "질문" in full_title or "문의" in full_title: return None
@@ -69,7 +52,7 @@ class PpomppuScraper(AsyncBaseScraper):
             
             # [HOTFIX] 핫딜 게시판이 아닌 다른 포럼(예: 해외포럼 id=oversea) 게시글이 핫딜 리스트에 추천글로 섞이는 현상 방지
             board_id = qs.get('id', [''])[0]
-            if board_id not in ['ppomppu', 'ppomppu4', 'ppomppu8', 'pmarket']:
+            if board_id not in ['ppomppu', 'ppomppu4', 'ppomppu8']:
                 return None
                 
             qs.pop('page', None)
@@ -122,9 +105,7 @@ class PpomppuScraper(AsyncBaseScraper):
             doc_id_match = re.search(r'no=([0-9]+)', href)
             if doc_id_match:
                 doc_id = doc_id_match.group(1)
-                if getattr(self, "hot_ids", None) is not None:
-                    is_super_hotdeal = doc_id in self.hot_ids
-            
+                
             view_count = 0
             like_count = 0
             for td in row.select('td.eng, td.baseList-space'):
@@ -138,6 +119,10 @@ class PpomppuScraper(AsyncBaseScraper):
                         like_count = int(parts[0].strip())
                 elif txt.isdigit(): # 조회수 (게시글 번호를 제외한 숫자)
                     view_count = int(txt)
+
+            # CEO 지시: 뽐뿌는 hot_icon2.jpg가 있는 경우에만 슈퍼핫딜로 인정
+            if hot_icon:
+                is_super_hotdeal = True
 
             # 인기/HOT 여부(is_super_hotdeal)는 프론트엔드 UI의 뱃지(마크) 표시용으로 사용됨
             comment_count = 0

@@ -86,14 +86,16 @@ class LlmNormalizer(ProductNormalizer):
                     raw_title=title
                 )
             except Exception as e:
-                if "429" in str(e):
-                    if "spending cap" in str(e).lower():
+                error_msg = str(e).lower()
+                if "429" in error_msg:
+                    if "spending cap" in error_msg or "quota" in error_msg or "exhausted" in error_msg:
                         from backend.core.ai_utils import mark_key_dead
                         mark_key_dead(api_key)
+                        continue
                     if attempt < max_retries - 1:
                         import re
                         wait_time = 1
-                        match = re.search(r'retry in ([\d\.]+)s', str(e))
+                        match = re.search(r'retry in ([\d\.]+)s', error_msg)
                         if match:
                             wait_time = int(float(match.group(1))) + 2
                         logger.warning(f"LlmNormalizer 429 Error. Rotating key/Waiting {wait_time}s... (Attempt {attempt+1}/{max_retries})")

@@ -186,7 +186,7 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                 WishlistDetailScreen(itemId = itemId, onBack = { navController.popBackStack() }, viewModel = wishlistViewModel)
             }
             composable("advanced_search") { com.ddaeany0919.insightdeal.presentation.search.AdvancedSearchScreen(navController) }
-            composable("category") { com.ddaeany0919.insightdeal.presentation.category.CategoryScreen(navController = navController, homeViewModel = homeViewModel) }
+            composable("category") { com.ddaeany0919.insightdeal.presentation.category.CategoryScreen(navController = navController) }
             composable("category_detail/{categoryName}") { backStackEntry ->
                 val encodedCategoryName = backStackEntry.arguments?.getString("categoryName") ?: "기타"
                 val categoryName = java.net.URLDecoder.decode(encodedCategoryName, "UTF-8")
@@ -197,7 +197,19 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                     navController = navController
                 )
             }
-            composable("community") { com.ddaeany0919.insightdeal.presentation.community.CommunityScreen() }
+            composable("community") { com.ddaeany0919.insightdeal.presentation.community.CommunityBoardScreen(navController = navController) }
+            composable("community_detail/{postId}") { backStackEntry ->
+                val postId = backStackEntry.arguments?.getString("postId")?.toIntOrNull() ?: -1
+                com.ddaeany0919.insightdeal.presentation.community.CommunityPostDetailScreen(
+                    postId = postId,
+                    navController = navController
+                )
+            }
+            composable("community_write") { com.ddaeany0919.insightdeal.presentation.community.WritePostScreen(navController = navController) }
+            composable("community_edit/{postId}") { backStackEntry ->
+                val postId = backStackEntry.arguments?.getString("postId")?.toIntOrNull()
+                com.ddaeany0919.insightdeal.presentation.community.WritePostScreen(navController = navController, postId = postId)
+            }
             composable("alerts") { com.ddaeany0919.insightdeal.presentation.alerts.AlertsScreen(deviceUserId = deviceUserId) }
             composable("mypage") { 
                 com.ddaeany0919.insightdeal.presentation.mypage.MyPageScreen(
@@ -219,6 +231,9 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                     onOpenUrl = { url ->
                         val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")
                         navController.navigate("webview/$encodedUrl")
+                    },
+                    onNavigateToCommunity = {
+                        navController.navigate("community")
                     }
                 )
             }
@@ -255,6 +270,7 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController, homeVi
         navigationItems.forEach { item ->
             val selected = when (item.route) {
                 "category" -> currentRoute == "category" || currentRoute == "category_detail"
+                "community" -> currentRoute == "community" || currentRoute == "community_write" || currentRoute == "community_edit" || currentRoute == "community_detail"
                 else -> currentRoute == item.route
             }
             
@@ -269,7 +285,6 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController, homeVi
                 selected = selected,
                 onClick = {
                     if (item.route == "home") {
-                        // 홈 진입 시 무조건 백스택 날려서 검색화면 등 닫기
                         homeViewModel?.selectCategory("전체")
                         navController.navigate("home") {
                             popUpTo(navController.graph.id) {
@@ -279,10 +294,8 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController, homeVi
                         }
                     } else {
                         if (selected) {
-                            // 이미 활성화된 탭을 다시 누른 경우 -> 해당 탭의 최상위 화면으로 이동 (Pop to Root)
                             navController.popBackStack(item.route, inclusive = false)
                         } else {
-                            // 다른 탭으로 이동
                             navController.navigate(item.route) {
                                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                 launchSingleTop = true

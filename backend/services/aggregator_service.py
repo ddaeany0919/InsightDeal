@@ -41,47 +41,105 @@ class AggregatorService:
         final_price = 0
         currency = "KRW"
         
+        title_price = 0
+        title_currency = "KRW"
+        
+        # 1. 괄호 속 달러/유로/원 우선 파싱
         match = re.search(r'\(\s*\$?\s*((?:[\d,]+|[\d,]*\.[\d]+)(?:원|달러|유로|€)?)(?:\s*/\s*([^\)]*))?\)', raw_title)
         if match:
             extracted_price = match.group(1).replace(',', '')
             if '달러' in extracted_price or '.' in extracted_price or '$' in raw_title:
-                currency = "USD"
+                title_currency = "USD"
                 extracted_price = extracted_price.replace('달러', '').replace('$', '').strip()
                 if extracted_price.replace('.', '', 1).isdigit():
-                    final_price = round(float(extracted_price) * 100)
+                    title_price = round(float(extracted_price) * 100)
             elif '유로' in extracted_price or '€' in raw_title:
-                currency = "EUR"
+                title_currency = "EUR"
                 extracted_price = extracted_price.replace('유로', '').replace('€', '').strip()
                 if extracted_price.replace('.', '', 1).isdigit():
-                    final_price = round(float(extracted_price) * 100)
+                    title_price = round(float(extracted_price) * 100)
             else:
                 extracted_price = extracted_price.replace('원', '')
-                if extracted_price.isdigit(): final_price = int(extracted_price)
+                if extracted_price.isdigit(): title_price = int(extracted_price)
             if match.group(2):
                 shipping_raw = match.group(2).lower()
                 if '무료' in shipping_raw or '무배' in shipping_raw or 'fs' in shipping_raw or 'free' in shipping_raw:
                     shipping_fee = "무료배송"
 
-        if final_price == 0:
+        # 2. 괄호 외 만/원/달러/유로 파싱
+        if title_price == 0:
             match_man = re.search(r'([\d,]*\.[\d]+|[\d,]+)만(?!\s*(원\s*)?(할인|적립|쿠폰|캐시백|이상|권))', raw_title)
             if match_man:
-                final_price = int(float(match_man.group(1).replace(',', '')) * 10000)
+                title_price = int(float(match_man.group(1).replace(',', '')) * 10000)
             else:
                 match_won = re.search(r'(?<![+\-])(?<!\d\s~\s)(?<!~\s)([0-9,]{3,})\s*원(?!\s*(할인|적립|쿠폰|캐시백|이상|권))', raw_title)
                 if match_won:
-                    final_price = int(match_won.group(1).replace(',', ''))
+                    title_price = int(match_won.group(1).replace(',', ''))
                 else:
                     match_dollar = re.search(r'\$\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*달러', raw_title)
                     if match_dollar: 
-                        currency = "USD"
+                        title_currency = "USD"
                         val = match_dollar.group(1) or match_dollar.group(2)
-                        final_price = round(float(val.replace(',', '')) * 100)
+                        title_price = round(float(val.replace(',', '')) * 100)
                     else:
                         match_euro = re.search(r'€\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*유로', raw_title)
                         if match_euro:
-                            currency = "EUR"
+                            title_currency = "EUR"
                             val = match_euro.group(1) or match_euro.group(2)
-                            final_price = round(float(val.replace(',', '')) * 100)
+                            title_price = round(float(val.replace(',', '')) * 100)
+        
+        # 기본 정책: 타이틀 가격을 우선시
+        if title_price > 0:
+            final_price = title_price
+            currency = title_currency
+            
+        # 퀘이사존은 핫딜 규정상 주황색 가격 태그가 가장 정확하므로 무조건 우선시함
+        if community_name in ["quasarzone", "퀘이사존"] and provided_price > 0:
+            final_price = provided_price
+            currency = scraped_data.get("currency", "KRW")
+            # 타이틀에서 추출된 가격과 달라도 더미 옵션을 생성하지 않음 (대부분 개당 가격을 제목에 쓴 경우이므로)
+        elif provided_price > 0:
+            # 타이틀 가격과 스크래퍼가 제공한 가격(본문 등)에 큰 차이가 있으면 모음전(멀티 옵션)으로 간주
+            if title_price > 0 and abs(title_price - provided_price) / max(title_price, provided_price) > 0.1:
+                print(f"DEBUG 💡 [가격 불일치 감지] 타이틀: {title_price}, 본문: {provided_price}")
+                logger.info(f"💡 [가격 불일치 감지] 타이틀: {title_price}, 본문: {provided_price}. 모음전으로 간주하여 대표 가격을 {title_price}로 고정합니다.")
+                final_price = title_price
+                currency = title_currency
+                
+                # [Auto-Skill Swarm Maximum Activated] - AI 할당량 소진 대비 Regex Fallback 추출 적용
+                extracted_options = []
+                content_html = scraped_data.get("content_html", "")
+                if content_html:
+                    try:
+                        from bs4 import BeautifulSoup
+                        soup = BeautifulSoup(content_html, 'html.parser')
+                        text_lines = soup.get_text(separator='\n').split('\n')
+                        seen_prices = set()
+                        for line in text_lines:
+                            line = line.strip()
+                            if '원' in line or '달러' in line or '$' in line or '유로' in line or '€' in line:
+                                nums = re.findall(r'\b\d{1,3}(?:,\d{3})+\b|\b\d{4,}\b', line)
+                                for num_str in nums:
+                                    val = int(num_str.replace(',', ''))
+                                    if val > 1000:
+                                        if val not in seen_prices:
+                                            seen_prices.add(val)
+                                            name = line[:40].strip()
+                                            extracted_options.append({"name": name, "price": val})
+                    except Exception as e:
+                        logger.error(f"Regex options extraction failed: {e}")
+                
+                # AI 분할을 대신하여 모음전이라는 것을 암시하는 더미 옵션을 생성
+                if "options_data" not in scraped_data or not scraped_data["options_data"]:
+                    if extracted_options and len(extracted_options) > 1:
+                        scraped_data["options_data"] = extracted_options
+                    else:
+                        scraped_data["options_data"] = [
+                            {"name": "옵션 1 (제목 기준 최저가)", "price": title_price},
+                            {"name": "옵션 2 (본문 기재 가격)", "price": provided_price}
+                        ]
+                print(f"DEBUG scraped_data['options_data']: {scraped_data.get('options_data')} ")
+
 
         # 제목에서 추출 실패 시 본문에서 스크래퍼가 넘겨준 가격 사용
         if final_price == 0 and provided_price > 0:
@@ -205,7 +263,7 @@ class AggregatorService:
             from datetime import timedelta
             recent_duplicate = self.db.query(Deal).filter(
                 Deal.ecommerce_link == ecommerce_url,
-                Deal.indexed_at >= datetime.now() - timedelta(days=2)
+                Deal.indexed_at >= datetime.utcnow() - timedelta(days=2)
             ).first()
             
             if recent_duplicate and recent_duplicate.ai_summary:
@@ -221,12 +279,13 @@ class AggregatorService:
 
         # 2. 중복 및 롤링 윈도우 클러스터링 체크 (Upsert 로직의 핵심)
         existing_deals = self.db.query(Deal).filter(Deal.post_link == url).all()
+        print(f"DEBUG: existing_deals based on post_link: {existing_deals}")
         
         # [24시간 롤링 윈도우 클러스터링]: 동일 URL이 아니더라도 24시간 내 동일 상품이면 병합 시도
         if not existing_deals:
             from datetime import timedelta
             query = self.db.query(Deal).filter(
-                Deal.indexed_at >= datetime.now() - timedelta(hours=24)
+                Deal.indexed_at >= datetime.utcnow() - timedelta(hours=24)
             )
             target_deals = []
             
@@ -244,6 +303,7 @@ class AggregatorService:
                 logger.info(f"🔄 [롤링 윈도우 클러스터링] 타 게시글({url})이지만 동일 상품으로 판단하여 병합 시도: {normalized.name}")
                 existing_deals = [max(target_deals, key=lambda d: d.indexed_at if d.indexed_at else datetime.min)]
         
+        print(f"DEBUG: existing_deals after rolling window: {existing_deals}")
         if existing_deals:
              # 이미 수집했던 글이거나, 클러스터링으로 묶인 글이라면 가격 등 메타정보 갱신 (Upsert)
              # 만약 AI가 다중 분할한 상품들이라면, 모든 split deal에 대해 종료 상태 등을 일괄 갱신합니다.
@@ -289,6 +349,11 @@ class AggregatorService:
                  existing_deal.is_closed = is_closed
                  existing_deal.shipping_fee = shipping_fee
                  
+                 import json
+                 if scraped_data.get("options_data"):
+                     existing_deal.options_data = json.dumps(scraped_data.get("options_data"), ensure_ascii=False)
+                     existing_deal.has_options = True
+                 
                  # 새로 수집된 날짜 정보가 존재하면 시간 정보가 더 구체적일 때만 업데이트
                  if posted_dt:
                      current_idx = existing_deal.indexed_at
@@ -319,8 +384,16 @@ class AggregatorService:
                          existing_deal.ai_summary = "🔥 [커뮤니티 인증 핫딜] " + existing_deal.ai_summary
                  else:
                      calc_score = min(99, calc_score)
+                     # 기존에 100점이었지만 더 이상 핫딜이 아니면 99점으로 강등 (단, 직접 지정된 경우 제외 가능하나 여기선 스크래퍼 동기화 우선)
                      
-                 existing_deal.honey_score = max(calc_score, existing_deal.honey_score or 0)
+                 if scraped_data.get("is_super_hotdeal") or existing_deal.honey_score is None:
+                     existing_deal.honey_score = calc_score
+                 else:
+                     # 슈퍼핫딜이 아닐 때는 일반적인 갱신(기존 점수가 100이었다면 99로 하락 가능)
+                     if existing_deal.honey_score == 100 and not scraped_data.get("is_super_hotdeal"):
+                         existing_deal.honey_score = calc_score
+                     else:
+                         existing_deal.honey_score = max(calc_score, existing_deal.honey_score)
                  
                  if price_changed and price > 0:
                      self._insert_price_history(existing_deal.id, price)
@@ -342,14 +415,12 @@ class AggregatorService:
         # [DB 평균치 기반 세밀한 점수화 로직 추가]
         try:
             from sqlalchemy import func
-            from backend.database.models import DealItem
             if price > 0 and normalized.category:
-                query = self.db.query(func.avg(DealItem.price)).filter(
-                    DealItem.category == normalized.category,
-                    DealItem.price > 0
+                query = self.db.query(func.avg(Deal.price)).filter(
+                    Deal.category == normalized.category,
+                    Deal.price > 0
                 )
-                if normalized.brand:
-                    query = query.filter(DealItem.brand == normalized.brand)
+                
                 avg_price = query.scalar()
                 
                 if avg_price:
@@ -391,7 +462,7 @@ class AggregatorService:
         # 2. 본문 텍스트 내에서 정규식으로 '원' 단위 숫자 패턴 갯수 추출
         price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+)\s*원', content_html) if content_html else []
         
-        is_multi_item = ("(" in raw_title and "다양" in raw_title) or raw_title.count(".") >= 2 or "모음" in raw_title or "선택" in raw_title or "," in raw_title
+        is_multi_item = ("(" in raw_title and "다양" in raw_title) or raw_title.count(".") >= 2 or "모음" in raw_title or "선택" in raw_title or "," in raw_title or len(price_matches) >= 3
         is_missing_price = (price == 0)
         
         # [핵심 로직] 가격이 아예 없거나(0원), 다중 상품일 가능성이 높으면 AI를 가동하여 분할(Split) 및 가격 추출을 시도합니다.
@@ -415,9 +486,10 @@ class AggregatorService:
             만약 여러 개의 상품이 포함된 벌크 핫딜이면 배열에 여러 객체를 넣고, 단일 상품이면 1개만 넣어. 다른 말은 절대 하지마.
             
             🚨 [아주 중요한 단일화 예외 규칙] 🚨
-            만약 게시글 본문에 각 상품별 구매 링크가 개별적으로 존재하지 않고, 오직 1개의 대표 구매 링크만 존재하는 '모음전(옵션 선택형)'이라면, 절대 상품을 여러 개로 분리하지 마! 
+            1. 만약 게시글 본문에 각 상품별 구매 링크가 개별적으로 존재하지 않고, 오직 1개의 대표 구매 링크만 존재하는 '모음전(옵션 선택형)'이라면, 절대 상품을 여러 개로 분리하지 마! 
             무조건 전체를 대표하는 이름으로 단일 객체(1개)만 반환해. (예: "무파마 삼겹살 외 14종 모음전")
-            대신 이 경우, 포함된 세부 상품들의 목록(마니커, 하림 등)이나 특징을 'ai_summary' 속성에 3줄 요약으로 보기 좋게 작성해줘.
+            2. [거대 모음전 방지 룰]: 본문에 개별 링크가 각각 존재하더라도, 발견된 상품의 총 개수가 6개 이상(6, 7, 30개 등)이면 절대로 쪼개지 마라! 이 경우에도 무조건 전체를 대표하는 1개의 객체(단일 핫딜)로 합쳐서 반환해야 한다. (쪼개는 것은 5개 이하일 때만 허용)
+            위 1번이나 2번에 해당하는 단일화 케이스일 경우, 포함된 세부 상품들의 대표적인 목록이나 특징을 'ai_summary' 속성에 3줄 요약으로 보기 좋게 작성해줘. (예: "🔥 [모음전] 레데리2(1.8만), 스택랜드(4천) 등 30종 할인")
             
             [가격 추출 필수 규칙]
             1. '59요금제' 같은 휴대폰 요금제의 경우 월 요금인 59000 처럼 계산해서 적어줘.
@@ -459,13 +531,16 @@ class AggregatorService:
                         logger.info(f"✅ Gemini 자동 분할/단일화 성공! {len(split_items)}개 상품 추출됨")
                     break
                 except Exception as e:
-                    if "429" in str(e):
-                        if "spending cap" in str(e).lower():
+                    error_msg = str(e).lower()
+                    if "429" in error_msg:
+                        if "spending cap" in error_msg or "quota" in error_msg or "exhausted" in error_msg:
                             from backend.core.ai_utils import mark_key_dead
                             mark_key_dead(api_key)
+                            # 할당량 초과 시 재시도하지 않고 다음 키를 사용하거나 루프 탈출
+                            continue
                         if attempt < max_retries - 1:
                             wait_time = 15
-                            match = re.search(r'retry in ([\d\.]+)s', str(e))
+                            match = re.search(r'retry in ([\d\.]+)s', error_msg)
                             if match:
                                 wait_time = int(float(match.group(1))) + 2
                             logger.warning(f"Gemini Rate Limit Hit (Split). Waiting {wait_time}s... (Attempt {attempt+1}/{max_retries})")
@@ -546,11 +621,21 @@ class AggregatorService:
                     logger.error(f"Error inserting split item '{derived_title}': {e}")
         else:
             # 단일 등록 (기존 로직)
+            print("DEBUG: Entered else block (단일 등록)")
             try:
+                import json
+                options_data_str = None
+                has_options = False
+                if scraped_data.get("options_data"):
+                    options_data_str = json.dumps(scraped_data.get("options_data"), ensure_ascii=False)
+                    has_options = True
+                
+                print(f"DEBUG options_data_str: {options_data_str}")
+
                 new_deal = Deal(
                     source_community_id=community_id,
                     title=raw_title,
-                    price=str(price) if price else "0",
+                    price=str(final_price) if final_price else "0",
                     currency=currency,
                     post_link=url,
                     ecommerce_link=scraped_data.get("ecommerce_link") or url,
@@ -560,19 +645,22 @@ class AggregatorService:
                     category=final_category,
                     base_product_name=normalized.name,
                     image_url=image_url,
-                    ai_summary=ai_summary,
+                    ai_summary=ai_summary or ("📦 [모음전] 여러 상품이 포함된 핫딜입니다. 상세페이지에서 확인하세요." if is_multi_item else None),
                     content_html=content_html,
                     honey_score=honey_score,
                     view_count=view_count,
                     like_count=like_count,
                     comment_count=comment_count,
+                    options_data=options_data_str,
+                    has_options=has_options,
                     indexed_at=posted_dt if posted_dt else func.now()
                 )
                 self.db.add(new_deal)
                 self.db.commit()
                 self.db.refresh(new_deal)
-                if price > 0: self._insert_price_history(new_deal.id, price)
+                if final_price > 0: self._insert_price_history(new_deal.id, final_price)
             except Exception as e:
+                print(f"DEBUG: Exception inside else block: {e}")
                 self.db.rollback()
                 logger.error(f"Error inserting deal '{raw_title}': {e}")
                 return None

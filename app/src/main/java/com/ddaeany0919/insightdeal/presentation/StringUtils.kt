@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 /**
  * 💰 가격 포매터
  */
-fun formatPrice(price: Int?, currency: String? = "KRW"): String {
+fun formatPrice(price: Long?, currency: String? = "KRW"): String {
     return if (price != null && price > 0) {
         val safeCurrency = currency ?: "KRW"
         when (safeCurrency.uppercase()) {

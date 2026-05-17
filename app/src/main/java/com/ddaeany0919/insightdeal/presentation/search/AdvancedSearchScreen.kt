@@ -33,8 +33,10 @@ import kotlinx.coroutines.FlowPreview
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, FlowPreview::class)
 @Composable
 fun AdvancedSearchScreen(navController: NavController, viewModel: HomeViewModel = viewModel()) {
-    var searchQuery by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
-    var isSearching by remember { mutableStateOf(false) }
+    var searchQuery by androidx.compose.runtime.saveable.rememberSaveable(stateSaver = androidx.compose.ui.text.input.TextFieldValue.Saver) { 
+        mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) 
+    }
+    var isSearching by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     
@@ -43,9 +45,11 @@ fun AdvancedSearchScreen(navController: NavController, viewModel: HomeViewModel 
     val popularKeywords by viewModel.popularKeywords.collectAsState()
 
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-        // 검색 화면 초기화 - 빈 결과 셋팅
-        viewModel.searchDeals("")
+        if (searchQuery.text.isEmpty()) {
+            focusRequester.requestFocus()
+            // 검색 화면 초기화 - 빈 결과 셋팅
+            viewModel.searchDeals("")
+        }
     }
 
     fun performSearch(query: String) {

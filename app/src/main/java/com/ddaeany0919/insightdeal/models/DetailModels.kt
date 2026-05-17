@@ -1,7 +1,11 @@
 package com.ddaeany0919.insightdeal.models
 
+import com.google.gson.annotations.SerializedName
+
 data class PriceHistoryPoint(
+    @SerializedName(value = "recordedAt", alternate = ["date"])
     val date: String,
+    @SerializedName("price")
     val price: Int,
     val platform: String = ""
 )

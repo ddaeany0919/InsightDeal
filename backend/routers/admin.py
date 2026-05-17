@@ -178,7 +178,7 @@ async def get_admin_dashboard():
     return HTMLResponse(content=HTML_TEMPLATE.replace("{last_updated}", last_updated))
 
 @router.get("/logs")
-async def get_logs():
+def get_logs():
     log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
     scraper_log = os.path.join(log_dir, "scraper_output.log")
     last_update_json = os.path.join(log_dir, "last_update.json")
@@ -208,6 +208,16 @@ async def get_logs():
                         count_str = match_succ.group(3) # "총 수집/갱신건수: 90건"
                         community_status[comm] = {"status": "업데이트 완료 ✅", "time": time_str, "count": count_str}
                 
+                import time
+                try:
+                    mtime = os.path.getmtime(scraper_log)
+                    if time.time() - mtime >= 300:
+                        for c in community_status:
+                            if community_status[c]["status"] == "진행 중 ⏳":
+                                community_status[c]["status"] = "비정상 종료 ❌"
+                except:
+                    pass
+                
                 # 로그 전송량 최적화 (마지막 200줄만)
                 logs = "".join(all_lines[-200:])
         except Exception:
@@ -223,9 +233,17 @@ async def get_logs():
             pass
             
     # 스크립트 실행 중 여부를 판단
+    import time
     is_running = False
     if logs and "모든 커뮤니티 데이터 파싱 및 업데이트 완료" not in logs and "AI Batch 요약 처리 완료" not in logs:
-        is_running = True
+        try:
+            mtime = os.path.getmtime(scraper_log)
+            if time.time() - mtime < 300:
+                is_running = True
+            else:
+                is_running = False
+        except:
+            is_running = False
         
     if logs and ("AI Batch 요약 처리 완료" in logs or "모든 커뮤니티 데이터 파싱 및 업데이트 완료" in logs):
         is_running = False

@@ -34,9 +34,14 @@ import com.ddaeany0919.insightdeal.presentation.rememberRelativeTime
 
 
 
+import androidx.navigation.NavController
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CommunityScreen(viewModel: CommunityViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
+fun CommunityScreen(
+    navController: NavController? = null,
+    viewModel: CommunityViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     val tabs = listOf("전체보기", "🔥 핫딜만", "💰 앱테크만")
@@ -99,12 +104,14 @@ fun CommunityScreen(viewModel: CommunityViewModel = androidx.lifecycle.viewmodel
                         }
                     }
                     is CommunityUiState.Success -> {
-                        // 필터링 로직
-                        val filteredDeals = when (selectedTabIndex) {
-                            0 -> state.deals // 전체보기
-                            1 -> state.deals.filter { it.category != "적립" && it.category != "이벤트" } // 핫딜만
-                            2 -> state.deals.filter { it.category == "적립" || it.category == "이벤트" } // 앱테크만
-                            else -> state.deals
+                        // 필터링 로직 - 성능 최적화를 위해 remember 사용
+                        val filteredDeals = remember(selectedTabIndex, state.deals) {
+                            when (selectedTabIndex) {
+                                0 -> state.deals // 전체보기
+                                1 -> state.deals.filter { it.honeyScore >= 80 } // 핫딜만 (꿀점수 80 이상)
+                                2 -> state.deals.filter { it.category == "적립" || it.category == "이벤트" } // 앱테크만
+                                else -> state.deals
+                            }
                         }
 
                         if (filteredDeals.isEmpty()) {
@@ -120,8 +127,16 @@ fun CommunityScreen(viewModel: CommunityViewModel = androidx.lifecycle.viewmodel
                                 contentPadding = PaddingValues(16.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                items(items = filteredDeals) { deal ->
-                                    HotDealCard(deal)
+                                items(
+                                    items = filteredDeals,
+                                    key = { it.id }
+                                ) { deal ->
+                                    HotDealCard(
+                                        deal = deal,
+                                        onClick = {
+                                            navController?.navigate("deal_detail/${deal.id}")
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -133,9 +148,9 @@ fun CommunityScreen(viewModel: CommunityViewModel = androidx.lifecycle.viewmodel
 }
 
 @Composable
-fun HotDealCard(deal: HotDealDto) {
+fun HotDealCard(deal: HotDealDto, onClick: () -> Unit = {}) {
     Card(
-        onClick = {},
+        onClick = onClick,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier.fillMaxWidth()
@@ -156,6 +171,8 @@ fun HotDealCard(deal: HotDealDto) {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(deal.imageUrl)
+                            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                            .addHeader("Referer", "https://www.fmkorea.com/")
                             .crossfade(true)
                             .build(),
                         contentDescription = null,
@@ -205,37 +222,49 @@ fun HotDealCard(deal: HotDealDto) {
                     Badge(text = deal.category ?: "기타", color = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = deal.mallName,
+                        text = deal.mallName ?: "정보 없음",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.weight(1f))
-                    Badge(text = deal.communityName, color = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val distinctCommunity = deal.communityName?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.distinct()?.joinToString(", ") ?: "기타"
+                    Badge(text = distinctCommunity, color = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
 
                 // 제목
-                Text(
-                    text = deal.title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        textDecoration = if (deal.isClosed) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
-                        color = if (deal.isClosed) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface
-                    ),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.Top) {
+                    if (deal.honeyScore >= 80) {
+                        Text(
+                            text = "🔥",
+                            modifier = Modifier.padding(end = 4.dp),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                    Text(
+                        text = deal.title,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            textDecoration = if (deal.isClosed) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                            color = if (deal.isClosed) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface
+                        ),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // 가격 및 배송/시간 정보
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        val priceText = if (deal.price == "0" || deal.price == "0원") {
+                        val priceText = if (deal.price == 0) {
                             if (deal.category == "이벤트" || deal.title.contains("무료") || deal.title.contains("쿠폰")) "무료 (쿠폰/이벤트)"
                             else "정보 확인필요"
-                        } else deal.price
+                        } else {
+                            String.format(java.util.Locale.getDefault(), "%,d원", deal.price)
+                        }
                         
                         Text(
                             text = priceText,
@@ -272,6 +301,30 @@ fun HotDealCard(deal: HotDealDto) {
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
+                    }
+                    
+                    if (deal.likeCount > 0 || deal.dislikeCount > 0 || deal.commentCount > 0) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (deal.likeCount > 0) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("🔥 질러 ", style = MaterialTheme.typography.labelSmall, color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                                    Text("${deal.likeCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B))
+                                }
+                            }
+                            if (deal.dislikeCount > 0) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("💸 지갑 지켜 ", style = MaterialTheme.typography.labelSmall, color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold)
+                                    Text("${deal.dislikeCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B))
+                                }
+                            }
+                            if (deal.commentCount > 0) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("💬 참견 ", style = MaterialTheme.typography.labelSmall, color = Color.DarkGray, fontWeight = FontWeight.Bold)
+                                    Text("${deal.commentCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B))
+                                }
+                            }
+                        }
                     }
                 }
             }

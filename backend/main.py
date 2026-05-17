@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -6,58 +6,59 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import logging
-from routers import wishlist, product, community, health, push
+from routers import wishlist, product, community, health, push, admin, auth
 
 import firebase_admin
 from firebase_admin import credentials
 
-# 로깅 설정
+# 濡쒓퉭 ?ㅼ젙
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Firebase 초기화
+# Firebase 珥덇린??
 try:
     cred = credentials.Certificate(os.path.join(os.path.dirname(__file__), "firebase-service-account.json"))
     firebase_admin.initialize_app(cred)
-    logger.info("🔥 Firebase Admin SDK 성공적으로 초기화되었습니다.")
+    logger.info("?뵦 Firebase Admin SDK ?깃났?곸쑝濡?珥덇린?붾릺?덉뒿?덈떎.")
 except Exception as e:
-    logger.error(f"❌ Firebase 초기화 실패: {e}")
+    logger.error(f"??Firebase 珥덇린???ㅽ뙣: {e}")
 
 app = FastAPI(title="InsightDeal API")
 
-# 이미지 캐시 디렉토리 설정
+# ?대?吏 罹먯떆 ?붾젆?좊━ ?ㅼ젙
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 IMAGE_CACHE_DIR = os.path.join(BASE_DIR, "image_cache")
 if not os.path.exists(IMAGE_CACHE_DIR):
     os.makedirs(IMAGE_CACHE_DIR)
 
-# 정적 파일 마운트 (이미지 서빙)
+# ?뺤쟻 ?뚯씪 留덉슫??(?대?吏 ?쒕튃)
 app.mount("/images", StaticFiles(directory=IMAGE_CACHE_DIR), name="images")
 
-# CORS 설정
+# CORS ?ㅼ젙
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
 if not ALLOWED_ORIGINS or ALLOWED_ORIGINS == [""]:
-    # 앱(안드로이드 에뮬/실기기)과 로컬 테스트 환경만 기본 허용
+    # ???덈뱶濡쒖씠???먮?/?ㅺ린湲?怨?濡쒖뺄 ?뚯뒪???섍꼍留?湲곕낯 ?덉슜
     ALLOWED_ORIGINS = ["http://localhost", "http://localhost:3000", "capacitor://localhost", "http://10.0.2.2"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # '*' 대신 명시적 선언
-    allow_headers=["Authorization", "Content-Type", "Accept"], # 허용되는 헤더 제한
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # '*' ???紐낆떆???좎뼵
+    allow_headers=["Authorization", "Content-Type", "Accept"], # ?덉슜?섎뒗 ?ㅻ뜑 ?쒗븳
 )
 
-# 라우터 등록
+# ?쇱슦???깅줉
 app.include_router(wishlist.router, prefix="/api/wishlist", tags=["wishlist"])
 app.include_router(product.router, prefix="/api/product", tags=["product"])
 app.include_router(community.router, prefix="/api/community", tags=["community"])
 app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(push.router, prefix="/api/push", tags=["push"])
 
-# 관리자 페이지 라우터 등록
+# 愿由ъ옄 ?섏씠吏 ?쇱슦???깅줉
 from routers import admin
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
 from fastapi.responses import Response
 import httpx
@@ -66,20 +67,35 @@ import httpx
 def read_root():
     return {"message": "Welcome to InsightDeal API"}
 
+# ?꾩뿭 HTTP ?대씪?댁뼵?몃? ?앹꽦?섏뿬 ?곌껐 ?留?Connection Pooling) ?ъ슜
+# ?대?吏 濡쒕뵫 ??SSL ?몃뱶?곗씠???ㅻ쾭?ㅻ뱶瑜????以꾩씠怨??띾룄瑜??믪엫
+proxy_client = httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=50, max_connections=100))
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await proxy_client.aclose()
+
 @app.get("/api/proxy-image")
 async def proxy_image(url: str):
-    with open("proxy_debug.log", "a", encoding="utf-8") as f:
-        f.write(f"REQ: {url}\n")
     try:
-        # Ppomppu 우회 시 이미지 URL 자체가 아닌 메인 사이트 도메인을 레퍼러로 주입
+        # Ppomppu ?고쉶 ???대?吏 URL ?먯껜媛 ?꾨땶 硫붿씤 ?ъ씠???꾨찓?몄쓣 ?덊띁?щ줈 二쇱엯
         referer = "https://m.ppomppu.co.kr/" if "ppomppu.co.kr" in url else url
-        async with httpx.AsyncClient(headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": referer}) as client:
-            resp = await client.get(url, timeout=10.0)
-            resp.raise_for_status()
-            content_type = resp.headers.get("Content-Type", "image/jpeg")
-            with open("proxy_debug.log", "a", encoding="utf-8") as f:
-                f.write(f"SUCC: size {len(resp.content)} bytes\n")
-            return Response(content=resp.content, media_type=content_type)
+        
+        # ?꾩뿭 ?대씪?댁뼵???ъ궗?⑹쑝濡??깅뒫 理쒖쟻??
+        resp = await proxy_client.get(
+            url, 
+            timeout=3.0,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": referer}
+        )
+        resp.raise_for_status()
+        content_type = resp.headers.get("Content-Type", "image/jpeg")
+        
+        # Coil (Android) 罹먯떛???꾪븳 Cache-Control ?ㅻ뜑 異붽? (7??罹먯떆)
+        return Response(
+            content=resp.content, 
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=604800, immutable"}
+        )
     except httpx.HTTPStatusError as e:
         logger.warning(f"Proxy Image 404/Error: {url} - {e}")
         from fastapi import HTTPException
@@ -99,4 +115,4 @@ async def generic_exception_handler(request, exc):
     from fastapi.responses import JSONResponse
     return JSONResponse(status_code=500, content={"message": "Internal Server Error - Please contact admin."})
 
-# (선택적으로 lifespan, DB/스크래퍼 초기화 등도 여기에 추가 가능)
+# (?좏깮?곸쑝濡?lifespan, DB/?ㅽ겕?섑띁 珥덇린???깅룄 ?ш린??異붽? 媛??

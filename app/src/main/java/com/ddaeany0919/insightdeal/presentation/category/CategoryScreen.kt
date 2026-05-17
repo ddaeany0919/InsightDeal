@@ -14,11 +14,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 import androidx.navigation.NavController
-import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CategoryScreen(navController: NavController? = null, homeViewModel: HomeViewModel? = null) {
+fun CategoryScreen(navController: NavController? = null) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -31,6 +30,7 @@ fun CategoryScreen(navController: NavController? = null, homeViewModel: HomeView
         }
     ) { paddingValues ->
         val categories = listOf(
+            "핫딜모음" to "🔥",
             "음식" to "🍔",
             "SW/게임" to "🎮",
             "PC제품" to "💻",

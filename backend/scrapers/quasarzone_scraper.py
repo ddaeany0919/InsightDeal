@@ -85,10 +85,7 @@ class QuasarzoneScraper(AsyncBaseScraper):
             if '종료' in full_title or '마감' in full_title or '품절' in full_title or '삭제' in full_title:
                 is_closed = True
 
-            is_super_hotdeal = False
-            label_el = row.select_one('.label')
-            if label_el and '인기' in label_el.get_text(strip=True):
-                is_super_hotdeal = True
+
 
             # 실제 게시글 작성 시간 추출
             posted_at_iso = None
@@ -100,6 +97,17 @@ class QuasarzoneScraper(AsyncBaseScraper):
             view_count = 0
             like_count = 0
             comment_count = 0
+            
+            # 퀘이사존 UI 귤(추천) 아이콘 파싱
+            tangerine_img = row.select_one('img.tangerine_icon')
+            if tangerine_img:
+                next_num = tangerine_img.find_next_sibling('span', class_='num')
+                if next_num:
+                    try:
+                        like_count = int(next_num.get_text(strip=True))
+                    except:
+                        pass
+                        
             for count_span in row.select('span.count'):
                 try:
                     icon = count_span.select_one('i')
@@ -107,9 +115,16 @@ class QuasarzoneScraper(AsyncBaseScraper):
                         cls = icon.get('class', [])
                         txt = count_span.get_text(strip=True).replace(',', '')
                         if 'fa-eye' in cls: view_count = int(txt)
-                        elif 'fa-thumbs-up' in cls: like_count = int(txt)
+                        elif 'fa-thumbs-up' in cls and like_count == 0: like_count = int(txt)
                         elif 'fa-comment' in cls or 'fa-comment-dots' in cls: comment_count = int(txt)
                 except: pass
+
+            is_super_hotdeal = False
+            label_el = row.select_one('.label')
+            if label_el and '인기' in label_el.get_text(strip=True):
+                is_super_hotdeal = True
+            if like_count >= 20:
+                is_super_hotdeal = True
 
             detail_info = await self.get_detail(url)
             
