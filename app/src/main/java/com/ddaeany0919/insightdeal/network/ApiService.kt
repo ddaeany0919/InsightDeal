@@ -298,6 +298,9 @@ interface ApiService {
     @GET("api/product/deals/{id}/comments")
     suspend fun getDealComments(@Path("id") dealId: Int): Response<List<ApiDealComment>>
 
+    @GET("api/community/users/{user_id}/comments")
+    suspend fun getUserComments(@Path("user_id") userId: String): Response<List<UserCommentDto>>
+
     @GET("api/product/deals/{id}/votes")
     suspend fun getDealVotes(
         @Path("id") dealId: Int,
@@ -487,4 +490,17 @@ data class Site(
     val name: String,
     val url: String,
     val icon: String? = null
+)
+
+data class UserCommentDto(
+    val id: Int,
+    val post_id: Int,
+    val post_title: String,
+    val user_id: String,
+    val nickname: String,
+    val content: String,
+    val deal_url: String?,
+    val is_accepted: Boolean,
+    val parent_id: Int?,
+    val created_at: String?
 )

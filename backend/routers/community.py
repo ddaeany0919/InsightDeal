@@ -1426,3 +1426,34 @@ def accept_community_post_comment(
     
     return {"message": "Comment accepted successfully", "bounty_points_awarded": post.bounty_points}
 
+@router.get("/users/{user_id}/comments")
+def get_user_comments(
+    user_id: str,
+    skip: int = 0,
+    limit: int = 20,
+    db: Session = Depends(get_db_session)
+):
+    comments = db.query(models.CommunityPostComment)\
+        .filter(models.CommunityPostComment.user_id == user_id)\
+        .order_by(models.CommunityPostComment.created_at.desc())\
+        .offset(skip).limit(limit).all()
+        
+    result = []
+    for c in comments:
+        # Get parent post for context
+        post = db.query(models.CommunityPost).filter(models.CommunityPost.id == c.post_id).first()
+        
+        result.append({
+            "id": c.id,
+            "post_id": c.post_id,
+            "post_title": post.title if post else "삭제된 게시글",
+            "user_id": c.user_id,
+            "nickname": c.nickname,
+            "content": c.content,
+            "deal_url": c.deal_url,
+            "is_accepted": c.is_accepted,
+            "parent_id": c.parent_id,
+            "created_at": c.created_at.isoformat() if c.created_at else None
+        })
+        
+    return result

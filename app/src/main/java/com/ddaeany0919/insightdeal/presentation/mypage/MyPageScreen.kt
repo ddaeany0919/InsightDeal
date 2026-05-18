@@ -51,7 +51,16 @@ fun MyPageScreen(
         (uiState as com.ddaeany0919.insightdeal.presentation.community.CommunityBoardUiState.Success).posts.count { it.userId == username }
     } else 0
 
-    val myCommentsCount = com.ddaeany0919.insightdeal.presentation.mypage.history.DummyDataManager.dummyComments.size
+    val myCommentsViewModel: com.ddaeany0919.insightdeal.presentation.mypage.history.MyCommentsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val myCommentsUiState by myCommentsViewModel.uiState.collectAsState()
+    
+    LaunchedEffect(username) {
+        myCommentsViewModel.loadComments(username ?: "admin")
+    }
+    
+    val myCommentsCount = if (myCommentsUiState is com.ddaeany0919.insightdeal.presentation.mypage.history.MyCommentsUiState.Success) {
+        (myCommentsUiState as com.ddaeany0919.insightdeal.presentation.mypage.history.MyCommentsUiState.Success).comments.size
+    } else 0
 
     Scaffold(
         topBar = {

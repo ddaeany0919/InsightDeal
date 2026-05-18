@@ -237,7 +237,7 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                 com.ddaeany0919.insightdeal.presentation.mypage.history.MyPostsScreen(navController = navController, onBack = { navController.popBackStack() })
             }
             composable("my_comments") {
-                com.ddaeany0919.insightdeal.presentation.mypage.history.MyCommentsScreen(onBack = { navController.popBackStack() })
+                com.ddaeany0919.insightdeal.presentation.mypage.history.MyCommentsScreen(navController = navController, onBack = { navController.popBackStack() })
             }
             composable("recent_deals") {
                 com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealsScreen(
