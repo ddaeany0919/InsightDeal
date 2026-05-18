@@ -1,32 +1,32 @@
 {
   "뽐뿌": {
     "last_count": 0,
-    "last_run": "2026-05-18 23:21:18",
+    "last_run": "2026-05-18 23:48:43",
     "status": "Blocked/Failed"
   },
   "알리뽐뿌": {
-    "last_count": 0,
-    "last_run": "2026-05-18 23:17:31",
-    "status": "Blocked/Failed"
+    "last_count": 74,
+    "last_run": "2026-05-18 23:50:07",
+    "status": "Success"
   },
   "퀘이사존": {
     "last_count": 0,
-    "last_run": "2026-05-18 23:18:02",
+    "last_run": "2026-05-18 23:47:02",
     "status": "Blocked/Failed"
   },
   "클리앙": {
     "last_count": 0,
-    "last_run": "2026-05-18 23:20:26",
+    "last_run": "2026-05-18 23:48:25",
     "status": "Blocked/Failed"
   },
   "루리웹": {
-    "last_count": 0,
-    "last_run": "2026-05-18 23:19:48",
-    "status": "Blocked/Failed"
+    "last_count": 5,
+    "last_run": "2026-05-18 23:48:43",
+    "status": "Success"
   },
   "펨코": {
     "last_count": 0,
-    "last_run": "2026-05-18 23:16:13",
+    "last_run": "2026-05-18 23:48:18",
     "status": "Blocked/Failed"
   },
   "빠삭해외": {
@@ -35,13 +35,13 @@
     "status": "Blocked/Failed"
   },
   "빠삭국내": {
-    "last_count": 2,
-    "last_run": "2026-05-17 23:22:47",
-    "status": "Success"
+    "last_count": 0,
+    "last_run": "2026-05-18 23:46:52",
+    "status": "Blocked/Failed"
   },
   "빠삭육아": {
     "last_count": 0,
-    "last_run": "2026-05-17 23:23:58",
+    "last_run": "2026-05-18 23:23:50",
     "status": "Blocked/Failed"
   },
   "뽐뿌해외": {

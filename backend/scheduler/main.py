@@ -106,8 +106,8 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
         async with scraper:
             logger.info(f"▶ [{community_display_name}] 큐 기반 스크래핑 워커 가동 (pages={pages})")
             
-            # 5개의 워커(Consumer) 생성 (커뮤니티당 동시 5개 처리)
-            workers = [asyncio.create_task(worker()) for _ in range(5)]
+            # SQLite 사용 시 동시 쓰기로 인한 DB 손상을 방지하기 위해 1개의 워커만 사용
+            workers = [asyncio.create_task(worker()) for _ in range(1)]
             global_seen_urls = set()
 
             # Producer: 리스트 페이지를 긁어서 Queue에 삽입

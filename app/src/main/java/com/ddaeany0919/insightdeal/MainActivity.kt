@@ -91,6 +91,9 @@ class MainActivity : ComponentActivity() {
             requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
+        // Initialize Recent Deals
+        com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager.init(this)
+
         // 앱 시작 시 FCM 토큰 가져와서 서버에 익명 가입(등록)
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
             if (!task.isSuccessful) {
@@ -231,7 +234,7 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                 ) 
             }
             composable("my_posts") {
-                com.ddaeany0919.insightdeal.presentation.mypage.history.MyPostsScreen(onBack = { navController.popBackStack() })
+                com.ddaeany0919.insightdeal.presentation.mypage.history.MyPostsScreen(navController = navController, onBack = { navController.popBackStack() })
             }
             composable("my_comments") {
                 com.ddaeany0919.insightdeal.presentation.mypage.history.MyCommentsScreen(onBack = { navController.popBackStack() })

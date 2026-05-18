@@ -563,9 +563,18 @@ async def get_hot_deals(
                 filter_conditions = [models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords]
                 query = query.filter(or_(*filter_conditions))
         else:
-            from sqlalchemy import and_
-            # ?꾩껜 ??씪 寃쎌슦 '?곷┰' 諛?'?대깽?? 移댄뀒怨좊━ ?④? 泥섎━ (?쒖닔 ?ル뵜留??몄텧)
-            query = query.filter(and_(models.Deal.category != "적립", models.Deal.category != "적립/이벤트", models.Deal.category != "이벤트"))
+            from sqlalchemy import and_, not_
+            # 전체 탭일 경우 '적립' 및 '이벤트' 카테고리와 정보성/적립성 제목 하드 필터링 (순수 핫딜만 노출)
+            query = query.filter(
+                and_(
+                    models.Deal.category != "적립", 
+                    models.Deal.category != "적립/이벤트", 
+                    models.Deal.category != "이벤트",
+                    not_(models.Deal.title.like("%적립%")),
+                    not_(models.Deal.title.like("%정보%")),
+                    not_(models.Deal.title.like("%불가%"))
+                )
+            )
             
         # [Epic 4: Noise Elimination] 
         # ?ㅽ뙵/?낆옄湲 ?댁텧: ?깅줉?쒖? 2?쒓컙??吏?щ뒗?곕룄 轅?먯닔(honey_score)媛 10??誘몃쭔?대㈃ ?쇰뱶?먯꽌 ?쒖쇅

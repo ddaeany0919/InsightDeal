@@ -37,8 +37,8 @@ async def run_update():
         scrape_community('bbasak_overseas', BbasakOverseasScraper, 3),
         scrape_community('bbasak_parenting', BbasakParentingScraper, 3),
     ]
-    # 병렬 처리를 위한 세마포어 (한 번에 최대 3개의 커뮤니티 동시 스크래핑)
-    sem = asyncio.Semaphore(3)
+    # 병렬 처리를 위한 세마포어 (SQLite DB Corruption 방지를 위해 1개씩 순차 실행)
+    sem = asyncio.Semaphore(1)
 
     async def run_with_semaphore(task_coro):
         async with sem:

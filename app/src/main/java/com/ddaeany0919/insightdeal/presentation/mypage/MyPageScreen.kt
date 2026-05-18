@@ -38,6 +38,21 @@ fun MyPageScreen(
     val context = LocalContext.current
     val username by AuthManager.getUsername(context).collectAsState(initial = "admin")
     
+    val recentDeals by com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager.recentDeals.collectAsState()
+    
+    val viewModel: com.ddaeany0919.insightdeal.presentation.community.CommunityBoardViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val uiState by viewModel.uiState.collectAsState()
+    
+    LaunchedEffect(Unit) {
+        viewModel.loadPosts()
+    }
+
+    val myPostsCount = if (uiState is com.ddaeany0919.insightdeal.presentation.community.CommunityBoardUiState.Success) {
+        (uiState as com.ddaeany0919.insightdeal.presentation.community.CommunityBoardUiState.Success).posts.count { it.userId == username }
+    } else 0
+
+    val myCommentsCount = com.ddaeany0919.insightdeal.presentation.mypage.history.DummyDataManager.dummyComments.size
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -136,7 +151,7 @@ fun MyPageScreen(
                 QuickStatCard(
                     modifier = Modifier.weight(1f), 
                     title = "작성글", 
-                    value = "0 건",
+                    value = "$myPostsCount 건",
                     onClick = onNavigateToMyPosts
                 )
             }
@@ -164,8 +179,8 @@ fun MyPageScreen(
                 )
                 
                 MyPageMenuItem(icon = Icons.Outlined.FavoriteBorder, title = "내 관심목록 (찜)", onClick = onNavigateToWatchlist)
-                MyPageMenuItem(icon = Icons.Outlined.History, title = "최근 본 핫딜", onClick = onNavigateToRecentDeals)
-                MyPageMenuItem(icon = Icons.Outlined.ChatBubbleOutline, title = "내가 쓴 댓글", onClick = onNavigateToMyComments)
+                MyPageMenuItem(icon = Icons.Outlined.History, title = "최근 본 핫딜", value = "${recentDeals.size} 건", onClick = onNavigateToRecentDeals)
+                MyPageMenuItem(icon = Icons.Outlined.ChatBubbleOutline, title = "내가 쓴 댓글", value = "$myCommentsCount 건", onClick = onNavigateToMyComments)
             }
 
             Box(

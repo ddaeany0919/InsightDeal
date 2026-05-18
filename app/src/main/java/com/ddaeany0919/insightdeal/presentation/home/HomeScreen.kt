@@ -183,11 +183,14 @@ fun HomeScreen(
                                 val topPicks = topHotDeals
                                     .filter { deal ->
                                         // 🔥 뱃지 조건을 카드와 동일하게: aiSummary에 커뮤니티 인기/인증 태그 AND honeyScore == 100
-                                        // honeyScore >= 100 단독 조건으로는 일반 생활용품도 핫딜로 오분류됨
                                         val hasHotTag = deal.aiSummary?.contains("🔥 [커뮤니티 인기]") == true
                                                 || deal.aiSummary?.contains("🔥 [커뮤니티 인증 핫딜]") == true
                                         val isSuperHot = hasHotTag && deal.honeyScore >= 100
                                         !deal.isClosed && isSuperHot
+                                    }
+                                    .filter { deal ->
+                                        // 정보성, 적립 등 부적절한 딜 제외
+                                        deal.category != "적립" && !deal.title.contains("적립") && !deal.title.contains("불가") && !deal.title.contains("정보")
                                     }
                                     .sortedByDescending { it.createdAt ?: "" }
                                 
@@ -524,7 +527,13 @@ fun DealCardComposable(
                         val sourcesToRender = rawSources.distinctBy { it.siteName }
                         
                         sourcesToRender.forEach { source ->
-                            val siteNameLower = source.siteName.lowercase(java.util.Locale.getDefault())
+                            val fullSiteName = source.siteName
+                            val displaySiteName = if (fullSiteName.contains(" - ")) {
+                                fullSiteName.substringBefore(" - ").trim()
+                            } else {
+                                fullSiteName
+                            }
+                            val siteNameLower = displaySiteName.lowercase(java.util.Locale.getDefault())
                             val (containerColor, contentColor) = when {
                                 siteNameLower.contains("뽐뿌") -> Color(0xFF1565C0) to Color.White
                                 siteNameLower.contains("퀘이사존") -> Color(0xFFE65100) to Color.White
@@ -553,7 +562,7 @@ fun DealCardComposable(
                                 }
                             ) {
                                 Text(
-                                    text = source.siteName,
+                                    text = displaySiteName,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     fontSize = 10.sp,
                                     color = contentColor

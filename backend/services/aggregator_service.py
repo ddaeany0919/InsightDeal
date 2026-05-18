@@ -93,8 +93,8 @@ class AggregatorService:
             final_price = title_price
             currency = title_currency
             
-        # 퀘이사존은 핫딜 규정상 주황색 가격 태그가 가장 정확하므로 무조건 우선시함
-        if community_name in ["quasarzone", "퀘이사존"] and provided_price > 0:
+        # 퀘이사존, 펨코는 핫딜 규정상 기재된 가격 태그가 가장 정확하므로 무조건 우선시함
+        if community_name in ["quasarzone", "퀘이사존", "fmkorea", "펨코"] and provided_price > 0:
             final_price = provided_price
             currency = scraped_data.get("currency", "KRW")
             # 타이틀에서 추출된 가격과 달라도 더미 옵션을 생성하지 않음 (대부분 개당 가격을 제목에 쓴 경우이므로)

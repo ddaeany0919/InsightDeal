@@ -46,8 +46,8 @@ fun CategoryDetailScreen(
         }
     ) { paddingValues ->
         LazyColumn(
-            contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)

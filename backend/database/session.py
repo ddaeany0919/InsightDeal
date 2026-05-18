@@ -21,11 +21,11 @@ class DatabaseManager:
         from dotenv import load_dotenv
         
         # 최상위 .env 로드
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        # session.py의 경로는 backend/database/session.py 이므로 두 번 올라가면 backend/ 폴더입니다.
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir = os.path.dirname(backend_dir)
         load_dotenv(os.path.join(base_dir, '.env'))
         
-        # 무조건 backend/ 폴더 안의 insight_deal.db 파일을 공유하도록 절대경로 지정
-        backend_dir = os.path.join(base_dir, "backend")
         default_db_path = os.path.join(backend_dir, "insight_deal.db")
         
         database_url = os.getenv("DATABASE_URL")
@@ -35,8 +35,8 @@ class DatabaseManager:
             
         logger.info(f"📊 데이터베이스 연결 시도: {database_url}")
         
-        # SQLite 특화 설정 적용
-        connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {"options": "-c timezone=Asia/Seoul"}
+        # SQLite 특화 설정 적용 (병렬 쓰기 시 DB Corruption 방지를 위해 timeout 증가)
+        connect_args = {"check_same_thread": False, "timeout": 30} if database_url.startswith("sqlite") else {"options": "-c timezone=Asia/Seoul"}
         
         self.engine = create_engine(
             database_url,
@@ -44,6 +44,14 @@ class DatabaseManager:
             echo=False,
             connect_args=connect_args
         )
+        
+        if database_url.startswith("sqlite"):
+            @event.listens_for(self.engine, "connect")
+            def set_sqlite_pragma(dbapi_connection, connection_record):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA busy_timeout=30000")
+                cursor.close()
+
         
         self.SessionLocal = sessionmaker(
             autocommit=False, 
