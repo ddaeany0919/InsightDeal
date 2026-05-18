@@ -224,8 +224,23 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
             composable("mypage") { 
                 com.ddaeany0919.insightdeal.presentation.mypage.MyPageScreen(
                     onNavigateToSettings = { navController.navigate("settings") },
-                    onNavigateToWatchlist = { navController.navigate("watchlist") }
+                    onNavigateToWatchlist = { navController.navigate("watchlist") },
+                    onNavigateToMyPosts = { navController.navigate("my_posts") },
+                    onNavigateToMyComments = { navController.navigate("my_comments") },
+                    onNavigateToRecentDeals = { navController.navigate("recent_deals") }
                 ) 
+            }
+            composable("my_posts") {
+                com.ddaeany0919.insightdeal.presentation.mypage.history.MyPostsScreen(onBack = { navController.popBackStack() })
+            }
+            composable("my_comments") {
+                com.ddaeany0919.insightdeal.presentation.mypage.history.MyCommentsScreen(onBack = { navController.popBackStack() })
+            }
+            composable("recent_deals") {
+                com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealsScreen(
+                    onBack = { navController.popBackStack() },
+                    onDealClick = { dealId -> navController.navigate("deal_detail/$dealId") }
+                )
             }
             composable("settings") { com.ddaeany0919.insightdeal.presentation.settings.SettingsScreen() }
             composable("platform") { com.ddaeany0919.insightdeal.presentation.platform.PlatformScreen() }

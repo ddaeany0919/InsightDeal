@@ -30,7 +30,10 @@ import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
 @Composable
 fun MyPageScreen(
     onNavigateToSettings: () -> Unit,
-    onNavigateToWatchlist: () -> Unit
+    onNavigateToWatchlist: () -> Unit,
+    onNavigateToMyPosts: () -> Unit,
+    onNavigateToMyComments: () -> Unit,
+    onNavigateToRecentDeals: () -> Unit
 ) {
     val context = LocalContext.current
     val username by AuthManager.getUsername(context).collectAsState(initial = "admin")
@@ -61,7 +64,7 @@ fun MyPageScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { /* TODO: 프로필 수정 이동 */ }
+                    .clickable { onNavigateToSettings() }
                     .padding(horizontal = 20.dp, vertical = 20.dp)
             ) {
                 Row(
@@ -134,7 +137,7 @@ fun MyPageScreen(
                     modifier = Modifier.weight(1f), 
                     title = "작성글", 
                     value = "0 건",
-                    onClick = { /* TODO */ }
+                    onClick = onNavigateToMyPosts
                 )
             }
             
@@ -161,8 +164,8 @@ fun MyPageScreen(
                 )
                 
                 MyPageMenuItem(icon = Icons.Outlined.FavoriteBorder, title = "내 관심목록 (찜)", onClick = onNavigateToWatchlist)
-                MyPageMenuItem(icon = Icons.Outlined.History, title = "최근 본 핫딜", onClick = { /* TODO */ })
-                MyPageMenuItem(icon = Icons.Outlined.ChatBubbleOutline, title = "내가 쓴 댓글", onClick = { /* TODO */ })
+                MyPageMenuItem(icon = Icons.Outlined.History, title = "최근 본 핫딜", onClick = onNavigateToRecentDeals)
+                MyPageMenuItem(icon = Icons.Outlined.ChatBubbleOutline, title = "내가 쓴 댓글", onClick = onNavigateToMyComments)
             }
 
             Box(

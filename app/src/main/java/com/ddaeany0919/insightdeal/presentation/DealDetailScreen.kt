@@ -77,6 +77,11 @@ fun DealDetailRoute(
         return
     }
 
+    val localContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(deal.id) {
+        com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager.addRecentDeal(localContext, deal)
+    }
+
     val currentPriceInt = deal.price.toInt()
     val targetUrl = deal.ecommerceUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl ?: ""
     val isBookmarked = (wishlistState as? WishlistUiState.Success)?.items?.any { it.productUrl == targetUrl } ?: false
