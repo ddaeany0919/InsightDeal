@@ -164,7 +164,7 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
     
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route?.substringBefore("/")
-    val showBottomNav = currentRoute in listOf("home", "advanced_search", "category", "community", "mypage", "watchlist")
+    val showBottomNav = currentRoute in listOf("home", "advanced_search", "category", "community", "mypage", "watchlist", "my_posts", "my_comments", "recent_deals", "settings", "theme_settings")
 
     Scaffold(
         bottomBar = { 
@@ -191,7 +191,8 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
             }
             composable("watchlist") {
                 WishlistScreen(
-                    viewModel = wishlistViewModel
+                    viewModel = wishlistViewModel,
+                    onBack = { navController.popBackStack() }
                 )
             }
             composable("watchlist/detail/{itemId}") { backStackEntry ->
@@ -299,6 +300,7 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController, homeVi
             val selected = when (item.route) {
                 "category" -> currentRoute == "category" || currentRoute == "category_detail"
                 "community" -> currentRoute == "community" || currentRoute == "community_write" || currentRoute == "community_edit" || currentRoute == "community_detail"
+                "mypage" -> currentRoute == "mypage" || currentRoute == "watchlist" || currentRoute == "my_posts" || currentRoute == "my_comments" || currentRoute == "recent_deals" || currentRoute == "settings" || currentRoute == "theme_settings"
                 else -> currentRoute == item.route
             }
             

@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.background
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -211,7 +212,7 @@ fun DashboardHeader(items: List<WishlistItem>) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WishlistScreen(viewModel: WishlistViewModel = viewModel()) {
+fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Unit = {}) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -221,17 +222,21 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel()) {
 
     Scaffold(
         topBar = {
-            LargeTopAppBar(
+            TopAppBar(
                 title = {
                     Text(
                         "Insight Deal",
-                        style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold)
+                        fontWeight = FontWeight.Bold
                     )
                 },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surface
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
                 )
             )
         },
