@@ -164,7 +164,7 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
     
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route?.substringBefore("/")
-    val showBottomNav = currentRoute in listOf("home", "advanced_search", "category", "community", "mypage", "watchlist", "my_posts", "my_comments", "recent_deals", "settings", "theme_settings")
+    val showBottomNav = currentRoute in listOf("home", "advanced_search", "category", "category_detail", "community", "mypage", "watchlist", "my_posts", "my_comments", "recent_deals", "settings", "theme_settings")
 
     Scaffold(
         bottomBar = { 

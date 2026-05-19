@@ -29,10 +29,19 @@ fun CategoryDetailScreen(
 
     val dealsPagingItems = viewModel.dealsPagingData.collectAsLazyPagingItems()
 
+    val categoriesMap = mapOf(
+        "핫딜모음" to "🔥", "음식" to "🍔", "SW/게임" to "🎮", "PC제품" to "💻",
+        "가전제품" to "📺", "생활용품" to "🧻", "의류" to "👕", "화장품" to "💄",
+        "모바일/기프티콘" to "📱", "상품권" to "💳", "패키지/이용권" to "🎟",
+        "여행.해외핫딜" to "✈️", "적립" to "💰", "이벤트" to "🎉", "기타" to "📦"
+    )
+    val emoji = categoriesMap[categoryName] ?: ""
+    val titleText = if (emoji.isNotEmpty()) "$emoji $categoryName" else categoryName
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(categoryName, fontWeight = FontWeight.Bold) },
+                title = { Text(titleText, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

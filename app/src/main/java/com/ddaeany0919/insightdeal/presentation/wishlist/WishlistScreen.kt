@@ -53,34 +53,25 @@ fun LoadingState() {
 }
 
 @Composable
-fun EmptyWishlistState(onAddItemClick: () -> Unit) {
+fun EmptyWishlistState() {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "위시리스트가 비어있습니다",
+            text = "관심 목록이 비어있습니다",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "관심있는 상품을 추가해보세요",
+            text = "마음에 드는 핫딜에 하트를 눌러보세요!",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
             textAlign = TextAlign.Center
         )
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(
-            onClick = onAddItemClick,
-            modifier = Modifier.padding(horizontal = 32.dp)
-        ) {
-            Icon(Icons.Default.Add, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("아이템 추가")
-        }
     }
 }
 
@@ -241,24 +232,12 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showDialog = true },
-                containerColor = MaterialTheme.colorScheme.secondary,
-                contentColor = MaterialTheme.colorScheme.onSecondary,
-                elevation = FloatingActionButtonDefaults.elevation(8.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("상품 추가", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-            }
-        },
         containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
         val currentState = uiState
         when (currentState) {
             is WishlistUiState.Loading -> LoadingState()
-            is WishlistUiState.Empty -> EmptyWishlistState { showDialog = true }
+            is WishlistUiState.Empty -> EmptyWishlistState()
             is WishlistUiState.Success -> LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -358,16 +337,5 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
                 }
             }
         }
-        AddWishlistDialog(
-            showDialog = showDialog,
-            onDismiss = { showDialog = false },
-            onConfirm = { keyword: String, productUrl: String, targetPrice: Int ->
-                viewModel.addItem(keyword, productUrl, targetPrice)
-                showDialog = false
-                scope.launch {
-                    snackbarHostState.showSnackbar(message = "$keyword ($productUrl) 위시리스트에 추가됨")
-                }
-            }
-        )
     }
 }

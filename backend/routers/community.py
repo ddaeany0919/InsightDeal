@@ -328,8 +328,8 @@ def build_dsu(deals, time_window_days=1):
                     sc_match = True
                 
                 # 1. Jaccard ?좎궗??50% ?댁긽
-                # 2. ?꾩뼱?곌린 類 ?꾩쟾 ?쇱튂
-                # 3. ?쒖そ???ㅻⅨ履쎌쓽 80% ?댁긽 ?ы븿?섎뒗 遺遺꾩쭛?⑹씠硫댁꽌 理쒖냼 3?⑥뼱 ?댁긽 寃뱀튌 ??(湲??쒕ぉ vs 吏㏃? ?쒕ぉ 洹밸났)
+                # 2. ?꾩뼱?곌린 類€ ?꾩쟾 ?쇱튂
+                # 3. ?쒖そ???ㅻⅨ履쎌쓽 80% ?댁긽 ?ы븿?섎뒗 遺€遺꾩쭛?⑹씠硫댁꽌 理쒖냼 3?⑥뼱 ?댁긽 寃뱀튌 ??(湲??쒕ぉ vs 吏㏃? ?쒕ぉ 洹밸났)
                 if jaccard >= 0.5 or sc_match or (subset_ratio >= 0.8 and intersection >= 3):
                     if not has_quantity_conflict(words_set, cluster['words']) and not has_model_conflict(words_set, cluster['words']):
                         dsu.union(deal.id, cluster['id'])
@@ -351,13 +351,17 @@ def build_dsu(deals, time_window_days=1):
 @router.get("/top-hot-deals")
 async def get_top_hot_deals(db: Session = Depends(get_db_session)):
     try:
-        from sqlalchemy import and_
+        from sqlalchemy import and_, or_
         query = db.query(models.Deal).join(models.Community)
         time_limit = datetime.utcnow() - timedelta(hours=24)
         
         deals = query.filter(
             and_(
                 models.Deal.honey_score >= 100,
+                or_(
+                    models.Deal.ai_summary.like("%🔥 [커뮤니티 인기]%"),
+                    models.Deal.ai_summary.like("%🔥 [커뮤니티 인증 핫딜]%")
+                ),
                 models.Deal.indexed_at >= time_limit,
                 models.Deal.is_closed == False,
                 models.Deal.category != "?곷┰",
@@ -404,14 +408,14 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                 existing = cluster_map[cluster_key]
                 if total_price > 0:
                     if existing.get("total_price", 0) == 0 or total_price < existing["total_price"]:
-                        # ?????쒖씠 諛쒓껄?섎㈃ ???媛寃?媛깆떊 (異쒖쿂??吏?곗? ?딆쓬)
+                        # ?????쒖씠 諛쒓껄?섎㈃ ?€??媛€寃? 媛깆떊 (異쒖쿂??吏€?곗? ?딆쓬)
                         existing["price"] = parsed_price_int
                         existing["shipping_fee"] = deal.shipping_fee or ""
                         existing["total_price"] = total_price
                         clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:달러|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
                         existing["title"] = clean_title
                         
-                        # ????理쒖?媛)???ㅼ젣 ?대?吏瑜?媛議뚭굅?? 湲곗〈 ?쒖씠 ?꾨컮? ?대?吏??寃쎌슦?먮쭔 ??뼱?
+                        # ????理쒖?媛€)???ㅼ젣 ?대?吏€瑜?媛€議뚭굅?? 湲곗〈 ?쒖씠 ?꾨컮?€ ?대?吏€??寃쎌슦?먮쭔 ??뼱?€
                         if deal.image_url or "ui-avatars.com" in existing.get("image_url", ""):
                             existing["image_url"] = image_url
                             
@@ -483,13 +487,13 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                 }
                 cluster_map[cluster_key] = deal_dict
                 grouped_result.append(deal_dict)
-        # 24?쒓컙 ?댁뿉 ?щ씪???쒖씠 ?ы븿???대윭?ㅽ꽣留??꾪꽣留?
+        # 24?쒓컙 ?댁뿉 ?щ씪???쒖쓠 ?ы븿???대윭?ㅽ꽣留??꾪꽣留?
         cutoff = datetime.utcnow() - timedelta(hours=24)
         filtered_result = []
         for deal_dict in grouped_result:
             if deal_dict.get("created_at"):
                 dt = datetime.fromisoformat(deal_dict["created_at"])
-                # ??꾩〈 ?뺣낫媛 ?덉쑝硫??쒓굅 ??鍮꾧탳
+                # ?€?꾩〈 ?뺣낫媛€ ?덉쑝硫??쒓굅 ??鍮꾧탳
                 if dt.tzinfo:
                     dt = dt.replace(tzinfo=None)
                 if dt >= cutoff:
@@ -510,7 +514,7 @@ async def get_hot_deals(
     limit: int = 20,
     offset: int = 0,
     category: str = Query(None, description="분류별 카테고리명(ex: 전자기기, 패션 등)"),
-    keyword: str = Query(None, description="寃?됱뼱"),
+    keyword: str = Query(None, description="寃€?됱뼱"),
     platform: str = Query(None, description="커뮤니티/사이트 필터"),
     db: Session = Depends(get_db_session)
 ):
@@ -547,16 +551,19 @@ async def get_hot_deals(
             elif category == "여행.해외핫딜":
                 target_keywords = ["여행", "해외", "호텔", "프리미엄", "항공", "직구"]
             elif category == "핫딜모음":
-                target_keywords = [] # ?ル뵜紐⑥쓬? ?꾨옒?먯꽌 蹂꾨룄濡??꾪꽣留?(honey_score >= 100 or ?뵦)
+                target_keywords = [] # ?ル뵜紐⑥쓬?€ ?꾨옒?먯꽌 蹂꾨룄濡??꾪꽣留?(honey_score >= 100 or ?뵦)
             else:
                 target_keywords = [category]
 
-            from sqlalchemy import or_
+            from sqlalchemy import or_, and_
             if category == "핫딜모음":
                 query = query.filter(
-                    or_(
+                    and_(
                         models.Deal.honey_score >= 100,
-                        models.Deal.ai_summary.like("%핫딜%")
+                        or_(
+                            models.Deal.ai_summary.like("%🔥 [커뮤니티 인기]%"),
+                            models.Deal.ai_summary.like("%🔥 [커뮤니티 인증 핫딜]%")
+                        )
                     )
                 )
             else:

@@ -154,7 +154,7 @@ fun HomeScreen(
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // ✨ 상태 관리를 통한 스켈레톤 로딩 노출
             when (dealsPagingItems.loadState.refresh) {
@@ -198,7 +198,7 @@ fun HomeScreen(
 
                                 if (topPicks.isNotEmpty()) {
                                     Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                                        Text("오늘의 미친 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 12.dp, start = 4.dp))
+                                        Text("오늘의 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 12.dp, start = 4.dp))
                                         LazyRow(
                                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                                             contentPadding = PaddingValues(horizontal = 4.dp)
@@ -207,8 +207,8 @@ fun HomeScreen(
                                                 val pick = topPicks[index]
                                                 Card(
                                                     modifier = Modifier
-                                                        .width(200.dp)
-                                                        .height(210.dp)
+                                                        .width(180.dp)
+                                                        .height(195.dp)
                                                         .clickable {
                                                             val targetUrl = pick.ecommerceUrl?.takeIf { it.isNotBlank() } ?: pick.postUrl ?: "https://insightdeal.com"
                                                             var finalUrl = if (targetUrl.startsWith("http")) targetUrl else "https://$targetUrl"
@@ -241,13 +241,13 @@ fun HomeScreen(
                                                             model = imageRequest,
                                                             contentDescription = "Carousel Image",
                                                             modifier = Modifier
-                                                                .height(120.dp)
+                                                                .height(100.dp)
                                                                 .fillMaxWidth()
                                                                 .background(Color.White)
                                                                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
                                                             contentScale = ContentScale.Crop
                                                         )
-                                                        Column(Modifier.padding(12.dp)) {
+                                                        Column(Modifier.padding(8.dp)) {
                                                             Text(pick.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 18.sp)
                                                             Spacer(Modifier.weight(1f))
                                                             val priceText = if (pick.price > 0) {
@@ -266,11 +266,14 @@ fun HomeScreen(
                                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                                                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                                                                     val priceFontSize = if (priceText.length >= 9) 13.sp else 16.sp
-                                                                    Text(priceText, color = Color(0xFFFF3B30), fontSize = priceFontSize, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                    Text(priceText, color = Color(0xFFFF3B30), fontSize = priceFontSize, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                                                                     if (!hideShipping) {
                                                                         val trimmed = pick.shippingFee?.trim() ?: "정보 없음"
                                                                         val displayShipping = when {
                                                                             trimmed == "정보 없음" || trimmed.isEmpty() -> "확인 필요"
+                                                                            trimmed.contains("와우") -> "와우무료"
+                                                                            trimmed.contains("스마일") || trimmed.contains("스클") -> "스클무료"
+                                                                            trimmed.contains("우주패스") -> "우주패스"
                                                                             trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
                                                                             trimmed.startsWith("0원/") || trimmed.startsWith("0원+") || trimmed.startsWith("0/") || trimmed.startsWith("0+") -> trimmed.replaceFirst(Regex("^0(원)?\\s*"), "무료 ")
                                                                             trimmed == "유료" || trimmed == "유료배송" -> "유료"
@@ -313,7 +316,7 @@ fun HomeScreen(
                                     }
                                 } else {
                                     Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp, top = 8.dp)) {
-                                        Text("오늘의 미친 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 12.dp, start = 4.dp))
+                                        Text("오늘의 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 12.dp, start = 4.dp))
                                         Card(
                                             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                                             shape = RoundedCornerShape(12.dp),
@@ -330,10 +333,10 @@ fun HomeScreen(
                                         }
                                     }
                                 }
-                                Spacer(Modifier.height(24.dp))
+                                Spacer(Modifier.height(8.dp))
                                 androidx.compose.material3.HorizontalDivider(thickness = 1.dp, color = Color.LightGray, modifier = Modifier.padding(horizontal = 4.dp))
-                                Spacer(Modifier.height(16.dp))
-                                Text("실시간 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp), color = MaterialTheme.colorScheme.onSurface)
+                                Spacer(Modifier.height(8.dp))
+                                Text("실시간 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(start = 4.dp), color = MaterialTheme.colorScheme.onSurface)
                             }
                         }
                     }
@@ -629,7 +632,9 @@ fun DealCardComposable(
                                 fontSize = priceFontSize,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = if (deal.price > 0) Color(0xFFFF3B30) else MaterialTheme.colorScheme.error,
-                                modifier = Modifier.align(Alignment.CenterVertically)
+                                modifier = Modifier.align(Alignment.CenterVertically).weight(1f, fill = false),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             
                             val digitalCategories = listOf("적립", "이벤트", "모바일/기프티콘", "상품권", "패키지/이용권")
@@ -640,6 +645,9 @@ fun DealCardComposable(
                                 val trimmed = deal.shippingFee?.trim() ?: "정보 없음"
                                 val displayShipping = when {
                                     trimmed == "정보 없음" || trimmed.isEmpty() -> "확인 필요"
+                                    trimmed.contains("와우") -> "와우무료"
+                                    trimmed.contains("스마일") || trimmed.contains("스클") -> "스클무료"
+                                    trimmed.contains("우주패스") -> "우주패스"
                                     trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
                                     trimmed.startsWith("0원/") || trimmed.startsWith("0원+") || trimmed.startsWith("0/") || trimmed.startsWith("0+") -> trimmed.replaceFirst(Regex("^0(원)?\\s*"), "무료 ")
                                     trimmed == "유료" || trimmed == "유료배송" -> "유료"
