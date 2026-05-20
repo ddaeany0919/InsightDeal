@@ -151,6 +151,11 @@ class PpomppuScraper(AsyncBaseScraper):
             if detail_posted_at:
                 posted_at_iso = detail_posted_at
 
+            # 제목 앞 대괄호 분류 파싱
+            scraped_category = None
+            category_match = re.match(r'^\[(.*?)\]', full_title)
+            if category_match:
+                scraped_category = category_match.group(1).strip()
 
             return {
                 "title": full_title,
@@ -166,7 +171,8 @@ class PpomppuScraper(AsyncBaseScraper):
                 "posted_at": posted_at_iso,
                 "view_count": view_count,
                 "like_count": like_count,
-                "comment_count": comment_count
+                "comment_count": comment_count,
+                "category": scraped_category
             }
             
         tasks = [process_row(row) for row in post_rows]

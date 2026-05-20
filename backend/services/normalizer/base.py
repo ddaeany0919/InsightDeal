@@ -15,5 +15,5 @@ class ProductNormalizer(ABC):
     """
     
     @abstractmethod
-    async def normalize(self, title: str) -> NormalizedProduct:
+    async def normalize(self, title: str, scraped_category: Optional[str] = None) -> NormalizedProduct:
         pass

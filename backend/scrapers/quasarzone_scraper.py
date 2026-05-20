@@ -79,6 +79,10 @@ class QuasarzoneScraper(AsyncBaseScraper):
                 image_url = image_url[:-1]
                 
             category = None
+            category_span = row.select_one('span.category')
+            if category_span:
+                category = category_span.get_text(strip=True)
+
             if any(k in full_title for k in ['적립', '출석', '출첵', '포인트']):
                 category = "적립"
 

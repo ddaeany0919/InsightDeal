@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from typing import Optional
 import google.generativeai as genai
 from .base import ProductNormalizer, NormalizedProduct
 from .regex_normalizer import RegexNormalizer
@@ -9,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class LlmNormalizer(ProductNormalizer):
     """
-    Gemini API를 이용한 지능형 상품명 정규화기 (AI Scraper)
+    [AI] Gemini API를 이용한 지능형 상품명 정규화기 (AI Scraper)
     API 키가 없거나 할당량 초과 시 자동으로 RegexNormalizer(정규식)로 Fallback 됩니다.
     """
     def __init__(self):
@@ -23,25 +24,24 @@ class LlmNormalizer(ProductNormalizer):
                 genai.configure(api_key=self.api_key)
                 self.model = genai.GenerativeModel('gemini-flash-latest')
                 self.is_active = True
-                logger.info("🤖 LlmNormalizer initialized with Gemini API.")
+                logger.info("[AI] LlmNormalizer initialized with Gemini API.")
             except Exception as e:
-                logger.warning(f"⚠️ Failed to init Gemini API, falling back to Regex: {e}")
+                logger.warning(f"[WARNING] Failed to init Gemini API, falling back to Regex: {e}")
         else:
-            logger.info("⚠️ GEMINI_API_KEY not found. LlmNormalizer will skip and use Regex fallback.")
+            logger.info("[WARNING] GEMINI_API_KEY not found. LlmNormalizer will skip and use Regex fallback.")
 
-    async def normalize(self, title: str) -> NormalizedProduct:
-        # ⚡ [하이브리드 캐싱 필터] 1단계: 정규표현식 파서 강제 선공
-        # LLM 무조건 호출로 인한 딜레이(2~5분)를 1초 미만으로 단축시킵니다.
-        regex_result = await self.fallback_normalizer.normalize(title)
+    async def normalize(self, title: str, scraped_category: Optional[str] = None) -> NormalizedProduct:
+        # [FAST] 1단계: 정규표현식 파서 강제 선공
+        regex_result = await self.fallback_normalizer.normalize(title, scraped_category)
         
-        # 만약 정규식 파서가 성공적으로 카테고리를 찾았거나, 충분한 정보가 확보됐다면 AI 생략! (비용 & 시간 절약)
         if regex_result.category != "기타" and len(regex_result.name) > 3:
-            logger.debug(f"⚡ [Hybrid Fast-Pass] 정규식 성능 최고도화 선방어: {regex_result.name}")
+            logger.debug(f"[FAST] [Hybrid Fast-Pass] 정규식 성능 최고도화 선방어: {regex_result.name}")
             return regex_result
 
-        # 정규식 파싱이 불확실한 소수(기타 등)의 데이터에만 2순위로 Gemini를 투입 (Fall-Forward)
         if not self.is_active:
             return regex_result
+
+        hint_text = f"\n참고로 수집처 자체에서 제공한 카테고리 분류 힌트는 '{scraped_category}' 입니다. 이를 최우선 참고하여 올바른 카테고리로 맵핑하세요." if scraped_category else ""
 
         prompt = f"""
         당신은 핫딜 커뮤니티의 파편화된 게시글 제목을 분석하여 정확한 상품명, 브랜드, 카테고리를 추출하는 AI 파서입니다.
@@ -49,6 +49,7 @@ class LlmNormalizer(ProductNormalizer):
         '가장 본질적인 상품명(모델명)'과 '브랜드'를 찾아주세요.
         카테고리는 반드시 다음 중 하나만 선택하세요:
         (음식, SW/게임, PC제품, 가전제품, 생활용품, 의류, 화장품, 모바일/기프티콘, 패키지/이용권, 해외핫딜, 기타)
+        {hint_text}
         
         반드시 JSON 형식으로만 반환하세요.
         Example:
@@ -75,9 +76,8 @@ class LlmNormalizer(ProductNormalizer):
                 text = response.text.replace('```json', '').replace('```', '').strip()
                 data = json.loads(text)
                 
-                # AI가 결과를 제대로 뱉지 않았을 경우 방어
                 if not data.get("name"):
-                     return await self.fallback_normalizer.normalize(title)
+                     return await self.fallback_normalizer.normalize(title, scraped_category)
 
                 return NormalizedProduct(
                     name=data["name"][:255],
@@ -98,10 +98,10 @@ class LlmNormalizer(ProductNormalizer):
                         match = re.search(r'retry in ([\d\.]+)s', error_msg)
                         if match:
                             wait_time = int(float(match.group(1))) + 2
-                        logger.warning(f"LlmNormalizer 429 Error. Rotating key/Waiting {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                        logger.warning(f"[WARNING] LlmNormalizer 429 Error. Rotating key/Waiting {wait_time}s... (Attempt {attempt+1}/{max_retries})")
                         time.sleep(wait_time)
                         continue
-                logger.error(f"🔥 LLM Normalization failed for '{title}': {e}. Falling back to Regex.")
-                return await self.fallback_normalizer.normalize(title)
+                logger.error(f"[ERROR] LLM Normalization failed for '{title}': {e}. Falling back to Regex.")
+                return await self.fallback_normalizer.normalize(title, scraped_category)
                     
-        return await self.fallback_normalizer.normalize(title)
+        return await self.fallback_normalizer.normalize(title, scraped_category)

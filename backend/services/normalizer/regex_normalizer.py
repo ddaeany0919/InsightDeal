@@ -29,6 +29,78 @@ class RegexNormalizer(ProductNormalizer):
         "해외핫딜": ["해외직구", "알리", "테무", "아마존", "큐텐", "직구", "관세", "배대지", "알리익스프레스"],
     }
 
+    # 수집처 고유 카테고리 -> 10대 표준 카테고리 화이트리스트 매핑 테이블
+    SCRAPER_CATEGORY_MAP = {
+        # 뽐뿌 카테고리
+        "식품건강": "음식",
+        "컴퓨터": "PC제품",
+        "가전가구": "가전제품",
+        "의류잡화": "의류",
+        "뷰티화장품": "화장품",
+        "상품권쿠폰": "모바일/기프티콘",
+        "육아완구": "생활용품",
+        "생활주방": "생활용품",
+        "디지털": "PC제품",
+        "스포츠레저": "생활용품",
+        "등산레저": "생활용품",
+        "서적기타": "기타",
+        
+        # 퀘이사존 카테고리
+        "PC하드웨어": "PC제품",
+        "노트북모바일": "PC제품",
+        "게임SW": "SW/게임",
+        "가전TV": "가전제품",
+        "생활식품": "음식",
+        "의류패션": "의류",
+        "기타세일정보": "기타",
+        "상품권": "모바일/기프티콘",
+        
+        # 에펨코리아 카테고리
+        "PC가전": "PC제품",
+        "디지털가전": "가전제품",
+        "식품": "음식",
+        "생활용품": "생활용품",
+        "화장품미용": "화장품",
+        "게임": "SW/게임",
+        
+        # 기타 변주형태
+        "의류": "의류",
+        "식품": "음식",
+        "생활": "생활용품",
+        "가전": "가전제품",
+        "화장품": "화장품",
+        "패션": "의류",
+        "잡화": "의류",
+        "쿠폰": "모바일/기프티콘",
+        "기프티콘": "모바일/기프티콘",
+        "도서": "기타",
+        "완구": "생활용품",
+        "여행": "패키지/이용권",
+        "숙박": "패키지/이용권",
+        "패키지": "패키지/이용권",
+        "이용권": "패키지/이용권"
+    }
+
+    def map_scraper_category(self, scraped_category: Optional[str]) -> Optional[str]:
+        """수집처 고유 카테고리를 당사 10대 정형 카테고리로 1순위 매핑"""
+        if not scraped_category:
+            return None
+        
+        # 공백 및 특수문자 제거하여 매핑 유연성 극대화
+        clean_cat = re.sub(r'[^가-힣a-zA-Z0-9]', '', scraped_category).strip()
+        
+        # 직접 매핑 확인
+        if clean_cat in self.SCRAPER_CATEGORY_MAP:
+            return self.SCRAPER_CATEGORY_MAP[clean_cat]
+            
+        # 부분 일치로 Fallback 매핑 (더 넓은 매칭을 위함)
+        for key, value in self.SCRAPER_CATEGORY_MAP.items():
+            if key in clean_cat or clean_cat in key:
+                return value
+                
+        return None
+
+
     def _clean_title(self, text: str) -> str:
         """1. 불필요한 수식어 및 괄호(대문자 등) 제거"""
         # [뽐뿌], (무료배송), 【특가】 등 괄호와 안의 내용 모두 제거
@@ -165,8 +237,8 @@ class RegexNormalizer(ProductNormalizer):
                 return category
         return "기타"
 
-    async def normalize(self, title: str) -> NormalizedProduct:
-        """전체 정규화 파이프라인 실행 엔진"""
+    async def normalize(self, title: str, scraped_category: Optional[str] = None) -> NormalizedProduct:
+        """전체 정규화 파이프라인 실행 엔진 (1순위: 수집처 카테고리 매핑, 2순위: 제목 기반 정규식 Fallback)"""
         cleaned_text = self._clean_title(title)
         brand, remaining_text = self._extract_brand(cleaned_text)
         
@@ -176,7 +248,12 @@ class RegexNormalizer(ProductNormalizer):
         if len(final_name) < 2:
             final_name = cleaned_text[:30]
             
-        category = self._map_category(cleaned_text + " " + title)
+        # 1순위: 수집처 자체 카테고리 우선 매핑 시도
+        category = self.map_scraper_category(scraped_category)
+        
+        # 2순위 Fallback: 수집처 카테고리가 없거나 매핑 실패한 경우에만 기존 제목 기반 분석 구동
+        if not category or category == "기타":
+            category = self._map_category(cleaned_text + " " + title)
 
         return NormalizedProduct(
             name=final_name,

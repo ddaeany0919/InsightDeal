@@ -198,13 +198,13 @@ class AggregatorService:
             logger.info(f"🗑️ [스팸 필터 처리됨] 핫딜이 아닌 게시판 정보 스킵: {raw_title}")
             return None
         
-        # 1. 원본 텍스트를 RegexNormalizer에 통과
-        normalized = await self.normalizer.normalize(raw_title)
+        # 스크래퍼 단에서 명시적으로 수집한 카테고리가 있다면 전달
+        scraped_category = scraped_data.get("category")
+
+        # 1. 원본 텍스트 및 수집처 카테고리를 함께 정규화기에 전달
+        normalized = await self.normalizer.normalize(raw_title, scraped_category)
         
-        # 스크래퍼 단에서 명시적으로 넘긴 category가 있다면(예: '적립') 그걸 최우선으로 적용
-        final_category = scraped_data.get("category")
-        if not final_category:
-            final_category = normalized.category
+        final_category = normalized.category
 
         # 적립/포인트 강제 보정 (사용자 요청: 적립 탭으로 분리)
         event_keywords = ["추첨", "설문", "무료배포", "체험단", "선착순", "라이브", "방송", "라방"]
