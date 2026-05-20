@@ -5,6 +5,7 @@ from sqlalchemy.sql import func
 from datetime import datetime, timezone
 from backend.database.models import Deal, PriceHistory, Community
 from backend.services.normalizer.llm_normalizer import LlmNormalizer
+from backend.services.ai_product_name_service import AIProductNameService
 import re
 
 logger = logging.getLogger(__name__)
@@ -338,6 +339,17 @@ class AggregatorService:
                  
                  if content_html and not existing_deal.content_html:
                      existing_deal.content_html = content_html
+                  
+                 # [가격분석] 브랜드 및 모델명 메타 정보 보완 (기존에 비어있던 경우 업데이트)
+                 if not existing_deal.brand or not existing_deal.model_code:
+                     try:
+                         brand_info = AIProductNameService.extract_brand_and_model(existing_deal.title)
+                         if brand_info.get("brand") and not existing_deal.brand:
+                             existing_deal.brand = brand_info.get("brand")
+                         if brand_info.get("model_code") and not existing_deal.model_code:
+                             existing_deal.model_code = brand_info.get("model_code")
+                     except Exception as e:
+                         logger.error(f"Error extracting brand/model for existing deal during upsert: {e}")
                  
                  # 적립/카테고리 강제 보정 적용
                  if existing_deal.category != final_category and final_category:
@@ -590,6 +602,13 @@ class AggregatorService:
                             # 인덱스에 맞춰 이미지 매핑 시도, 없으면 첫 번째 이미지
                             extracted_img = img_matches[idx] if idx < len(img_matches) else img_matches[0]
                             
+                    # 브랜드 및 모델명 메타 정보 추출
+                    brand_info = {"brand": "", "model_code": ""}
+                    try:
+                        brand_info = AIProductNameService.extract_brand_and_model(derived_title)
+                    except Exception as e:
+                        logger.error(f"Error extracting brand/model for split deal: {e}")
+
                     new_deal = Deal(
                         source_community_id=community_id,
                         title=derived_title[:255],
@@ -609,6 +628,8 @@ class AggregatorService:
                         view_count=view_count,
                         like_count=like_count,
                         comment_count=comment_count,
+                        brand=brand_info.get("brand"),
+                        model_code=brand_info.get("model_code"),
                         indexed_at=posted_dt if posted_dt else func.now()
                     )
                     self.db.add(new_deal)
@@ -632,6 +653,13 @@ class AggregatorService:
                 
                 print(f"DEBUG options_data_str: {options_data_str}")
 
+                # 브랜드 및 모델명 메타 정보 추출
+                brand_info = {"brand": "", "model_code": ""}
+                try:
+                    brand_info = AIProductNameService.extract_brand_and_model(raw_title)
+                except Exception as e:
+                    logger.error(f"Error extracting brand/model for single deal: {e}")
+
                 new_deal = Deal(
                     source_community_id=community_id,
                     title=raw_title,
@@ -653,6 +681,8 @@ class AggregatorService:
                     comment_count=comment_count,
                     options_data=options_data_str,
                     has_options=has_options,
+                    brand=brand_info.get("brand"),
+                    model_code=brand_info.get("model_code"),
                     indexed_at=posted_dt if posted_dt else func.now()
                 )
                 self.db.add(new_deal)

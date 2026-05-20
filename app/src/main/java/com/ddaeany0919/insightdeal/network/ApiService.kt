@@ -451,7 +451,10 @@ data class EnhancedDealInfo(
 data class RegisterDeviceReq(
     val device_uuid: String,
     val fcm_token: String,
-    val night_push_consent: Boolean = false
+    val night_push_consent: Boolean = false,
+    val dnd_enabled: Boolean = false,
+    val dnd_start_time: String = "21:00",
+    val dnd_end_time: String = "08:00"
 )
 
 /**

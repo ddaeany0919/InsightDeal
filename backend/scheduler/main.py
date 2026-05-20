@@ -11,6 +11,8 @@ sys.path.append(root_dir)
 load_dotenv(os.path.join(root_dir, '.env'))
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from backend.scheduler.naver_price_scheduler import run_naver_price_collection
+
 
 from backend.database.models import Base, Community, Deal
 from backend.scrapers.ppomppu_scraper import PpomppuScraper
@@ -312,8 +314,10 @@ def start_scheduler():
     scheduler.add_job(validate_closed_deals, 'interval', minutes=7, id='hotdeal_validator')
     # 펨코 실시간 급상승 검색어 수집 (1시간 주기, 정각 실행)
     scheduler.add_job(update_fmkorea_trending_keywords, 'cron', minute=0, id='fmkorea_trending')
+    # 📈 네이버 쇼핑 시장 최저가 추적 배치 (매일 새벽 4시 실행)
+    scheduler.add_job(run_naver_price_collection, 'cron', hour=4, minute=0, id='naver_price_collection')
     scheduler.start()
-    logger.info("⏰ [System] 투트랙 스케줄러 & 상태 검증 데몬 시동 완료")
+    logger.info("⏰ [System] 투트랙 스케줄러 & 상태 검증 & 네이버 쇼핑 배치 시동 완료")
     return scheduler
 
 if __name__ == "__main__":

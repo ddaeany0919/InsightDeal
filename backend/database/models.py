@@ -41,6 +41,8 @@ class Deal(Base):
     has_options = Column(Boolean, default=False, nullable=False)
     options_data = Column(TEXT, nullable=True)
     base_product_name = Column(String(500), nullable=True)
+    brand = Column(String(100), index=True, nullable=True) # [가격분석] 브랜드명
+    model_code = Column(String(100), index=True, nullable=True) # [가격분석] 규격/고유모델번호
     honey_score = Column(Integer, default=0) # [Phase 11] 추천도 점수
     ai_summary = Column(String(500), nullable=True) # [Phase 11 Epic 1] AI 핵심 1줄 요약
     view_count = Column(Integer, default=0)
@@ -72,6 +74,9 @@ class DeviceToken(Base):
     fcm_token = Column(String(500), nullable=True) # 파이어베이스 푸시 토큰
     is_active = Column(Boolean, default=True)
     night_push_consent = Column(Boolean, default=False) # 야간 푸시 수신 동의 여부
+    dnd_enabled = Column(Boolean, default=False, nullable=False) # [DND] 방해금지 시간대 활성 여부
+    dnd_start_time = Column(String(5), default="21:00", nullable=False) # [DND] 방해금지 시작 (ex: "22:00")
+    dnd_end_time = Column(String(5), default="08:00", nullable=False) # [DND] 방해금지 종료 (ex: "07:00")
     registered_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     
     keywords = relationship("PushKeyword", back_populates="device_token", cascade="all, delete-orphan")
@@ -442,3 +447,17 @@ class User(Base):
     honey_points = Column(Integer, default=0) # 활동 내공 (채택되면 증가)
     
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+class NaverPriceHistory(Base):
+    """
+    📈 네이버 쇼핑 시장 최저가 추이 적재 테이블
+    브랜드와 모델 코드를 기준으로 하루 1회 배치 스케줄러가 최저가 수집 후 저장
+    """
+    __tablename__ = "naver_price_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    brand = Column(String(100), index=True, nullable=False)
+    model_code = Column(String(100), index=True, nullable=False)
+    price = Column(Integer, nullable=False)
+    checked_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
+

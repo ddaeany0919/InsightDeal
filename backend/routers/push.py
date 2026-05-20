@@ -12,6 +12,9 @@ class RegisterDeviceReq(BaseModel):
     device_uuid: str
     fcm_token: str = None
     night_push_consent: bool = False
+    dnd_enabled: bool = False
+    dnd_start_time: str = "21:00"
+    dnd_end_time: str = "08:00"
 
 class KeywordReq(BaseModel):
     device_uuid: str
@@ -21,12 +24,22 @@ class KeywordReq(BaseModel):
 def register_device(req: RegisterDeviceReq, db: Session = Depends(get_db_session)):
     device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == req.device_uuid).first()
     if not device:
-        device = models.DeviceToken(device_uuid=req.device_uuid, fcm_token=req.fcm_token, night_push_consent=req.night_push_consent)
+        device = models.DeviceToken(
+            device_uuid=req.device_uuid,
+            fcm_token=req.fcm_token,
+            night_push_consent=req.night_push_consent,
+            dnd_enabled=req.dnd_enabled,
+            dnd_start_time=req.dnd_start_time,
+            dnd_end_time=req.dnd_end_time
+        )
         db.add(device)
     else:
         if req.fcm_token is not None:
             device.fcm_token = req.fcm_token
         device.night_push_consent = req.night_push_consent
+        device.dnd_enabled = req.dnd_enabled
+        device.dnd_start_time = req.dnd_start_time
+        device.dnd_end_time = req.dnd_end_time
     db.commit()
     return {"message": "Device registered"}
 

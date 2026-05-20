@@ -934,13 +934,13 @@ def get_deal_history(deal_id: int, period: str = "7d", db: Session = Depends(get
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
         
-    # ?꾩옱 議고쉶?섎뒗 ?쒖쓽 ?쒓컙??湲곗??쇰줈, 洹??쒓컙 ?댁쟾 7?쇨컙???곗씠?곕쭔 媛?몄샂
+    # 현재 조회하는 딜의 시간대를 기준으로, 해당 시간 이전 기간의 데이터만 조회
     if deal.indexed_at:
         end_time = deal.indexed_at
     else:
         end_time = datetime.utcnow()
         
-    # 湲곌컙 ?뚮씪誘명꽣 ?뚯떛
+    # 기간 파라미터 파싱 (7일, 1개월, 3개월, 6개월, 1개년)
     days_map = {
         "7d": 7,
         "1m": 30,
@@ -949,67 +949,117 @@ def get_deal_history(deal_id: int, period: str = "7d", db: Session = Depends(get
         "1y": 365
     }
     days = days_map.get(period, 7)
-    
     time_limit = end_time - timedelta(days=days)
     
-    recent_deals = db.query(models.Deal).filter(
-        models.Deal.indexed_at >= time_limit,
-        models.Deal.indexed_at <= end_time
-    ).all()
-    
-    if not any(d.id == deal.id for d in recent_deals):
-        recent_deals.append(deal)
+    # 1. 동일 brand 및 model_code를 가진 Deal들을 O(1) 인덱스 기반으로 직접 DB에서 조회
+    # DSU 알고리즘의 O(N^2) 실시간 연산을 완전히 제거하여 타임아웃 박멸
+    if deal.brand and deal.model_code:
+        matched_deals = db.query(models.Deal).filter(
+            models.Deal.brand == deal.brand,
+            models.Deal.model_code == deal.model_code,
+            models.Deal.indexed_at >= time_limit,
+            models.Deal.indexed_at <= end_time
+        ).all()
+    else:
+        matched_deals = [deal]
         
-    dsu = build_dsu(recent_deals, time_window_days=days)
-    cluster_key = dsu.find(deal.id)
-    
-    cluster_deal_ids = [d.id for d in recent_deals if dsu.find(d.id) == cluster_key]
-    
-    if not cluster_deal_ids:
-        cluster_deal_ids = [deal_id]
+    matched_deal_ids = [d.id for d in matched_deals]
+    if deal.id not in matched_deal_ids:
+        matched_deals.append(deal)
+        matched_deal_ids.append(deal.id)
         
+    # 2. 커뮤니티 핫딜 가격 히스토리(PriceHistory) 조회
     history = db.query(models.PriceHistory).filter(
-        models.PriceHistory.deal_id.in_(cluster_deal_ids),
+        models.PriceHistory.deal_id.in_(matched_deal_ids),
+        models.PriceHistory.checked_at >= time_limit,
         models.PriceHistory.checked_at <= end_time
     ).order_by(models.PriceHistory.checked_at.asc()).all()
     
-    # ?좎쭨蹂??쒓컙 ?⑥쐞 ?뱀? ???⑥쐞)濡?媛????? 媛寃⑸쭔 ?④린湲?(?대윭?ㅽ꽣 ???媛寃?
-    result_map = {}
     time_format = "%m.%d %H:%M" if days <= 7 else "%y.%m.%d"
     
+    community_points = []
+    comm_map = {} # 날짜 키별 최저가 필터링을 위한 임시 맵
+    
+    # 2-1. PriceHistory 데이터 정렬 및 최저가 선정
     for h in history:
         try:
             p_val = int(re.sub(r'[^\d]', '', str(h.price)))
             if p_val > 0:
                 time_key = h.checked_at.strftime(time_format) if h.checked_at else ""
-                if time_key not in result_map or p_val < result_map[time_key]:
-                    result_map[time_key] = p_val
+                dt = h.checked_at
+                if time_key not in comm_map or p_val < comm_map[time_key]["price"]:
+                    comm_map[time_key] = {"price": p_val, "dt": dt, "source": "community"}
         except:
             pass
             
-    # DB??history媛 ?놁쓣 ?섎룄 ?덉쑝?? ?꾩옱 deal?ㅼ쓽 ?앹꽦 ?쒓컙 媛寃⑸룄 ?ы븿
-    for d in recent_deals:
-        if d.id in cluster_deal_ids:
+    # 2-2. Deal 자체의 수집 시점 가격 반영
+    for d in matched_deals:
+        try:
+            p_val = int(re.sub(r'[^\d]', '', str(d.price)))
+            if p_val > 0:
+                time_key = d.indexed_at.strftime(time_format) if d.indexed_at else ""
+                dt = d.indexed_at
+                if time_key not in comm_map or p_val < comm_map[time_key]["price"]:
+                    comm_map[time_key] = {"price": p_val, "dt": dt, "source": "community"}
+        except:
+            pass
+            
+    for k, v in comm_map.items():
+        community_points.append({
+            "price": v["price"],
+            "originalPrice": None,
+            "discountRate": None,
+            "recordedAt": k.replace(" 00:00", ""),
+            "source": "community",
+            "dt": v["dt"]
+        })
+
+    # 3. 네이버 쇼핑 최저가 히스토리(NaverPriceHistory) 조회 및 병합
+    naver_points = []
+    if deal.brand and deal.model_code:
+        naver_history = db.query(models.NaverPriceHistory).filter(
+            models.NaverPriceHistory.brand == deal.brand,
+            models.NaverPriceHistory.model_code == deal.model_code,
+            models.NaverPriceHistory.checked_at >= time_limit,
+            models.NaverPriceHistory.checked_at <= end_time
+        ).order_by(models.NaverPriceHistory.checked_at.asc()).all()
+        
+        naver_map = {}
+        for nh in naver_history:
             try:
-                p_val = int(re.sub(r'[^\d]', '', str(d.price)))
-                if p_val > 0:
-                    time_key = d.indexed_at.strftime(time_format) if d.indexed_at else ""
-                    if time_key not in result_map or p_val < result_map[time_key]:
-                        result_map[time_key] = p_val
+                time_key = nh.checked_at.strftime(time_format) if nh.checked_at else ""
+                dt = nh.checked_at
+                p_val = int(nh.price)
+                if time_key not in naver_map or p_val < naver_map[time_key]["price"]:
+                    naver_map[time_key] = {"price": p_val, "dt": dt, "source": "naver"}
             except:
                 pass
                 
-    result = []
-    # ?뺣젹?섏뿬 諛섑솚
-    sorted_times = sorted(result_map.keys())
-    for t in sorted_times:
-        result.append({
-            "price": result_map[t],
-            "originalPrice": None,
-            "discountRate": None,
-            "recordedAt": t.replace(" 00:00", "") # ?뺤떆 ?쒓린 媛꾩냼??
-        })
+        for k, v in naver_map.items():
+            naver_points.append({
+                "price": v["price"],
+                "originalPrice": None,
+                "discountRate": None,
+                "recordedAt": k.replace(" 00:00", ""),
+                "source": "naver",
+                "dt": v["dt"]
+            })
             
+    # 4. 두 최저가 스트림을 통합하여 날짜(dt) 순으로 오름차순 정렬
+    all_points = community_points + naver_points
+    all_points.sort(key=lambda x: x["dt"])
+    
+    # 5. 최종 반환 형태 정제 (dt 제외)
+    result = []
+    for p in all_points:
+        result.append({
+            "price": p["price"],
+            "originalPrice": p["originalPrice"],
+            "discountRate": p["discountRate"],
+            "recordedAt": p["recordedAt"],
+            "source": p["source"]
+        })
+        
     return result
 
 # --- ?뚮퉬 李멸껄 嫄곗?諛?API ---
