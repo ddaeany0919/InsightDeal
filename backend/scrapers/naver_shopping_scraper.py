@@ -27,6 +27,32 @@ class NaverProduct:
     brand: str = ""
     product_id: str = ""
 
+    def __getitem__(self, key):
+        """딕셔너리 호환성 제공"""
+        if key == 'link':
+            return self.url
+        elif key == 'title':
+            return self.title
+        elif key == 'price':
+            return self.price
+        elif key == 'mall' or key == 'mallName':
+            return self.mall
+        elif key == 'image':
+            return self.image
+        elif key == 'category':
+            return self.category1
+        
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(key)
+
+    def get(self, key, default=None):
+        """딕셔너리 get 호환성 제공"""
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
 class NaverShoppingScraper:
     """네이버 쇼핑 API 스크래퍼"""
     

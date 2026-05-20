@@ -7,10 +7,11 @@ from backend.scrapers.base_scraper import AsyncBaseScraper
 logger = logging.getLogger(__name__)
 
 class BbasakBaseScraper(AsyncBaseScraper):
-    def __init__(self, community_name: str, community_url: str, community_id: int = 0):
+    def __init__(self, community_name: str, community_url: str, community_id: int = 0, default_category: str = None):
         super().__init__(community_name, max_concurrent_requests=5)
         self.community_id = community_id
         self.list_url = community_url
+        self.default_category = default_category
 
     async def parse_list(self, html: str) -> list[dict]:
         """빠삭 게시판 데이터 추출 (비동기 처리)"""
@@ -100,6 +101,16 @@ class BbasakBaseScraper(AsyncBaseScraper):
             if time_str:
                 posted_at_iso = self.parse_time_str(time_str)
                 
+            # 제목 맨 앞의 대괄호 [...] 에서 카테고리 추출
+            category_extracted = None
+            cat_match = re.search(r'^\s*\[([^\]]+)\]', full_title)
+            if cat_match:
+                category_extracted = cat_match.group(1).strip()
+            
+            # 대괄호가 없을 시 default_category 사용
+            if not category_extracted:
+                category_extracted = self.default_category
+
             return {
                 "title": full_title,
                 "url": url,
@@ -113,7 +124,8 @@ class BbasakBaseScraper(AsyncBaseScraper):
                 "posted_at": posted_at_iso,
                 "view_count": view_count,
                 "like_count": 0,
-                "comment_count": comment_count
+                "comment_count": comment_count,
+                "category": category_extracted
             }
 
         tasks = [process_row(row) for row in post_rows]

@@ -5,7 +5,8 @@ import logging
 class PriceComparisonService:
     @staticmethod
     async def search_lowest_price(keyword: str):
-        products = NaverShoppingScraper.search_products(keyword, display=30)
+        scraper = NaverShoppingScraper()
+        products = scraper.search_products(keyword, display=30)
         if not products:
             return None
         

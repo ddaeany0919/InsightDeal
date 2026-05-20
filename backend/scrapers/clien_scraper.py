@@ -71,6 +71,12 @@ class ClienScraper(AsyncBaseScraper):
             if time_span:
                 posted_at_iso = self.parse_time_str(time_span.get('title') or time_span.get_text(strip=True))
 
+            # 제목 맨 앞의 대괄호 [...] 에서 카테고리 추출
+            category_extracted = None
+            cat_match = re.search(r'^\s*\[([^\]]+)\]', full_title)
+            if cat_match:
+                category_extracted = cat_match.group(1).strip()
+
             deals.append({
                 "title": full_title,
                 "url": url,
@@ -82,7 +88,8 @@ class ClienScraper(AsyncBaseScraper):
                 "posted_at": posted_at_iso,
                 "view_count": hit,
                 "like_count": symph,
-                "comment_count": 0
+                "comment_count": 0,
+                "category": category_extracted
             })
             
         import asyncio

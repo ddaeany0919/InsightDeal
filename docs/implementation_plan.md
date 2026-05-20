@@ -27,20 +27,25 @@
 *   **해결 방안**:
     *   위시리스트 로딩 데이터 파이프라인을 `PagingSource`로 추상화하여, Room DB로부터 무한 스크롤 환경에서 20개 단위로 데이터를 안전하고 매끄럽게 페이징 로딩(Paging 3)함으로써 60fps/120fps Jank-Free 오프라인 UX를 이식합니다.
 
-### 5. [지능형 카테고리] 수집처 자체 카테고리 최우선 매핑 및 Fallback RegexNormalizer 아키텍처 (신규 추가)
-*   **문제 상황**: 기존에는 수집처 분류와 무관하게 무조건 제목 텍스트 기반 정규식(`RegexNormalizer.py`)으로 카테고리를 추정하여 오분류 위험이 상존했습니다. (예: 화장품 핫딜 제목에 가전 명칭이 우연히 포함된 경우 가전제품으로 잘못 자동 매핑됨)
+### 5. [지능형 카테고리] 수집처 자체 카테고리 최우선 매핑 및 Fallback RegexNormalizer 아키텍처 (전수 고도화)
+*   **문제 상황**: 기존에는 수집처 분류와 무관하게 무조건 제목 텍스트 기반 정규식(`RegexNormalizer.py`)으로 카테고리를 추정하여 오분류 위험이 상존했습니다. 또한 뽐뿌, 퀘이사존, 펨코를 제외한 나머지 핵심 스크래퍼(클리앙, 루리웹, 빠삭, 네이버 쇼핑)는 카테고리 추출 자체가 누락되어 있었습니다.
 *   **해결 방안**:
-    1.  **스크래퍼 자체 파싱 고도화**:
-        *   **뽐뿌 (`ppomppu_scraper.py`)**: 뽐뿌 핫딜은 리스트와 제목 맨 앞의 대괄호 `[분류명]` 형태로 카테고리가 강제 제공되므로, 정규식을 통해 이를 `category` 필드로 안전하게 추출합니다. (예: `[식품/건강]` -> `category="식품/건강"`)
-        *   **퀘이사존 (`quasarzone_scraper.py`)**: 퀘이사존 핫딜 목록의 `span.category` 태그를 직접 CSS Selector로 스나이핑하여 `category` 필드를 채워줍니다.
-        *   **에펨코리아 (`fmkorea_scraper.py`)**: 기존 파싱 로직의 `span.category` 추출 로직을 그대로 활용하여 `category` 필드를 채워 보냅니다.
+    1.  **스크래퍼 자체 파싱 전수 고도화**:
+        *   **뽐뿌 (`ppomppu_scraper.py`)**: 제목 맨 앞의 대괄호 `[분류명]` 형태로 제공되는 카테고리를 정규식으로 안전하게 추출합니다.
+        *   **알리뽐뿌 (`alippomppu_scraper.py`)**: `PpomppuScraper`를 상속받으므로 대괄호 카테고리 추출이 자동으로 적용되어 동작합니다.
+        *   **퀘이사존 (`quasarzone_scraper.py`)**: 목록의 `span.category` 태그를 직접 CSS Selector로 스나이핑하여 추출합니다.
+        *   **에펨코리아 (`fmkorea_scraper.py`)**: 목록 및 상세에 있는 `span.category` 추출 로직을 활용해 반영합니다.
+        *   **클리앙 (`clien_scraper.py`) [신규]**: 제목 맨 앞의 대괄호 `[분류명]` 형태로 작성되는 카테고리(예: `[iOS]`, `[WearOS]`, `[이마트]`)를 정규식으로 완벽히 낚아채어 `category` 필드로 넣어줍니다.
+        *   **루리웹 (`ruliweb_scraper.py`) [신규]**: 기존의 적립 키워드 하드코딩을 넘어, 제목 맨 앞의 대괄호 `[PC/가전]`, `[음식]`, `[이벤트]` 분류명을 정규식으로 완벽하게 수집합니다.
+        *   **빠삭 (`bbasak_base_scraper.py` 및 서브 스크래퍼) [신규]**: 제목 맨 앞의 대괄호 `[분류명]`을 정규식으로 1차 수집하되, 수집이 불가능한 경우를 대비해 각 서브 게시판별 default 카테고리(해외게시판 -> "해외핫딜", 육아게시판 -> "생활용품", 국내게시판 -> None)를 주입하는 2중 안전장치 설계를 이식합니다.
+        *   **네이버 쇼핑 (`naver_shopping_scraper.py`) [신규]**: API 결과로 나오는 `category1`, `category2`, `category3` 중 대표 카테고리(`category1`)를 `category` 단일 필드로 매핑하여 통합 정상 작동을 지원합니다.
     2.  **1순위 매핑 및 2순위 Fallback 구조 정립 (`RegexNormalizer.py`)**:
-        *   `RegexNormalizer`에 수집처 고유 카테고리를 당사 10대 정형 카테고리(`음식`, `의류`, `PC제품`, `가전제품`, `생활용품`, `화장품`, `SW/게임`, `모바일/기프티콘`, `패키지/이용권`, `해외핫딜`)로 변환시켜 주는 **화이트리스트 매핑 테이블(`SCRAPER_CATEGORY_MAP`)**을 구축합니다.
+        *   `RegexNormalizer`에 수집처 고유 카테고리를 당사 10대 정형 카테고리로 변환시켜 주는 **화이트리스트 매핑 테이블(`SCRAPER_CATEGORY_MAP`)**을 확장 구축합니다. (클리앙의 모바일 플랫폼 기프티콘, 루리웹의 PC/가전, 빠삭의 핫딜 고유 분류 반영)
         *   스크래퍼가 카테고리를 성공적으로 넘겼다면 해당 변환 테이블을 거쳐 **최우선(1순위)으로 확정**합니다.
         *   만약 수집처 카테고리가 누락되었거나 변환 테이블 매핑에 실패한 경우(None/기타)에만 **2차(Fallback)로 기존 제목 기반 정규표현식 휴리스틱 파서**를 구동시킵니다.
     3.  **LlmNormalizer 하이브리드 파이프라인 연동**:
         *   `ProductNormalizer.normalize` 인터페이스 시그니처에 `scraped_category` 매개변수를 추가하여 스크래퍼 데이터를 안전하게 내장 파이프라인에 주입합니다.
-        *   AI(Gemini) 분석이 불가피하게 구동될 때도, 수집처 카테고리를 프롬프트에 **컨텍스트 힌트**로 동시 제공하여 AI의 상품 카테고리 정확도를 200% 극대화합니다.
+        *   AI(Gemini) 분석이 불가피하게 구동될 때도, 수집처 카테고리를 프롬프트에 **컨텍스트 힌트**로 동시 제공하여 AI의 상품 카테고리 정확도를 극대화합니다.
 
 ---
 
@@ -52,7 +57,7 @@
 *   `ProductNormalizer.normalize` 추상 메서드 시그니처에 `scraped_category: Optional[str] = None` 선택 인자 주입.
 
 #### [MODIFY] [regex_normalizer.py](file:///C:/Users/kth00/StudioProjects/InsightDeal/backend/services/normalizer/regex_normalizer.py)
-*   수집처 카테고리 매핑 딕셔너리 `SCRAPER_CATEGORY_MAP` 정의.
+*   수집처 카테고리 매핑 딕셔너리 `SCRAPER_CATEGORY_MAP`에 신규 추가된 클리앙, 루리웹, 빠삭 등의 고유 대괄호 텍스트 분류 매핑 테이블 추가.
 *   `map_scraper_category` 및 `normalize` 메서드를 고쳐 외부 수집 카테고리를 1순위로 채택하고, 누락 시에만 정규식 Fallback을 태우는 통합 분기 구조 장착.
 
 #### [MODIFY] [llm_normalizer.py](file:///C:/Users/kth00/StudioProjects/InsightDeal/backend/services/normalizer/llm_normalizer.py)
@@ -61,6 +66,22 @@
 
 #### [MODIFY] [aggregator_service.py](file:///C:/Users/kth00/StudioProjects/InsightDeal/backend/services/aggregator_service.py)
 *   수집 데이터 저장 시 `scraped_data.get("category")`를 추출하여 `self.normalizer.normalize(raw_title, scraped_category)`로 직접 연계 주입.
+
+#### [MODIFY] [clien_scraper.py](file:///C:/Users/kth00/StudioProjects/InsightDeal/backend/scrapers/clien_scraper.py)
+*   일반 핫딜 아이템 파싱 시 제목 접두사의 대괄호 `[...]` 카테고리명을 정규식으로 안전하게 수집해 `"category"` 필드에 이식.
+
+#### [MODIFY] [ruliweb_scraper.py](file:///C:/Users/kth00/StudioProjects/InsightDeal/backend/scrapers/ruliweb_scraper.py)
+*   일반 핫딜 아이템 파싱 시 제목 접두사의 대괄호 `[...]` 카테고리명을 정규식으로 안전하게 수집해 `"category"` 필드에 이식.
+
+#### [MODIFY] [bbasak_base_scraper.py](file:///C:/Users/kth00/StudioProjects/InsightDeal/backend/scrapers/bbasak_base_scraper.py)
+*   `BbasakBaseScraper` 생성자(`__init__`)에 `default_category`를 추가로 받도록 보완.
+*   파싱 시 제목 맨 앞의 대괄호 `[...]` 카테고리를 1차 수집하고, 없을 경우 `default_category`를 폴백으로 채워주는 하이브리드 수집 구조 이식.
+
+#### [MODIFY] [bbasak_domestic_scraper.py](file:///C:/Users/kth00/StudioProjects/InsightDeal/backend/scrapers/bbasak_domestic_scraper.py), [bbasak_overseas_scraper.py](file:///C:/Users/kth00/StudioProjects/InsightDeal/backend/scrapers/bbasak_overseas_scraper.py), [bbasak_parenting_scraper.py](file:///C:/Users/kth00/StudioProjects/InsightDeal/backend/scrapers/bbasak_parenting_scraper.py)
+*   `super().__init__` 호출 시 각각의 성격에 적합한 `default_category`를 명시적으로 주입 (국내 -> None, 해외 -> `"해외핫딜"`, 육아 -> `"생활용품"`).
+
+#### [MODIFY] [naver_shopping_scraper.py](file:///C:/Users/kth00/StudioProjects/InsightDeal/backend/scrapers/naver_shopping_scraper.py)
+*   `NaverProduct` 클래스 및 파싱 함수에 단일 대표 `"category"` 필드(값은 `category1` 기준)를 세팅하여 일관된 1순위 카테고리 통신을 지원하도록 보장.
 
 #### [MODIFY] [ppomppu_scraper.py](file:///C:/Users/kth00/StudioProjects/InsightDeal/backend/scrapers/ppomppu_scraper.py)
 *   뽐뿌 제목의 대괄호 `[...]` 접두사를 정규식으로 안전하게 파싱하여 `"category"` 데이터 필드로 이식.

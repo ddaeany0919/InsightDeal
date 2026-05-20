@@ -56,6 +56,10 @@ class RuliwebScraper(AsyncBaseScraper):
                     elif not image_url.startswith('http'): image_url = urljoin("https://bbs.ruliweb.com", image_url)
 
             category = None
+            cat_match = re.search(r'^\s*\[([^\]]+)\]', full_title)
+            if cat_match:
+                category = cat_match.group(1).strip()
+
             if any(k in full_title for k in ['적립', '출석', '출첵', '포인트']):
                 category = "적립"
 

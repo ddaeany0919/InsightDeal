@@ -5,5 +5,6 @@ class BbasakParentingScraper(BbasakBaseScraper):
         super().__init__(
             community_name="빠삭육아",
             community_url="https://bbasak.com/bbs/board.php?bo_table=bbasak3",
-            community_id=community_id
+            community_id=community_id,
+            default_category="육아핫딜"
         )

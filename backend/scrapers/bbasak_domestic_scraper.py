@@ -5,5 +5,6 @@ class BbasakDomesticScraper(BbasakBaseScraper):
         super().__init__(
             community_name="빠삭국내",
             community_url="https://bbasak.com/bbs/board.php?bo_table=bbasak1",
-            community_id=community_id
+            community_id=community_id,
+            default_category="국내핫딜"
         )
