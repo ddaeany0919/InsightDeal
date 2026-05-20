@@ -12,6 +12,9 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalDateTime
 import android.util.Log
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
+import kotlinx.coroutines.flow.Flow
 
 sealed class WishlistUiState {
     object Loading : WishlistUiState()
@@ -41,6 +44,9 @@ class WishlistViewModel(
 
     private val _isAlarmOn = MutableStateFlow(false)
     val isAlarmOn: StateFlow<Boolean> = _isAlarmOn
+
+    val wishlistPagedFlow: Flow<PagingData<WishlistItem>> = wishlistRepository.getWishlistPagedFlow()
+        .cachedIn(viewModelScope)
 
     init {
         // ✨ Room Flow 구독하여 변경 사항 실시간 옵저빙 (Recomposition)

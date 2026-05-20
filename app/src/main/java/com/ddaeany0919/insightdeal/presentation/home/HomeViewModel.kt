@@ -17,6 +17,11 @@ import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.presentation.home.HotDealsPagingSource
 
+import androidx.paging.ExperimentalPagingApi
+import androidx.paging.map
+import kotlinx.coroutines.flow.map
+import com.ddaeany0919.insightdeal.InsightDealApplication
+
 class HomeViewModel : ViewModel() {
 
     private val apiService = NetworkModule.createService<ApiService>()
@@ -69,7 +74,7 @@ class HomeViewModel : ViewModel() {
     val filterState: StateFlow<FilterState> = _filterState.asStateFlow()
 
     // ✨ Paging3 적용: 필터 상태(FilterState)가 변경될 때마다 Pager 폭포수 재생성 (flatMapLatest)
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, ExperimentalPagingApi::class)
     val dealsPagingData: Flow<PagingData<DealItem>> = _filterState.flatMapLatest { state ->
         Pager(
             config = PagingConfig(
@@ -77,15 +82,25 @@ class HomeViewModel : ViewModel() {
                 enablePlaceholders = false,
                 initialLoadSize = 20
             ),
+            remoteMediator = HotDealsRemoteMediator(
+                database = InsightDealApplication.database,
+                apiService = apiService,
+                category = state.category,
+                keyword = state.keyword,
+                platform = state.platform
+            ),
             pagingSourceFactory = { 
-                HotDealsPagingSource(
-                    apiService = apiService, 
+                InsightDealApplication.database.dealDao().getPagedDeals(
                     category = state.category,
                     keyword = state.keyword,
                     platform = state.platform
                 ) 
             }
-        ).flow.cachedIn(viewModelScope)
+        ).flow
+            .map { pagingData ->
+                pagingData.map { it.toDealItem() }
+            }
+            .cachedIn(viewModelScope)
     }
 
     fun selectCategory(category: String) {

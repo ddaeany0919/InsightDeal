@@ -23,6 +23,25 @@
 *   **목표가 알림 (`PriceAlertRegistrationButton`)**: 현재 가격 기준 -5%(`currentPrice * 0.95`)를 기본값으로, 사용자가 원하는 목표 가격 도달 시 푸시를 받도록 다이얼로그 제공.
 *   **UI 컬러링**: 출처별 테마 컬러 강제 적용 (예: 뽐뿌=파란색 `#1565C0`, 퀘이사존=주황색 `#E65100`, 루리웹=남색 `#0D47A1`).
 
+### 1.3 🔄 오프라인 우선(Offline-First) Room + Paging 3 아키텍처
+불안정한 네트워크 환경이나 오프라인 상태에서도 끊김 없는 탐색 환경을 보장하기 위해 로컬 캐시를 단일 진실 공급원(Single Source of Truth)으로 삼는 오프라인 캐싱 파이프라인을 구축했습니다.
+*   **Room DB 스키마 다변화**:
+    *   `DealEntity` (테이블명 `deals`): 크롤러로 수집된 핫딜의 제목, AI 요약, 원가, 할인가, 카테고리, 플랫폼 및 시간 메타데이터를 저장하는 영속성 데이터 모델.
+    *   `DealRemoteKeysEntity` (테이블명 `deal_remote_keys`): 무한 스크롤 페이징에서 다음 페이지 오프셋과 키 포인터를 추적하기 위한 페이징 전용 테이블.
+    *   **정밀한 메모리 관리 (`Converters.kt`)**: Paging 3 무한 스크롤 시 빈번한 JSON 직렬화/역직렬화 과정에서 쓰레기 객체 생성으로 인한 GC(가비지 컬렉터) 부하 및 렌더링 렉(Jank) 현상을 방지하기 위해, 내부 Gson 인스턴스를 static companion object 싱글톤으로 고정 바인딩하여 런타임 메모리 효율성을 최대화했습니다.
+*   **원격 및 로컬 오케스트레이터 (`HotDealsRemoteMediator.kt`)**:
+    *   `RemoteMediator<Int, DealEntity>`를 구현하여 네트워크에서 새 핫딜을 페칭하는 즉시 로컬 Room DB에 트랜잭션 단위로 적재(Upsert/Clear)하고, 페이징 컴포넌트(`PagingSource`)는 오직 로컬 DB만 바라보게 설계했습니다.
+    *   네트워크 응답 성공 시 페이징 상태에 따라 `MediatorResult.Success(endOfPaginationReached)`를 반환하고, 예외 발생 시 `MediatorResult.Error`로 깔끔하게 래핑하여 예외를 상위로 전파합니다.
+*   **HomeViewModel 데이터 흐름 단일화**:
+    *   `Pager(config, remoteMediator) { dao.getPagingSource() }.flow.cachedIn(viewModelScope)`를 적용하여 데이터의 Single Source of Truth 아키텍처를 견고히 확립했습니다.
+
+### 1.4 📶 실시간 네트워크 감지 및 슬라이딩 배너 UX (`NetworkMonitor.kt` / `HomeScreen.kt`)
+*   **실시간 감지기 (`NetworkMonitor.kt`)**:
+    *   `ConnectivityManager`의 상태 콜백 리스너를 코루틴 `callbackFlow`로 래핑하여, 네트워크 유효성 상태(`NetworkCapabilities`)가 변경될 때마다 실시간 `Flow<Boolean>` 스트림으로 전파되도록 구현했습니다.
+*   **슬라이딩 경고 배너**:
+    *   인터넷 연결이 단절되었음을 실시간 감지하면, `HomeScreen` 최상단에 미려한 페이드인/아웃 슬라이딩 애니메이션 효과와 함께 **"⚠️ 현재 오프라인 상태입니다. 로컬 캐시된 핫딜을 표시하고 있습니다."** 라는 브랜드 오렌지 톤(Color(0xFFFF9500))의 경고 배너가 나타납니다.
+    *   단순한 토스트 팝업을 넘어서 사용자가 현재 표시된 데이터의 신뢰성 상태를 즉각 직관적으로 인지할 수 있도록 상용 premium 등급의 마이크로 UX 디테일을 구현했습니다.
+
 ---
 
 ## 2. 🔍 검색 (Search) - `AdvancedSearchScreen.kt`
@@ -71,15 +90,37 @@ InsightDeal의 핵심 지능형 추천 엔진.
 *   **백엔드 인증 구조**: FastAPI `/api/auth/signup`, `/login` 제공. 비밀번호는 `hashlib.sha256`로 암호화 후 `User` 테이블에 적재. 유저의 `honey_points`(꿀점수) 및 `nickname` 고유성 보장.
 *   **모바일 로컬 세션**: 구글 공식 권장 `DataStore(Preferences)` 기반의 `AuthManager.kt`를 통해 로그인한 유저 세션 정보를 영구 보존. 커뮤니티 글 작성 시 자동 바인딩.
 
+### 5.2 🛡️ 하드웨어 수준의 로컬 보안 암호화 인프라 (`EncryptedPrefsManager.kt`)
+개인 정보 보호 및 안전한 앱 보안을 위해 로컬에 저장되는 민감 정보를 하드웨어 수준에서 암호화 관리하도록 설계했습니다.
+*   **Keystore 기반 AES-256-GCM 암호화**:
+    *   `androidx.security:security-crypto:1.1.0-alpha06` 라이브러리를 도입하여, Android Keystore 시스템에 대칭키 방식의 마스터 키(`MasterKey.Builder`)를 생성하고 파일명과 콘텐츠를 AES-256 규격으로 무중단 실시간 암호화 처리합니다.
+*   **백그라운드 런타임 Fallback 예외 대응 아키텍처**:
+    *   기기가 완전히 잠겨있거나 백그라운드 서비스 및 수신기(`MyFirebaseMessagingService` 등)에서 Keystore 마스터 키에 접근할 수 없는 특수한 안드로이드 플랫폼 런타임 예외(`KeyStoreException`, `GeneralSecurityException`) 발생 시 크래시가 유발되는 문제를 해결하기 위해 **안전한 Fallback 아키텍처**를 구현했습니다.
+    *   Keystore 로드 예외 감지 시 즉각 일반 SharedPreferences 영역으로 대체하여 데이터를 안전하게 저장/로드하도록 유연한 싱글톤 빌더 구조를 구축했습니다.
+*   **보안 저장소로의 전면적인 마이그레이션**:
+    *   앱 잠금 여부 및 비밀번호 값(`app_lock_enabled`, `app_lock_pin`), 야간 DND 알림 수신 동의 여부(`night_push_consent`) 등의 핵심 제어 설정 값을 읽고 쓰는 주체를 기존 일반 SharedPreferences에서 `EncryptedPrefsManager.getEncryptedPrefs(context)`로 일괄 완전 전환했습니다.
+
 ---
 
 ## 6. 👤 내정보 (My Info) - `MyPageScreen.kt`
 개인화된 활동 내역과 푸시 알림 인프라 제어.
 
-### 5.1 FCM 푸시 & 알림 인프라 (`ApiService` 연동)
+### 6.1 FCM 푸시 & 알림 인프라 (`ApiService` 연동)
 *   **기기 등록 (`POST /api/push/device`)**: 익명 가입 시 `device_uuid`와 `fcm_token`을 백엔드로 전송하여 알림 구독 테이블 생성.
 *   **키워드 알림 (`POST /api/push/keywords`)**: "아이패드" 등을 등록 시 DB에 매핑되어 크롤러가 해당 텍스트 감지 시 백그라운드 푸시 전송.
 *   **위시리스트 (찜목록)**: `POST /api/wishlist/from-keyword`, `GET /api/wishlist/{wishlist_id}/history` 등 전용 Wishlist API를 통해 관심 상품의 지속적인 가격 추적 및 변동 알림(Alarm State) 토글 기능 제공.
+
+### 6.2 🔔 스마트 FCM 푸시 파이프라인 및 야간 DND 무음 처리 (`NotificationService.kt`)
+사용자의 수면 및 일상 피로도를 보호하면서도 놓치기 아쉬운 핫딜 정보를 안전하게 배달하기 위한 고도화된 알림 수신 파이프라인입니다.
+*   **실시간 수신 및 무중단 알림 보관함 적재**:
+    *   `InsightDealFirebaseMessagingService` 백그라운드 서비스를 가동하여 앱이 종료된 상태에서도 실시간으로 푸시 토큰 및 페이로드를 안정적으로 수집합니다.
+    *   푸시가 도착하면 기기의 네트워크나 활성 상태와 상관없이, 하드웨어 보안 저장소 기반으로 구동되는 **로컬 알림 보관함(`NotificationHistoryManager.kt`)**에 즉시 암호화 적재를 수행합니다.
+*   **야간 방해금지 (DND, 21:00 ~ 08:00) 스마트 필터링**:
+    *   정보통신망법 규정을 철저히 준수하고 사용자 경험을 배려하기 위해, 푸시 알림 수신 시 디바이스 로컬 시간을 기준으로 야간(21:00 ~ 익일 08:00) 시간대를 정밀 판별합니다.
+    *   사용자의 야간 알림 수신 동의 상태(`night_push_consent`)에 따라 동작을 스마트 분기합니다:
+        1.  **DND 활성화 상태 (수신 거부)**: 시스템 헤드업 알림 및 소리/진동을 원천적으로 발생시키지 않고, 조용히 로컬 알림 보관함(`NotificationHistoryManager`)에만 적재합니다.
+        2.  **DND 비활성화 상태 (수신 동의)**: 소리와 진동을 원천 배제한 **무음 전용 알림 채널 (`silent_hotdeal_notifications`)**로 즉시 전환 바인딩하여 백그라운드 노티피케이션을 노출시킵니다.
+    *   이를 통해 푸시 알림 피로도를 획기적으로 경감시켜 사용자가 앱을 이탈하거나 알림 자체를 전면 차단하는 심각한 보안 및 운영 악순환을 사전에 방지했습니다.
 
 ---
 

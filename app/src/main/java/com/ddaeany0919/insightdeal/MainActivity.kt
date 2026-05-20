@@ -36,6 +36,9 @@ import com.ddaeany0919.insightdeal.presentation.settings.ThemeSettingsScreenColl
 import com.ddaeany0919.insightdeal.presentation.home.HomeScreen
 import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
 import com.ddaeany0919.insightdeal.presentation.theme.InsightDealTheme
+import com.ddaeany0919.insightdeal.presentation.components.PinLockDialog
+import com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager
+import com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
 import java.util.UUID
 import androidx.compose.foundation.clickable
 import com.google.firebase.messaging.FirebaseMessaging
@@ -91,8 +94,9 @@ class MainActivity : ComponentActivity() {
             requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
-        // Initialize Recent Deals
+        // Initialize Recent Deals & Notification History
         com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager.init(this)
+        com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager.init(this)
 
         // 앱 시작 시 FCM 토큰 가져와서 서버에 익명 가입(등록)
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
@@ -104,7 +108,7 @@ class MainActivity : ComponentActivity() {
             val token = task.result
             Log.d(TAG_UI, "📱 FCM Token 가져오기 성공: ${token.take(20)}...")
 
-            val prefs = getSharedPreferences("insight_deal_prefs", Context.MODE_PRIVATE)
+            val prefs = EncryptedPrefsManager.getEncryptedPrefs(this)
             val nightPushConsent = prefs.getBoolean("night_push_consent", false)
             
             CoroutineScope(Dispatchers.IO).launch {
@@ -135,12 +139,37 @@ class MainActivity : ComponentActivity() {
             val systemDark = isSystemInDarkTheme()
             val useDark = tm.shouldUseDarkTheme(systemDark)
             
+            // 보안 앱 잠금 상태 검사
+            val context = this
+            val prefs = remember { EncryptedPrefsManager.getEncryptedPrefs(context) }
+            val lockEnabled = remember { prefs.getBoolean("app_lock_enabled", false) }
+            val correctPin = remember { prefs.getString("app_lock_pin", "") ?: "" }
+            var isLocked by remember { mutableStateOf(lockEnabled && correctPin.isNotEmpty()) }
+
             InsightDealTheme(
                 darkTheme = useDark,
                 themeMode = mode,
                 amoledMode = amoledMode
             ) {
-                MainApp(deviceUserId, currentIntent)
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    if (isLocked) {
+                        PinLockDialog(
+                            title = "보안 PIN 번호 입력",
+                            subtitle = "개인 정보 보호를 위해 4자리 PIN을 입력하세요.",
+                            correctPin = correctPin,
+                            isSetupMode = false,
+                            onDismiss = {},
+                            onSuccess = {
+                                isLocked = false
+                            }
+                        )
+                    } else {
+                        MainApp(deviceUserId, currentIntent)
+                    }
+                }
             }
         }
     }
@@ -246,7 +275,7 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                     onDealClick = { dealId -> navController.navigate("deal_detail/$dealId") }
                 )
             }
-            composable("settings") { com.ddaeany0919.insightdeal.presentation.settings.SettingsScreen() }
+            composable("settings") { com.ddaeany0919.insightdeal.presentation.settings.SettingsScreen(onBackClick = { navController.popBackStack() }) }
             composable("platform") { com.ddaeany0919.insightdeal.presentation.platform.PlatformScreen() }
             composable("deal_detail/{dealId}") { backStackEntry ->
                 val dealId = backStackEntry.arguments?.getString("dealId")?.toIntOrNull() ?: -1

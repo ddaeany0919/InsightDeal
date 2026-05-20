@@ -36,6 +36,10 @@
 
 ### Services (Core/Background)
 - core\NotificationService.kt
+- core\InsightDealFirebaseMessagingService.kt
+- core\security\EncryptedPrefsManager.kt
+- core\network\NetworkMonitor.kt
+- presentation\home\HotDealsRemoteMediator.kt
 - data\PriceComparisonService.kt
 
 ### Network/API
@@ -91,3 +95,21 @@
 - models\models_v2.py
 - models\product_models.py
 - models\wishlist_models.py
+
+---
+
+## 🛠️ 2단계 고도화 컴파일 트러블슈팅 이력 (Technical Issue Log)
+
+2단계 고도화 진행 과정 중 발생했던 주요 컴파일, 링킹 및 런타임 플랫폼 이슈들과 이에 대한 최종 해결(Action) 내역을 기록한 엔지니어링 분석 로그입니다.
+
+### 1. Room Paging 3 컴파일 의존성 FAILED 에러
+*   **원인 (Root Cause)**: Room DB에 캐시된 엔터티를 무한 스크롤 페이징 소스로 반환하기 위해 `PagingSource<Int, DealEntity>` 형태로 DAO 메서드를 정의했으나, 컴파일러가 `To use PagingSource, you must add room-paging artifact from Room as a dependency.` 예외를 발생시키며 중단됨. KSP 컴파일 시 해당 어노테이션 프로세서가 Paging 의존성을 링킹하지 못해 생기는 안드로이드 고유 이슈.
+*   **조치 (Resolution)**: `app/build.gradle` 의존성 블록에 `implementation 'androidx.room:room-paging:2.6.1'` 라이브러리를 안전하게 명시적으로 주입하여 KSP 프로세싱 단계를 완전 정상화함.
+
+### 2. Paging 3 MediatorResult Unresolved Reference 컴파일 에러
+*   **원인 (Root Cause)**: `HotDealsRemoteMediator.kt`를 설계 및 작성하는 도중, `MediatorResult` 심볼을 참조하려 할 때 `Unresolved reference: MediatorResult` 에러가 빌드 과정에서 발생.
+*   **조치 (Resolution)**: Paging 3 아키텍처 상 `MediatorResult`가 독립된 탑레벨 클래스가 아니라 `RemoteMediator` 추상 클래스 내부에 정의된 중첩 실드 클래스(Nested Sealed Class)라는 특이 구조를 파악. 임포트 경로를 `import androidx.paging.RemoteMediator.MediatorResult`로 정밀 정정하여 깔끔하게 에러를 해소하고 컴파일 완료.
+
+### 3. Kotlin/KSP 컴파일러 데몬 내부 캐시 충돌 크래시
+*   **원인 (Root Cause)**: 여러 소스 코드 파일(Room Entity, DAO, Mediator 등)이 급격히 신설 및 교체되면서 Gradle 빌드 데몬과 Kotlin 컴파일러 캐시 간의 충돌 상태가 유발됨. 이로 인해 `lateinit property cleanFilenames has not been initialized` 라는 컴파일러 내부 런타임 예외가 발생하여 빌드가 전면 FAILED 됨.
+*   **조치 (Resolution)**: Gradle 컴파일러 세션의 데몬 캐시 충돌을 완전히 해소하기 위해, 터미널에서 `.\gradlew clean`을 호출해 전체 컴파일 빌드 캐시 세션을 말끔히 초기화한 뒤 컴파일을 재수행하여 `BUILD SUCCESSFUL`을 달성하고 안정성을 원천 확보함.

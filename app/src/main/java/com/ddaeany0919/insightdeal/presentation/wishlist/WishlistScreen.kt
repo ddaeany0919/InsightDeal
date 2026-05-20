@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import androidx.paging.compose.collectAsLazyPagingItems
 
 suspend fun SnackbarHostState.offerUndo(
     message: String,
@@ -208,7 +209,7 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val itemPriceHistories by viewModel.itemPriceHistories.collectAsStateWithLifecycle()
-    var showDialog by remember { mutableStateOf(false) }
+    val lazyPagingItems = viewModel.wishlistPagedFlow.collectAsLazyPagingItems()
     var expandedItemId by remember { mutableStateOf<Int?>(null) }
 
     Scaffold(
@@ -248,7 +249,11 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
                 item {
                     DashboardHeader(items = currentState.items)
                 }
-                items(items = currentState.items, key = { it.id }) { item ->
+                items(
+                    count = lazyPagingItems.itemCount,
+                    key = { index -> lazyPagingItems[index]?.id ?: index }
+                ) { index ->
+                    val item = lazyPagingItems[index] ?: return@items
                     val dismissState = rememberSwipeToDismissBoxState(
                         confirmValueChange = { dismissValue ->
                             if (dismissValue == SwipeToDismissBoxValue.EndToStart || dismissValue == SwipeToDismissBoxValue.StartToEnd) {
@@ -285,7 +290,8 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
                             }
                         },
                         content = {
-                            com.ddaeany0919.insightdeal.presentation.components.StandardWishlistCard(style = com.ddaeany0919.insightdeal.presentation.components.WishlistCardStyle.DETAILED,
+                            com.ddaeany0919.insightdeal.presentation.components.StandardWishlistCard(
+                                style = com.ddaeany0919.insightdeal.presentation.components.WishlistCardStyle.DETAILED,
                                 item = item,
                                 onDelete = {
                                     viewModel.deleteItem(item)
@@ -298,18 +304,18 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
                                         )
                                     }
                                 },
-                        onCheckPrice = { viewModel.checkPrice(item) },
-                        isExpanded = expandedItemId == item.id,
-                        onExpand = {
-                            Log.d("WishlistScreen", "onExpand called for ${item.keyword}, current expanded: $expandedItemId")
-                            if (expandedItemId == item.id) {
-                                expandedItemId = null
-                            } else {
-                                expandedItemId = item.id
-                                viewModel.loadItemHistory(item)
-                            }
-                        },
-                        priceHistory = itemPriceHistories[item.id]
+                                onCheckPrice = { viewModel.checkPrice(item) },
+                                isExpanded = expandedItemId == item.id,
+                                onExpand = {
+                                    Log.d("WishlistScreen", "onExpand called for ${item.keyword}, current expanded: $expandedItemId")
+                                    if (expandedItemId == item.id) {
+                                        expandedItemId = null
+                                    } else {
+                                        expandedItemId = item.id
+                                        viewModel.loadItemHistory(item)
+                                    }
+                                },
+                                priceHistory = itemPriceHistories[item.id]
                             )
                         }
                     )

@@ -1,5 +1,6 @@
 package com.ddaeany0919.insightdeal.local.db
 
+import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -12,6 +13,9 @@ import kotlinx.coroutines.flow.Flow
 interface WishlistDao {
     @Query("SELECT * FROM wishlist ORDER BY createdAt DESC")
     fun getAllWishlistsFlow(): Flow<List<WishlistEntity>>
+
+    @Query("SELECT * FROM wishlist ORDER BY createdAt DESC")
+    fun getAllWishlistsPaged(): PagingSource<Int, WishlistEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertWishlist(wishlist: WishlistEntity): Long

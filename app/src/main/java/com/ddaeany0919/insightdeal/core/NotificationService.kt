@@ -13,6 +13,8 @@ import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.MainActivity
 import com.ddaeany0919.insightdeal.R
+import com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
+import com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 import java.text.NumberFormat
+import java.util.Calendar
 
 class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
 
@@ -28,6 +31,10 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         private const val CHANNEL_ID = "hotdeal_notifications"
         private const val CHANNEL_NAME = "핫딜 알림"
         private const val CHANNEL_DESCRIPTION = "새로운 핫딜과 가격 변동을 실시간으로 알려드립니다"
+
+        private const val SILENT_CHANNEL_ID = "silent_hotdeal_notifications"
+        private const val SILENT_CHANNEL_NAME = "야간 무음 알림"
+        private const val SILENT_CHANNEL_DESCRIPTION = "방해금지 시간대(21:00~08:00)에 소리와 진동 없이 수신되는 알림입니다"
 
         // 알림 카테고리
         private const val TYPE_NEW_HOTDEAL = "new_hotdeal"
@@ -54,7 +61,8 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
                 val deviceId = getCustomDeviceId()
                 Log.d(TAG, "📱 Device ID: $deviceId")
                 
-                val prefs = getSharedPreferences("insight_deal_prefs", Context.MODE_PRIVATE)
+                // 🔒 보안 스토리지 전환 적용
+                val prefs = EncryptedPrefsManager.getEncryptedPrefs(applicationContext)
                 val nightPushConsent = prefs.getBoolean("night_push_consent", false)
                 
                 val request = RegisterDeviceReq(
@@ -81,6 +89,25 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         Log.d(TAG, "📨 FCM 메시지 수신: ${remoteMessage.from}")
+
+        // 📥 데이터 수신 즉시 로컬 보관함에 적재 연동
+        val title = remoteMessage.notification?.title 
+            ?: remoteMessage.data["title"] 
+            ?: "InsightDeal 알림"
+        val keyword = remoteMessage.data["keyword"] 
+            ?: remoteMessage.data["category"] 
+            ?: "핫딜"
+        val dealUrl = remoteMessage.data["ecommerce_url"] 
+            ?: remoteMessage.data["post_url"] 
+            ?: "https://insightdeal.com"
+
+        try {
+            NotificationHistoryManager.init(applicationContext)
+            NotificationHistoryManager.addAlert(applicationContext, title, keyword, dealUrl)
+            Log.d(TAG, "✅ FCM 수신 알림 로컬 보관함 적재 성공")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ FCM 수신 알림 로컬 보관함 적재 중 에러", e)
+        }
 
         // 데이터 페이로드 처리
         if (remoteMessage.data.isNotEmpty()) {
@@ -196,6 +223,30 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         )
     }
 
+    private fun downloadBitmap(context: Context, imageUrl: String): android.graphics.Bitmap? {
+        return try {
+            val loader = coil.ImageLoader(context)
+            val request = coil.request.ImageRequest.Builder(context)
+                .data(imageUrl)
+                .allowHardware(false) // Notification에 사용하기 위해 소프트웨어 비트맵으로 로딩 필수
+                .build()
+            
+            // FCM 백그라운드 스레드에서 동기적으로 이미지 로딩
+            val result = kotlinx.coroutines.runBlocking {
+                loader.execute(request)
+            }
+            
+            if (result is coil.request.SuccessResult) {
+                (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ FCM Rich 알림 이미지 다운로드 중 에러: ${e.message}", e)
+            null
+        }
+    }
+
     private fun showSmartNotification(
         title: String,
         body: String,
@@ -204,6 +255,23 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         priority: Int = NotificationCompat.PRIORITY_DEFAULT,
         autoCancel: Boolean = true
     ) {
+        // ⏰ 야간 시간대 체크 (21:00 ~ 08:00)
+        val calendar = Calendar.getInstance()
+        val hour = calendar.get(Calendar.HOUR_OF_DAY)
+        val isNightTime = hour >= 21 || hour < 8
+
+        // 🔒 보안 스토리지를 통해 야간 수신 동의 여부 로드 (백그라운드 스레드 Keystore 예외 방지 Fallback 적용)
+        val prefs = EncryptedPrefsManager.getEncryptedPrefs(applicationContext)
+        val nightPushConsent = prefs.getBoolean("night_push_consent", false)
+
+        if (isNightTime) {
+            if (!nightPushConsent) {
+                // 야간 수신 동의가 비활성화 상태이면 시스템 알림은 노출하지 않고 취소 (로컬 보관함에만 적재)
+                Log.d(TAG, "🚫 야간 방해금지(21:00~08:00) 및 수신 비동의 상태로 시스템 알림 노출 스킵: $title")
+                return
+            }
+        }
+
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
         val intent = createDeepLinkIntent(data)
@@ -214,21 +282,57 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        // 야간 시간대 수신 동의 상태라면, 알림을 소리/진동 없이 "무음 채널"로 우회 생성하여 사용자 숙면 방해 최소화
+        val activeChannelId = if (isNightTime) SILENT_CHANNEL_ID else CHANNEL_ID
+        val activePriority = if (isNightTime) NotificationCompat.PRIORITY_LOW else priority
+
+        val notificationBuilder = NotificationCompat.Builder(this, activeChannelId)
             .setContentTitle(title)
             .setContentText(body)
             .setSmallIcon(icon)
             .setContentIntent(pendingIntent)
             .setAutoCancel(autoCancel)
-            .setPriority(priority)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setDefaults(NotificationCompat.DEFAULT_ALL)
-            .build()
+            .setPriority(activePriority)
 
+        // 🖼️ Rich Notification (BigPictureStyle) 이식
+        // 데이터 페이로드에서 이미지 URL 추출 (다양한 키Fallback 적용)
+        val imageUrl = data["image_url"] 
+            ?: data["thumbnail_url"] 
+            ?: data["imageUrl"] 
+            ?: data["image"]
+            ?: data["thumbnail"]
+
+        if (!imageUrl.isNullOrBlank()) {
+            val bitmap = downloadBitmap(applicationContext, imageUrl)
+            if (bitmap != null) {
+                notificationBuilder.setLargeIcon(bitmap)
+                notificationBuilder.setStyle(
+                    NotificationCompat.BigPictureStyle()
+                        .bigPicture(bitmap)
+                        .bigLargeIcon(null as android.graphics.Bitmap?) // 알림 펼쳤을 때 우측 작은 썸네일 중복 방지 제거
+                        .setSummaryText(body)
+                )
+                Log.d(TAG, "🖼️ FCM Rich 알림 이미지 연동 성공: $imageUrl")
+            } else {
+                notificationBuilder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            }
+        } else {
+            notificationBuilder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        }
+
+        if (isNightTime) {
+            notificationBuilder.setSound(null)
+            notificationBuilder.setVibrate(null)
+            notificationBuilder.setDefaults(0)
+        } else {
+            notificationBuilder.setDefaults(NotificationCompat.DEFAULT_ALL)
+        }
+
+        val notification = notificationBuilder.build()
         val notificationId = System.currentTimeMillis().toInt()
         notificationManager.notify(notificationId, notification)
 
-        Log.d(TAG, "🔔 스마트 알림 표시: $title")
+        Log.d(TAG, "🔔 스마트 알림 표시 (채널: $activeChannelId): $title")
     }
 
     private fun createDeepLinkIntent(data: Map<String, String>): Intent {
@@ -257,6 +361,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // 1. 기본 고음량 알림 채널
             val importance = NotificationManager.IMPORTANCE_HIGH
             val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, importance).apply {
                 description = CHANNEL_DESCRIPTION
@@ -266,11 +371,23 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
                 setShowBadge(true)
             }
 
+            // 2. 야간 무음 알림 채널
+            val silentImportance = NotificationManager.IMPORTANCE_LOW
+            val silentChannel = NotificationChannel(SILENT_CHANNEL_ID, SILENT_CHANNEL_NAME, silentImportance).apply {
+                description = SILENT_CHANNEL_DESCRIPTION
+                enableLights(true)
+                enableVibration(false)
+                vibrationPattern = null
+                setSound(null, null)
+                setShowBadge(true)
+            }
+
             val notificationManager: NotificationManager =
                 getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
+            notificationManager.createNotificationChannel(silentChannel)
 
-            Log.d(TAG, "📱 알림 채널 생성 완료")
+            Log.d(TAG, "📱 알림 채널 생성 완료 (기본 및 무음 채널 등록 완료)")
         }
     }
 
@@ -286,11 +403,11 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     private fun saveTokenToPrefs(token: String) {
-        val prefs = getSharedPreferences("insightdeal_prefs", MODE_PRIVATE)
+        val prefs = EncryptedPrefsManager.getEncryptedPrefs(applicationContext)
         prefs.edit()
             .putString("fcm_token", token)
             .putLong("token_saved_at", System.currentTimeMillis())
             .apply()
-        Log.d(TAG, "💾 FCM Token 로컬 저장 완료")
+        Log.d(TAG, "💾 FCM Token 로컬 보안 저장 완료")
     }
 }

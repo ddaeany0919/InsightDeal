@@ -2,6 +2,10 @@ package com.ddaeany0919.insightdeal.presentation.wishlist
 
 import android.content.Context
 import android.util.Log
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.map
 import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.data.network.*
 import com.ddaeany0919.insightdeal.local.db.AppDatabase
@@ -59,6 +63,20 @@ class WishlistRepository(
     fun getWishlistFlow(): Flow<List<WishlistItem>> {
         return dao.getAllWishlistsFlow().map { entities ->
             entities.map { it.toWishlistItem() }
+        }
+    }
+
+    // [Epic 4] Room DB와 Paging 3를 결합한 초고성능 페이징 조회 스트림
+    fun getWishlistPagedFlow(): Flow<PagingData<WishlistItem>> {
+        return Pager(
+            config = PagingConfig(
+                pageSize = 20, // 20개 단위로 최적의 메모리 관리 로드
+                enablePlaceholders = false,
+                prefetchDistance = 5
+            ),
+            pagingSourceFactory = { dao.getAllWishlistsPaged() }
+        ).flow.map { pagingData ->
+            pagingData.map { entity -> entity.toWishlistItem() }
         }
     }
 
