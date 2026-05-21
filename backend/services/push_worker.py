@@ -80,15 +80,43 @@ def background_trigger_keyword_alarms(deal_id: int):
                         logger.info(f"🌙 [야간 푸시 차단] UID: {device.device_uuid[:8]}... | 키워드: '{kw.keyword}' | 사유: 야간 발송 동의 안함")
                         continue
                         
-                    # 2. [DND] 기기 개별 방해 금지 시간대(DND) 실시간 필터링
+                    # 2. [DND] 기기 개별 방해 금지 시간대(DND) 실시간 필터링 (요일별 세부 예약 적용)
                     if device.dnd_enabled:
                         now_time = now.time()
-                        if is_in_dnd_range(now_time, device.dnd_start_time, device.dnd_end_time):
-                            logger.info(
-                                f"🔕 [DND 푸시 차단] UID: {device.device_uuid[:8]}... | "
-                                f"키워드: '{kw.keyword}' | 설정범위: {device.dnd_start_time} ~ {device.dnd_end_time} | "
-                                f"현재시각: {now_time.strftime('%H:%M')} | 사유: 방해 금지 시간대 해당"
-                            )
+                        dnd_blocked = False
+                        
+                        if device.dnd_settings_json:
+                            try:
+                                import json
+                                dnd_map = json.loads(device.dnd_settings_json)
+                                weekday_keys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+                                today_key = weekday_keys[now.weekday()]
+                                
+                                if today_key in dnd_map:
+                                    day_config = dnd_map[today_key]
+                                    if day_config.get("enabled", False):
+                                        start_str = day_config.get("start", "21:00")
+                                        end_str = day_config.get("end", "08:00")
+                                        if is_in_dnd_range(now_time, start_str, end_str):
+                                            dnd_blocked = True
+                                            logger.info(
+                                                f"🔕 [요일별 DND 푸시 차단] UID: {device.device_uuid[:8]}... | "
+                                                f"키워드: '{kw.keyword}' | 오늘 요일: {today_key} | 설정범위: {start_str} ~ {end_str} | "
+                                                f"현재시각: {now_time.strftime('%H:%M')} | 사유: 해당 요일 방해 금지 시간대"
+                                            )
+                            except Exception as json_err:
+                                logger.error(f"❌ 요일별 DND JSON 파싱 실패, 기본 DND 설정으로 폴백합니다: {json_err}")
+                        
+                        if not dnd_blocked and not device.dnd_settings_json:
+                            if is_in_dnd_range(now_time, device.dnd_start_time, device.dnd_end_time):
+                                dnd_blocked = True
+                                logger.info(
+                                    f"🔕 [기본 DND 푸시 차단] UID: {device.device_uuid[:8]}... | "
+                                    f"키워드: '{kw.keyword}' | 설정범위: {device.dnd_start_time} ~ {device.dnd_end_time} | "
+                                    f"현재시각: {now_time.strftime('%H:%M')} | 사유: 방해 금지 시간대 해당"
+                                )
+                        
+                        if dnd_blocked:
                             continue
 
                     # [Rate Limiting] 하루 최대 3회 제한 로직

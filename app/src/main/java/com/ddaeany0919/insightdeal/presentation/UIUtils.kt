@@ -1,8 +1,13 @@
 package com.ddaeany0919.insightdeal.presentation
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -13,7 +18,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -153,3 +161,69 @@ fun CommunityBadge(community: String) {
         )
     }
 }
+
+/**
+ * 쫀득한 클릭 반응(Scale Spring Animation)을 제공하는 프리미엄 터치 Modifier
+ * Modifier.composed {} 를 사용하여 리컴포지션 시 Modifier 인스턴스 재생성을 최적화하고,
+ * graphicsLayer 블록 내부에서 스케일을 갱신하여 Layout 단계를 건너뛰고 오직 Draw 단계만 업데이트하여 렉을 방지합니다.
+ * 스크롤 터치 충돌 문제를 방지하기 위해 드래그 변위가 touchSlop 임계값을 초과하는 즉시 
+ * 바운스 스케일을 원래대로(1.0f) 복구시키고 클릭 감지를 캔슬(Scroll-Aware)합니다.
+ */
+fun Modifier.bounceClick(
+    scaleDown: Float = 0.97f,
+    onClick: () -> Unit
+): Modifier = composed {
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) scaleDown else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "bounceScale"
+    )
+
+    this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .pointerInput(onClick) {
+            val viewConfiguration = this.viewConfiguration
+            val touchSlop = viewConfiguration.touchSlop
+            
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                isPressed = true
+                var isCancelled = false
+                var accumulatedDragX = 0f
+                var accumulatedDragY = 0f
+                
+                while (true) {
+                    val event = awaitPointerEvent()
+                    if (event.changes.all { !it.pressed }) {
+                        break
+                    }
+                    
+                    for (change in event.changes) {
+                        if (change.pressed) {
+                            val positionChange = change.position - change.previousPosition
+                            accumulatedDragX += kotlin.math.abs(positionChange.x)
+                            accumulatedDragY += kotlin.math.abs(positionChange.y)
+                            
+                            if (accumulatedDragX > touchSlop || accumulatedDragY > touchSlop) {
+                                isPressed = false
+                                isCancelled = true
+                            }
+                        }
+                    }
+                }
+                
+                if (!isCancelled) {
+                    isPressed = false
+                    onClick()
+                }
+            }
+        }
+}
+

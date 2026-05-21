@@ -72,11 +72,33 @@ class PpomppuScraper(AsyncBaseScraper):
                  if image_url.startswith('//'): image_url = "https:" + image_url
                  elif not image_url.startswith('http'): image_url = urljoin("https://www.ppomppu.co.kr", image_url)
 
+            # 만약 썸네일 주소가 투명 이미지이거나 아이콘이면 비움 처리
+            if image_url:
+                img_url_lower = image_url.lower()
+                if any(x in img_url_lower for x in ['transparent', 'blank', 'logo', 'icon', 'empty']):
+                    image_url = ""
+
             # 제목에서 가격 추출 시도 (예: 15,900원, 3만9천원)
             import re
             extracted_price = 0
+            extracted_currency = "KRW"
+            
+            usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
+            if not usd_match:
+                usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', full_title, re.IGNORECASE)
+                
             price_match = re.search(r'([\d,]+(?:원|만원))', full_title)
-            if price_match:
+            
+            if usd_match:
+                try:
+                    val = float(usd_match.group(1).replace(',', ''))
+                    extracted_price = int(val * 100)
+                    if '유로' in full_title or '€' in full_title:
+                        extracted_currency = "EUR"
+                    else:
+                        extracted_currency = "USD"
+                except: pass
+            elif price_match:
                 price_str = price_match.group(1).replace(',', '')
                 if '만원' in price_str:
                     try: extracted_price = int(float(price_str.replace('만원', '')) * 10000)
@@ -89,6 +111,17 @@ class PpomppuScraper(AsyncBaseScraper):
             
             if extracted_price == 0 and detail_info.get("price", 0) > 0:
                 extracted_price = detail_info.get("price")
+                extracted_currency = detail_info.get("currency", extracted_currency)
+
+            # 고화질 본문 이미지가 있으면 무조건 덮어쓰기 (썸네일 흐림 방지 및 투명 썸네일 완벽 대체)
+            if detail_info.get("image_url"):
+                image_url = detail_info.get("image_url")
+
+            # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
+            if extracted_currency == "KRW" and extracted_price > 0 and extracted_price <= 10000:
+                if any(kw in full_title for kw in ['알리', '코인', '큐텐', '직구', '알익']):
+                    extracted_currency = "USD"
+                    extracted_price = int(extracted_price * 100)
 
             is_closed = detail_info.get("is_closed", False)
             if '종료' in full_title or '마감' in full_title or '품절' in full_title:
@@ -161,6 +194,7 @@ class PpomppuScraper(AsyncBaseScraper):
                 "title": full_title,
                 "url": url,
                 "price": extracted_price,
+                "currency": extracted_currency,
                 "shop_name": "",
                 "image_url": image_url,
                 "ecommerce_link": detail_info.get("ecommerce_link", ""),
@@ -243,17 +277,40 @@ class PpomppuScraper(AsyncBaseScraper):
         
         # 이미지 태그 추출해서 본문에 덧붙이기 (Gemini 매칭용)
         images = []
+        image_url = ""
         for img in soup.select('.board-contents img, table.pic_bg img, .han img, .cont img'):
             src = img.get('src')
             if src and src.startswith('//'): src = 'https:' + src
-            if src and 'http' in src and 'icon' not in src:
+            if src and 'http' in src:
+                src_lower = src.lower()
+                # 이모티콘, 스티커, 로고, 프로필 등 배제
+                if any(x in src_lower for x in ['emoticon', 'sticker', 'transparent', 'logo', 'icon', 'reply', 'blank', 'avatar', 'profile']):
+                    continue
                 images.append(src)
+                if not image_url:
+                    image_url = src
+                    
         if images:
             body_text += f"\n[첨부된 이미지 링크들]: {', '.join(images)}"
             
         # 예: 15,000원, 23,500 원, 49900원 등
+        extracted_currency = "KRW"
+        usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', body_text, re.IGNORECASE)
+        if not usd_match:
+            usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', body_text, re.IGNORECASE)
+            
         price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', body_text)
-        if price_matches:
+        
+        if usd_match:
+            try:
+                val = float(usd_match.group(1).replace(',', ''))
+                price_fallback = int(val * 100)
+                if '유로' in body_text or '€' in body_text:
+                    extracted_currency = "EUR"
+                else:
+                    extracted_currency = "USD"
+            except: pass
+        elif price_matches:
             try:
                 # 본문에서 찾은 가격 중 가장 합리적인 첫 번째 금액
                 price_fallback = int(price_matches[0].replace(',', '').replace('.', ''))
@@ -277,7 +334,7 @@ class PpomppuScraper(AsyncBaseScraper):
         if not shipping_fee:
             search_text = full_title + " " + body_text
             import re
-            if re.search(r'(무료배송|무배|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', search_text):
+            if re.search(r'(무료배송|무배|배송비\s*mu배|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', search_text):
                 shipping_fee = "무료배송"
         
         is_closed = False
@@ -294,8 +351,10 @@ class PpomppuScraper(AsyncBaseScraper):
         return {
             "ecommerce_link": ecommerce_link, 
             "price": price_fallback, 
+            "currency": extracted_currency,
             "shipping_fee": shipping_fee, 
             "content_html": body_text, 
+            "image_url": image_url,
             "is_closed": is_closed,
             "posted_at": posted_at_iso
         }

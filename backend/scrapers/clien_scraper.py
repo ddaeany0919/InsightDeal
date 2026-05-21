@@ -98,6 +98,14 @@ class ClienScraper(AsyncBaseScraper):
             detail = await self.get_detail(deal["url"])
             deal["ecommerce_link"] = detail.get("ecommerce_link", "")
             deal["price"] = detail.get("price", 0)
+            deal["currency"] = detail.get("currency", "KRW")
+            
+            # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
+            if deal["currency"] == "KRW" and deal["price"] > 0 and deal["price"] <= 10000:
+                if any(kw in deal["title"] for kw in ['알리', '코인', '큐텐', '직구', '알익']):
+                    deal["currency"] = "USD"
+                    deal["price"] = int(deal["price"] * 100)
+                    
             deal["shipping_fee"] = detail.get("shipping_fee", "")
             if not deal.get("image_url") and detail.get("image_url"):
                 deal["image_url"] = detail.get("image_url")
@@ -144,13 +152,28 @@ class ClienScraper(AsyncBaseScraper):
             ecommerce_link = ""
             
         price_fallback = 0
+        extracted_currency = "KRW"
         shipping_fee = ""
         body_text = soup.get_text(separator=' ')
         
         # 가격 휴리스틱 추출
         import re
+        usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', body_text, re.IGNORECASE)
+        if not usd_match:
+            usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', body_text, re.IGNORECASE)
+            
         price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', body_text)
-        if price_matches:
+        
+        if usd_match:
+            try:
+                val = float(usd_match.group(1).replace(',', ''))
+                price_fallback = int(val * 100)
+                if '유로' in body_text or '€' in body_text:
+                    extracted_currency = "EUR"
+                else:
+                    extracted_currency = "USD"
+            except: pass
+        elif price_matches:
             try:
                 price_fallback = int(price_matches[0].replace(',', '').replace('.', ''))
             except:
@@ -165,4 +188,4 @@ class ClienScraper(AsyncBaseScraper):
         if content_area:
             content_html = content_area.get_text(separator=' ', strip=True)
             
-        return {"ecommerce_link": ecommerce_link, "image_url": image_url, "price": price_fallback, "shipping_fee": shipping_fee, "content_html": content_html}
+        return {"ecommerce_link": ecommerce_link, "image_url": image_url, "price": price_fallback, "currency": extracted_currency, "shipping_fee": shipping_fee, "content_html": content_html}

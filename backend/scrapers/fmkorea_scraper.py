@@ -101,6 +101,9 @@ class FmkoreaScraper(AsyncBaseScraper):
                                 else:
                                     clean_href = a.get('href').split('?')[0]
                                     self.hot_urls.add(urljoin("https://www.fmkorea.com/", clean_href))
+                            else:
+                                clean_href = a.get('href').split('?')[0]
+                                self.hot_urls.add(urljoin("https://www.fmkorea.com/", clean_href))
             except Exception as e:
                 logger.warning(f"[{self.platform_name}] 인기 핫딜 목록 조회 실패: {e}")
 
@@ -145,27 +148,32 @@ class FmkoreaScraper(AsyncBaseScraper):
 
             full_title = title_element.get_text(strip=True)
 
-            # 🖼️ 기본 썸네일 확인 (아이콘일 가능성이 큼)
+            # 🖼️ 기본 썸네일 확인 (Lazy Loading 방어 위해 data-original, data-src 우선 조회)
             image_url = ""
             img_tag = row.select_one('img.thumb, .thumb img, .tmb img, img')
-            if img_tag and img_tag.has_attr('src'):
-                image_url = img_tag['src']
+            if img_tag:
+                image_url = img_tag.get('data-original') or img_tag.get('data-src') or img_tag.get('src', '')
                 if image_url.startswith('//'):
                     image_url = "https:" + image_url
-                elif not image_url.startswith('http'):
+                elif image_url and not image_url.startswith('http'):
                     image_url = urljoin("https://www.fmkorea.com/", image_url)
+
+            # 만약 썸네일 주소가 펨코리아 아이콘, 투명 기프, 빈 로고 등 유효하지 않은 정보라면 비움 처리
+            if image_url:
+                img_url_lower = image_url.lower()
+                if any(x in img_url_lower for x in ['transparent', 'fmkorea', 'blank', 'logo', 'icon', 'empty']) or image_url.startswith('data:') or 'base64' in img_url_lower:
+                    image_url = ""
 
             # 상세 페이지에서 ecommerce_link와 본문 파싱
             detail_info = await self.get_detail(url)
             
-            # 고화질 본문 이미지가 있으면 무조건 덮어쓰기 (썸네일 흐림 방지)
+            # 고화질 본문 이미지가 있으면 무조건 덮어쓰기 (썸네일 흐림 방지 및 투명 썸네일 완벽 대체)
             if detail_info.get("image_url"):
                 image_url = detail_info.get("image_url")
-            elif 'icons/fmkorea' in image_url or 'transparent.gif' in image_url or not image_url:
-                image_url = ""
                 
             # 가격 및 배송비 파싱 (hotdeal_info)
             extracted_price = 0
+            extracted_currency = "KRW"
             shop_name = ""
             shipping_fee = ""
             
@@ -181,9 +189,20 @@ class FmkoreaScraper(AsyncBaseScraper):
                         strong = span.select_one('.strong')
                         if strong: 
                             price_text = strong.get_text(strip=True)
-                            p_match = re.search(r'([0-9,]+)', price_text)
+                            if '$' in price_text or '달러' in price_text or 'USD' in price_text.upper():
+                                extracted_currency = "USD"
+                            elif '€' in price_text or '유로' in price_text or 'EUR' in price_text.upper():
+                                extracted_currency = "EUR"
+                                
+                            p_match = re.search(r'([0-9,]+(?:\.[0-9]+)?)', price_text)
                             if p_match:
-                                extracted_price = int(p_match.group(1).replace(',', ''))
+                                try:
+                                    raw_val = float(p_match.group(1).replace(',', ''))
+                                    if extracted_currency in ["USD", "EUR"]:
+                                        extracted_price = int(raw_val * 100)
+                                    else:
+                                        extracted_price = int(raw_val)
+                                except: pass
                     elif '배송비' in text:
                         strong = span.select_one('.strong')
                         if strong: shipping_fee = strong.get_text(strip=True)
@@ -193,10 +212,17 @@ class FmkoreaScraper(AsyncBaseScraper):
                 
             if extracted_price == 0 and detail_info.get("price", 0) > 0:
                 extracted_price = detail_info.get("price")
+                extracted_currency = detail_info.get("currency", extracted_currency)
             if not shop_name and detail_info.get("shop_name", ""):
                 shop_name = detail_info.get("shop_name")
             if not shipping_fee and detail_info.get("shipping_fee", ""):
                 shipping_fee = detail_info.get("shipping_fee")
+
+            # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
+            if extracted_currency == "KRW" and extracted_price > 0 and extracted_price <= 10000:
+                if any(kw in full_title for kw in ['알리', '코인', '큐텐', '직구', '알익']):
+                    extracted_currency = "USD"
+                    extracted_price = int(extracted_price * 100)
 
             # 종료 여부 확인 (취소선이 그어져 있는지 또는 종료 키워드)
             is_closed = detail_info.get("is_closed", False)
@@ -279,6 +305,7 @@ class FmkoreaScraper(AsyncBaseScraper):
                 "title": full_title,
                 "url": url,
                 "price": extracted_price,
+                "currency": extracted_currency,
                 "shop_name": shop_name,
                 "image_url": image_url,
                 "ecommerce_link": detail_info.get("ecommerce_link", ""),
@@ -338,28 +365,44 @@ class FmkoreaScraper(AsyncBaseScraper):
                         ecommerce_link = "https://" + url_matches2[0]
                 
         image_url = ""
-        # 펨코 본문 이미지는 보통 files/attach/new 경로에 업로드됩니다.
-        for img in soup.select('img'):
-            src = img.get('src', '')
-            if 'files/attach/new' in src:
+        # 펨코 본문 영역 (.xe_content or .rd_body)에서 고해상도 실제 이미지를 정밀 추출
+        content_area = soup.select_one('.xe_content') or soup.select_one('.rd_body')
+        if content_area:
+            for img in content_area.select('img'):
+                src = img.get('data-original') or img.get('data-src') or img.get('src', '')
+                if not src:
+                    continue
+                src_lower = src.lower()
+                # 이모티콘, 스티커, 추천 뱃지, 로고, 프로필, 투명 기프, 빈 공간 등은 제외
+                if any(x in src_lower for x in ['emoticon', 'sticker', 'transparent', 'logo', 'icon', 'reply', 'blank', 'avatar', 'profile']) or src.startswith('data:') or 'base64' in src_lower:
+                    continue
                 if src.startswith('//'):
                     image_url = "https:" + src
                 elif not src.startswith('http'):
                     image_url = urljoin("https://www.fmkorea.com/", src)
+                else:
+                    image_url = src
                 break
 
-        # 혹시 image_url도 못 찾았지만 img 태그가 있다면 (외부 링크 이미지 등)
+        # 2차 폴백: 본문 영역이 없을 때만 전체 상세 페이지에서 유효 이미지 재탐색
         if not image_url:
             for img in soup.select('img'):
-                src = img.get('src', '')
-                if src and 'fmkorealogo' not in src and 'icons/fmkorea' not in src and 'transparent' not in src:
-                    if src.startswith('//'):
-                        image_url = "https:" + src
-                    elif not src.startswith('http'):
-                        image_url = urljoin("https://www.fmkorea.com/", src)
-                    break
+                src = img.get('data-original') or img.get('data-src') or img.get('src', '')
+                if not src:
+                    continue
+                src_lower = src.lower()
+                if any(x in src_lower for x in ['emoticon', 'sticker', 'transparent', 'logo', 'icon', 'reply', 'blank', 'avatar', 'profile']) or src.startswith('data:') or 'base64' in src_lower:
+                    continue
+                if src.startswith('//'):
+                    image_url = "https:" + src
+                elif not src.startswith('http'):
+                    image_url = urljoin("https://www.fmkorea.com/", src)
+                else:
+                    image_url = src
+                break
 
         price_fallback = 0
+        currency_fallback = "KRW"
         shipping_fee = ""
         shop_name = ""
         
@@ -374,10 +417,19 @@ class FmkoreaScraper(AsyncBaseScraper):
                         th_text = th.get_text(strip=True)
                         td_text = td.get_text(strip=True)
                         if '가격' in th_text:
-                            price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)\s*원?', td_text)
+                            if '$' in td_text or '달러' in td_text or 'USD' in td_text.upper():
+                                currency_fallback = "USD"
+                            elif '€' in td_text or '유로' in td_text or 'EUR' in td_text.upper():
+                                currency_fallback = "EUR"
+                            
+                            price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', td_text)
                             if price_matches:
                                 try:
-                                    price_fallback = int(price_matches[0].replace(',', ''))
+                                    raw_val = float(price_matches[0].replace(',', ''))
+                                    if currency_fallback in ["USD", "EUR"]:
+                                        price_fallback = int(raw_val * 100)
+                                    else:
+                                        price_fallback = int(raw_val)
                                 except: pass
                         elif '배송' in th_text:
                             shipping_fee = td_text
@@ -392,10 +444,19 @@ class FmkoreaScraper(AsyncBaseScraper):
                 for span in hotdeal_info.select('span'):
                     span_text = span.get_text(strip=True)
                     if '가격:' in span_text:
-                        price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)\s*원?', span_text)
+                        if '$' in span_text or '달러' in span_text or 'USD' in span_text.upper():
+                            currency_fallback = "USD"
+                        elif '€' in span_text or '유로' in span_text or 'EUR' in span_text.upper():
+                            currency_fallback = "EUR"
+                            
+                        price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', span_text)
                         if price_matches:
                             try:
-                                price_fallback = int(price_matches[0].replace(',', ''))
+                                raw_val = float(price_matches[0].replace(',', ''))
+                                if currency_fallback in ["USD", "EUR"]:
+                                    price_fallback = int(raw_val * 100)
+                                else:
+                                    price_fallback = int(raw_val)
                             except: pass
                     elif '배송:' in span_text:
                         shipping_fee = span_text.replace('배송:', '').replace('배송 :', '').strip()
@@ -424,10 +485,19 @@ class FmkoreaScraper(AsyncBaseScraper):
                 if "(0원)" in body_text or "나눔" in body_text:
                     price_fallback = 0
                 else:
-                    price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,})\s*원', body_text)
+                    if '$' in body_text or '달러' in body_text or 'USD' in body_text.upper():
+                        currency_fallback = "USD"
+                    elif '€' in body_text or '유로' in body_text or 'EUR' in body_text.upper():
+                        currency_fallback = "EUR"
+                        
+                    price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,}(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', body_text)
                     if price_matches:
                         try:
-                            price_fallback = int(price_matches[0].replace(',', ''))
+                            raw_val = float(price_matches[0].replace(',', ''))
+                            if currency_fallback in ["USD", "EUR"]:
+                                price_fallback = int(raw_val * 100)
+                            else:
+                                price_fallback = int(raw_val)
                         except:
                             pass
                     
@@ -458,6 +528,7 @@ class FmkoreaScraper(AsyncBaseScraper):
             "ecommerce_link": ecommerce_link,
             "image_url": image_url,
             "price": price_fallback,
+            "currency": currency_fallback,
             "shop_name": shop_name,
             "shipping_fee": shipping_fee,
             "content_html": body_text,

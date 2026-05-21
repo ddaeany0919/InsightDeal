@@ -2,6 +2,9 @@ package com.ddaeany0919.insightdeal.presentation.home
 
 import com.ddaeany0919.insightdeal.presentation.formatPrice
 import androidx.compose.foundation.*
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import com.ddaeany0919.insightdeal.presentation.KeywordManagerViewModel
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.*
@@ -30,6 +33,7 @@ import com.ddaeany0919.insightdeal.models.DealItem
  
 import com.ddaeany0919.insightdeal.presentation.components.shimmerEffect
 import com.ddaeany0919.insightdeal.presentation.rememberRelativeTime
+import com.ddaeany0919.insightdeal.presentation.bounceClick
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.platform.LocalContext
@@ -41,85 +45,24 @@ import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistViewModel
 import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistUiState
 
 import androidx.compose.animation.core.*
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.composed
 
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 
-/**
- * 쫀득한 클릭 반응(Scale Spring Animation)을 제공하는 프리미엄 터치 Modifier
- * Modifier.composed {} 를 사용하여 리컴포지션 시 Modifier 인스턴스 재생성을 최적화하고,
- * graphicsLayer 블록 내부에서 스케일을 갱신하여 Layout 단계를 건너뛰고 오직 Draw 단계만 업데이트하여 렉을 방지합니다.
- * 스크롤 터치 충돌 문제를 방지하기 위해 드래그 변위가 touchSlop 임계값을 초과하는 즉시 
- * 바운스 스케일을 원래대로(1.0f) 복구시키고 클릭 감지를 캔슬(Scroll-Aware)합니다.
- */
-fun Modifier.bounceClick(
-    scaleDown: Float = 0.97f,
-    onClick: () -> Unit
-): Modifier = composed {
-    var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) scaleDown else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "bounceScale"
-    )
-
-    this
-        .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-        }
-        .pointerInput(onClick) {
-            val viewConfiguration = this.viewConfiguration
-            val touchSlop = viewConfiguration.touchSlop
-            
-            awaitEachGesture {
-                awaitFirstDown(requireUnconsumed = false)
-                isPressed = true
-                var isCancelled = false
-                var accumulatedDragX = 0f
-                var accumulatedDragY = 0f
-                
-                while (true) {
-                    val event = awaitPointerEvent()
-                    if (event.changes.all { !it.pressed }) {
-                        break
-                    }
-                    
-                    for (change in event.changes) {
-                        if (change.pressed) {
-                            val positionChange = change.position - change.previousPosition
-                            accumulatedDragX += kotlin.math.abs(positionChange.x)
-                            accumulatedDragY += kotlin.math.abs(positionChange.y)
-                            
-                            if (accumulatedDragX > touchSlop || accumulatedDragY > touchSlop) {
-                                isPressed = false
-                                isCancelled = true
-                            }
-                        }
-                    }
-                }
-                
-                if (!isCancelled) {
-                    isPressed = false
-                    onClick()
-                }
-            }
-        }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     navController: NavController, 
     viewModel: HomeViewModel = viewModel(),
-    wishlistViewModel: WishlistViewModel? = null
+    wishlistViewModel: WishlistViewModel? = null,
+    keywordViewModel: KeywordManagerViewModel = viewModel()
 ) {
     val filterState by viewModel.filterState.collectAsState()
     val selectedCategory = filterState.category
@@ -160,7 +103,10 @@ fun HomeScreen(
     // [Epic 3] 키워드 설정 다이얼로그 상태
     var showKeywordDialog by remember { mutableStateOf(false) }
     if (showKeywordDialog) {
-        KeywordSettingsBottomSheet(onDismiss = { showKeywordDialog = false })
+        KeywordSettingsBottomSheet(
+            onDismiss = { showKeywordDialog = false },
+            keywordViewModel = keywordViewModel
+        )
     }
 
     // [Epic 4] 쿠팡 파트너스 / 쿠팡 계정 로그인 (UI 제공)
@@ -303,6 +249,124 @@ fun HomeScreen(
                 }
             }
 
+            // 🔔 Toss/29CM 스타일의 흐르는 프리미엄 관심 키워드 칩셋 LazyRow
+            val keywordsState by keywordViewModel.keywords.collectAsState()
+            val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+            val currentKeywordFilter = filterState.keyword
+
+            if (keywordsState.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    LazyRow(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 16.dp, end = 48.dp, top = 8.dp, bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        items(
+                            items = keywordsState,
+                            key = { it.id }
+                        ) { keywordEntity ->
+                            val isSelected = currentKeywordFilter == keywordEntity.keyword
+                            val isActive = keywordEntity.isActive
+
+                            // 쫀득한 클릭 반응 애니메이션을 위한 Scale
+                            val scale by animateFloatAsState(
+                                targetValue = if (isSelected) 1.05f else 1.0f,
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+                                label = "chipScale"
+                            )
+
+                            // 켜짐/꺼짐 색상 전환 애니메이션
+                            val animBgColor by animateColorAsState(
+                                targetValue = when {
+                                    isSelected -> MaterialTheme.colorScheme.primaryContainer
+                                    isActive -> MaterialTheme.colorScheme.surfaceVariant
+                                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                },
+                                label = "chipBgColor"
+                            )
+
+                            val animTextColor by animateColorAsState(
+                                targetValue = when {
+                                    isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+                                    isActive -> MaterialTheme.colorScheme.onSurface
+                                    else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                },
+                                label = "chipTextColor"
+                            )
+
+                            val animBorderColor by animateColorAsState(
+                                targetValue = when {
+                                    isSelected -> MaterialTheme.colorScheme.primary
+                                    isActive -> MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                                    else -> Color.Transparent
+                                },
+                                label = "chipBorder"
+                            )
+
+                            Surface(
+                                modifier = Modifier
+                                    .graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                    }
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .combinedClickable(
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            if (isSelected) {
+                                                viewModel.searchDeals("") // 필터 해제
+                                            } else {
+                                                viewModel.searchDeals(keywordEntity.keyword) // 필터 적용
+                                            }
+                                        },
+                                        onLongClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            keywordViewModel.toggleKeyword(keywordEntity)
+                                        }
+                                    ),
+                                color = animBgColor,
+                                border = BorderStroke(1.dp, animBorderColor),
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (isActive) "🔔 ${keywordEntity.keyword}" else "🔕 ${keywordEntity.keyword}",
+                                        color = animTextColor,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 프리미엄 페이드 그라데이션 에지 마스크 (우측)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(48.dp)
+                            .align(Alignment.CenterEnd)
+                            .background(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        MaterialTheme.colorScheme.background
+                                    )
+                                )
+                            )
+                    )
+                }
+            }
+
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 contentPadding = PaddingValues(16.dp),
@@ -368,14 +432,21 @@ fun HomeScreen(
                                                     .crossfade(true).build()
                                             }
 
-                                            val priceText = remember(pick.id, pick.price, pick.currency) {
+                                            val priceText = remember(pick.id, pick.price, pick.currency, pick.category, pick.title) {
                                                 if (pick.price > 0) {
                                                     when (pick.currency.uppercase(Locale.getDefault())) {
                                                         "USD" -> "$${String.format(Locale.US, "%.2f", pick.price.toDouble() / 100)}"
                                                         "EUR" -> "€${String.format(Locale.US, "%.2f", pick.price.toDouble() / 100)}"
                                                         else -> formatPrice(pick.price, pick.currency)
                                                     }
-                                                } else "확인필요"
+                                                } else if (pick.category == "적립" || pick.title.contains("적립")) {
+                                                    "포인트 적립"
+                                                } else if (pick.category == "이벤트" || pick.category == "SW/게임" || pick.category == "게임/SW" ||
+                                                    listOf("무료", "공짜", "배포", "나눔", "0원", "일시무료", "쿠폰").any { pick.title.contains(it) }) {
+                                                    "무료 (쿠폰/공짜)"
+                                                } else {
+                                                    "정보 확인필요"
+                                                }
                                             }
 
                                             val isBookmarked = wishlistedUrls.contains(pick.postUrl)
@@ -897,7 +968,7 @@ fun DealCardComposable(
     }
 
     // 6. 가격 정보 포맷팅 캐싱
-    val priceText = remember(deal.id, deal.price, deal.currency, deal.category) {
+    val priceText = remember(deal.id, deal.price, deal.currency, deal.category, deal.title) {
         if (deal.price > 0) {
             when (deal.currency.uppercase(Locale.getDefault())) {
                 "USD" -> "$${String.format(Locale.US, "%.2f", deal.price.toDouble() / 100)}"
@@ -906,7 +977,8 @@ fun DealCardComposable(
             }
         } else if (deal.category == "적립" || deal.title.contains("적립")) {
             "포인트 적립"
-        } else if (deal.category == "이벤트" || deal.title.contains("무료") || deal.title.contains("쿠폰") || deal.title.contains("0원") || deal.title.contains("공짜")) {
+        } else if (deal.category == "이벤트" || deal.category == "SW/게임" || deal.category == "게임/SW" ||
+            listOf("무료", "공짜", "배포", "나눔", "0원", "일시무료", "쿠폰").any { deal.title.contains(it) }) {
             "무료 (쿠폰/공짜)"
         } else {
             "정보 확인필요"
@@ -1325,32 +1397,21 @@ fun DealCardComposable(
 }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun KeywordSettingsBottomSheet(onDismiss: () -> Unit) {
+fun KeywordSettingsBottomSheet(
+    onDismiss: () -> Unit,
+    keywordViewModel: KeywordManagerViewModel
+) {
     var keywordText by remember { mutableStateOf("") }
-    var keywords by remember { mutableStateOf(listOf<String>()) }
-    var isPushEnabled by remember { mutableStateOf(true) }
     
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("insightdeal_prefs", android.content.Context.MODE_PRIVATE) }
-    var nightPushConsent by remember { mutableStateOf(prefs.getBoolean("night_push_consent", false)) }
+    val keywordsState by keywordViewModel.keywords.collectAsState()
+    val dndEnabled by keywordViewModel.dndEnabled.collectAsState()
+    val dndStartTime by keywordViewModel.dndStartTime.collectAsState()
+    val dndEndTime by keywordViewModel.dndEndTime.collectAsState()
     
     val coroutineScope = rememberCoroutineScope()
-    val deviceUuid = remember { com.ddaeany0919.insightdeal.generateDeviceUserId(context) }
-    val apiService = com.ddaeany0919.insightdeal.network.NetworkModule.retrofit.create(com.ddaeany0919.insightdeal.network.ApiService::class.java)
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    LaunchedEffect(Unit) {
-        try {
-            val response = apiService.getPushKeywords(deviceUuid)
-            if (response.isSuccessful) {
-                keywords = response.body()?.keywords ?: emptyList()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1361,56 +1422,46 @@ fun KeywordSettingsBottomSheet(onDismiss: () -> Unit) {
         Column(modifier = Modifier.padding(24.dp).padding(bottom = 32.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Text("🔔 맞춤 키워드 알림", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurface)
-                Switch(checked = isPushEnabled, onCheckedChange = { isPushEnabled = it })
+                Switch(
+                    checked = !dndEnabled, 
+                    onCheckedChange = { isEnabled ->
+                        keywordViewModel.updateDndSettings(
+                            enabled = !isEnabled, 
+                            startTime = dndStartTime, 
+                            endTime = dndEndTime
+                        )
+                    }
+                )
             }
             Text("원하는 키워드를 등록하면 특가가 떴을 때 즉시 푸시 알림을 쏴드립니다!", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top=8.dp, bottom=16.dp))
             
-            // 야간 알림 수신 동의 UI
+            // 야간 알림 수신 동의 및 DND 상태 토글 UI
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = if (nightPushConsent) MaterialTheme.colorScheme.primaryContainer.copy(alpha=0.3f) else MaterialTheme.colorScheme.surfaceVariant,
+                color = if (dndEnabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha=0.3f) else MaterialTheme.colorScheme.surfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).clickable { 
-                    val newValue = !nightPushConsent
-                    nightPushConsent = newValue
-                    prefs.edit().putBoolean("night_push_consent", newValue).apply()
-                    
-                    val token = prefs.getString("fcm_token", "") ?: ""
-                    coroutineScope.launch {
-                        try {
-                            val req = com.ddaeany0919.insightdeal.network.RegisterDeviceReq(
-                                device_uuid = deviceUuid,
-                                fcm_token = token,
-                                night_push_consent = newValue
-                            )
-                            apiService.registerFCMToken(req)
-                        } catch (e: Exception) { e.printStackTrace() }
-                    }
+                    keywordViewModel.updateDndSettings(
+                        enabled = !dndEnabled, 
+                        startTime = dndStartTime, 
+                        endTime = dndEndTime
+                    )
                 }
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(16.dp)) {
                     Checkbox(
-                        checked = nightPushConsent,
+                        checked = dndEnabled,
                         onCheckedChange = { 
-                            nightPushConsent = it 
-                            prefs.edit().putBoolean("night_push_consent", it).apply()
-                            
-                            val token = prefs.getString("fcm_token", "") ?: ""
-                            coroutineScope.launch {
-                                try {
-                                    val req = com.ddaeany0919.insightdeal.network.RegisterDeviceReq(
-                                        device_uuid = deviceUuid,
-                                        fcm_token = token,
-                                        night_push_consent = it
-                                    )
-                                    apiService.registerFCMToken(req)
-                                } catch (e: Exception) { e.printStackTrace() }
-                            }
+                            keywordViewModel.updateDndSettings(
+                                enabled = it, 
+                                startTime = dndStartTime, 
+                                endTime = dndEndTime
+                            )
                         }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        Text("야간(21시~08시) 핫딜 푸시 수신 동의", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
-                        Text("정보통신망법 제50조에 따른 필수 동의 항목입니다.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                        Text("야간(21시~08시) DND 모드 활성화", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Text("야간 시간대에 수신을 일시적으로 제한합니다.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -1423,18 +1474,9 @@ fun KeywordSettingsBottomSheet(onDismiss: () -> Unit) {
                 shape = RoundedCornerShape(16.dp),
                 trailingIcon = {
                     IconButton(onClick = {
-                        if (keywordText.isNotBlank() && !keywords.contains(keywordText)) {
-                            val newKw = keywordText
-                            coroutineScope.launch {
-                                try {
-                                    val req = com.ddaeany0919.insightdeal.network.AddKeywordRequest(deviceUuid, newKw)
-                                    val res = apiService.addPushKeyword(req)
-                                    if (res.isSuccessful) {
-                                        keywords = keywords + newKw
-                                        keywordText = ""
-                                    }
-                                } catch (e: Exception) { e.printStackTrace() }
-                            }
+                        if (keywordText.isNotBlank() && !keywordsState.any { it.keyword == keywordText }) {
+                            keywordViewModel.addKeyword(keywordText)
+                            keywordText = ""
                         }
                     }) {
                         Icon(Icons.Default.Add, contentDescription = "추가", tint = MaterialTheme.colorScheme.primary)
@@ -1445,37 +1487,28 @@ fun KeywordSettingsBottomSheet(onDismiss: () -> Unit) {
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            @OptIn(ExperimentalLayoutApi::class)
             FlowRow(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                keywords.forEach { kw ->
+                keywordsState.forEach { kwEntity ->
                     InputChip(
                         selected = false,
                         onClick = { },
-                        label = { Text(kw, fontWeight = FontWeight.Bold) },
+                        label = { Text(kwEntity.keyword, fontWeight = FontWeight.Bold) },
                         trailingIcon = {
                             Icon(
                                 Icons.Default.Close,
                                 contentDescription = "삭제",
                                 modifier = Modifier.size(16.dp).clickable {
-                                    coroutineScope.launch {
-                                        try {
-                                            val req = com.ddaeany0919.insightdeal.network.AddKeywordRequest(deviceUuid, kw)
-                                            val res = apiService.deletePushKeyword(req)
-                                            if (res.isSuccessful) {
-                                                keywords = keywords.filter { it != kw }
-                                            }
-                                        } catch (e: Exception) { e.printStackTrace() }
-                                    }
+                                    keywordViewModel.deleteKeyword(kwEntity.keyword)
                                 }
                             )
                         },
                         colors = InputChipDefaults.inputChipColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            containerColor = if (kwEntity.isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            labelColor = if (kwEntity.isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         border = InputChipDefaults.inputChipBorder(
                             borderColor = Color.Transparent, enabled = true, selected = false

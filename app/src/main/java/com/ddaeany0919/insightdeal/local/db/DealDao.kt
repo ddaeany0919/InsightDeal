@@ -22,10 +22,10 @@ interface DealDao {
      */
     @Query("""
         SELECT * FROM deals 
-        WHERE (:category IS NULL OR :category = '전체' OR category = :category)
+        WHERE (:category IS NULL OR :category = '전체' OR :category = '핫딜모음' OR category = :category)
           AND (:keyword IS NULL OR :keyword = '' OR title LIKE '%' || :keyword || '%')
           AND (:platform IS NULL OR :platform = '전체' OR :platform = '' OR INSTR(',' || :platform || ',', ',' || siteName || ',') > 0)
-        ORDER BY id DESC
+        ORDER BY createdAt DESC, id DESC
     """)
     fun getPagedDeals(
         category: String?,

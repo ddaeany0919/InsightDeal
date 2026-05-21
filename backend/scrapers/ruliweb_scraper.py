@@ -81,11 +81,46 @@ class RuliwebScraper(AsyncBaseScraper):
             if time_td:
                 posted_at_iso = self.parse_time_str(time_td.get_text(strip=True))
 
+            extracted_currency = detail_info.get("currency", "KRW")
+            price = detail_info.get("price", 0)
+            
+            if price == 0:
+                usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
+                if not usd_match:
+                    usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', full_title, re.IGNORECASE)
+                    
+                price_match = re.search(r'([\d,]+(?:원|만원))', full_title)
+                
+                if usd_match:
+                    try:
+                        val = float(usd_match.group(1).replace(',', ''))
+                        price = int(val * 100)
+                        if '유로' in full_title or '€' in full_title:
+                            extracted_currency = "EUR"
+                        else:
+                            extracted_currency = "USD"
+                    except: pass
+                elif price_match:
+                    price_str = price_match.group(1).replace(',', '')
+                    if '만원' in price_str:
+                        try: price = int(float(price_str.replace('만원', '')) * 10000)
+                        except: pass
+                    else:
+                        nums = re.findall(r'\d+', price_str)
+                        if nums: price = int(''.join(nums))
+
+            # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
+            if extracted_currency == "KRW" and price > 0 and price <= 10000:
+                if any(kw in full_title for kw in ['알리', '코인', '큐텐', '직구', '알익']):
+                    extracted_currency = "USD"
+                    price = int(price * 100)
+
             return {
                 "category": category,
                 "title": full_title,
                 "url": url,
-                "price": detail_info.get("price", 0),
+                "price": price,
+                "currency": extracted_currency,
                 "shop_name": "",
                 "image_url": image_url,
                 "ecommerce_link": detail_info.get("ecommerce_link", ""),
@@ -134,5 +169,25 @@ class RuliwebScraper(AsyncBaseScraper):
         search_text = full_title + " " + body_text
         if re.search(r'(무료배송|무배|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', search_text):
             shipping_fee = "무료배송"
-            
-        return {"ecommerce_link": ecommerce_link, "image_url": image_url, "price": price_fallback, "shipping_fee": shipping_fee, "content_html": content_html}
+        extracted_currency = "KRW"
+        usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', body_text, re.IGNORECASE)
+        if not usd_match:
+            usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', body_text, re.IGNORECASE)
+        
+        price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', body_text)
+        
+        if usd_match:
+            try:
+                val = float(usd_match.group(1).replace(',', ''))
+                price_fallback = int(val * 100)
+                if '유로' in body_text or '€' in body_text:
+                    extracted_currency = "EUR"
+                else:
+                    extracted_currency = "USD"
+            except: pass
+        elif price_matches:
+            try:
+                price_fallback = int(price_matches[0].replace(',', '').replace('.', ''))
+            except: pass
+
+        return {"ecommerce_link": ecommerce_link, "image_url": image_url, "price": price_fallback, "currency": extracted_currency, "shipping_fee": shipping_fee, "content_html": content_html}

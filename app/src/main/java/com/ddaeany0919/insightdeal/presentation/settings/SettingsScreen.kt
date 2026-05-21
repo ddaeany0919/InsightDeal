@@ -39,7 +39,10 @@ import com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
 
 @OptIn(ExperimentalMaterial3Api::class, coil.annotation.ExperimentalCoilApi::class)
 @Composable
-fun SettingsScreen(onBackClick: () -> Unit) {
+fun SettingsScreen(
+    onBackClick: () -> Unit,
+    onNavigateToKeywordManager: () -> Unit
+) {
     val ctx = LocalContext.current
     val tm = remember { ThemeManager.getInstance(ctx) }
     val mode by tm.themeMode.collectAsState()
@@ -187,6 +190,14 @@ fun SettingsScreen(onBackClick: () -> Unit) {
                             notificationsEnabled = it 
                             appPrefs.edit().putBoolean("push_enabled", it).apply()
                         }
+                    )
+                    
+                    // 🔔 키워드 및 푸시 알림 설정 (DND 포함) 진입로 추가
+                    SettingsNavigationRow(
+                        icon = Icons.Default.NotificationsActive,
+                        title = "키워드 및 푸시 알림 설정",
+                        value = "키워드 등록/DND",
+                        onClick = onNavigateToKeywordManager
                     )
                     
                     // 신규 피처: 야간 방해금지 시간대 설정 UI

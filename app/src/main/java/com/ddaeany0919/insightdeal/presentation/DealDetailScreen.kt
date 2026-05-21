@@ -59,45 +59,6 @@ private data class SiteChipInfo(
     val textColor: Color
 )
 
-/**
- * 쫀득한 클릭 반응(Scale Spring Animation)을 제공하는 프리미엄 터치 Modifier
- * Modifier.composed {} 를 사용하여 리컴포지션 시 Modifier 인스턴스 재생성을 최적화하고,
- * graphicsLayer 블록 내부에서 스케일을 갱신하여 Layout 단계를 건너뛰고 오직 Draw 단계만 업데이트합니다.
- */
-fun Modifier.bounceClick(
-    scaleDown: Float = 0.95f,
-    onClick: () -> Unit
-): Modifier = composed {
-    var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) scaleDown else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "bounceScale"
-    )
-
-    this
-        .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-        }
-        .pointerInput(Unit) {
-            detectTapGestures(
-                onPress = {
-                    isPressed = true
-                    try {
-                        awaitRelease()
-                    } finally {
-                        isPressed = false
-                    }
-                },
-                onTap = { onClick() }
-            )
-        }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DealDetailRoute(

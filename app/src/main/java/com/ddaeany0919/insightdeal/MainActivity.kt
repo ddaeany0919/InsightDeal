@@ -275,12 +275,21 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                     onDealClick = { dealId -> navController.navigate("deal_detail/$dealId") }
                 )
             }
-            composable("settings") { com.ddaeany0919.insightdeal.presentation.settings.SettingsScreen(onBackClick = { navController.popBackStack() }) }
+            composable("settings") {
+                com.ddaeany0919.insightdeal.presentation.settings.SettingsScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onNavigateToKeywordManager = { navController.navigate("keyword_alarm") }
+                )
+            }
+            composable("keyword_alarm") {
+                com.ddaeany0919.insightdeal.presentation.KeywordManagerScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
             composable("platform") { com.ddaeany0919.insightdeal.presentation.platform.PlatformScreen() }
             composable("deal_detail/{dealId}") { backStackEntry ->
                 val dealId = backStackEntry.arguments?.getString("dealId")?.toIntOrNull() ?: -1
                 val viewModel: com.ddaeany0919.insightdeal.presentation.DealDetailViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-                val localContext = androidx.compose.ui.platform.LocalContext.current
                 com.ddaeany0919.insightdeal.presentation.DealDetailRoute(
                     dealId = dealId,
                     viewModel = viewModel,

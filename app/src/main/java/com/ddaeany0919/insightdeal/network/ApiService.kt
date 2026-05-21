@@ -148,6 +148,11 @@ interface ApiService {
         @Body request: AddKeywordRequest
     ): Response<ApiResponse>
 
+    @POST("api/push/keywords/toggle")
+    suspend fun togglePushKeyword(
+        @Body request: AddKeywordRequest
+    ): Response<ApiResponse>
+
     @HTTP(method = "DELETE", path = "api/push/keywords", hasBody = true)
     suspend fun deletePushKeyword(
         @Body request: AddKeywordRequest
@@ -344,8 +349,20 @@ data class ApiVoteCreate(
 )
 
 // [Epic 3] 키워드 응답 모델
+data class DetailedKeywordDto(
+    val id: Int,
+    val keyword: String,
+    val is_active: Boolean
+)
+
 data class KeywordListResponse(
-    val keywords: List<String>
+    val keywords: List<String>,
+    val detailed_keywords: List<DetailedKeywordDto>? = null,
+    val dnd_enabled: Boolean? = null,
+    val dnd_start_time: String? = null,
+    val dnd_end_time: String? = null,
+    val dnd_settings_json: String? = null,
+    val night_push_consent: Boolean? = null
 )
 data class AddKeywordRequest(
     val device_uuid: String,
@@ -454,7 +471,8 @@ data class RegisterDeviceReq(
     val night_push_consent: Boolean = false,
     val dnd_enabled: Boolean = false,
     val dnd_start_time: String = "21:00",
-    val dnd_end_time: String = "08:00"
+    val dnd_end_time: String = "08:00",
+    val dnd_settings_json: String? = null
 )
 
 /**

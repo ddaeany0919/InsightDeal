@@ -10,9 +10,10 @@ import androidx.room.TypeConverters
     entities = [
         WishlistEntity::class, 
         DealEntity::class, 
-        DealRemoteKeysEntity::class
+        DealRemoteKeysEntity::class,
+        KeywordEntity::class
     ], 
-    version = 2, 
+    version = 3, 
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -20,6 +21,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun wishlistDao(): WishlistDao
     abstract fun dealDao(): DealDao
     abstract fun dealRemoteKeysDao(): DealRemoteKeysDao
+    abstract fun keywordDao(): KeywordDao
 
     companion object {
         @Volatile

@@ -43,19 +43,34 @@ class BbasakBaseScraper(AsyncBaseScraper):
             detail_info = await self.get_detail(url)
             
             price = 0
+            extracted_currency = "KRW"
             import re
-            match = re.search(r'([\d,]+)\s*원', full_title)
-            if match:
+            usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
+            if not usd_match:
+                usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', full_title, re.IGNORECASE)
+                
+            if usd_match:
                 try:
-                    price = int(match.group(1).replace(',', ''))
+                    val = float(usd_match.group(1).replace(',', ''))
+                    price = int(val * 100)
+                    if '유로' in full_title or '€' in full_title:
+                        extracted_currency = "EUR"
+                    else:
+                        extracted_currency = "USD"
                 except: pass
-            
-            if price == 0:
-                plan_match = re.search(r'(\d{2,3})\s*요금제', full_title)
-                if plan_match:
+            else:
+                match = re.search(r'([\d,]+)\s*원', full_title)
+                if match:
                     try:
-                        price = int(plan_match.group(1)) * 1000
+                        price = int(match.group(1).replace(',', ''))
                     except: pass
+                
+                if price == 0:
+                    plan_match = re.search(r'(\d{2,3})\s*요금제', full_title)
+                    if plan_match:
+                        try:
+                            price = int(plan_match.group(1)) * 1000
+                        except: pass
                 
             is_closed = False
             if '종료' in full_title or '마감' in full_title or '품절' in full_title:
@@ -87,6 +102,13 @@ class BbasakBaseScraper(AsyncBaseScraper):
                 
             if price == 0 and detail_info.get("price", 0) > 0:
                 price = detail_info.get("price")
+                extracted_currency = detail_info.get("currency", extracted_currency)
+
+            # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
+            if extracted_currency == "KRW" and price > 0 and price <= 10000:
+                if any(kw in full_title for kw in ['알리', '코인', '큐텐', '직구', '알익']):
+                    extracted_currency = "USD"
+                    price = int(price * 100)
                 
             # 실제 게시글 작성 시간 추출
             posted_at_iso = None
@@ -115,6 +137,7 @@ class BbasakBaseScraper(AsyncBaseScraper):
                 "title": full_title,
                 "url": url,
                 "price": price,
+                "currency": extracted_currency,
                 "shop_name": "",
                 "image_url": detail_info.get("image_url", ""),
                 "ecommerce_link": detail_info.get("ecommerce_link", ""),
@@ -200,12 +223,27 @@ class BbasakBaseScraper(AsyncBaseScraper):
                     ecommerce_link = u
                     break
         price_fallback = 0
+        extracted_currency = "KRW"
         shipping_fee = ""
         body_text = soup.get_text(separator=' ')
         
         # 가격 휴리스틱 추출
+        usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', body_text, re.IGNORECASE)
+        if not usd_match:
+            usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', body_text, re.IGNORECASE)
+        
         price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', body_text)
-        if price_matches:
+        
+        if usd_match:
+            try:
+                val = float(usd_match.group(1).replace(',', ''))
+                price_fallback = int(val * 100)
+                if '유로' in body_text or '€' in body_text:
+                    extracted_currency = "EUR"
+                else:
+                    extracted_currency = "USD"
+            except: pass
+        elif price_matches:
             try:
                 price_fallback = int(price_matches[0].replace(',', '').replace('.', ''))
             except:
@@ -229,4 +267,4 @@ class BbasakBaseScraper(AsyncBaseScraper):
             if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):
                 shipping_fee = "무료배송"
         
-        return {"image_url": image_url, "ecommerce_link": ecommerce_link, "price": price_fallback, "shipping_fee": shipping_fee}
+        return {"image_url": image_url, "ecommerce_link": ecommerce_link, "price": price_fallback, "currency": extracted_currency, "shipping_fee": shipping_fee}

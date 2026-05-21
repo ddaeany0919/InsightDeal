@@ -37,3 +37,10 @@
   - `[x]` 7-2. 루리웹(`ruliweb_scraper.py`): 대괄호 정규식 추출 및 `"category"` 이식 완료
   - `[x]` 7-3. 빠삭(`bbasak_base_scraper.py`): 제목 대괄호 정규식 + 각 서브게시판별 `default_category` 주입 하이브리드 로직 완공
   - `[x]` 7-4. 네이버 쇼핑(`naver_shopping_scraper.py`): `category1`을 단일 `"category"` 대표 필드로 매핑 및 딕셔너리 호환 인터페이스(`__getitem__`, `get`) 완비로 기존 API 버그 원천 차단
+  
+- `[x]` **8. [키워드 에픽] 실시간 관심 키워드 알림 및 키워드 보관함(야간 푸시 방지 포함) 구현**
+  - `[x]` 8-1. 로컬 SQLite Room DB에 키워드를 저장할 `KeywordEntity` [NEW] 및 `KeywordDao` [NEW] 엔티티 설계 및 `AppDatabase` 마이그레이션 전략 구성
+  - `[x]` 8-2. 키워드 알림 화면 `KeywordManagerScreen.kt` [NEW] 및 `KeywordManagerViewModel.kt` [NEW] 제작 (Toss 스타일 프리미엄 그라데이션 칩 UI 및 OutlinedTextField, Switch, 추천 뱃지 포함)
+  - `[x]` 8-3. Android 13+ 알림 런타임 권한(`POST_NOTIFICATIONS`) 요청 분기 및 가이드 다이얼로그 연동
+  - `[x]` 8-4. 설정 화면(`SettingsScreen.kt`)에서 `KeywordManagerScreen`으로의 내비게이션 경로 라우팅 및 Chevron 진입로 추가
+  - `[x]` 8-5. 백그라운드 핫딜 크롤링 시 등록한 키워드와의 인메모리 비교 로직 및 로컬 알림 매핑 테스트

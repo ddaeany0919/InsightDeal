@@ -15,6 +15,7 @@ class RegisterDeviceReq(BaseModel):
     dnd_enabled: bool = False
     dnd_start_time: str = "21:00"
     dnd_end_time: str = "08:00"
+    dnd_settings_json: str = None # 요일별 세부 DND (ex: JSON string)
 
 class KeywordReq(BaseModel):
     device_uuid: str
@@ -30,7 +31,8 @@ def register_device(req: RegisterDeviceReq, db: Session = Depends(get_db_session
             night_push_consent=req.night_push_consent,
             dnd_enabled=req.dnd_enabled,
             dnd_start_time=req.dnd_start_time,
-            dnd_end_time=req.dnd_end_time
+            dnd_end_time=req.dnd_end_time,
+            dnd_settings_json=req.dnd_settings_json
         )
         db.add(device)
     else:
@@ -40,6 +42,7 @@ def register_device(req: RegisterDeviceReq, db: Session = Depends(get_db_session
         device.dnd_enabled = req.dnd_enabled
         device.dnd_start_time = req.dnd_start_time
         device.dnd_end_time = req.dnd_end_time
+        device.dnd_settings_json = req.dnd_settings_json
     db.commit()
     return {"message": "Device registered"}
 
@@ -47,8 +50,43 @@ def register_device(req: RegisterDeviceReq, db: Session = Depends(get_db_session
 def get_keywords(device_uuid: str, db: Session = Depends(get_db_session)):
     device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == device_uuid).first()
     if not device:
-        return {"keywords": []}
-    return {"keywords": [k.keyword for k in device.keywords if k.is_active]}
+        return {
+            "keywords": [],
+            "detailed_keywords": [],
+            "dnd_enabled": False,
+            "dnd_start_time": "21:00",
+            "dnd_end_time": "08:00",
+            "dnd_settings_json": None,
+            "night_push_consent": False
+        }
+    return {
+        "keywords": [k.keyword for k in device.keywords if k.is_active],
+        "detailed_keywords": [{"id": k.id, "keyword": k.keyword, "is_active": k.is_active} for k in device.keywords],
+        "dnd_enabled": device.dnd_enabled,
+        "dnd_start_time": device.dnd_start_time,
+        "dnd_end_time": device.dnd_end_time,
+        "dnd_settings_json": device.dnd_settings_json,
+        "night_push_consent": device.night_push_consent
+    }
+
+@router.post("/keywords/toggle")
+def toggle_keyword(req: KeywordReq, db: Session = Depends(get_db_session)):
+    device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == req.device_uuid).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+        
+    kw = db.query(models.PushKeyword).filter(
+        models.PushKeyword.device_token_id == device.id,
+        models.PushKeyword.keyword == req.keyword
+    ).first()
+    
+    if not kw:
+        raise HTTPException(status_code=404, detail="Keyword not registered")
+        
+    kw.is_active = not kw.is_active
+    db.commit()
+    db.refresh(kw)
+    return {"success": True, "is_active": kw.is_active, "message": f"Keyword active status toggled to {kw.is_active}"}
 
 @router.post("/keywords")
 def add_keyword(req: KeywordReq, db: Session = Depends(get_db_session)):

@@ -65,6 +65,12 @@
 - **스마트 FCM 푸시 및 야간 방해금지(DND) 필터링**:
     - `InsightDealFirebaseMessagingService` 백그라운드 리스너 완비 및 `AndroidManifest.xml` 안전 등록 완료. 백그라운드 푸시 수신 시 즉시 로컬 알림 보관함에 은밀히 자동 적재.
     - 푸시 수신 시간이 야간(21:00 ~ 08:00) 시간대일 경우 사용자의 DND 활성화 여부에 따라 동작을 스마트 분기. DND 활성화 상태 시 알림 소리/진동을 완전 무음 처리하여 로컬 보관함에 조용히 저장하며, DND 비활성화 상태에서는 무음 전용 채널(`silent_hotdeal_notifications`)로 분기 처리하여 알림 피로도 및 기기 이탈률 원천 차단.
+- **실시간 관심 키워드 알림 및 키워드 보관함(야간 DND 포함) 구현 [완료]**:
+    - 로컬 Room DB `KeywordEntity` 및 `KeywordDao`를 설계하고 `AppDatabase` 마이그레이션 적용.
+    - `KeywordManagerViewModel`에서 Room DB 트랜잭션을 Coroutine Flow 기반의 단방향 데이터 흐름(UDF)으로 연동하여 UI 갱신 최적화.
+    - `KeywordManagerScreen`에 Android 13+ 런타임 알림 권한(`POST_NOTIFICATIONS`) 분기 처리 및 Toss 감성의 프리미엄 설득형 가이드 다이얼로그(체크리스트, 혜택, 법적 고지 포함) 구현.
+    - 입력 필드 아래에 가로 스크롤 추천 키워드 칩(`LazyRow`)을 구성하여 클릭 시 자동 입력되는 마이크로 인터랙션 구현 및 Material 3 사양(`HorizontalDivider`, `AutoMirrored.Filled.ArrowBack`)에 최적화하여 컴파일 경고까지 Zero 상태의 무결점 최종 이식 완료.
+    - 설정 화면(`SettingsScreen.kt`) 및 `MainActivity.kt` Navigation Graph에 Chevron 진입로와 `"keyword_alarm"` 라우트를 매끄럽게 연동.
 
 ---
 
@@ -76,6 +82,8 @@
 - [ ] **위시리스트 Paging 3 연동**: 100개 이상의 위시리스트 아이템을 Room 캐시와 Paging 3를 통해 매끄럽게 무한 렌더링하고, 일괄 선택/삭제 트랜지션 적용.
 - [ ] **실시간 클라우드 동기화**: DataStore 세션 정보를 기반으로 유저별 위시리스트 및 관심 키워드를 Firebase Cloud Firestore에 백업 및 실시간 동기화.
 - [ ] **인앱 제휴마케팅 명시 UI**: 공정거래위원회 심사 지침을 준수하기 위해 핫딜 아웃링크 진입 시 하단 스낵바 형태로 "제휴 링크 수수료 제공" 안내 문구 자동 노출.
+- [ ] **[신규 기획] 키워드 기반 원클릭 간편 구독 위젯 UI**: 홈 화면 상단에 사용자가 가장 자주 등록하는 실시간 급상승 핫딜 키워드를 원클릭으로 바로 알림 보관함에 등록할 수 있는 미려한 "원클릭 알림 추가 칩셋" 배치 기획.
+- [ ] **[신규 기획] DND 세부 예약 모드 (요일별 DND)**: 주말과 주중 수면 패턴이 다른 사용자를 고려하여, 월~금 / 토~일 별로 방해금지 시간대를 다르게 자동 예약하는 요일별 프리미엄 DND 인텔리전트 모드 추가.
 
 ### 2. 백엔드 (Backend)
 - [ ] **대량 푸시 전송 비동기 워커 (Bulk Push Sender)**: 1만 명 이상의 유저에게 실시간 FCM 알림을 동시에 발송할 때 병목 현상 및 시간 지연을 차단하기 위한 비동기 멀티스레딩 셀러리(Celery) 큐 배치 구축.

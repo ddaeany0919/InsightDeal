@@ -557,15 +557,7 @@ async def get_hot_deals(
 
             from sqlalchemy import or_, and_
             if category == "핫딜모음":
-                query = query.filter(
-                    and_(
-                        models.Deal.honey_score >= 100,
-                        or_(
-                            models.Deal.ai_summary.like("%🔥 [커뮤니티 인기]%"),
-                            models.Deal.ai_summary.like("%🔥 [커뮤니티 인증 핫딜]%")
-                        )
-                    )
-                )
+                query = query.filter(models.Deal.honey_score >= 100)
             else:
                 filter_conditions = [models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords]
                 query = query.filter(or_(*filter_conditions))
