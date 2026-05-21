@@ -943,12 +943,19 @@ def get_deal_history(deal_id: int, period: str = "7d", db: Session = Depends(get
     days = days_map.get(period, 7)
     time_limit = end_time - timedelta(days=days)
     
-    # 1. 동일 brand 및 model_code를 가진 Deal들을 O(1) 인덱스 기반으로 직접 DB에서 조회
-    # DSU 알고리즘의 O(N^2) 실시간 연산을 완전히 제거하여 타임아웃 박멸
+    # 1. 동일 brand 및 model_code 혹은 brand 및 base_product_name을 가진 Deal들을 직접 DB에서 조회
     if deal.brand and deal.model_code:
         matched_deals = db.query(models.Deal).filter(
             models.Deal.brand == deal.brand,
             models.Deal.model_code == deal.model_code,
+            models.Deal.indexed_at >= time_limit,
+            models.Deal.indexed_at <= end_time
+        ).all()
+    elif deal.brand and deal.base_product_name:
+        matched_deals = db.query(models.Deal).filter(
+            models.Deal.brand == deal.brand,
+            models.Deal.base_product_name == deal.base_product_name,
+            (models.Deal.model_code == None) | (models.Deal.model_code == ""),
             models.Deal.indexed_at >= time_limit,
             models.Deal.indexed_at <= end_time
         ).all()
@@ -1008,10 +1015,11 @@ def get_deal_history(deal_id: int, period: str = "7d", db: Session = Depends(get
 
     # 3. 네이버 쇼핑 최저가 히스토리(NaverPriceHistory) 조회 및 병합
     naver_points = []
-    if deal.brand and deal.model_code:
+    target_model_code = deal.model_code if deal.model_code else (deal.base_product_name if deal.base_product_name else None)
+    if deal.brand and target_model_code:
         naver_history = db.query(models.NaverPriceHistory).filter(
             models.NaverPriceHistory.brand == deal.brand,
-            models.NaverPriceHistory.model_code == deal.model_code,
+            models.NaverPriceHistory.model_code == target_model_code,
             models.NaverPriceHistory.checked_at >= time_limit,
             models.NaverPriceHistory.checked_at <= end_time
         ).order_by(models.NaverPriceHistory.checked_at.asc()).all()

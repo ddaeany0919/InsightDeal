@@ -121,18 +121,35 @@ async def run_naver_price_collection():
         # 1. 대상 상품군 추출: 최근 30일 이내에 적재되었으며 brand, model_code가 유효한 딜 식별
         limit_date = datetime.now() - timedelta(days=30)
         
-        # 중복 쿼리를 방지하기 위해 brand와 model_code의 유니크한 쌍 목록 가져오기
-        active_products = db.query(Deal.brand, Deal.model_code)\
+        # 1) 고유 모델 코드가 존재하는 브랜드 제품군 추출
+        products_with_model = db.query(Deal.brand, Deal.model_code)\
             .filter(Deal.brand.isnot(None), Deal.brand != "")\
             .filter(Deal.model_code.isnot(None), Deal.model_code != "")\
             .filter(Deal.indexed_at >= limit_date)\
             .group_by(Deal.brand, Deal.model_code)\
             .all()
             
-        logger.info(f"📋 분석 대상 유니크 상품군 식별 완료: 총 {len(active_products)}개 품목")
+        # 2) 고유 모델 코드가 없지만 대표명(base_product_name)이 명확한 식품/생필품군 추출
+        products_without_model = db.query(Deal.brand, Deal.base_product_name)\
+            .filter(Deal.brand.isnot(None), Deal.brand != "")\
+            .filter((Deal.model_code == None) | (Deal.model_code == ""))\
+            .filter(Deal.base_product_name.isnot(None), Deal.base_product_name != "")\
+            .filter(Deal.indexed_at >= limit_date)\
+            .group_by(Deal.brand, Deal.base_product_name)\
+            .all()
+            
+        # 두 리스트를 하나의 유니크한 (brand, model_code_or_base_name, is_base_name) 구조로 통합
+        target_list = []
+        for brand, model_code in products_with_model:
+            target_list.append((brand, model_code, False))
+            
+        for brand, base_name in products_without_model:
+            target_list.append((brand, base_name, True))
+            
+        logger.info(f"📋 분석 대상 유니크 상품군 식별 완료: 총 {len(target_list)}개 품목 (모델 코드 포함: {len(products_with_model)}개, 식품/생필품 대표명: {len(products_without_model)}개)")
         
-        if not active_products:
-            logger.info("ℹ️ 최근 30일 이내에 추출된 브랜드 및 모델 코드 딜이 없습니다. 수집을 건너뜁니다.")
+        if not target_list:
+            logger.info("ℹ️ 최근 30일 이내에 추출된 대상 딜이 없습니다. 수집을 건너뜁니다.")
             return
  
         today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -141,29 +158,29 @@ async def run_naver_price_collection():
         success_count = 0
         
         # 네이버 쇼핑 API 초당 호출 속도 제한(QPS) 방어를 위해 순차적으로 슬롯을 두고 처리
-        for brand, model_code in active_products:
+        for brand, identifier, is_base_name in target_list:
             try:
                 # 2. 오늘 이미 수집된 이력이 있는지 대조 (중복 수집 방지하여 데이터 중복 및 트래픽 방어)
                 already_collected = db.query(NaverPriceHistory)\
                     .filter(
                         NaverPriceHistory.brand == brand,
-                        NaverPriceHistory.model_code == model_code,
+                        NaverPriceHistory.model_code == identifier,
                         NaverPriceHistory.checked_at >= today_start,
                         NaverPriceHistory.checked_at < today_end
                     ).first()
                 
                 if already_collected:
-                    logger.info(f"⏭️ [Skip] '{brand} {model_code}'은 오늘 이미 시장 가격이 수집되었습니다.")
+                    logger.info(f"⏭️ [Skip] '{brand} {identifier}'은 오늘 이미 시장 가격이 수집되었습니다.")
                     continue
                 
                 # 3. 네이버 쇼핑 실시간 최저가 조회
-                lowest_price = await fetch_naver_lowest_price(brand, model_code)
+                lowest_price = await fetch_naver_lowest_price(brand, identifier)
                 
                 if lowest_price is not None:
                     # 4. NaverPriceHistory 적재
                     history_entry = NaverPriceHistory(
                         brand=brand,
-                        model_code=model_code,
+                        model_code=identifier,
                         price=lowest_price,
                         checked_at=datetime.now()
                     )
@@ -178,7 +195,7 @@ async def run_naver_price_collection():
                 
             except Exception as item_err:
                 db.rollback()
-                logger.error(f"❌ '{brand} {model_code}' 가격 수집 중 개별 오류: {item_err}")
+                logger.error(f"❌ '{brand} {identifier}' 가격 수집 중 개별 오류: {item_err}")
                 
         logger.info(f"🎉 네이버 쇼핑 가격 수집 완료! 오늘 수집된 건수: {success_count}건")
         
