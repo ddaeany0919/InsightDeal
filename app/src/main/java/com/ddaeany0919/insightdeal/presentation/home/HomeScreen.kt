@@ -29,6 +29,7 @@ import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.ddaeany0919.insightdeal.models.DealItem
  
 import com.ddaeany0919.insightdeal.presentation.components.shimmerEffect
@@ -67,7 +68,7 @@ fun HomeScreen(
     val filterState by viewModel.filterState.collectAsState()
     val selectedCategory = filterState.category
     
-    val wishlistState by wishlistViewModel?.uiState?.collectAsState(initial = WishlistUiState.Loading) ?: mutableStateOf(WishlistUiState.Loading)
+    val wishlistState by wishlistViewModel?.uiState?.collectAsState(initial = WishlistUiState.Loading) ?: remember { mutableStateOf(WishlistUiState.Loading) }
     val wishlistedUrls = remember(wishlistState) {
         if (wishlistState is WishlistUiState.Success) {
             (wishlistState as WishlistUiState.Success).items.map { it.productUrl }.toSet()
@@ -380,9 +381,8 @@ fun HomeScreen(
                             val topPicks = remember(topHotDeals) {
                                 topHotDeals
                                     .filter { deal ->
-                                        val hasHotTag = deal.aiSummary?.contains("🔥 [커뮤니티 인기]") == true
-                                                || deal.aiSummary?.contains("🔥 [커뮤니티 인증 핫딜]") == true
-                                        val isSuperHot = hasHotTag && deal.honeyScore >= 100
+                                        // 🎯 AI 요약 여부와 상관없이 100점 만점 꿀딜은 즉각 노출 보장!
+                                        val isSuperHot = deal.honeyScore >= 100
                                         !deal.isClosed && isSuperHot
                                     }
                                     .filter { deal ->
@@ -390,6 +390,7 @@ fun HomeScreen(
                                     }
                                     .sortedByDescending { it.createdAt ?: "" }
                             }
+
                             
                             LaunchedEffect(topHotDeals.size, topPicks.size) {
                                 android.util.Log.d("HomeScreen", "topHotDeals size: ${topHotDeals.size}, topPicks size: ${topPicks.size}")
@@ -492,56 +493,82 @@ fun HomeScreen(
                                                     contentColor = MaterialTheme.colorScheme.onSurface
                                                 )
                                             ) {
-                                                Column {
-                                                    AsyncImage(
-                                                        model = imageRequest,
-                                                        contentDescription = "Carousel Image",
-                                                        modifier = Modifier
-                                                            .height(100.dp)
-                                                            .fillMaxWidth()
-                                                            .background(if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White)
-                                                            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
-                                                        contentScale = ContentScale.Crop
-                                                    )
-                                                    Column(Modifier.padding(8.dp)) {
-                                                        Text(
-                                                            text = pick.title, 
-                                                            maxLines = 2, 
-                                                            overflow = TextOverflow.Ellipsis, 
-                                                            fontSize = 13.sp, 
+                                                 Column {
+                                                     if (pick.imageUrl.isNullOrBlank()) {
+                                                         BrandPlaceholder(
+                                                             siteName = pick.siteName,
+                                                             modifier = Modifier
+                                                                 .height(100.dp)
+                                                                 .fillMaxWidth()
+                                                                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+                                                             textStyle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                                                         )
+                                                     } else {
+                                                         SubcomposeAsyncImage(
+                                                             model = imageRequest,
+                                                             contentDescription = "Carousel Image",
+                                                             modifier = Modifier
+                                                                 .height(100.dp)
+                                                                 .fillMaxWidth()
+                                                                 .background(if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White)
+                                                                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+                                                             contentScale = ContentScale.Crop,
+                                                             error = {
+                                                                 BrandPlaceholder(
+                                                                     siteName = pick.siteName,
+                                                                     modifier = Modifier.fillMaxSize(),
+                                                                     textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                                                 )
+                                                             }
+                                                         )
+                                                     }
+                                                     Column(Modifier.padding(8.dp)) {
+                                                         Text(
+                                                             text = pick.title,
+                                                             maxLines = 2,
+                                                             overflow = TextOverflow.Ellipsis,
+                                                             fontSize = 13.sp, 
                                                             fontWeight = FontWeight.Bold, 
                                                             lineHeight = 18.sp,
-                                                            color = MaterialTheme.colorScheme.onSurface
+                                                            color = MaterialTheme.colorScheme.onSurface,
                                                         )
                                                         Spacer(Modifier.weight(1f))
                                                         
                                                         Row(
-                                                            verticalAlignment = Alignment.CenterVertically, 
+                                                            verticalAlignment = Alignment.Bottom, 
                                                             horizontalArrangement = Arrangement.SpaceBetween, 
                                                             modifier = Modifier.fillMaxWidth()
                                                         ) {
-                                                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                                                val priceFontSize = if (priceText.length >= 9) 13.sp else 16.sp
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                modifier = Modifier.weight(1f).padding(end = 2.dp)
+                                                            ) {
+                                                                // 🎯 지능형 동적 가격 폰트 스케일링 가드 (글자 길이에 맞춘 유연한 사이즈 조정)
+                                                                val priceFontSize = when {
+                                                                    priceText.length >= 9 -> 10.sp
+                                                                    priceText.length >= 7 -> 12.sp
+                                                                    priceText.length >= 5 -> 14.sp
+                                                                    else -> 15.sp
+                                                                }
                                                                 Text(
                                                                     text = priceText, 
                                                                     color = if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30), 
                                                                     fontSize = priceFontSize, 
                                                                     fontWeight = FontWeight.ExtraBold, 
                                                                     maxLines = 1, 
-                                                                    overflow = TextOverflow.Ellipsis, 
-                                                                    modifier = Modifier.weight(1f, fill = false)
+                                                                    overflow = TextOverflow.Ellipsis
                                                                 )
                                                                 if (displayShipping != null) {
-                                                                    Spacer(Modifier.width(2.dp))
+                                                                    Spacer(modifier = Modifier.width(4.dp))
                                                                     Surface(
-                                                                        shape = RoundedCornerShape(4.dp), 
+                                                                        shape = RoundedCornerShape(3.dp), 
                                                                         color = if (isDark) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant
                                                                     ) {
                                                                         Text(
-                                                                            text = "배송비: $displayShipping", 
+                                                                            text = displayShipping, // 가로 공간 극대화를 위해 "배송비:"를 떼고 배송비 정보만 실속 칩셋으로 노출!
                                                                             fontSize = 8.sp, 
                                                                             color = if (isDark) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant, 
-                                                                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 2.dp), 
+                                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), 
                                                                             maxLines = 1, 
                                                                             overflow = TextOverflow.Ellipsis
                                                                         )
@@ -612,15 +639,16 @@ fun HomeScreen(
                         }
                     }
             // ✨ 상태 관리를 통한 스켈레톤 로딩 노출
-            when (dealsPagingItems.loadState.refresh) {
-                is LoadState.Loading -> {
+            // [HOTFIX] 이미 로드된 데이터가 존재할 때(itemCount > 0) refresh가 발생하더라도 목록을 밀어버리지 않고 유지하여 스크롤 튕김 완벽 차단!
+            when {
+                dealsPagingItems.loadState.refresh is LoadState.Loading && dealsPagingItems.itemCount == 0 -> {
                     items(
                         count = 3,
                         key = { index -> "skeleton_$index" },
                         contentType = { "skeleton_loader" }
                     ) { HomeDealCardSkeleton() }
                 }
-                is LoadState.Error -> {
+                dealsPagingItems.loadState.refresh is LoadState.Error -> {
                     item(key = "loading_error", contentType = "error_section") {
                         Card(
                             modifier = Modifier
@@ -1013,27 +1041,20 @@ fun DealCardComposable(
         )
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
-            Column {
-                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top) {
                     if (imageRequest == null) {
                         // 이미지가 없는 경우 (또는 분리된 상품 중 이미지가 없는 경우)
-                        Box(
+                        BrandPlaceholder(
+                            siteName = deal.siteName,
                             modifier = Modifier
                                 .size(80.dp)
-                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
                                 .clip(RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ShoppingCart,
-                                contentDescription = "No Image",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
+                            textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        )
                     } else {
                         Box(modifier = Modifier.size(80.dp)) {
-                            AsyncImage(
+                            SubcomposeAsyncImage(
                                 model = imageRequest,
                                 contentDescription = deal.title,
                                 modifier = Modifier
@@ -1044,7 +1065,13 @@ fun DealCardComposable(
                                     remember { androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) }) }
                                 } else null,
                                 contentScale = ContentScale.Crop,
-                                error = androidx.compose.ui.graphics.vector.rememberVectorPainter(image = Icons.Default.ShoppingCart)
+                                error = {
+                                    BrandPlaceholder(
+                                        siteName = deal.siteName,
+                                        modifier = Modifier.fillMaxSize(),
+                                        textStyle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    )
+                                }
                             )
                             
                             // 종료된 상품 오버레이
@@ -1222,39 +1249,50 @@ fun DealCardComposable(
                 }
             
             // ✨ 아코디언 토글 상세 영역 (다이렉트 구매처 아웃링크 및 큰 이미지)
-            AnimatedVisibility(visible = isExpanded) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            androidx.compose.animation.AnimatedVisibility(visible = isExpanded) {
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     // ✨ 큰 사이즈 원본 이미지 뷰어 (OOM 방지 및 크로스페이드)
-                    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp, max = 300.dp), contentAlignment = Alignment.Center) {
-                        val proxiedExpandedUrl = remember(deal.id, deal.imageUrl) {
-                            val rawImageUrl = deal.imageUrl.takeIf { !it.isNullOrBlank() } ?: "https://placehold.co/400x300/E2E8F0/A0AEC0?text=Deal"
-                            if (rawImageUrl.contains("bbasak.com") || rawImageUrl.contains("ppomppu.co.kr") || rawImageUrl.contains("fmkorea.com")) {
-                                "http://192.168.0.36:8000/api/proxy-image?url=${java.net.URLEncoder.encode(rawImageUrl, "UTF-8")}"
-                            } else rawImageUrl
+                    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp, max = 220.dp), contentAlignment = Alignment.Center) {
+                        if (deal.imageUrl.isNullOrBlank()) {
+                            BrandPlaceholder(
+                                siteName = deal.siteName,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                textStyle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                            )
+                        } else {
+                            val proxiedExpandedUrl = remember(deal.id, deal.imageUrl) {
+                                val rawImageUrl = deal.imageUrl
+                                if (rawImageUrl.isNullOrBlank()) ""
+                                else if (rawImageUrl.contains("bbasak.com") || rawImageUrl.contains("ppomppu.co.kr") || rawImageUrl.contains("fmkorea.com")) {
+                                    "http://192.168.0.36:8000/api/proxy-image?url=${java.net.URLEncoder.encode(rawImageUrl, "UTF-8")}"
+                                } else rawImageUrl
+                            }
+                            AsyncImage(
+                                model = coil.request.ImageRequest.Builder(context)
+                                    .data(proxiedExpandedUrl)
+                                    .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
+                                    .setHeader("Referer", deal.postUrl ?: "https://insightdeal.com/")
+                                    .crossfade(true)
+                                    .crossfade(400)
+                                    .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                                    .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                                    .build(),
+                                contentDescription = "Full Product Image",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .then(if (deal.isClosed) Modifier.blur(6.dp) else Modifier),
+                                colorFilter = if (deal.isClosed) androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) }) else null,
+                                contentScale = ContentScale.Inside,
+                                error = coil.compose.rememberAsyncImagePainter(android.R.drawable.ic_menu_report_image)
+                            )
                         }
-
-                        AsyncImage(
-                            model = coil.request.ImageRequest.Builder(context)
-                                .data(proxiedExpandedUrl)
-                                .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
-                                .setHeader("Referer", deal.postUrl ?: "https://insightdeal.com/")
-                                .crossfade(true)
-                                .crossfade(400)
-                                .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                                .diskCachePolicy(coil.request.CachePolicy.ENABLED)
-                                .build(),
-                            contentDescription = "Full Product Image",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .then(if (deal.isClosed) Modifier.blur(6.dp) else Modifier),
-                            colorFilter = if (deal.isClosed) androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) }) else null,
-                            contentScale = ContentScale.Inside,
-                            error = coil.compose.rememberAsyncImagePainter(android.R.drawable.ic_menu_report_image)
-                        )
                         
                         if (deal.isClosed) {
                             Box(
@@ -1371,31 +1409,34 @@ fun DealCardComposable(
             }
         }
         
-        // 핫딜 뱃지를 우측 최상단에 고정
+        // 핫딜 뱃지를 우측 최상단에 고정 (Box로 감싸서 BoxScope 2D 정렬 완벽 보장!)
         if (isSuperHot) {
-            Surface(
-                shape = RoundedCornerShape(bottomStart = 12.dp, topEnd = 12.dp),
-                color = if (isDark) Color(0xFF3700B3).copy(alpha = 0.2f) else Color(0xFFFFEBEB),
-                modifier = Modifier.align(Alignment.TopEnd)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Surface(
+                    shape = RoundedCornerShape(bottomStart = 12.dp, topEnd = 12.dp),
+                    color = if (isDark) Color(0xFF3700B3).copy(alpha = 0.2f) else Color(0xFFFFEBEB),
+                    modifier = Modifier.align(Alignment.TopEnd)
                 ) {
-                    Text("🔥", fontSize = 12.sp)
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text(
-                        text = "핫딜", 
-                        fontSize = 11.sp, 
-                        color = if (isDark) Color(0xFFCF6679) else Color(0xFFD32F2F), 
-                        fontWeight = FontWeight.ExtraBold
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("🔥", fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(
+                            text = "핫딜", 
+                            fontSize = 11.sp, 
+                            color = if (isDark) Color(0xFFCF6679) else Color(0xFFD32F2F), 
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
                 }
             }
         }
     }
 }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -1622,6 +1663,165 @@ fun CoupangSettingsDialog(onDismiss: () -> Unit) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun BrandPlaceholder(
+    siteName: String, 
+    modifier: Modifier = Modifier, 
+    textStyle: TextStyle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+) {
+    val siteLower = siteName.lowercase(Locale.getDefault())
+    val (colors, siteLabel) = remember(siteLower) {
+        when {
+            siteLower.contains("뽐뿌") -> listOf(Color(0xFF1976D2), Color(0xFF0D47A1)) to "뽐뿌"
+            siteLower.contains("퀘이사존") -> listOf(Color(0xFFFFB74D), Color(0xFFE65100)) to "퀘존"
+            siteLower.contains("펨코") || siteLower.contains("에펨코리아") -> listOf(Color(0xFF4FC3F7), Color(0xFF0288D1)) to "펨코"
+            siteLower.contains("루리웹") -> listOf(Color(0xFF5C6BC0), Color(0xFF1A237E)) to "루리"
+            siteLower.contains("빠삭") -> listOf(Color(0xFFF48FB1), Color(0xFFC2185B)) to "빠삭"
+            siteLower.contains("슬리앙") || siteLower.contains("클리앙") -> listOf(Color(0xFF78909C), Color(0xFF37474F)) to "클앙"
+            else -> listOf(Color(0xFFB0BEC5), Color(0xFF546E7A)) to "HOT"
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .background(
+                brush = Brush.linearGradient(
+                    colors = colors,
+                    start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                    end = androidx.compose.ui.geometry.Offset(100f, 100f)
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(4.dp)
+        ) {
+            // 🔥 초귀여운 2D 슬픈 핫딜 불꽃(🔥) Canvas 일러스트
+            androidx.compose.foundation.Canvas(
+                modifier = Modifier
+                    .size(26.dp)
+                    .padding(bottom = 1.dp)
+            ) {
+                // 1. 외곽 큰 불꽃 몸체 (빨강 -> 오렌지 그라데이션)
+                val firePath = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(size.width * 0.5f, size.height * 0.05f)
+                    // 우측 뾰족한 곡선
+                    quadraticBezierTo(size.width * 0.85f, size.height * 0.35f, size.width * 0.85f, size.height * 0.65f)
+                    quadraticBezierTo(size.width * 0.85f, size.height * 0.95f, size.width * 0.5f, size.height * 0.95f)
+                    // 좌측 뾰족한 곡선
+                    quadraticBezierTo(size.width * 0.15f, size.height * 0.95f, size.width * 0.15f, size.height * 0.65f)
+                    quadraticBezierTo(size.width * 0.15f, size.height * 0.35f, size.width * 0.5f, size.height * 0.05f)
+                    close()
+                }
+                
+                // 불꽃 그라데이션
+                val fireBrush = Brush.verticalGradient(
+                    colors = listOf(Color(0xFFFF3D00), Color(0xFFFF9100)),
+                    startY = 0f,
+                    endY = size.height
+                )
+                drawPath(path = firePath, brush = fireBrush)
+
+                // 2. 내부 노란 불꽃 핵 (노란색)
+                val innerFirePath = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(size.width * 0.5f, size.height * 0.35f)
+                    quadraticBezierTo(size.width * 0.72f, size.height * 0.55f, size.width * 0.72f, size.height * 0.75f)
+                    quadraticBezierTo(size.width * 0.72f, size.height * 0.9f, size.width * 0.5f, size.height * 0.9f)
+                    quadraticBezierTo(size.width * 0.28f, size.height * 0.9f, size.width * 0.28f, size.height * 0.75f)
+                    quadraticBezierTo(size.width * 0.28f, size.height * 0.55f, size.width * 0.5f, size.height * 0.35f)
+                    close()
+                }
+                drawPath(path = innerFirePath, color = Color(0xFFFFEA3B))
+
+                // 3. 슬픈 눈 (동그란 눈에 맺힌 눈물)
+                drawCircle(
+                    color = Color(0xFF212121),
+                    radius = 1.8f,
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.4f, size.height * 0.65f)
+                )
+                drawCircle(
+                    color = Color(0xFF212121),
+                    radius = 1.8f,
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.6f, size.height * 0.65f)
+                )
+
+                // 4. 슬픈 입 모양 (우는 아치형)
+                val mouthPath = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(size.width * 0.46f, size.height * 0.78f)
+                    quadraticBezierTo(
+                        size.width * 0.5f, size.height * 0.73f,
+                        size.width * 0.54f, size.height * 0.78f
+                    )
+                }
+                drawPath(
+                    path = mouthPath,
+                    color = Color(0xFF212121),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f)
+                )
+
+                // 5. 수줍고 귀여운 뺨 볼터치
+                drawCircle(
+                    color = Color(0xFFFF8A80).copy(alpha = 0.8f),
+                    radius = 1.8f,
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.32f, size.height * 0.72f)
+                )
+                drawCircle(
+                    color = Color(0xFFFF8A80).copy(alpha = 0.8f),
+                    radius = 1.8f,
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.72f)
+                )
+
+                // 6. 💧 주룩주룩 흐르는 귀여운 ㅠㅠ 눈물방울!
+                // 왼쪽 눈물방울
+                val tearPathLeft = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(size.width * 0.38f, size.height * 0.68f)
+                    quadraticBezierTo(size.width * 0.33f, size.height * 0.73f, size.width * 0.33f, size.height * 0.78f)
+                    quadraticBezierTo(size.width * 0.33f, size.height * 0.83f, size.width * 0.38f, size.height * 0.83f)
+                    quadraticBezierTo(size.width * 0.43f, size.height * 0.83f, size.width * 0.43f, size.height * 0.78f)
+                    close()
+                }
+                drawPath(path = tearPathLeft, color = Color(0xFF29B6F6))
+
+                // 오른쪽 눈물방울
+                val tearPathRight = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(size.width * 0.58f, size.height * 0.68f)
+                    quadraticBezierTo(size.width * 0.53f, size.height * 0.73f, size.width * 0.53f, size.height * 0.78f)
+                    quadraticBezierTo(size.width * 0.53f, size.height * 0.83f, size.width * 0.58f, size.height * 0.83f)
+                    quadraticBezierTo(size.width * 0.63f, size.height * 0.83f, size.width * 0.63f, size.height * 0.78f)
+                    close()
+                }
+                drawPath(path = tearPathRight, color = Color(0xFF29B6F6))
+            }
+
+            Spacer(modifier = Modifier.height(2.dp))
+            
+            // 📝 감성 자극 귀여운 텍스트 문구
+            Text(
+                text = "이미지가 없어요 ㅠㅠ",
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White.copy(alpha = 0.95f),
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            
+            Spacer(modifier = Modifier.height(1.dp))
+
+            // 🏷️ 출처 라벨 표시
+            Text(
+                text = "($siteLabel)",
+                fontSize = 7.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color.White.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
