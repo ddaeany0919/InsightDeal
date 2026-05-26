@@ -83,13 +83,71 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                 # 각 워커별 독립적인 DB 세션 생성 (동시성 데드락 및 세션 오염 완벽 차단)
                 local_db = SessionLocal()
                 try:
-                    existing_deal = local_db.query(Deal).filter(Deal.post_link == item['url']).first()
+                    from backend.core.url_utils import normalize_url
+                    normalized_url = normalize_url(item['url'])
+                    item['url'] = normalized_url  # 큐 내부 아이템의 URL도 정규화된 규격으로 통일
+                    
+                    # 1. Exact Match로 기존 수집 여부 판별
+                    existing_deal = local_db.query(Deal).filter(Deal.post_link == normalized_url).first()
+                    
+                    # 2. 롤링 윈도우 (24시간 내 동일 상품명/쇼핑몰 링크) 사전 검출로 중복상세 원천 차단
+                    if not existing_deal:
+                        from datetime import timedelta
+                        # 24시간 이내 동일 글/상품 검출 (동일 쇼핑몰 링크 우선 매칭)
+                        target_url = item.get("ecommerce_link")
+                        if target_url and len(target_url) > 20 and 'coupang' not in target_url:
+                            target_url = normalize_url(target_url)
+                            existing_deal = local_db.query(Deal).filter(
+                                Deal.ecommerce_link == target_url,
+                                Deal.indexed_at >= datetime.utcnow() - timedelta(hours=24)
+                            ).first()
                     
                     if not existing_deal:
-                        # 신규 딜일 경우에만 상세 페이지(HTML, AI 등) 파싱 실행
-                        detail = await scraper.get_detail(item['url'])
+                        # 1. 완전한 신규 딜인 경우 ➔ 상세 페이지(HTML, AI 등) 초고속 파싱 및 신규 등록 (Lazy Load)
+                        detail = await scraper.get_detail(normalized_url)
                         if detail:
+                            # 상세 페이지 내부의 외부 링크가 있다면 그것도 정규화
+                            if detail.get("ecommerce_link"):
+                                detail["ecommerce_link"] = normalize_url(detail["ecommerce_link"])
                             item.update(detail)
+                    else:
+                        # 2. 기존 수집된 딜인 경우 ➔ 시간 기반 스마트 델타 스킵 가드 (Time-based Delta Skip Guard) 적용!
+                        from datetime import datetime, timedelta
+                        now = datetime.utcnow()
+                        indexed_time = existing_deal.indexed_at
+                        if indexed_time.tzinfo is not None:
+                            now = datetime.now(indexed_time.tzinfo)
+                        
+                        time_diff = now - indexed_time
+                        
+                        # 가드 1: 이미 작성된 지 12시간이 경과한 노후 핫딜은 핫딜마크 달성 기한이 끝났으므로 갱신 연산 스킵!
+                        if time_diff > timedelta(hours=12):
+                            local_db.close()
+                            queue.task_done()
+                            continue
+                            
+                        # 가드 2: 3~12시간 사이의 안정기 글은 최근 20분 이내에 갱신되었다면 DB 및 I/O 절감을 위해 스킵!
+                        from backend.database.models import DealReaction
+                        reaction = local_db.query(DealReaction).filter(DealReaction.deal_id == existing_deal.id).first()
+                        if reaction and reaction.last_updated:
+                            rx_time = reaction.last_updated
+                            if rx_time.tzinfo is not None:
+                                now = datetime.now(rx_time.tzinfo)
+                            rx_diff = now - rx_time
+                            
+                            if time_diff > timedelta(hours=3) and rx_diff < timedelta(minutes=20):
+                                local_db.close()
+                                queue.task_done()
+                                continue
+                        
+                        # [Lazy-Loading 최적화 핵심]: 상세 정보(본문 등)가 예외적으로 누락된 경우가 아니라면,
+                        # 기존 딜 업데이트 시 상세 페이지(get_detail)를 다시 긁지 않고 목록의 초경량 메타데이터(추천수, 조회수 등)로만 Upsert!
+                        if not existing_deal.content_html:
+                            detail = await scraper.get_detail(normalized_url)
+                            if detail:
+                                if detail.get("ecommerce_link"):
+                                    detail["ecommerce_link"] = normalize_url(detail["ecommerce_link"])
+                                item.update(detail)
                     
                     aggregator = AggregatorService(local_db)
                     deal = await aggregator.process_scraped_deal(community_id, item)
@@ -101,9 +159,8 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                 except Exception as e:
                     local_db.rollback()
                     logger.error(f"[{community_display_name}] 데이터 처리 중 에러: {e}")
-                finally:
-                    local_db.close()
-                    queue.task_done()
+                local_db.close()
+                queue.task_done()
 
         async with scraper:
             logger.info(f"▶ [{community_display_name}] 큐 기반 스크래핑 워커 가동 (pages={pages})")
@@ -137,12 +194,15 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                         check_db = SessionLocal()
                         unique_items = []
                         try:
+                            from backend.core.url_utils import normalize_url
                             for item in items:
-                                if item['url'] in global_seen_urls:
+                                norm_url = normalize_url(item['url'])
+                                if norm_url in global_seen_urls:
                                     continue
-                                global_seen_urls.add(item['url'])
+                                global_seen_urls.add(norm_url)
+                                item['url'] = norm_url # 아이템의 url을 정규화된 것으로 미리 치환
                                 unique_items.append(item)
-                                if check_db.query(Deal).filter(Deal.post_link == item['url']).first():
+                                if check_db.query(Deal).filter(Deal.post_link == norm_url).first():
                                     duplicate_count += 1
                         finally:
                             check_db.close()
@@ -263,16 +323,50 @@ async def validate_closed_deals():
 
 async def run_pipeline_job():
     """
-    투트랙(Two-Track) 오케스트레이션 엔진:
-    - 매 사이클: 단기 수집 (1페이지)
-    - 매 12번째 사이클 (약 1시간): 심층 수집 (1~3페이지)
+    자가 치유 복구(Self-Healing Backfill)가 내장된 투트랙 오케스트레이션 엔진:
+    - 매 5분 사이클: 단기 수집 (1페이지 초고속 - 신규 글 즉시 반영)
+    - 매 2번째 사이클 (10분): 심층 수집 (1~3페이지 - 핫딜마크 갱신)
+    - [Self-Healing]: 서버 장애 또는 개발 부재로 인한 누락 시간(최대 5일) 자동 감지 시, 복구 완료될 때까지 동적 백필(최대 25페이지) 자동 구동!
     """
     logger.info("====================================")
     
-    is_deep_scan = (SCHEDULER_STATE["total_run_count"] % 12 == 0)
-    pages_to_scrape = 3 if is_deep_scan else 1
+    db = SessionLocal()
+    pages_to_scrape = 1
+    is_backfill_mode = False
+    gap_hours = 0.0
     
-    mode_str = "심층 수사대(1~3페이지)" if is_deep_scan else "단기 감시조(1페이지)"
+    try:
+        # DB에서 가장 최근에 수집된 핫딜 조회
+        from backend.database.models import Deal
+        last_deal = db.query(Deal).order_by(Deal.indexed_at.desc()).first()
+        if last_deal and last_deal.indexed_at:
+            from datetime import datetime, timedelta
+            now = datetime.utcnow()
+            last_time = last_deal.indexed_at
+            if last_time.tzinfo is not None:
+                now = datetime.now(last_time.tzinfo)
+            
+            gap_seconds = (now - last_time).total_seconds()
+            gap_hours = gap_seconds / 3600.0
+            
+            # 수집 공백이 2시간을 초과한 경우 ➔ 자가 치유 복구 백필 모드 가동!
+            if gap_hours > 2.0:
+                is_backfill_mode = True
+                # 누락 시간에 비례하여 탐색할 과거 페이지 깊이를 동적 결정 (최대 25페이지, 약 5일 치 분량 복구)
+                pages_to_scrape = min(25, max(3, int(gap_hours * 1.5)))
+    except Exception as e:
+        logger.error(f"[Self-Healing] 수집 공백 분석 실패: {e}")
+    finally:
+        db.close()
+        
+    if not is_backfill_mode:
+        # 평시 모드
+        is_deep_scan = (SCHEDULER_STATE["total_run_count"] % 2 == 0)
+        pages_to_scrape = 3 if is_deep_scan else 1
+        mode_str = "핫딜마크 추적대(1~3페이지)" if is_deep_scan else "신규글 감시조(1페이지)"
+    else:
+        mode_str = f"🔥 자가치유 백필 복구 가동 (공백 {gap_hours:.1f}시간 감지 -> {pages_to_scrape}페이지 자동 추적)"
+        
     logger.info(f"🚀 [Background] 정기 핫딜 동시 수집 파이프라인 가동 - 모드: {mode_str}")
     logger.info("====================================")
     
