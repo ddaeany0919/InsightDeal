@@ -45,15 +45,12 @@ class RuliwebScraper(AsyncBaseScraper):
             full_title_raw = title_element.get_text(strip=True)
             full_title = re.sub(r'\s*\(\d+\)$', '', full_title_raw).strip()
 
-            detail_info = await self.get_detail(url, full_title)
-            
-            image_url = detail_info.get("image_url", "")
-            if not image_url:
-                img_tag = row.select_one('img')
-                if img_tag and img_tag.has_attr('src'):
-                    image_url = img_tag['src']
-                    if image_url.startswith('//'): image_url = "https:" + image_url
-                    elif not image_url.startswith('http'): image_url = urljoin("https://bbs.ruliweb.com", image_url)
+            image_url = ""
+            img_tag = row.select_one('img')
+            if img_tag and img_tag.has_attr('src'):
+                image_url = img_tag['src']
+                if image_url.startswith('//'): image_url = "https:" + image_url
+                elif not image_url.startswith('http'): image_url = urljoin("https://bbs.ruliweb.com", image_url)
 
             category = None
             cat_match = re.search(r'^\s*\[([^\]]+)\]', full_title)
@@ -63,7 +60,7 @@ class RuliwebScraper(AsyncBaseScraper):
             if any(k in full_title for k in ['적립', '출석', '출첵', '포인트']):
                 category = "적립"
 
-            is_closed = detail_info.get("is_closed", False)
+            is_closed = False
             style = title_element.get('style', '')
             if 'line-through' in style or title_element.select_one('del, s, strike'):
                 is_closed = True
@@ -81,8 +78,8 @@ class RuliwebScraper(AsyncBaseScraper):
             if time_td:
                 posted_at_iso = self.parse_time_str(time_td.get_text(strip=True))
 
-            extracted_currency = detail_info.get("currency", "KRW")
-            price = detail_info.get("price", 0)
+            extracted_currency = "KRW"
+            price = 0
             
             if price == 0:
                 usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
@@ -123,12 +120,12 @@ class RuliwebScraper(AsyncBaseScraper):
                 "currency": extracted_currency,
                 "shop_name": "",
                 "image_url": image_url,
-                "ecommerce_link": detail_info.get("ecommerce_link", ""),
+                "ecommerce_link": "",
                 "is_closed": is_closed,
-                "shipping_fee": detail_info.get("shipping_fee", ""),
+                "shipping_fee": "",
                 "is_super_hotdeal": is_super_hotdeal,
                 "posted_at": posted_at_iso,
-                "content_html": detail_info.get("content_html", "")
+                "content_html": ""
             }
             
         tasks = [process_row(row) for row in post_rows]

@@ -92,31 +92,7 @@ class ClienScraper(AsyncBaseScraper):
                 "category": category_extracted
             })
             
-        import asyncio
-        # Gather details to fetch ecommerce link (though mock for now)
-        async def fetch_detail_mock(deal):
-            detail = await self.get_detail(deal["url"])
-            deal["ecommerce_link"] = detail.get("ecommerce_link", "")
-            deal["price"] = detail.get("price", 0)
-            deal["currency"] = detail.get("currency", "KRW")
-            
-            # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
-            if deal["currency"] == "KRW" and deal["price"] > 0 and deal["price"] <= 10000:
-                if any(kw in deal["title"] for kw in ['알리', '코인', '큐텐', '직구', '알익']):
-                    deal["currency"] = "USD"
-                    deal["price"] = int(deal["price"] * 100)
-                    
-            deal["shipping_fee"] = detail.get("shipping_fee", "")
-            if not deal.get("image_url") and detail.get("image_url"):
-                deal["image_url"] = detail.get("image_url")
-            deal["content_html"] = detail.get("content_html", "")
-            deal["is_closed"] = deal.get("is_closed", False) or detail.get("is_closed", False)
-            if "posted_at" not in deal:
-                deal["posted_at"] = None
-            return deal
-            
-        tasks = [fetch_detail_mock(d) for d in deals]
-        return await asyncio.gather(*tasks)
+        return deals
 
     async def get_detail(self, url: str) -> dict:
         """상세 페이지 데이터 파싱 로직"""

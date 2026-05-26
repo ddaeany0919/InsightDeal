@@ -165,12 +165,6 @@ class FmkoreaScraper(AsyncBaseScraper):
                     image_url = ""
 
             # 상세 페이지에서 ecommerce_link와 본문 파싱
-            detail_info = await self.get_detail(url)
-            
-            # 고화질 본문 이미지가 있으면 무조건 덮어쓰기 (썸네일 흐림 방지 및 투명 썸네일 완벽 대체)
-            if detail_info.get("image_url"):
-                image_url = detail_info.get("image_url")
-                
             # 가격 및 배송비 파싱 (hotdeal_info)
             extracted_price = 0
             extracted_currency = "KRW"
@@ -209,14 +203,6 @@ class FmkoreaScraper(AsyncBaseScraper):
             
             if "(0원)" in full_title and extracted_price == 0:
                 extracted_price = 0
-                
-            if extracted_price == 0 and detail_info.get("price", 0) > 0:
-                extracted_price = detail_info.get("price")
-                extracted_currency = detail_info.get("currency", extracted_currency)
-            if not shop_name and detail_info.get("shop_name", ""):
-                shop_name = detail_info.get("shop_name")
-            if not shipping_fee and detail_info.get("shipping_fee", ""):
-                shipping_fee = detail_info.get("shipping_fee")
 
             # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
             if extracted_currency == "KRW" and extracted_price > 0 and extracted_price <= 10000:
@@ -225,7 +211,7 @@ class FmkoreaScraper(AsyncBaseScraper):
                     extracted_price = int(extracted_price * 100)
 
             # 종료 여부 확인 (취소선이 그어져 있는지 또는 종료 키워드)
-            is_closed = detail_info.get("is_closed", False)
+            is_closed = False
             
             # 펨코 전용: 핫딜 종료 시 a 태그(title_element)에 'hotdeal_var8Y' 클래스가 붙음
             a_classes = title_element.get('class', [])
@@ -281,16 +267,10 @@ class FmkoreaScraper(AsyncBaseScraper):
             if time_td:
                 posted_at_iso = self.parse_time_str(time_td.get_text(strip=True))
 
-            # 상세페이지에서 가져온 정확한 시간이 있다면 우선 적용
-            if detail_info.get("posted_at"):
-                posted_at_iso = detail_info.get("posted_at")
-
             category_span = row.select_one('span.category')
             cat_text = ""
             if category_span:
                 cat_text = category_span.get_text(strip=True).replace('/', '').replace(' ', '')
-            elif detail_info.get("category"):
-                cat_text = detail_info.get("category").replace('/', '').replace(' ', '')
 
             extracted_category = None
             if cat_text:
@@ -308,7 +288,7 @@ class FmkoreaScraper(AsyncBaseScraper):
                 "currency": extracted_currency,
                 "shop_name": shop_name,
                 "image_url": image_url,
-                "ecommerce_link": detail_info.get("ecommerce_link", ""),
+                "ecommerce_link": "",
                 "is_closed": is_closed,
                 "shipping_fee": shipping_fee,
                 "is_super_hotdeal": is_poten,
@@ -317,7 +297,7 @@ class FmkoreaScraper(AsyncBaseScraper):
                 "like_count": like_count,
                 "comment_count": comment_count,
                 "category": extracted_category,
-                "content_html": detail_info.get("content_html", "")
+                "content_html": ""
             }
 
         tasks = [process_row(row) for row in post_rows]

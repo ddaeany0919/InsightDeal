@@ -107,23 +107,13 @@ class PpomppuScraper(AsyncBaseScraper):
                     nums = re.findall(r'\d+', price_str)
                     if nums: extracted_price = int(''.join(nums))
 
-            detail_info = await self.get_detail(url, full_title)
-            
-            if extracted_price == 0 and detail_info.get("price", 0) > 0:
-                extracted_price = detail_info.get("price")
-                extracted_currency = detail_info.get("currency", extracted_currency)
-
-            # 고화질 본문 이미지가 있으면 무조건 덮어쓰기 (썸네일 흐림 방지 및 투명 썸네일 완벽 대체)
-            if detail_info.get("image_url"):
-                image_url = detail_info.get("image_url")
-
             # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
             if extracted_currency == "KRW" and extracted_price > 0 and extracted_price <= 10000:
                 if any(kw in full_title for kw in ['알리', '코인', '큐텐', '직구', '알익']):
                     extracted_currency = "USD"
                     extracted_price = int(extracted_price * 100)
 
-            is_closed = detail_info.get("is_closed", False)
+            is_closed = False
             if '종료' in full_title or '마감' in full_title or '품절' in full_title:
                 is_closed = True
             if title_el.select_one('del, s, strike, font[color="#999999"]'):
@@ -180,10 +170,6 @@ class PpomppuScraper(AsyncBaseScraper):
             if time_str:
                 posted_at_iso = self.parse_time_str(time_str)
 
-            detail_posted_at = detail_info.get("posted_at")
-            if detail_posted_at:
-                posted_at_iso = detail_posted_at
-
             # 제목 앞 대괄호 분류 파싱
             scraped_category = None
             category_match = re.match(r'^\[(.*?)\]', full_title)
@@ -197,10 +183,10 @@ class PpomppuScraper(AsyncBaseScraper):
                 "currency": extracted_currency,
                 "shop_name": "",
                 "image_url": image_url,
-                "ecommerce_link": detail_info.get("ecommerce_link", ""),
-                "content_html": detail_info.get("content_html", ""),
+                "ecommerce_link": "",
+                "content_html": "",
                 "is_closed": is_closed,
-                "shipping_fee": detail_info.get("shipping_fee", ""),
+                "shipping_fee": "",
                 "is_super_hotdeal": is_super_hotdeal,
                 "posted_at": posted_at_iso,
                 "view_count": view_count,
@@ -319,14 +305,15 @@ class PpomppuScraper(AsyncBaseScraper):
                 
         shipping_fee = ""
         # 1. 명시적인 테이블 정보(배송비/택배비) 확인
-        for tr in soup.select('table tr'):
-            th = tr.select_one('th, td.han')
-            td = tr.select_one('td:not(.han)')
+        # [HOTFIX] 본문 td.han이 th로 잘못 매칭되어 배송비 필드가 본문으로 오염되는 현상 원천 차단
+        for tr in soup.select('table.board_table tr, table[class*="board_table"] tr, tr'):
+            th = tr.select_one('th')
+            td = tr.select_one('td')
             if th and td:
                 th_text = th.get_text(strip=True)
-                if '배송비' in th_text or '택배비' in th_text:
+                if len(th_text) < 15 and ('배송비' in th_text or '택배비' in th_text):
                     fee_text = td.get_text(strip=True)
-                    if fee_text:
+                    if fee_text and len(fee_text) < 50:
                         shipping_fee = fee_text
                         break
         

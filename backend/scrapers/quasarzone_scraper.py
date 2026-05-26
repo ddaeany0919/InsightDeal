@@ -130,8 +130,6 @@ class QuasarzoneScraper(AsyncBaseScraper):
             if like_count >= 20:
                 is_super_hotdeal = True
 
-            detail_info = await self.get_detail(url)
-            
             return {
                 "category": category,
                 "title": full_title,
@@ -140,15 +138,15 @@ class QuasarzoneScraper(AsyncBaseScraper):
                 "currency": currency,
                 "shop_name": "",
                 "image_url": image_url,
-                "ecommerce_link": detail_info.get("ecommerce_link", ""),
-                "is_closed": is_closed or detail_info.get("is_closed", False),
-                "shipping_fee": detail_info.get("shipping_fee", ""),
+                "ecommerce_link": "",
+                "is_closed": is_closed,
+                "shipping_fee": "",
                 "is_super_hotdeal": is_super_hotdeal,
                 "posted_at": posted_at_iso,
                 "view_count": view_count,
                 "like_count": like_count,
                 "comment_count": comment_count,
-                "content_html": detail_info.get("content_html", "")
+                "content_html": ""
             }
             
         tasks = [process_row(row) for row in post_rows]

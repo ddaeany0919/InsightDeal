@@ -39,8 +39,6 @@ class BbasakBaseScraper(AsyncBaseScraper):
                 url += "&device=pc" if "?" in url else "?device=pc"
                 
             full_title = title_element.get_text(strip=True)
-
-            detail_info = await self.get_detail(url)
             
             price = 0
             extracted_currency = "KRW"
@@ -100,10 +98,6 @@ class BbasakBaseScraper(AsyncBaseScraper):
                     comment_count = int(cmt_match.group(1))
                     full_title = re.sub(r'\s*\[\d+\]$', '', full_title).strip()
                 
-            if price == 0 and detail_info.get("price", 0) > 0:
-                price = detail_info.get("price")
-                extracted_currency = detail_info.get("currency", extracted_currency)
-
             # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
             if extracted_currency == "KRW" and price > 0 and price <= 10000:
                 if any(kw in full_title for kw in ['알리', '코인', '큐텐', '직구', '알익']):
@@ -139,10 +133,10 @@ class BbasakBaseScraper(AsyncBaseScraper):
                 "price": price,
                 "currency": extracted_currency,
                 "shop_name": "",
-                "image_url": detail_info.get("image_url", ""),
-                "ecommerce_link": detail_info.get("ecommerce_link", ""),
+                "image_url": "",
+                "ecommerce_link": "",
                 "is_closed": is_closed,
-                "shipping_fee": detail_info.get("shipping_fee", ""),
+                "shipping_fee": "",
                 "is_super_hotdeal": is_super_hotdeal,
                 "posted_at": posted_at_iso,
                 "view_count": view_count,
