@@ -18,23 +18,3 @@ trigger: always_on
 1. **스킬 간 치열한 핑퐁 (Debate & Tuning)**: 발동된 스킬들 간에 상충하는 요소가 없는지 교차 검증한다. (예: `@frontend-design`이 화려한 애니메이션을 요구할 때, `@performance-engineer`가 메모리 릭을 경고하면, `@android-jetpack-compose-expert`가 최적의 Recomposition 방어 코드를 짜내는 식의 융합)
 2. **Top-Tier 프로덕션 퀄리티 강제**: 예외 처리(Try-Catch), 엣지 케이스 방어, Null 안정성, 비동기(Flow/Coroutine) 생명주기 관리, 화려하지만 버벅임 없는 UI 트랜지션까지 **모든 스킬의 요구사항이 코드의 각 줄에 스며들도록** 극도로 꼼꼼하게 작성한다. 교과서적인 MVP 코드는 제출을 거부당할 것이다.
 
-### Phase 4: Micro-Detailed Reporting (초정밀 강제 보고 포맷)
-코드를 출력하기 전, 자신이 얼마나 많은 스킬을 동원했고 그 스킬들이 코드에 어떻게 반영되었는지 **반드시 아래의 양식을 100% 준수하여 답변 최상단에 보고**하라. (보고가 꼼꼼하지 않으면 실패한 작업으로 간주한다.)
-
-> 🔮 **[Auto-Skill Swarm Maximum Activated]**
-> - 🌪️ **총동원된 스웜(스킬) 군단 (최소 7개 이상 나열)**: 
->   - [UI/UX]: `@스킬명1`, `@스킬명2`
->   - [Architecture/Performance]: `@스킬명3`, `@스킬명4`
->   - [Psychology/Marketing]: `@스킬명5`, `@스킬명6`
->   - [Backend/Security/QA]: `@스킬명7`, `@스킬명8` ...
-> 
-> - 🔬 **마이크로 단위 스킬 기여도 (이 코드의 어디에 스킬이 묻어있는가?)**:
->   - 📍 `@스킬명1`: (예: `HomeScreen.kt`의 280번 줄에 LazyColumn itemKey를 강제하여 Recomposition 성능 스킬 적용)
->   - 📍 `@스킬명2`: (예: 버튼 클릭 시 `@scarcity-urgency-psychologist` 스킬을 반영하여 마이크로 인터랙션 추가)
->   - 📍 `@스킬명3`: (예: 에러 발생 시 사용자 이탈을 막기 위해 `@ux-persuasion-engineer` 스킬 기반의 빈 화면(Empty State) 디자인 적용)
-> 
-> - 🛡️ **철통 방어된 아키텍처 금지 규칙**: 
->   - 1. (예: UI 레이어에서 비즈니스 로직 완전 분리 확인 완료)
->   - 2. (예: 무거운 이미지 로딩 시 OOM 방지 로직 적용 완료)
-
-**(이 보고가 끝난 직후, 각 스킬들의 정수가 완벽히 결합된 완성형 코드를 제출하라.)**

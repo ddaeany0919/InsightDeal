@@ -290,14 +290,50 @@ class AggregatorService:
             )
             target_deals = []
             
-            # 1. 쇼핑몰 링크(ecommerce_url) 기준 매칭 (확실한 고유 링크일 경우, 너무 짧은 링크 제외)
+            # 1. 쇼핑몰 링크(ecommerce_url) 기준 매칭 (확실한 고유 링크일 경우, 정규화 보증하여 도메인 차이 극복)
             target_url = scraped_data.get("ecommerce_link")
             if target_url and len(target_url) > 20 and 'coupang' not in target_url:
-                target_deals = query.filter(Deal.ecommerce_link == target_url).all()
+                from backend.core.url_utils import normalize_url
+                normalized_target_url = normalize_url(target_url)
+                # 정규화된 URL 혹은 원본 URL 모두에 대해 폭넓은 매칭 시도
+                target_deals = query.filter(
+                    (Deal.ecommerce_link == normalized_target_url) | 
+                    (Deal.ecommerce_link == target_url)
+                ).all()
             
             # 2. 정규화된 상품명(base_product_name) 기준 매칭 (링크가 없거나 달라도 상품명이 같으면)
             if not target_deals and normalized.name and len(normalized.name) > 4:
                 target_deals = query.filter(Deal.base_product_name == normalized.name).all()
+                
+            # 3. 🚨 [초지능형 토큰 교차 매칭 가드] (대표님 핫픽스: Toocki 100W C to C 3개 vs Toocki C to C 100W 3pcs 병합 성공!)
+            if not target_deals:
+                # 최근 24시간 이내의 모든 딜을 긁어서 제목 기반의 유사 토큰 오버랩 분석 실시
+                recent_deals = query.all()
+                import re
+                
+                def get_clean_tokens(text: str) -> set:
+                    # 영어, 숫자, 주요 특수 단어 위주로 토큰화
+                    cleaned = re.sub(r'[^a-zA-Z0-9\s]', ' ', text.lower())
+                    return {token for token in cleaned.split() if len(token) >= 2 and token not in ["to", "and", "or", "for", "pcs"]}
+
+                input_tokens = get_clean_tokens(raw_title)
+                
+                # 핵심 키워드(예: Toocki, 100W, ugreen, acer 등 브랜드/숫자스펙)를 반드시 담고 있어야 함
+                core_keywords = {tk for tk in input_tokens if re.search(r'[0-9]+[wWdD]?|[a-zA-Z]{4,}', tk)}
+                
+                if len(core_keywords) >= 2:
+                    for d in recent_deals:
+                        d_tokens = get_clean_tokens(d.title)
+                        # 핵심 키워드가 최소 2개 이상 100% 동일하게 겹치는지 체크
+                        overlap_core = core_keywords.intersection(d_tokens)
+                        if len(overlap_core) >= 2:
+                            # 겹치는 비율이 높은지 검사 (유사 상품군으로 100% 확증)
+                            all_overlap = input_tokens.intersection(d_tokens)
+                            if len(all_overlap) >= 3:
+                                logger.info(f"🔮 [초지능형 토큰 병합 적중] 유사도가 매우 높은 동일 핫딜 감지하여 병합! 원제: '{raw_title}' ➔ 기존딜: '{d.title}'")
+                                target_deals = [d]
+                                break
+
                 
             if target_deals:
                 # 롤링 윈도우 병합 발생! 가장 최근(마지막) 딜을 대상으로 갱신을 수행하여 윈도우를 연장시킴
