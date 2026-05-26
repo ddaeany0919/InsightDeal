@@ -23,16 +23,20 @@ logger = logging.getLogger(__name__)
 def process_ai_batch():
     db = SessionLocal()
     try:
-        # ai_summary가 비어있는 항목을 15개씩 묶어서 처리
+        from datetime import datetime, timedelta
+        # 🔍 [초고효율 시간 가드] 과거 유산 데이터 summarization 병목을 막기 위해 최근 48시간 이내 수집된 딜만 타겟팅!
+        limit_time = datetime.utcnow() - timedelta(hours=48)
+        
         deals_to_process = db.query(Deal).filter(
             Deal.ai_summary == None, 
             Deal.price != '0', 
-            Deal.price != None
+            Deal.price != None,
+            Deal.indexed_at >= limit_time
         ).limit(15).all()
         
         if not deals_to_process:
-            logger.info("🎉 처리가 필요한 AI 요약 항목이 없습니다.")
             return 0
+
 
         logger.info(f"🚀 {len(deals_to_process)}개의 항목에 대해 일괄 AI 분석을 시작합니다...")
         
@@ -141,16 +145,24 @@ def process_ai_batch():
 def run_all_batches(max_batches=20):
     """최대 설정된 횟수만큼 배치 처리 실행"""
     total_processed = 0
+    from datetime import datetime, timedelta
+    limit_time = datetime.utcnow() - timedelta(hours=48)
+    
     for i in range(max_batches):
         db = SessionLocal()
-        count = db.query(Deal).filter(Deal.ai_summary == None, Deal.price != '0', Deal.price != None).count()
+        count = db.query(Deal).filter(
+            Deal.ai_summary == None, 
+            Deal.price != '0', 
+            Deal.price != None,
+            Deal.indexed_at >= limit_time
+        ).count()
         db.close()
         
         if count == 0:
-            logger.info("모든 요약 처리가 완료되었습니다.")
+            logger.info("🎉 모든 최근 요약 처리가 완료되었습니다.")
             break
             
-        logger.info(f"배치 라운드 {i+1}/{max_batches} 시작 (남은 항목: {count}개)")
+        logger.info(f"배치 라운드 {i+1}/{max_batches} 시작 (남은 최근 항목: {count}개)")
         processed = process_ai_batch()
         if processed == 0:
             logger.warning("진척이 없어 배치를 중단합니다.")
@@ -161,6 +173,7 @@ def run_all_batches(max_batches=20):
         time.sleep(4)
         
     return total_processed
+
 
 if __name__ == "__main__":
     run_all_batches()
