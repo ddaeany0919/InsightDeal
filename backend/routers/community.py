@@ -112,8 +112,9 @@ def extract_price(price_str):
 
 def extract_shipping_fee(fee_str):
     if not fee_str: return 0
-    if '臾대즺' in str(fee_str) or '臾대같' in str(fee_str): return 0
-    nums = re.findall(r'\d+', str(fee_str))
+    fee_str_str = str(fee_str)
+    if any(x in fee_str_str for x in ['무료', '무배', '무료배송', '臾대즺', '臾대같']): return 0
+    nums = re.findall(r'\d+', fee_str_str)
     if nums: return int(''.join(nums))
     return 0
 

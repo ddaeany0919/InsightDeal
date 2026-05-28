@@ -386,6 +386,7 @@ class FmkoreaScraper(AsyncBaseScraper):
         currency_fallback = "KRW"
         shipping_fee = ""
         shop_name = ""
+        is_price_resolved = False
         
         # 1. table 방식의 핫딜 정보 파싱 (데스크탑 레이아웃 등)
         for table in soup.select('table'):
@@ -398,20 +399,25 @@ class FmkoreaScraper(AsyncBaseScraper):
                         th_text = th.get_text(strip=True)
                         td_text = td.get_text(strip=True)
                         if '가격' in th_text:
-                            if '$' in td_text or '달러' in td_text or 'USD' in td_text.upper():
-                                currency_fallback = "USD"
-                            elif '€' in td_text or '유로' in td_text or 'EUR' in td_text.upper():
-                                currency_fallback = "EUR"
-                            
-                            price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', td_text)
-                            if price_matches:
-                                try:
-                                    raw_val = float(price_matches[0].replace(',', ''))
-                                    if currency_fallback in ["USD", "EUR"]:
-                                        price_fallback = int(raw_val * 100)
-                                    else:
-                                        price_fallback = int(raw_val)
-                                except: pass
+                            if any(x in td_text.lower() for x in ['무료', '공짜', '나눔', 'free', '0원', '무배']):
+                                price_fallback = 0
+                                is_price_resolved = True
+                            else:
+                                if '$' in td_text or '달러' in td_text or 'USD' in td_text.upper():
+                                    currency_fallback = "USD"
+                                elif '€' in td_text or '유로' in td_text or 'EUR' in td_text.upper():
+                                    currency_fallback = "EUR"
+                                
+                                price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', td_text)
+                                if price_matches:
+                                    try:
+                                        raw_val = float(price_matches[0].replace(',', ''))
+                                        if currency_fallback in ["USD", "EUR"]:
+                                            price_fallback = int(raw_val * 100)
+                                        else:
+                                            price_fallback = int(raw_val)
+                                        is_price_resolved = True
+                                    except: pass
                         elif '배송' in th_text:
                             shipping_fee = td_text
                         elif '쇼핑몰' in th_text:
@@ -419,26 +425,32 @@ class FmkoreaScraper(AsyncBaseScraper):
                 break
                 
         # 2. div.hotdeal_info 방식의 핫딜 정보 파싱
-        if price_fallback == 0 and not shipping_fee:
+        if not is_price_resolved or not shipping_fee:
             hotdeal_info = soup.select_one('.hotdeal_info')
             if hotdeal_info:
                 for span in hotdeal_info.select('span'):
                     span_text = span.get_text(strip=True)
                     if '가격:' in span_text:
-                        if '$' in span_text or '달러' in span_text or 'USD' in span_text.upper():
-                            currency_fallback = "USD"
-                        elif '€' in span_text or '유로' in span_text or 'EUR' in span_text.upper():
-                            currency_fallback = "EUR"
-                            
-                        price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', span_text)
-                        if price_matches:
-                            try:
-                                raw_val = float(price_matches[0].replace(',', ''))
-                                if currency_fallback in ["USD", "EUR"]:
-                                    price_fallback = int(raw_val * 100)
-                                else:
-                                    price_fallback = int(raw_val)
-                            except: pass
+                        # 무료 감지 추가
+                        if any(x in span_text.lower() for x in ['무료', '공짜', '나눔', 'free', '0원', '무배']):
+                            price_fallback = 0
+                            is_price_resolved = True
+                        else:
+                            if '$' in span_text or '달러' in span_text or 'USD' in span_text.upper():
+                                currency_fallback = "USD"
+                            elif '€' in span_text or '유로' in span_text or 'EUR' in span_text.upper():
+                                currency_fallback = "EUR"
+                                
+                            price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', span_text)
+                            if price_matches:
+                                try:
+                                    raw_val = float(price_matches[0].replace(',', ''))
+                                    if currency_fallback in ["USD", "EUR"]:
+                                        price_fallback = int(raw_val * 100)
+                                    else:
+                                        price_fallback = int(raw_val)
+                                    is_price_resolved = True
+                                except: pass
                     elif '배송:' in span_text:
                         shipping_fee = span_text.replace('배송:', '').replace('배송 :', '').strip()
                     elif '쇼핑몰:' in span_text:
@@ -462,16 +474,21 @@ class FmkoreaScraper(AsyncBaseScraper):
         if body_parts:
             body_text = " \n ".join(body_parts)
             
-            if price_fallback == 0:
-                if "(0원)" in body_text or "나눔" in body_text:
+            # 가격이 수립되지 않은 경우에만 본문 폴백 가격 유추기 작동
+            if not is_price_resolved:
+                # 본문 파싱 전 URL 소거 처리! (스팀 앱아이디 등 링크 내의 숫자 오인 차단)
+                cleaned_body_text = re.sub(r'https?://[^\s]+', '', body_text)
+                
+                if "(0원)" in cleaned_body_text or "나눔" in cleaned_body_text or any(x in cleaned_body_text.lower() for x in ['무료', '공짜', 'free']):
                     price_fallback = 0
+                    is_price_resolved = True
                 else:
-                    if '$' in body_text or '달러' in body_text or 'USD' in body_text.upper():
+                    if '$' in cleaned_body_text or '달러' in cleaned_body_text or 'USD' in cleaned_body_text.upper():
                         currency_fallback = "USD"
-                    elif '€' in body_text or '유로' in body_text or 'EUR' in body_text.upper():
+                    elif '€' in cleaned_body_text or '유로' in cleaned_body_text or 'EUR' in cleaned_body_text.upper():
                         currency_fallback = "EUR"
                         
-                    price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,}(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', body_text)
+                    price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,}(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', cleaned_body_text)
                     if price_matches:
                         try:
                             raw_val = float(price_matches[0].replace(',', ''))
@@ -479,12 +496,13 @@ class FmkoreaScraper(AsyncBaseScraper):
                                 price_fallback = int(raw_val * 100)
                             else:
                                 price_fallback = int(raw_val)
+                            is_price_resolved = True
                         except:
                             pass
                     
-                if not shipping_fee:
-                    if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):
-                        shipping_fee = "무료배송"
+            if not shipping_fee:
+                if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):
+                    shipping_fee = "무료배송"
 
         posted_at_iso = None
         date_el = soup.select_one('.date')

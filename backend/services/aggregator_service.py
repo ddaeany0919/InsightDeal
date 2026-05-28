@@ -155,10 +155,10 @@ class AggregatorService:
             sf_str = str(shipping_fee).strip()
             # 텍스트 내의 다중 공백, 탭, 줄바꿈 등을 하나의 공백으로 압축하여 프론트엔드 UI 깨짐 방지
             sf_str = re.sub(r'\s+', ' ', sf_str)
-            if sf_str in ["0", "0원", "무료"]:
+            if sf_str in ["0", "0원", "무료", "무배", "무료배송", "臾대즺", "臾대같"]:
                 shipping_fee = "무료배송"
-            elif re.match(r'^(0원?|무료)\s*(/|\+)', sf_str):
-                shipping_fee = re.sub(r'^(0원?|무료)\s*', '무료배송 ', sf_str)
+            elif re.match(r'^(0원?|무료|무배|臾대즺|臾대같)\s*(/|\+)', sf_str):
+                shipping_fee = re.sub(r'^(0원?|무료|무배|臾대즺|臾대같)\s*', '무료배송 ', sf_str)
             else:
                 shipping_fee = sf_str
         
