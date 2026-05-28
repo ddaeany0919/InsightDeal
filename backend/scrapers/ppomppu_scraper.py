@@ -72,10 +72,10 @@ class PpomppuScraper(AsyncBaseScraper):
                  if image_url.startswith('//'): image_url = "https:" + image_url
                  elif not image_url.startswith('http'): image_url = urljoin("https://www.ppomppu.co.kr", image_url)
 
-            # 만약 썸네일 주소가 투명 이미지이거나 아이콘이면 비움 처리
+            # 만약 썸네일 주소가 투명 이미지이거나 아이콘, 또는 노이미지 엑스박스면 비움 처리
             if image_url:
                 img_url_lower = image_url.lower()
-                if any(x in img_url_lower for x in ['transparent', 'blank', 'logo', 'icon', 'empty']):
+                if any(x in img_url_lower for x in ['transparent', 'blank', 'logo', 'icon', 'empty', 'noimage']) or image_url.startswith('data:') or 'base64' in img_url_lower:
                     image_url = ""
 
             # 제목에서 가격 추출 시도 (예: 15,900원, 3만9천원)

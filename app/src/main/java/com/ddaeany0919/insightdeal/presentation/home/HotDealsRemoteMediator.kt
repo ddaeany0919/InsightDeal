@@ -34,10 +34,7 @@ class HotDealsRemoteMediator(
         return try {
             // 1. 현재 로드 타입에 따른 Offset(페이지 키) 계산
             val offset = when (loadType) {
-                LoadType.REFRESH -> {
-                    val remoteKeys = getRemoteKeyClosestToCurrentPosition(state)
-                    remoteKeys?.nextKey?.minus(state.config.pageSize) ?: 0
-                }
+                LoadType.REFRESH -> 0
                 LoadType.PREPEND -> {
                     return MediatorResult.Success(endOfPaginationReached = true)
                 }

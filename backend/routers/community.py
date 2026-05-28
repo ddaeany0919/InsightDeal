@@ -194,7 +194,9 @@ def get_normalized_url(deal):
     if "link.php" in url or "out.php" in url:
         return None
         
-    return url
+    # [정밀 정규화 추가]: 최종 반환 전 normalize_url을 거쳐 끝단 슬래시(/) 및 프로토콜을 완벽히 규격화!
+    from backend.core.url_utils import normalize_url
+    return normalize_url(url)
 
 class DSU:
     def __init__(self):
@@ -245,14 +247,16 @@ def has_quantity_conflict(words_a, words_b):
 
 def has_model_conflict(words_a, words_b):
     """Check model number conflicts between two word sets"""
-    # ?곸닽???쇳빀 5???댁긽 ?⑥뼱 = 紐⑤뜽踰덊샇 ?꾨낫
+    # 영숫자 조합 5자 이상 단어 = 모델번호 후보 (한글 제외, ASCII 영문+숫자만 허용)
     def get_model_codes(words):
+        import re
         codes = set()
         for w in words:
-            # ?곷Ц+?レ옄 ?쇳빀, 5???댁긽, ?쒖닔 ?レ옄???쒖닔 ?곷Ц ?꾨땶 寃?
+            # 영문+숫자 혼합, 5자 이상, 순수 숫자나 순수 영문 아닌 것 (한글/유니코드 글자 제외)
             if (len(w) >= 5
+                    and re.match(r'^[a-zA-Z0-9]+$', w)
                     and any(c.isdigit() for c in w)
-                    and any(c.isalpha() for c in w)
+                    and any(c.isascii() and c.isalpha() for c in w)
                     and not w.endswith('gb')
                     and not w.endswith('mb')
                     and not w.endswith('kg')
@@ -292,7 +296,8 @@ def build_dsu(deals, time_window_days=1):
                     if curr_words_set and past_words_set:
                         intersection = len(curr_words_set.intersection(past_words_set))
                         union = len(curr_words_set.union(past_words_set))
-                        if intersection > 0 and (intersection / union) >= 0.1:
+                        is_detailed_url = len(n_url_key) > 30 or any(kw in n_url_key for kw in ["/app/", "/products/", "/item/", "/goods/"])
+                        if (intersection > 0 and (intersection / union) >= 0.1) or is_detailed_url:
                             if not has_quantity_conflict(curr_words_set, past_words_set) and not has_model_conflict(curr_words_set, past_words_set):
                                 dsu.union(deal.id, past_id)
                                 break
@@ -625,8 +630,30 @@ async def get_hot_deals(
             if platform_conditions:
                 query = query.filter(or_(*platform_conditions))
             
-        # ?됰꼮?섍쾶 媛?몄????뚯씠???⑥뿉???대윭?ㅽ꽣留?
+        # ?됰꼮?섍쾶 媛€?몄????뚯씠???⑥뿉???대윭?ㅽ꽣留?
         deals = query.order_by(models.Deal.indexed_at.desc()).limit(300).all()
+
+        # [스마트 DSU 백필 가드 (DSU Backfill Guard)]
+        # 검색(keyword) 필터링 등으로 인해 병합되어야 할 다른 커뮤니티 딜이 누락되는 현상 방지
+        if deals:
+            ecom_links = []
+            for d in deals:
+                if d.ecommerce_link and len(d.ecommerce_link) > 10:
+                    link = d.ecommerce_link.strip()
+                    ecom_links.append(link)
+                    if link.endswith('/'):
+                        ecom_links.append(link[:-1])
+                    else:
+                        ecom_links.append(link + '/')
+            if ecom_links:
+                existing_ids = {d.id for d in deals}
+                additional_deals = db.query(models.Deal).join(models.Community).filter(
+                    models.Deal.ecommerce_link.in_(ecom_links),
+                    ~models.Deal.id.in_(existing_ids),
+                    models.Deal.is_closed == False
+                ).all()
+                if additional_deals:
+                    deals.extend(additional_deals)
 
         COMMUNITY_MAP = {
             "fmkorea": "에펀", "ppomppu": "뽐뻐", "ruliweb": "루리웹",

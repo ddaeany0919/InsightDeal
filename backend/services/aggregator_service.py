@@ -311,8 +311,8 @@ class AggregatorService:
                 recent_deals = query.all()
                 
                 def get_clean_tokens(text: str) -> set:
-                    # 영어, 숫자, 주요 특수 단어 위주로 토큰화
-                    cleaned = re.sub(r'[^a-zA-Z0-9\s]', ' ', text.lower())
+                    # 영어, 숫자, 한글, 주요 특수 단어 위주로 토큰화하여 한-영 교차 매칭 지원
+                    cleaned = re.sub(r'[^a-zA-Z0-9가-힣\s]', ' ', text.lower())
                     return {token for token in cleaned.split() if len(token) >= 2 and token not in ["to", "and", "or", "for", "pcs"]}
 
                 input_tokens = get_clean_tokens(raw_title)
@@ -399,7 +399,12 @@ class AggregatorService:
                      existing_deal.currency = currency
 
                  existing_deal.is_closed = is_closed
-                 existing_deal.shipping_fee = shipping_fee
+                 # [Smart Shipping Fee Merge Guard]
+                 # 새로 긁어온 배송비가 '정보 없음'이고 기존에 이미 유효한 배송 정보가 기재되어 있다면 덮어쓰지 않고 기존 값 유지!
+                 if shipping_fee and shipping_fee != "정보 없음":
+                     existing_deal.shipping_fee = shipping_fee
+                 elif not existing_deal.shipping_fee or existing_deal.shipping_fee == "정보 없음":
+                     existing_deal.shipping_fee = shipping_fee or "정보 없음"
                  
                  import json
                  if scraped_data.get("options_data"):

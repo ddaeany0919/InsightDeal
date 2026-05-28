@@ -222,11 +222,14 @@ class BbasakBaseScraper(AsyncBaseScraper):
         body_text = soup.get_text(separator=' ')
         
         # 가격 휴리스틱 추출
-        usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', body_text, re.IGNORECASE)
-        if not usd_match:
-            usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', body_text, re.IGNORECASE)
+        # [방어막 추가]: 본문 파싱 전 URL 소거 처리! (링크 내의 숫자 오인 차단)
+        cleaned_body_text = re.sub(r'https?://[^\s]+', '', body_text)
         
-        price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', body_text)
+        usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', cleaned_body_text, re.IGNORECASE)
+        if not usd_match:
+            usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', cleaned_body_text, re.IGNORECASE)
+        
+        price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', cleaned_body_text)
         
         if usd_match:
             try:
