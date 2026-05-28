@@ -161,7 +161,8 @@ class FmkoreaScraper(AsyncBaseScraper):
             # 만약 썸네일 주소가 펨코리아 아이콘, 투명 기프, 빈 로고 등 유효하지 않은 정보라면 비움 처리
             if image_url:
                 img_url_lower = image_url.lower()
-                if any(x in img_url_lower for x in ['transparent', 'fmkorea', 'blank', 'logo', 'icon', 'empty']) or image_url.startswith('data:') or 'base64' in img_url_lower:
+                # 'fmkorea'는 도메인 주소에 포함되므로 필터 키워드에서 제외하여 정상적인 이미지 URL이 유실되는 버그를 방지합니다.
+                if any(x in img_url_lower for x in ['transparent', 'blank', 'logo', 'icon', 'empty']) or image_url.startswith('data:') or 'base64' in img_url_lower:
                     image_url = ""
 
             # 상세 페이지에서 ecommerce_link와 본문 파싱
@@ -485,7 +486,7 @@ class FmkoreaScraper(AsyncBaseScraper):
                     if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):
                         shipping_fee = "무료배송"
 
-        posted_at_iso = ""
+        posted_at_iso = None
         date_el = soup.select_one('.date')
         if date_el:
             date_text = date_el.get_text(strip=True)
@@ -504,7 +505,7 @@ class FmkoreaScraper(AsyncBaseScraper):
         if soup.find(string=re.compile(r'종료된 핫딜입니다')):
             is_closed = True
 
-        return {
+        ret_data = {
             "ecommerce_link": ecommerce_link,
             "image_url": image_url,
             "price": price_fallback,
@@ -512,7 +513,9 @@ class FmkoreaScraper(AsyncBaseScraper):
             "shop_name": shop_name,
             "shipping_fee": shipping_fee,
             "content_html": body_text,
-            "posted_at": posted_at_iso,
             "category": category_text,
             "is_closed": is_closed
         }
+        if posted_at_iso:
+            ret_data["posted_at"] = posted_at_iso
+        return ret_data

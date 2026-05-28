@@ -59,16 +59,16 @@ data class DealItem(
     @SerializedName("category")
     val category: String? = null,
     
-    @SerializedName("created_at")
+    @SerializedName(value = "created_at", alternate = ["indexed_at"])
     val createdAt: String? = null,
     
-    @SerializedName("view_count")
+    @SerializedName(value = "view_count", alternate = ["views"])
     val viewCount: Int = 0,
     
-    @SerializedName("comment_count")
+    @SerializedName(value = "comment_count", alternate = ["comments"])
     val commentCount: Int = 0,
     
-    @SerializedName("like_count")
+    @SerializedName(value = "like_count", alternate = ["recommendations"])
     val likeCount: Int = 0,
 
     @SerializedName("dislike_count")
@@ -77,7 +77,7 @@ data class DealItem(
     @SerializedName("tags")
     val tags: List<String> = emptyList(),
 
-    @SerializedName("honey_score")
+    @SerializedName(value = "honey_score", alternate = ["score"])
     val honeyScore: Int = 0,
 
     @SerializedName("ai_summary")

@@ -753,6 +753,13 @@ fun HomeScreen(
                         contentType = { "deal_item" }
                     ) { index ->
                         val deal = dealsPagingItems[index]
+                        
+                        // 🔍 유저 고속 스크롤 추적용 실시간 렌더링 로깅 가드
+                        android.util.Log.d(
+                            "InsightDealScroll", 
+                            "Index: $index | DealID: ${deal?.id ?: "NULL"} | Title: ${deal?.title?.take(15) ?: "PLACEHOLDER(Skeleton)"}"
+                        )
+
                         if (deal != null) {
                             DealCardComposable(
                                 deal = deal,
@@ -773,6 +780,9 @@ fun HomeScreen(
                                     }
                                 }
                             )
+                        } else {
+                            // 🚀 스크롤 속도가 데이터 로드보다 빠를 때 높이 0으로 압축되는 레이아웃 붕괴를 원천 방어하여 튕김 현상 제거!
+                            HomeDealCardSkeleton()
                         }
                     }
                     

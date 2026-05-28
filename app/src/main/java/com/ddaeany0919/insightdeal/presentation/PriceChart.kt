@@ -32,7 +32,8 @@ import kotlin.math.max
 fun PriceChart(
     prices: List<Float>,
     dates: List<String>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currency: String = "KRW"
 ) {
     if (prices.isEmpty()) return
 
@@ -188,7 +189,7 @@ fun PriceChart(
                 drawCircle(color = primaryColor, radius = 6.dp.toPx(), center = point)
                 drawCircle(color = Color.White, radius = 3.dp.toPx(), center = point)
 
-                val priceText = String.format("%,d원", prices[index].toInt())
+                val priceText = formatPrice(prices[index].toLong(), currency)
                 val rawDate: String? = if (dates.isNotEmpty() && index < dates.size) dates[index] else ""
                 val dateText = rawDate ?: ""
                 

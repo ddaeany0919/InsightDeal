@@ -109,7 +109,10 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                             # 상세 페이지 내부의 외부 링크가 있다면 그것도 정규화
                             if detail.get("ecommerce_link"):
                                 detail["ecommerce_link"] = normalize_url(detail["ecommerce_link"])
-                            item.update(detail)
+                            # [Smart Merge Guard] 빈 문자열이나 None이 아닌 유효한 값만 병합하여 목록 단의 posted_at 등 유실 방지
+                            for k, v in detail.items():
+                                if v is not None and v != "":
+                                    item[k] = v
                     else:
                         # 2. 기존 수집된 딜인 경우 ➔ 시간 기반 스마트 델타 스킵 가드 (Time-based Delta Skip Guard) 적용!
                         from datetime import datetime, timedelta
@@ -147,7 +150,10 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                             if detail:
                                 if detail.get("ecommerce_link"):
                                     detail["ecommerce_link"] = normalize_url(detail["ecommerce_link"])
-                                item.update(detail)
+                                # [Smart Merge Guard] 빈 문자열이나 None이 아닌 유효한 값만 병합하여 목록 단의 posted_at 등 유실 방지
+                                for k, v in detail.items():
+                                    if v is not None and v != "":
+                                        item[k] = v
                     
                     aggregator = AggregatorService(local_db)
                     deal = await aggregator.process_scraped_deal(community_id, item)
@@ -212,7 +218,11 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                             
                         # 핫딜 종료/점수 강등 상태 업데이트를 위해 페이지 조기 종료 스킵 (1~3페이지 모두 스캔 보장)
                         if unique_items and duplicate_count >= len(unique_items) - 1:
-                            logger.info(f"ℹ️ [{community_display_name}] {page}페이지 대부분({duplicate_count}/{len(items)})이 기존 딜이지만, 상태 갱신을 위해 스캔을 계속합니다.")
+                            if page > 3:
+                                logger.info(f"⏭️ [{community_display_name}] {page}페이지 대부분({duplicate_count}/{len(items)})이 기존 딜입니다. 백필 구간이 연결되었으므로 조기 종료합니다.")
+                                break
+                            else:
+                                logger.info(f"ℹ️ [{community_display_name}] {page}페이지 대부분({duplicate_count}/{len(items)})이 기존 딜이지만, 상태 갱신을 위해 스캔을 계속합니다.")
                 except Exception as e:
                     logger.error(f"[{community_display_name}] 리스트 페이지 {page} 파싱 에러: {e}")
                     # 타임아웃/차단 등 심각한 에러 발생 시 다음 페이지 조회를 중단하여 파이프라인 지연 방지

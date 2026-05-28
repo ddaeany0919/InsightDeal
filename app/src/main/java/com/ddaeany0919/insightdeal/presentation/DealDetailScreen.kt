@@ -124,12 +124,16 @@ fun DealDetailRoute(
         )
     }
 
+    val selectedPeriod by viewModel.selectedPeriod.collectAsState()
+
     DealDetailScreen(
         deal = deal,
         priceHistory = uiState.priceHistory,
         mallPrices = pricesList,
         isBookmarked = isBookmarked,
         votes = uiState.votes,
+        selectedPeriod = selectedPeriod,
+        onPeriodSelected = { viewModel.setPeriod(it) },
         onBack = onBack,
         onBookmarkToggle = {
             if (isBookmarked) {
@@ -159,6 +163,8 @@ fun DealDetailScreen(
     mallPrices: List<MallPrice>,
     isBookmarked: Boolean,
     votes: ApiDealVotes?,
+    selectedPeriod: String,
+    onPeriodSelected: (String) -> Unit,
     onBack: () -> Unit,
     onBookmarkToggle: () -> Unit,
     onShare: () -> Unit,
@@ -274,14 +280,16 @@ fun DealDetailScreen(
                 DealHeader(deal)
             }
             item(key = "price_chart", contentType = "chart") { 
-                PriceHistoryInteractiveCard(priceHistory) 
+                PriceHistoryInteractiveCard(
+                    history = priceHistory,
+                    currency = deal.currency,
+                    selectedPeriod = selectedPeriod,
+                    onPeriodSelected = onPeriodSelected
+                ) 
             }
             item(key = "buyer_guide", contentType = "guide") {
                 if (priceHistory.size > 1 || deal.honeyScore > 0) {
-                    val minPrice = remember(priceHistory, mallPrices) {
-                        priceHistory.minOfOrNull { it.price } ?: mallPrices.minOfOrNull { it.price } ?: 0
-                    }
-                    AIBuyerGuide(deal = deal, priceHistory = priceHistory, currentPrice = minPrice)
+                    AIBuyerGuide(deal = deal, priceHistory = priceHistory, currentPrice = deal.price.toInt())
                 }
             }
             item(key = "alert_register", contentType = "alert_btn") {
@@ -551,101 +559,145 @@ private fun PriceAlertRegistrationButton(currentPrice: Int, onAlertClick: (Int) 
 }
 
 @Composable
-private fun PriceHistoryInteractiveCard(history: List<PriceHistoryPoint>) {
-    if (history.size <= 1) {
-        // ⚡ 가격 정보 부족 시 미려한 AI 펄스 웨이브 애니메이션 카드 제공
-        val infiniteTransition = rememberInfiniteTransition(label = "pulseTransition")
-        val alpha by infiniteTransition.animateFloat(
-            initialValue = 0.3f,
-            targetValue = 0.95f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 1500, easing = LinearOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "pulseAlpha"
-        )
-        val scale by infiniteTransition.animateFloat(
-            initialValue = 0.97f,
-            targetValue = 1.01f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "pulseScale"
-        )
-
-        Card(
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier = Modifier
-                .fillMaxWidth()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                }
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(24.dp)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
+private fun PriceHistoryInteractiveCard(
+    history: List<PriceHistoryPoint>,
+    currency: String = "KRW",
+    selectedPeriod: String = "7d",
+    onPeriodSelected: (String) -> Unit = {}
+) {
+    Card(
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            // Header Row (핫딜 가격 변동 + 기간 선택 칩들)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f * alpha),
-                    modifier = Modifier.size(54.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
                 Text(
-                    text = "AI 가격 이력 차트 빌딩 중 📈",
+                    text = "핫딜 가격 변동",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    letterSpacing = (-0.3).sp
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "AI가 스마트 수집 로봇을 통해 이 상품의 역대 가격 변동 데이터를 백그라운드에서 실시간 적재하고 있습니다. 차트가 완성되는 대로 곧 보여드릴게요!",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 20.sp,
-                    letterSpacing = (-0.2).sp
-                )
-            }
-        }
-    } else {
-        Card(
-            elevation = CardDefaults.cardElevation(0.dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text(
-                    text = "핫딜 가격 변동", 
-                    style = MaterialTheme.typography.titleMedium, 
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                     letterSpacing = (-0.3).sp
                 )
-                Spacer(Modifier.height(16.dp))
+                
+                // 기간 선택 칩들 (7일, 30일, 90일)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf(
+                        "7d" to "7일",
+                        "1m" to "30일",
+                        "3m" to "90일"
+                    ).forEach { (periodKey, label) ->
+                        val isSelected = periodKey == selectedPeriod
+                        val containerColor = if (isSelected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent
+                        val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        val borderStroke = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        
+                        androidx.compose.material3.Surface(
+                            onClick = { onPeriodSelected(periodKey) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = containerColor,
+                            contentColor = contentColor,
+                            border = borderStroke,
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.padding(horizontal = 10.dp)
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
+            Spacer(Modifier.height(16.dp))
+            
+            if (history.size <= 1) {
+                // ⚡ 가격 정보 부족 시 미려한 AI 펄스 웨이브 애니메이션 카드 제공
+                val infiniteTransition = rememberInfiniteTransition(label = "pulseTransition")
+                val alpha by infiniteTransition.animateFloat(
+                    initialValue = 0.3f,
+                    targetValue = 0.95f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 1500, easing = LinearOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "pulseAlpha"
+                )
+                val scale by infiniteTransition.animateFloat(
+                    initialValue = 0.97f,
+                    targetValue = 1.01f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "pulseScale"
+                )
+                
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp)
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                        },
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    androidx.compose.material3.Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f * alpha),
+                        modifier = Modifier.size(54.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = "AI 가격 이력 차트 빌딩 중 📈",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        letterSpacing = (-0.3).sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "AI가 스마트 수집 로봇을 통해 이 상품의 역대 가격 변동 데이터를 백그라운드에서 실시간 적재하고 있습니다. 차트가 완성되는 대로 곧 보여드릴게요!",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 20.sp,
+                        letterSpacing = (-0.2).sp
+                    )
+                }
+            } else {
                 Box(modifier = Modifier.fillMaxWidth().height(200.dp)) {
                     PriceChart(
                         prices = history.map { it.price.toFloat() },
                         dates = history.map { it.date },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        currency = currency
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
@@ -664,6 +716,7 @@ private fun PriceHistoryInteractiveCard(history: List<PriceHistoryPoint>) {
 private fun AIBuyerGuide(deal: DealItem, priceHistory: List<PriceHistoryPoint>, currentPrice: Int) {
     if (currentPrice == 0) return
 
+    val currency = remember(deal.currency) { deal.currency }
     val minPrice = remember(priceHistory, currentPrice) { priceHistory.minOfOrNull { it.price } ?: currentPrice }
     val maxPrice = remember(priceHistory, currentPrice) { priceHistory.maxOfOrNull { it.price } ?: currentPrice }
     val isRecordLow = remember(currentPrice, minPrice, priceHistory) { currentPrice <= minPrice && priceHistory.size > 1 }
@@ -692,6 +745,18 @@ private fun AIBuyerGuide(deal: DealItem, priceHistory: List<PriceHistoryPoint>, 
             if (isDark) Color(0xFF059669) else Color(0xFF4ADE80)
         } else {
             if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)
+        }
+    }
+
+    // 통화별 가격 차이 포매팅 헬퍼 함수
+    val formatDiff = remember(currency) {
+        { diffVal: Int ->
+            val safeCurr = currency.uppercase(Locale.getDefault())
+            when (safeCurr) {
+                "USD" -> String.format(Locale.US, "$%.2f", diffVal / 100.0)
+                "EUR" -> String.format(Locale.US, "€%.2f", diffVal / 100.0)
+                else -> String.format(Locale.getDefault(), "%,d원", diffVal)
+            }
         }
     }
 
@@ -781,26 +846,50 @@ private fun AIBuyerGuide(deal: DealItem, priceHistory: List<PriceHistoryPoint>, 
                 )
                 Spacer(Modifier.height(8.dp))
                 val diffFromMax = maxPrice - currentPrice
-                val formattedDiff = remember(diffFromMax) { String.format("%,d", diffFromMax) }
+                val formattedDiff = remember(diffFromMax) { formatDiff(diffFromMax) }
                 Text(
-                    text = "현재 수집된 역대 가격 역사 중 최저점을 돌파했습니다. 이전 전고점 대비 약 ${formattedDiff}원이나 다운된 상황으로, 수량이 소진되기 전에 강력 추천합니다.",
+                    text = "현재 수집된 역대 가격 역사 중 최저점을 돌파했습니다. 이전 최고가 대비 약 ${formattedDiff} 다운된 상황으로, 수량이 소진되기 전에 강력 추천합니다.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isDark) Color(0xFFCBD5E1) else Color(0xFF334155),
                     lineHeight = 22.sp,
                     letterSpacing = (-0.2).sp
                 )
             } else {
-                val percentage = remember(currentPrice, minPrice, maxPrice) {
-                    if (maxPrice > minPrice) {
-                        ((currentPrice.toFloat() - minPrice.toFloat()) / (maxPrice.toFloat() - minPrice.toFloat()) * 100).toInt()
-                    } else {
-                        50
+                val prevPrice = remember(priceHistory) {
+                    if (priceHistory.size >= 2) priceHistory[priceHistory.size - 2].price else currentPrice
+                }
+                val diffFromPrev = currentPrice - prevPrice
+                val diffFromMin = currentPrice - minPrice
+                
+                val formattedDiffPrev = remember(diffFromPrev) { formatDiff(Math.abs(diffFromPrev)) }
+                val formattedDiffMin = remember(diffFromMin) { formatDiff(diffFromMin) }
+
+                val dynamicMessage = remember(diffFromPrev, diffFromMin, formattedDiffPrev, formattedDiffMin) {
+                    when {
+                        diffFromPrev > 0 -> {
+                            "📈 가격 상승 흐름 포착! 현재 가격은 직전 등록가 대비 약 ${formattedDiffPrev} 상승했으며, 역대 최저가 대비해서는 약 ${formattedDiffMin} 높은 상태입니다. 추가 상승 우려가 있으니 필요시 빠르게 결정을 내리시는 것을 제안합니다."
+                        }
+                        diffFromPrev < 0 -> {
+                            "📉 점진적 하락세 진입! 현재 가격은 직전 등록가 대비 약 ${formattedDiffPrev} 더 저렴해졌으며, 역대 최저가와는 약 ${formattedDiffMin} 차이로 좁혀졌습니다. 꽤 매력적인 진입 타이밍입니다."
+                        }
+                        else -> {
+                            "현재 가격은 직전 가격과 변동 없이 유지되고 있으며, 역대 최저가 대비 약 ${formattedDiffMin} 높은 수준에서 방어되고 있습니다. 굳이 급하지 않다면 '목표가 알림'을 걸어놓고 지켜보시는 것을 제안합니다."
+                        }
                     }
                 }
+
                 Text(
-                     text = "현재 가격은 변동폭 내 상위 ${percentage}% 범위에 안착해 있습니다. 가격 방어가 유지되고 있으므로, 굳이 급하지 않다면 '목표가 알림'을 걸어놓고 지켜보시는 것을 제안합니다.",
+                    text = "📊 AI 가격 트렌드 실시간 브리핑",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB),
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = (-0.3).sp
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                     text = dynamicMessage,
                      style = MaterialTheme.typography.bodyMedium,
-                     color = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569),
+                     color = if (isDark) Color(0xFFCBD5E1) else Color(0xFF334155),
                      lineHeight = 22.sp,
                      letterSpacing = (-0.2).sp
                 )
@@ -1035,6 +1124,59 @@ fun DealHeader(deal: DealItem) {
                         modifier = Modifier.size(20.dp).padding(bottom = 2.dp)
                     )
                 }
+            }
+
+            // ⌚ 등록 일시 & 실시간 조회수 메타데이터 바 (Premium HSL Gray Typography & Dot Divider)
+            Spacer(modifier = Modifier.height(10.dp))
+            val absoluteTimeText = remember(deal.createdAt) {
+                if (deal.createdAt.isNullOrEmpty()) return@remember ""
+                try {
+                    val parsedTime = try {
+                        java.time.OffsetDateTime.parse(deal.createdAt)
+                    } catch (e: Exception) {
+                        val local = java.time.LocalDateTime.parse(deal.createdAt)
+                        local.atZone(java.time.ZoneId.systemDefault()).toOffsetDateTime()
+                    }
+                    val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm", Locale.getDefault())
+                    parsedTime.format(formatter)
+                } catch (e: Exception) {
+                    ""
+                }
+            }
+            val relativeTime = rememberRelativeTime(deal.createdAt)
+            val timeDisplayText = remember(relativeTime, absoluteTimeText) {
+                when {
+                    relativeTime.isNotEmpty() && absoluteTimeText.isNotEmpty() -> "$relativeTime ($absoluteTimeText)"
+                    relativeTime.isNotEmpty() -> relativeTime
+                    absoluteTimeText.isNotEmpty() -> absoluteTimeText
+                    else -> "등록일 정보 없음"
+                }
+            }
+            
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "등록 $timeDisplayText",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    fontWeight = FontWeight.Medium
+                )
+                
+                Text(
+                    text = "•",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                )
+                
+                Text(
+                    text = "조회 ${deal.viewCount}회",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    fontWeight = FontWeight.Medium
+                )
             }
             
             if (deal.aiSummary != null && deal.aiSummary.isNotEmpty()) {

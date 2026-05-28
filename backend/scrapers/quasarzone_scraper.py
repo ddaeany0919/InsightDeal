@@ -55,9 +55,12 @@ class QuasarzoneScraper(AsyncBaseScraper):
                         price = int(usd_val * 100)
                         currency = "USD"
                 else:
-                    digits = re.sub(r'[^0-9]', '', price_str)
-                    if digits:
-                        price = int(digits)
+                    # 첫 번째로 발견되는 숫자 그룹(쉼표 포함)만 추출하여 파싱하여 병합 버그 방지
+                    match = re.search(r'([0-9,]+)', price_str)
+                    if match:
+                        digits = re.sub(r'[^0-9]', '', match.group(1))
+                        if digits:
+                            price = int(digits)
 
             image_url = ""
             span_img = row.select_one('span.img-background-wrap')

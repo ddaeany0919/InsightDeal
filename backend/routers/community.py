@@ -97,8 +97,17 @@ async def proxy_image(url: str):
 
 def extract_price(price_str):
     if not price_str: return 0
-    nums = re.findall(r'\d+', str(price_str))
-    if nums: return int(''.join(nums))
+    price_str_str = str(price_str)
+    # 제휴 링크나 URL 내의 상품번호 숫자가 가격으로 오역되는 현상 영구 차단
+    if "http://" in price_str_str or "https://" in price_str_str or "products/" in price_str_str:
+        return 0
+    nums = re.findall(r'\d+', price_str_str)
+    if nums:
+        parsed_val = int(''.join(nums))
+        # 천만 원(10,000,000원) 이상의 비현실적 가격은 크롤링 오류이므로 0(정보 없음 / 본문 참조)으로 강제 정화
+        if parsed_val >= 10000000:
+            return 0
+        return parsed_val
     return 0
 
 def extract_shipping_fee(fee_str):
@@ -353,18 +362,17 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
     try:
         from sqlalchemy import and_, or_
         query = db.query(models.Deal).join(models.Community)
-        time_limit = datetime.utcnow() - timedelta(hours=24)
+        # ⏰ 24시간 제한을 48시간으로 완화하여 어제 올라온 고품질 핫딜도 함께 구제
+        time_limit = datetime.utcnow() - timedelta(hours=48)
         
         deals = query.filter(
             and_(
+                # 🎯 대표님의 정책 결정에 따라 오늘의 핫딜 신뢰성 보존을 위해 100점 컷오프 유지!
                 models.Deal.honey_score >= 100,
-                or_(
-                    models.Deal.ai_summary.like("%🔥 [커뮤니티 인기]%"),
-                    models.Deal.ai_summary.like("%🔥 [커뮤니티 인증 핫딜]%")
-                ),
                 models.Deal.indexed_at >= time_limit,
                 models.Deal.is_closed == False,
-                models.Deal.category != "?곷┰",
+                # 🧹 깨진 인코딩 깨짐(?곷┰)을 한글 '적립'으로 올바르게 보정
+                models.Deal.category != "적립",
                 models.Deal.category != "이벤트",
                 models.Deal.category != "적립/이벤트"
             )
@@ -487,8 +495,8 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                 }
                 cluster_map[cluster_key] = deal_dict
                 grouped_result.append(deal_dict)
-        # 24?쒓컙 ?댁뿉 ?щ씪???쒖쓠 ?ы븿???대윭?ㅽ꽣留??꾪꽣留?
-        cutoff = datetime.utcnow() - timedelta(hours=24)
+        # 48시간 이내에 올라온 딜을 포함한 클러스터링 필터링
+        cutoff = datetime.utcnow() - timedelta(hours=48)
         filtered_result = []
         for deal_dict in grouped_result:
             if deal_dict.get("created_at"):
@@ -944,23 +952,111 @@ def get_deal_history(deal_id: int, period: str = "7d", db: Session = Depends(get
     time_limit = end_time - timedelta(days=days)
     
     # 1. 동일 brand 및 model_code 혹은 brand 및 base_product_name을 가진 Deal들을 직접 DB에서 조회
-    if deal.brand and deal.model_code:
-        matched_deals = db.query(models.Deal).filter(
-            models.Deal.brand == deal.brand,
-            models.Deal.model_code == deal.model_code,
-            models.Deal.indexed_at >= time_limit,
-            models.Deal.indexed_at <= end_time
-        ).all()
-    elif deal.brand and deal.base_product_name:
-        matched_deals = db.query(models.Deal).filter(
-            models.Deal.brand == deal.brand,
-            models.Deal.base_product_name == deal.base_product_name,
-            (models.Deal.model_code == None) | (models.Deal.model_code == ""),
-            models.Deal.indexed_at >= time_limit,
-            models.Deal.indexed_at <= end_time
-        ).all()
-    else:
-        matched_deals = [deal]
+    matched_deals = []
+    
+    # 1-1. DB에서 1차 후보군 조회 (속도 향상을 위해 검색 키워드 기반으로 SQL 필터링)
+    # 딜 제목에서 의미 있는 핵심 키워드(3글자 이상 한글/영문) 추출하여 LIKE 검색
+    words = re.findall(r'[가-힣a-zA-Z0-9]{3,}', deal.title)
+    # 특가, 할인, 배송 등 노이즈성 키워드는 핵심 키워드에서 제외
+    noise_keywords = {
+        "특가", "할인", "배송", "무배", "무료", "코인", "체감", "대박", "쿠폰", "카드", "알리", 
+        "코인딜", "타임딜", "올킬", "핫딜", "뽐뿌", "펨코", "루리웹", "퀘이사존", "클리앙", 
+        "지마켓", "옥션", "쿠팡", "단독", "알리익스프레스", "무료배송"
+    }
+    core_words = [w for w in words if w.lower() not in noise_keywords]
+    
+    query = db.query(models.Deal).filter(
+        models.Deal.indexed_at >= time_limit,
+        models.Deal.indexed_at <= end_time
+    )
+    
+    # 핵심 단어들 중 첫 번째 단어로 LIKE 필터링 (브랜드명이나 제품명일 가능성이 매우 높음)
+    first_core = core_words[0] if core_words else None
+    if first_core:
+        query = query.filter(models.Deal.title.ilike(f"%{first_core}%"))
+        
+    candidate_deals = query.all()
+    
+    # Jaccard 및 스펙 매칭을 위해 토큰 추출 헬퍼 정의
+    def get_tokens(title):
+        if not title:
+            return set()
+        clean = re.sub(r'\([^)]*\)|\[[^\]]*\]', '', title)
+        tokens = set(re.findall(r'[가-힣a-zA-Z0-9]+', clean.lower()))
+        common_noises = {"특가", "할인", "배송", "무배", "무료", "코인", "체감", "대박", "쿠폰", "카드", "알리", "개", "pcs", "릴케이블", "케이블"}
+        return tokens - common_noises
+
+    target_tokens = get_tokens(deal.title)
+    
+    # 주요 숫자/스펙 정보 추출 헬퍼 (예: 100W, 60W, 3개 등)
+    def extract_numbers_with_context(title):
+        if not title:
+            return set()
+        return set(re.findall(r'\d+[a-zA-Z가-힣]*', title.lower()))
+        
+    target_nums = extract_numbers_with_context(deal.title)
+
+    for d in candidate_deals:
+        if d.id == deal.id:
+            matched_deals.append(d)
+            continue
+            
+        # 1) 엄격한 매칭 규칙: 브랜드와 모델코드가 둘 다 일치할 경우
+        if deal.brand and d.brand and deal.brand.lower() == d.brand.lower():
+            if deal.model_code and d.model_code and deal.model_code.lower() == d.model_code.lower():
+                matched_deals.append(d)
+                continue
+                
+        # 2) 브랜드가 없거나 불명확한 경우, Jaccard 유사도 매칭 사용
+        d_tokens = get_tokens(d.title)
+        if not target_tokens or not d_tokens:
+            continue
+            
+        intersection = target_tokens.intersection(d_tokens)
+        union = target_tokens.union(d_tokens)
+        jaccard = len(intersection) / len(union) if union else 0
+        
+        min_len = min(len(target_tokens), len(d_tokens))
+        overlap_ratio = len(intersection) / min_len if min_len else 0
+        
+        # Jaccard 유사도가 45% 이상이거나, 한쪽 단어의 75% 이상이 겹치고 매칭 단어가 3개 이상일 때
+        if jaccard >= 0.45 or (overlap_ratio >= 0.75 and len(intersection) >= 3):
+            # 스펙(단위별 숫자 정보) 충돌 방어
+            d_nums = extract_numbers_with_context(d.title)
+            conflict = False
+            
+            # 1) 수량성 패밀리 단위(개, 캔, 팩, 봉, 병, pcs) 통합 충돌 가드 (예: 24개 vs 48캔 완벽 차단)
+            qty_units = ["개", "캔", "팩", "봉", "병", "pcs"]
+            target_qty_vals = set()
+            d_qty_vals = set()
+            for q_u in qty_units:
+                target_qty_vals.update({re.sub(r'[^0-9.]', '', n) for n in target_nums if re.search(rf'\d+(?:\.\d+)?{q_u}', n)})
+                d_qty_vals.update({re.sub(r'[^0-9.]', '', n) for n in d_nums if re.search(rf'\d+(?:\.\d+)?{q_u}', n)})
+            
+            if target_qty_vals and d_qty_vals:
+                if not target_qty_vals.intersection(d_qty_vals):
+                    conflict = True
+                    continue
+
+            # 2) 그 외 용량, 전력, 무게 등 일반 스펙 단위 매칭
+            common_units = [
+                "w", "v", "a", "hz", "gb", "tb", "mb", "kg", "g", "ml", "l", 
+                "인치", "inch", "세대", "gen", "mah", "ah"
+            ]
+            
+            for unit in common_units:
+                # 해당 단위를 포함하는 숫자 토큰만 추출 (예: '100w' -> '100')
+                target_vals = {re.sub(r'[^0-9.]', '', n) for n in target_nums if re.search(rf'\d+(?:\.\d+)?{unit}', n)}
+                d_vals = {re.sub(r'[^0-9.]', '', n) for n in d_nums if re.search(rf'\d+(?:\.\d+)?{unit}', n)}
+                
+                # 두 상품 모두 해당 스펙 단위가 명시되어 있는데, 숫자가 다를 경우 매칭 제외 (충돌 발생)
+                if target_vals and d_vals:
+                    if not target_vals.intersection(d_vals):
+                        conflict = True
+                        break
+                    
+            if not conflict:
+                matched_deals.append(d)
         
     matched_deal_ids = [d.id for d in matched_deals]
     if deal.id not in matched_deal_ids:
@@ -991,14 +1087,19 @@ def get_deal_history(deal_id: int, period: str = "7d", db: Session = Depends(get
         except:
             pass
             
-    # 2-2. Deal 자체의 수집 시점 가격 반영
+    # 2-2. Deal 자체의 수집 시점 가격 반영 (현재 조회 중인 딜은 최우측 앵커로 무조건 보존)
     for d in matched_deals:
         try:
             p_val = int(re.sub(r'[^\d]', '', str(d.price)))
             if p_val > 0:
+                is_current = (d.id == deal.id)
                 time_key = d.indexed_at.strftime(time_format) if d.indexed_at else ""
+                if is_current:
+                    time_key += "_current"
                 dt = d.indexed_at
-                if time_key not in comm_map or p_val < comm_map[time_key]["price"]:
+                
+                # 현재 딜인 경우에는 기존 데이터와 날짜가 겹쳐도 무조건 보존하여 뭉개짐 방지
+                if is_current or time_key not in comm_map or p_val < comm_map[time_key]["price"]:
                     comm_map[time_key] = {"price": p_val, "dt": dt, "source": "community"}
         except:
             pass
@@ -1008,7 +1109,7 @@ def get_deal_history(deal_id: int, period: str = "7d", db: Session = Depends(get
             "price": v["price"],
             "originalPrice": None,
             "discountRate": None,
-            "recordedAt": k.replace(" 00:00", ""),
+            "recordedAt": k.replace(" 00:00", "").replace("_current", ""),
             "source": "community",
             "dt": v["dt"]
         })
@@ -1047,6 +1148,9 @@ def get_deal_history(deal_id: int, period: str = "7d", db: Session = Depends(get
             
     # 4. 두 최저가 스트림을 통합하여 날짜(dt) 순으로 오름차순 정렬
     all_points = community_points + naver_points
+    
+
+
     all_points.sort(key=lambda x: x["dt"])
     
     # 5. 최종 반환 형태 정제 (dt 제외)

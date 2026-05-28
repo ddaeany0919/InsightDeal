@@ -201,7 +201,7 @@ def get_logs():
                         community_status[comm] = {"status": "진행 중 ⏳", "time": time_str, "count": ""}
                     
                     # 완료 감지: 2026-05-09 18:43:34,704 - backend.scheduler.main - INFO - ✅ [퀘이사존] 스크래핑 성공 (총 수집/갱신건수: 90건)
-                    match_succ = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?✅ \[([^\]]+)\] 스크래핑 성공 \((.*?)\)', line)
+                    match_succ = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?✅ \[([^\]]+)\] 스크래핑 성공 \((.*)\)', line)
                     if match_succ:
                         time_str = match_succ.group(1)
                         comm = match_succ.group(2)

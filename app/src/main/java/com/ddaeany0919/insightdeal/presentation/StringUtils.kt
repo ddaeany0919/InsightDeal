@@ -27,52 +27,38 @@ fun formatPrice(price: Long?, currency: String? = "KRW"): String {
     }
 }
 
-// SimpleDateFormat은 생성 비용이 매우 비싸므로 ThreadLocal로 재사용하여 스크롤 성능(프레임 드랍) 문제를 해결합니다.
-private val utcFormat = object : ThreadLocal<java.text.SimpleDateFormat>() {
-    override fun initialValue(): java.text.SimpleDateFormat {
-        return java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
-        }
-    }
-}
-
-private val mdFormat = object : ThreadLocal<java.text.SimpleDateFormat>() {
-    override fun initialValue(): java.text.SimpleDateFormat {
-        return java.text.SimpleDateFormat("MM.dd", Locale.getDefault()).apply {
-            timeZone = TimeZone.getDefault()
-        }
-    }
-}
-
 /**
- * ⌚ 상대시간 포매터 - API 24 호환
+ * ⌚ 상대시간 포매터 - API 24 호환 및 java.time 리팩토링 버전
+ * 백엔드 ISO 8601 타임존 오프셋(+09:00, Z 등) 및 소수점 초를 완벽하게 정합적으로 파싱하여 시간 왜곡 문제를 원천 차단합니다.
  */
 fun formatRelativeTime(updatedAt: String): String {
     return try {
-        val format = utcFormat.get()!!
+        // 백엔드 날짜 형식(예: 2026-05-27T23:45:00+09:00)을 타임존 오프셋 보존하며 파싱합니다.
+        val parsedTime = try {
+            java.time.OffsetDateTime.parse(updatedAt)
+        } catch (e: Exception) {
+            // 오프셋이 없는 naive datetime(예: 2026-05-27T15:10:00) 형식에 대응하는 2단계 예외 안전망
+            val local = java.time.LocalDateTime.parse(updatedAt)
+            local.atZone(java.time.ZoneId.systemDefault()).toOffsetDateTime()
+        }
         
-        val cleanDateString = if (updatedAt.contains(".")) updatedAt.substringBefore(".") else updatedAt
+        // 동일한 시간대 기준으로 현재 시각을 구합니다.
+        val now = java.time.OffsetDateTime.now(parsedTime.offset)
+        val duration = java.time.Duration.between(parsedTime, now)
         
-        val date = format.parse(cleanDateString)
-        if (date != null) {
-            val now = Date()
-            val diffInMillis = now.time - date.time
-            
-            val diffInMinutes = java.util.concurrent.TimeUnit.MILLISECONDS.toMinutes(diffInMillis)
-            val diffInHours = java.util.concurrent.TimeUnit.MILLISECONDS.toHours(diffInMillis)
-            val diffInDays = java.util.concurrent.TimeUnit.MILLISECONDS.toDays(diffInMillis)
-            
-            when {
-                diffInMinutes < 1 -> "방금 전"
-                diffInMinutes < 60 -> "${diffInMinutes}분 전"
-                diffInHours < 24 -> "${diffInHours}시간 전"
-                diffInDays < 7 -> "${diffInDays}일 전"
-                else -> {
-                    mdFormat.get()!!.format(date)
-                }
+        val diffInMinutes = duration.toMinutes()
+        val diffInHours = duration.toHours()
+        val diffInDays = duration.toDays()
+        
+        when {
+            diffInMinutes < 1 -> "방금 전"
+            diffInMinutes < 60 -> "${diffInMinutes}분 전"
+            diffInHours < 24 -> "${diffInHours}시간 전"
+            diffInDays < 7 -> "${diffInDays}일 전"
+            else -> {
+                val formatter = java.time.format.DateTimeFormatter.ofPattern("MM.dd", Locale.getDefault())
+                parsedTime.format(formatter)
             }
-        } else {
-            "알 수 없음"
         }
     } catch (e: Exception) {
         "알 수 없음"

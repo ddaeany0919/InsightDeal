@@ -309,7 +309,6 @@ class AggregatorService:
             if not target_deals:
                 # 최근 24시간 이내의 모든 딜을 긁어서 제목 기반의 유사 토큰 오버랩 분석 실시
                 recent_deals = query.all()
-                import re
                 
                 def get_clean_tokens(text: str) -> set:
                     # 영어, 숫자, 주요 특수 단어 위주로 토큰화
@@ -339,12 +338,17 @@ class AggregatorService:
                 # 롤링 윈도우 병합 발생! 가장 최근(마지막) 딜을 대상으로 갱신을 수행하여 윈도우를 연장시킴
                 logger.info(f"🔄 [롤링 윈도우 클러스터링] 타 게시글({url})이지만 동일 상품으로 판단하여 병합 시도: {normalized.name}")
                 existing_deals = [max(target_deals, key=lambda d: d.indexed_at if d.indexed_at else datetime.min)]
-        
         print(f"DEBUG: existing_deals after rolling window: {existing_deals}")
         if existing_deals:
              # 이미 수집했던 글이거나, 클러스터링으로 묶인 글이라면 가격 등 메타정보 갱신 (Upsert)
              # 만약 AI가 다중 분할한 상품들이라면, 모든 split deal에 대해 종료 상태 등을 일괄 갱신합니다.
              for existing_deal in existing_deals:
+                 # 새로 수집된 진짜 작성 시간 정보(posted_dt)가 존재하면, 기존의 잘못된 수집 시간을 진짜 시간으로 강제 갱신/보정
+                 if posted_dt:
+                     current_idx = existing_deal.indexed_at
+                     if not current_idx or current_idx != posted_dt:
+                         existing_deal.indexed_at = posted_dt
+
                  price_changed = False
                  
                  # 제목 갱신: 단일 상품일 때
@@ -462,11 +466,12 @@ class AggregatorService:
         
         # [DB 평균치 기반 세밀한 점수화 로직 추가]
         try:
-            from sqlalchemy import func
+            from sqlalchemy import func, cast, Integer
             if price > 0 and normalized.category:
-                query = self.db.query(func.avg(Deal.price)).filter(
+                # PostgreSQL에서는 VARCHAR 컬럼에 대한 avg() 연산이 제한되므로 정수형 캐스팅 필수
+                query = self.db.query(func.avg(cast(Deal.price, Integer))).filter(
                     Deal.category == normalized.category,
-                    Deal.price > 0
+                    cast(Deal.price, Integer) > 0
                 )
                 
                 avg_price = query.scalar()
@@ -482,6 +487,7 @@ class AggregatorService:
                     elif price > avg_price * 1.1:
                         honey_score -= 20
         except Exception as e:
+            self.db.rollback()  # 롤백 처리하여 후속 INSERT 트랜잭션 붕괴 원천 차단
             logger.error(f"DB 평균가 계산 에러: {e}")
             
         if honey_score < 50 and price > 0:

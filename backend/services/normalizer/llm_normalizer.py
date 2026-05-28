@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re
 from typing import Optional
 import google.generativeai as genai
 from .base import ProductNormalizer, NormalizedProduct
@@ -93,7 +94,6 @@ class LlmNormalizer(ProductNormalizer):
                         mark_key_dead(api_key)
                         continue
                     if attempt < max_retries - 1:
-                        import re
                         wait_time = 1
                         match = re.search(r'retry in ([\d\.]+)s', error_msg)
                         if match:

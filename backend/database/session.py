@@ -30,7 +30,9 @@ class DatabaseManager:
         
         database_url = os.getenv("DATABASE_URL")
         # 호스트 PC에서 도커용 postgres URL로 접속을 시도하면 연결 오류가 나므로 로컬에선 SQLite 강제 처리
-        if not database_url or "postgres:5432" in database_url:
+        # 단, 도커 컨테이너 내부일 때는 그대로 PostgreSQL(postgres:5432)을 사용합니다.
+        is_docker = os.path.exists('/.dockerenv')
+        if not is_docker and (not database_url or "postgres:5432" in database_url):
             database_url = f"sqlite:///{default_db_path}"
             
         logger.info(f"📊 데이터베이스 연결 시도: {database_url}")
@@ -49,7 +51,7 @@ class DatabaseManager:
             @event.listens_for(self.engine, "connect")
             def set_sqlite_pragma(dbapi_connection, connection_record):
                 cursor = dbapi_connection.cursor()
-                cursor.execute("PRAGMA busy_timeout=30000")
+                cursor.execute("PRAGMA busy_timeout=60000")
                 cursor.close()
 
         
