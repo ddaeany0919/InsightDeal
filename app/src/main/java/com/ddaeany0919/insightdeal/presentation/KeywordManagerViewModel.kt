@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -232,7 +233,10 @@ class KeywordManagerViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val response = apiService.getPushKeywords(deviceUuid)
+                val username = com.ddaeany0919.insightdeal.presentation.auth.AuthManager.getUsername(InsightDealApplication.instance).first()
+                val userOrDevice = if (username == "guest" || username.isNullOrEmpty()) deviceUuid else username
+
+                val response = apiService.getUserKeywords(userOrDevice)
                 if (response.isSuccessful) {
                     val responseBody = response.body()
                     val detailedList = responseBody?.detailed_keywords
@@ -272,7 +276,7 @@ class KeywordManagerViewModel : ViewModel() {
                                     putString("dnd_start_time", body.dnd_start_time ?: "22:00")
                                     putString("dnd_end_time", body.dnd_end_time ?: "08:00")
                                     putString("dnd_settings_json", json)
-                                }.apply()
+                                }?.apply()
                             } catch (e: Exception) {
                                 // 파싱 실패 시 무시
                             }
@@ -295,8 +299,11 @@ class KeywordManagerViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val request = AddKeywordRequest(device_uuid = deviceUuid, keyword = keyword)
-                val response = apiService.addPushKeyword(request)
+                val username = com.ddaeany0919.insightdeal.presentation.auth.AuthManager.getUsername(InsightDealApplication.instance).first()
+                val userOrDevice = if (username == "guest" || username.isNullOrEmpty()) deviceUuid else username
+
+                val request = AddKeywordRequest(device_uuid = userOrDevice, keyword = keyword)
+                val response = apiService.addUserKeyword(request)
                 if (response.isSuccessful && response.body()?.success == true) {
                     // 로컬 DB에도 즉각 비동기로 캐시 이식
                     viewModelScope.launch(Dispatchers.IO) {
@@ -330,8 +337,11 @@ class KeywordManagerViewModel : ViewModel() {
             }
 
             try {
-                val request = AddKeywordRequest(device_uuid = deviceUuid, keyword = entity.keyword)
-                val response = apiService.togglePushKeyword(request)
+                val username = com.ddaeany0919.insightdeal.presentation.auth.AuthManager.getUsername(InsightDealApplication.instance).first()
+                val userOrDevice = if (username == "guest" || username.isNullOrEmpty()) deviceUuid else username
+
+                val request = AddKeywordRequest(device_uuid = userOrDevice, keyword = entity.keyword)
+                val response = apiService.toggleUserKeyword(request)
                 if (!response.isSuccessful || response.body()?.success != true) {
                     // 서버 실패 시 원복
                     viewModelScope.launch(Dispatchers.IO) {
@@ -353,8 +363,11 @@ class KeywordManagerViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val request = AddKeywordRequest(device_uuid = deviceUuid, keyword = keyword)
-                val response = apiService.deletePushKeyword(request)
+                val username = com.ddaeany0919.insightdeal.presentation.auth.AuthManager.getUsername(InsightDealApplication.instance).first()
+                val userOrDevice = if (username == "guest" || username.isNullOrEmpty()) deviceUuid else username
+
+                val request = AddKeywordRequest(device_uuid = userOrDevice, keyword = keyword)
+                val response = apiService.deleteUserKeyword(request)
                 if (response.isSuccessful && response.body()?.success == true) {
                     // 로컬 DB에서도 비동기식으로 안전하게 추방
                     viewModelScope.launch(Dispatchers.IO) {

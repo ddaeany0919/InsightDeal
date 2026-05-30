@@ -43,7 +43,7 @@ def normalize_url(url: str) -> str:
         qs = parse_qs(parsed.query)
         
         # 보존할 쿼리 키 정의 (커뮤니티 글 구분에 결정적인 번호나 고유 식별 매개변수만 남김)
-        keep_keys = ["id", "no", "document_srl", "article_id", "board_id", "itemId", "productId", "goodsNo"]
+        keep_keys = ["id", "no", "document_srl", "article_id", "board_id", "itemId", "productId", "goodsNo", "bo_table", "wr_id"]
         
         filtered_qs = {}
         for k, v in qs.items():

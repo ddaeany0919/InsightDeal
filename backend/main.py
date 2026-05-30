@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import logging
-from routers import wishlist, product, community, health, push, admin, auth
+from routers import wishlist, product, community, health, push, admin, auth, users
 
 import firebase_admin
 from firebase_admin import credentials
@@ -54,6 +54,7 @@ app.include_router(product.router, prefix="/api/product", tags=["product"])
 app.include_router(community.router, prefix="/api/community", tags=["community"])
 app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(push.router, prefix="/api/push", tags=["push"])
+app.include_router(users.router, prefix="/api/users", tags=["users"])
 
 # 愿由ъ옄 ?섏씠吏 ?쇱슦???깅줉
 from routers import admin

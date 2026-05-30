@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -64,3 +64,20 @@ def login(user: UserLogin, db: Session = Depends(get_db_session)):
         raise HTTPException(status_code=400, detail="Invalid username or password")
         
     return db_user
+
+class UserWithdraw(BaseModel):
+    username: str
+    password: str
+
+@router.post("/withdraw")
+def withdraw(user: UserWithdraw, db: Session = Depends(get_db_session)):
+    db_user = db.query(models.User).filter(models.User.username == user.username).first()
+    if not db_user:
+        raise HTTPException(status_code=400, detail="존재하지 않는 회원입니다.")
+        
+    if db_user.password_hash != hash_password(user.password):
+        raise HTTPException(status_code=400, detail="비밀번호가 올바르지 않습니다.")
+        
+    db.delete(db_user)
+    db.commit()
+    return {"success": True, "message": "회원 탈퇴가 완료되었습니다."}

@@ -21,8 +21,12 @@ import androidx.paging.ExperimentalPagingApi
 import androidx.paging.map
 import kotlinx.coroutines.flow.map
 import com.ddaeany0919.insightdeal.InsightDealApplication
+import androidx.compose.foundation.lazy.LazyListState
 
 class HomeViewModel : ViewModel() {
+
+    // ✨ 홈 화면 스크롤 보존을 위한 LazyListState 호스팅
+    val listState = LazyListState()
 
     private val apiService = NetworkModule.createService<ApiService>()
 

@@ -83,7 +83,8 @@ fun MyPostsScreen(
                         onEditClick = { navController?.navigate("community_write?postId=${post.id}") },
                         onVoteSubmit = { viewModel.loadPosts(showLoading = false) },
                         navController = navController,
-                        onClick = { navController?.navigate("community_detail/${post.id}") }
+                        onClick = { navController?.navigate("community_detail/${post.id}") },
+                        viewModel = viewModel
                     )
                 }
             }

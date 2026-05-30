@@ -10,6 +10,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
 import java.util.concurrent.TimeUnit
+import com.google.gson.annotations.SerializedName
 
 /**
  * 🌐 InsightDeal API 서비스 인터페이스 (통합 버전)
@@ -323,7 +324,60 @@ interface ApiService {
         @Path("id") dealId: Int,
         @Body req: ApiVoteCreate
     ): Response<ApiDealVotes>
+
+    // ✅ [Epic 2] 실시간 알림 연동 API
+    @GET("api/users/notifications")
+    suspend fun getUserNotifications(
+        @Query("user_id") userId: String
+    ): Response<List<NotificationAlertDto>>
+
+    @POST("api/users/notifications")
+    suspend fun addUserNotification(
+        @Body request: AddNotificationRequest
+    ): Response<ApiResponse>
+
+    @DELETE("api/users/notifications/{alert_id}")
+    suspend fun deleteUserNotification(
+        @Path("alert_id") alertId: Int,
+        @Query("user_id") userId: String
+    ): Response<ApiResponse>
+
+    @POST("api/users/notifications/clear")
+    suspend fun clearUserNotifications(
+        @Query("user_id") userId: String
+    ): Response<ApiResponse>
+
+    @GET("api/users/keywords")
+    suspend fun getUserKeywords(
+        @Query("user_id") userId: String
+    ): Response<KeywordListResponse>
+
+    @POST("api/users/keywords")
+    suspend fun addUserKeyword(
+        @Body request: AddKeywordRequest
+    ): Response<ApiResponse>
+
+    @POST("api/users/keywords/toggle")
+    suspend fun toggleUserKeyword(
+        @Body request: AddKeywordRequest
+    ): Response<ApiResponse>
+
+    @HTTP(method = "DELETE", path = "api/users/keywords", hasBody = true)
+    suspend fun deleteUserKeyword(
+        @Body request: AddKeywordRequest
+    ): Response<ApiResponse>
+
+    // 👤 회원 탈퇴 API (DB 완전 연동)
+    @POST("api/auth/withdraw")
+    suspend fun withdrawUser(
+        @Body request: UserWithdrawRequest
+    ): Response<ApiResponse>
 }
+
+data class UserWithdrawRequest(
+    @SerializedName("username") val username: String,
+    @SerializedName("password") val password: String
+)
 
 data class ApiDealComment(
     val id: Int,
@@ -365,7 +419,7 @@ data class KeywordListResponse(
     val night_push_consent: Boolean? = null
 )
 data class AddKeywordRequest(
-    val device_uuid: String,
+    @SerializedName("user_id") val device_uuid: String,
     val keyword: String
 )
 
@@ -524,4 +578,19 @@ data class UserCommentDto(
     val is_accepted: Boolean,
     val parent_id: Int?,
     val created_at: String?
+)
+
+data class NotificationAlertDto(
+    val id: String,
+    val title: String,
+    val keyword: String,
+    val receivedAt: Long,
+    val dealUrl: String
+)
+
+data class AddNotificationRequest(
+    val user_id: String,
+    val title: String,
+    val keyword: String,
+    val deal_url: String
 )

@@ -1005,13 +1005,84 @@ def get_deal_history(deal_id: int, period: str = "7d", db: Session = Depends(get
         
     candidate_deals = query.all()
     
+    # E-commerce 고유 상품 키 추출 헬퍼 (1단계 100% 매칭 수호선)
+    def extract_ecommerce_product_key(url: str) -> str:
+        if not url:
+            return ""
+        from urllib.parse import urlparse, parse_qs
+        try:
+            parsed = urlparse(url)
+            host = parsed.netloc.lower()
+            path = parsed.path
+            qs = parse_qs(parsed.query)
+            
+            # 1. 쿼리 파라미터 기반 추출 (itemId, productId, goodsNo 등)
+            for key in ["itemId", "productId", "goodsNo", "goods_no", "prdNo", "gPrdNo", "item_id", "product_id"]:
+                if key in qs:
+                    return f"{host}_{qs[key][0]}"
+                for q_k in qs.keys():
+                    if q_k.lower() == key.lower():
+                        return f"{host}_{qs[q_k][0]}"
+                        
+            # 2. 경로 패턴 매칭
+            # 쿠팡, 11번가, 스마트스토어 등
+            match = re.search(r'/products/(\d+)', path)
+            if match:
+                return f"{host}_{match.group(1)}"
+            match = re.search(r'/deal/(\d+)', path)
+            if match:
+                return f"{host}_{match.group(1)}"
+            match = re.search(r'/deal/adeal/(\d+)', path)
+            if match:
+                return f"{host}_{match.group(1)}"
+        except Exception:
+            pass
+        return ""
+
+    # 세부 라인업 및 세대 충돌 가드 (3단계 네거티브 스펙 차단선)
+    def check_lineup_conflict(title1: str, title2: str) -> bool:
+        lineups = ["pro max", "pro", "max", "plus", "ultra", "air", "lite", "neo", "mini", "fe"]
+        t1_lower = title1.lower()
+        t2_lower = title2.lower()
+        
+        # 띄어쓰기 공백 제거하여 밀착 비교
+        t1_clean = re.sub(r'\s+', '', t1_lower)
+        t2_clean = re.sub(r'\s+', '', t2_lower)
+        
+        for l in lineups:
+            l_clean = l.replace(" ", "")
+            has1 = l_clean in t1_clean
+            has2 = l_clean in t2_clean
+            if has1 != has2:
+                if l == "pro" and ("promax" in t1_clean or "promax" in t2_clean):
+                    return True
+                return True
+                
+        # 모델 세대 및 버전 충돌 체크 (예: M1, M2, M3, M4 / Gen1, Gen2, Gen3 / 1세대, 2세대 등)
+        gens = [r'm\d+', r'gen\s*\d+', r'\d+\s*세대', r'세대\s*\d+']
+        for pattern in gens:
+            v1 = re.findall(pattern, t1_lower)
+            v2 = re.findall(pattern, t2_lower)
+            if v1 and v2:
+                s1 = {v.replace(" ", "") for v in v1}
+                s2 = {v.replace(" ", "") for v in v2}
+                if not s1.intersection(s2):
+                    return True
+        return False
+
     # Jaccard 및 스펙 매칭을 위해 토큰 추출 헬퍼 정의
     def get_tokens(title):
         if not title:
             return set()
         clean = re.sub(r'\([^)]*\)|\[[^\]]*\]', '', title)
         tokens = set(re.findall(r'[가-힣a-zA-Z0-9]+', clean.lower()))
-        common_noises = {"특가", "할인", "배송", "무배", "무료", "코인", "체감", "대박", "쿠폰", "카드", "알리", "개", "pcs", "릴케이블", "케이블"}
+        common_noises = {
+            "특가", "할인", "배송", "무배", "무료", "코인", "체감", "대박", "쿠폰", "카드", "알리", "개", "pcs", "릴케이블", "케이블",
+            "지마켓", "옥션", "11번가", "쿠팡", "위메프", "티몬", "뽐뿌", "펨코", "루리웹", "퀘이사존", "클리앙",
+            "gmarket", "auction", "11st", "coupang", "wemakeprice", "tmon", "aliexpress", "ali", "temu", "테무",
+            "네이버", "naver", "스마트스토어", "smartstore", "ssg", "신세계", "하이마트", "himart", "전자랜드", "lotte", "롯데",
+            "역대급", "종료", "품절", "끌올", "인기"
+        }
         return tokens - common_noises
 
     target_tokens = get_tokens(deal.title)
@@ -1029,6 +1100,13 @@ def get_deal_history(deal_id: int, period: str = "7d", db: Session = Depends(get
             matched_deals.append(d)
             continue
             
+        # 1-0) 1단계: E-commerce Product Key 100% 일치 매칭 가드
+        target_key = extract_ecommerce_product_key(deal.ecommerce_link)
+        d_key = extract_ecommerce_product_key(d.ecommerce_link)
+        if target_key and d_key and target_key == d_key:
+            matched_deals.append(d)
+            continue
+
         # 1) 엄격한 매칭 규칙: 브랜드와 모델코드가 둘 다 일치할 경우
         if deal.brand and d.brand and deal.brand.lower() == d.brand.lower():
             if deal.model_code and d.model_code and deal.model_code.lower() == d.model_code.lower():
@@ -1049,6 +1127,10 @@ def get_deal_history(deal_id: int, period: str = "7d", db: Session = Depends(get
         
         # Jaccard 유사도가 45% 이상이거나, 한쪽 단어의 75% 이상이 겹치고 매칭 단어가 3개 이상일 때
         if jaccard >= 0.45 or (overlap_ratio >= 0.75 and len(intersection) >= 3):
+            # 3-0) 라인업 및 모델 세대 불일치 네거티브 차단 가드 작동
+            if check_lineup_conflict(deal.title, d.title):
+                continue
+
             # 스펙(단위별 숫자 정보) 충돌 방어
             d_nums = extract_numbers_with_context(d.title)
             conflict = False

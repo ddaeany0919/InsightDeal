@@ -193,7 +193,7 @@ fun Modifier.bounceClick(
             val touchSlop = viewConfiguration.touchSlop
             
             awaitEachGesture {
-                awaitFirstDown(requireUnconsumed = false)
+                val down = awaitFirstDown(requireUnconsumed = true)
                 isPressed = true
                 var isCancelled = false
                 var accumulatedDragX = 0f
@@ -202,10 +202,18 @@ fun Modifier.bounceClick(
                 while (true) {
                     val event = awaitPointerEvent()
                     if (event.changes.all { !it.pressed }) {
+                        if (event.changes.any { it.isConsumed }) {
+                            isCancelled = true
+                            isPressed = false
+                        }
                         break
                     }
                     
                     for (change in event.changes) {
+                        if (change.isConsumed) {
+                            isPressed = false
+                            isCancelled = true
+                        }
                         if (change.pressed) {
                             val positionChange = change.position - change.previousPosition
                             accumulatedDragX += kotlin.math.abs(positionChange.x)

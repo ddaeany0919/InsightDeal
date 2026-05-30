@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,6 +64,8 @@ fun KeywordManagerScreen(
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val username by AuthManager.getUsername(context).collectAsState(initial = "admin")
+    val isLoggedIn = username != "guest" && !username.isNullOrEmpty()
     
     // ViewModel StateFlow 구독
     val keywords by viewModel.keywords.collectAsState()
@@ -217,7 +220,7 @@ fun KeywordManagerScreen(
                     // 혜택 리스트
                     val benefits = listOf(
                         "📌 등록한 키워드의 초특가 딜 실시간 매칭 알림",
-                        "🌙 방해금지(DND) 설정으로 수면 시간 수신 완벽 차단",
+                        "🌙 야간 차단 및 방해금지 시간 설정으로 수면 방해 완전히 방지",
                         "🔥 품절 대란 핫딜 정보 선착순 1초 컷 진입 보장"
                     )
                     benefits.forEach { benefit ->
@@ -247,7 +250,7 @@ fun KeywordManagerScreen(
                     
                     // 법적 고지 문구
                     Text(
-                        text = "본 알림 서비스는 정보통신망법(제50조)을 준수하며, 야간 시간대(21:00 ~ 익일 08:00)의 광고성 푸시는 수신 동의 여부와 관계없이 설정된 DND 규칙에 따라 완전히 필터링됩니다.",
+                        text = "본 알림 서비스는 정보통신망법(제50조)을 준수하며, 야간 시간대(21:00 ~ 익일 08:00)의 광고성 푸시는 수신 동의 여부와 관계없이 설정된 방해금지 규칙에 따라 완전히 필터링됩니다.",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         lineHeight = 16.sp,
@@ -361,7 +364,7 @@ fun KeywordManagerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("키워드 및 DND 관리", fontWeight = FontWeight.Bold, fontSize = 20.sp) },
+                title = { Text("키워드 및 알림 설정", fontWeight = FontWeight.Bold, fontSize = 20.sp) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
@@ -411,7 +414,7 @@ fun KeywordManagerScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            text = "방해금지 시간대 설정 (DND)", 
+                                            text = "야간 알림 차단 (방해금지 시간)", 
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 16.sp,
                                             color = MaterialTheme.colorScheme.onSurface
@@ -785,8 +788,16 @@ fun KeywordManagerScreen(
                             Button(
                                 onClick = {
                                     if (keywordInput.isNotBlank()) {
-                                        viewModel.addKeyword(keywordInput.trim())
-                                        keywordInput = ""
+                                        if (!isLoggedIn && keywords.size >= 3) {
+                                            Toast.makeText(
+                                                context,
+                                                "⚠️ 비로그인 상태에서는 최대 3개까지만 등록할 수 있습니다. 1초 간편 로그인하고 무제한으로 등록해 보세요! ⚡",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        } else {
+                                            viewModel.addKeyword(keywordInput.trim())
+                                            keywordInput = ""
+                                        }
                                     }
                                 },
                                 modifier = Modifier.height(56.dp),

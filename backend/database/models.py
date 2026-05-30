@@ -462,3 +462,17 @@ class NaverPriceHistory(Base):
     price = Column(Integer, nullable=False)
     checked_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
 
+
+class NotificationAlert(Base):
+    """
+    🔔 사용자/디바이스별 알림 수신 내역 적재 테이블
+    """
+    __tablename__ = "notification_alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(100), index=True, default="default")
+    title = Column(TEXT, nullable=False)
+    keyword = Column(String(100), nullable=False)
+    received_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    deal_url = Column(String(2048), nullable=True)
+

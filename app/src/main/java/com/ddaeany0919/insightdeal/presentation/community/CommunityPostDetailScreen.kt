@@ -206,14 +206,71 @@ fun CommunityPostDetailScreen(
     
     val currentUserId by AuthManager.getUsername(context).collectAsState(initial = "admin")
     val currentUserNickname by AuthManager.getNickname(context).collectAsState(initial = "익명")
+    val isLoggedIn = currentUserId != "admin" && !currentUserId.isNullOrEmpty()
     
     var commentText by remember { mutableStateOf("") }
     var replyingToCommentId by remember { mutableStateOf<Int?>(null) }
     var replyingToNickname by remember { mutableStateOf<String?>(null) }
     var editingCommentId by remember { mutableStateOf<Int?>(null) }
+    var showLoginIncentiveDialog by remember { mutableStateOf(false) }
     
     LaunchedEffect(postId) {
         viewModel.loadPostDetail(postId)
+    }
+    
+    if (showLoginIncentiveDialog) {
+        AlertDialog(
+            onDismissRequest = { showLoginIncentiveDialog = false },
+            title = {
+                Text("🔒 회원 전용 혜택 안내", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "커뮤니티 글과 댓글 작성은 본인 인증을 완료한 꿀 회원만의 전용 특전입니다. 1초 소셜 로그인 시 아래의 압도적인 혜택이 즉시 활성화됩니다!",
+                        fontSize = 13.sp,
+                        color = NeutralGray700,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("✨", fontSize = 12.sp)
+                        Text("고민글 및 조언 댓글 작성 권한 해제", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = NeutralGray900)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("✨", fontSize = 12.sp)
+                        Text("1:1 개인화 AI 맞춤 최저가 꿀딜 추천 활성", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = NeutralGray900)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("✨", fontSize = 12.sp)
+                        Text("꿀 내공 레벨업 등급제 및 Lv.2 비밀 특가 해제", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = NeutralGray900)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("✨", fontSize = 12.sp)
+                        Text("찜 목록 & 히스토리 100% 클라우드 안전 실시간 백업", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = NeutralGray900)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLoginIncentiveDialog = false
+                        navController?.navigate("settings")
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentOrange),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("1초 간편 로그인하기 ⚡", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLoginIncentiveDialog = false }) {
+                    Text("둘러보기", color = NeutralGray500)
+                }
+            },
+            containerColor = Color.White,
+            shape = RoundedCornerShape(18.dp)
+        )
     }
     
     Scaffold(
@@ -290,25 +347,40 @@ fun CommunityPostDetailScreen(
                                 .clip(RoundedCornerShape(20.dp))
                                 .background(NeutralGray50)
                                 .border(1.dp, NeutralGray200, RoundedCornerShape(20.dp))
+                                .clickable {
+                                    if (!isLoggedIn) {
+                                        showLoginIncentiveDialog = true
+                                    }
+                                }
                                 .padding(horizontal = 16.dp, vertical = 10.dp),
                             contentAlignment = Alignment.CenterStart
                         ) {
                             if (commentText.isEmpty()) {
-                                Text("조언이나 피드백을 남겨주세요...", color = NeutralGray500, fontSize = 13.sp)
+                                Text(
+                                    text = if (isLoggedIn) "조언이나 피드백을 남겨주세요..." else "🔒 로그인 후 조언을 나누어 보세요",
+                                    color = NeutralGray500,
+                                    fontSize = 13.sp
+                                )
                             }
-                            androidx.compose.foundation.text.BasicTextField(
-                                value = commentText,
-                                onValueChange = { commentText = it },
-                                textStyle = androidx.compose.ui.text.TextStyle(
-                                    fontSize = 14.sp,
-                                    color = NeutralGray900
-                                ),
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            if (isLoggedIn) {
+                                androidx.compose.foundation.text.BasicTextField(
+                                    value = commentText,
+                                    onValueChange = { commentText = it },
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 14.sp,
+                                        color = NeutralGray900
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
                         
                         IconButton(
                             onClick = {
+                                if (!isLoggedIn) {
+                                    showLoginIncentiveDialog = true
+                                    return@IconButton
+                                }
                                 if (commentText.isNotBlank()) {
                                     if (editingCommentId != null) {
                                         viewModel.updateComment(
@@ -340,7 +412,7 @@ fun CommunityPostDetailScreen(
                                     }
                                 }
                             },
-                            enabled = commentText.isNotBlank() && !isCommentSubmitting,
+                            enabled = (commentText.isNotBlank() && !isCommentSubmitting) || !isLoggedIn,
                             modifier = Modifier.size(40.dp),
                             colors = IconButtonDefaults.iconButtonColors(
                                 containerColor = AccentOrange,

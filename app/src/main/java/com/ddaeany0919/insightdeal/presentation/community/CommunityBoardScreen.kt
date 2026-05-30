@@ -5,6 +5,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -47,6 +48,9 @@ import com.ddaeany0919.insightdeal.data.network.CommunityPostDto
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
+import com.ddaeany0919.insightdeal.presentation.bounceClick
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -170,6 +174,8 @@ fun CommunityBoardScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val currentUserId by AuthManager.getUsername(context).collectAsState(initial = "admin")
+    val isLoggedIn = currentUserId != "guest" && !currentUserId.isNullOrEmpty()
+    var showLoginIncentiveDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.loadPosts()
@@ -215,7 +221,13 @@ fun CommunityBoardScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { navController?.navigate("community_write") },
+                onClick = {
+                    if (isLoggedIn) {
+                        navController?.navigate("community_write")
+                    } else {
+                        showLoginIncentiveDialog = true
+                    }
+                },
                 containerColor = AccentOrange,
                 contentColor = Color.White,
                 shape = RoundedCornerShape(16.dp),
@@ -341,7 +353,8 @@ fun CommunityBoardScreen(
                                     onEditClick = { navController?.navigate("community_write?postId=${post.id}") },
                                     onVoteSubmit = { viewModel.loadPosts(showLoading = false) },
                                     navController = navController,
-                                    onClick = { navController?.navigate("community_detail/${post.id}") }
+                                    onClick = { navController?.navigate("community_detail/${post.id}") },
+                                    viewModel = viewModel
                                 )
                             }
                             item { Spacer(modifier = Modifier.height(80.dp)) }
@@ -350,6 +363,51 @@ fun CommunityBoardScreen(
                 }
             }
         }
+    }
+
+    // 소셜 로그인 강력 권장 및 락인 설득 다이얼로그
+    if (showLoginIncentiveDialog) {
+        AlertDialog(
+            onDismissRequest = { showLoginIncentiveDialog = false },
+            title = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Text("💡 회원 전용 혜택 안내", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = AccentOrange)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("커뮤니티 글쓰기는 로그인 후 이용 가능합니다.", fontSize = 13.sp, color = NeutralGray700)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Text("⚡ 소셜 로그인 시 이런 꿀 혜택을 드려요:", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = NeutralGray900)
+                    Text("• 🍯 꿀딜 고민 등록 시 즉시 +10 내공 포인트 획득", fontSize = 13.sp, color = NeutralGray700)
+                    Text("• 🔒 Lv.2 이상 도달 시 시크릿 특가 딜 & 할인 쿠폰 해제", fontSize = 13.sp, color = NeutralGray700)
+                    Text("• 🤖 나만을 위한 1:1 지능형 AI 추천 핫딜 피드 활성화", fontSize = 13.sp, color = NeutralGray700)
+                    Text("• ⏱️ 기기 변경 시에도 안전한 클라우드 100% 자동 백업", fontSize = 13.sp, color = NeutralGray700)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLoginIncentiveDialog = false
+                        navController?.navigate("settings")
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentOrange)
+                ) {
+                    Text("1초 간편 로그인하기 ⚡", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showLoginIncentiveDialog = false },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("다음에 할게요", color = NeutralGray500)
+                }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 }
 
@@ -360,11 +418,13 @@ fun ShouldIBuyVoteCard(
     onEditClick: () -> Unit,
     onVoteSubmit: () -> Unit,
     navController: NavController? = null,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    viewModel: CommunityBoardViewModel
 ) {
     val context = LocalContext.current
     val api = remember { NetworkModule.createService<com.ddaeany0919.insightdeal.network.ApiService>() }
     val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
     
     var userVote by remember { mutableStateOf(getUserVote(context, post.id)) }
     
@@ -406,12 +466,23 @@ fun ShouldIBuyVoteCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .then(
-                if (onClick != null) Modifier.clickable { onClick() } else Modifier
+            .bounceClick {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick?.invoke()
+            }
+            .border(
+                width = 1.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        AccentOrange.copy(alpha = 0.35f),
+                        Color(0xFF3A7BD5).copy(alpha = 0.15f)
+                    )
+                ),
+                shape = RoundedCornerShape(20.dp)
             ),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             // 상단: 제목(좌측) & 라벨/수정버튼(우측)
@@ -627,15 +698,15 @@ fun ShouldIBuyVoteCard(
             ) {
                 Button(
                     onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         scope.launch {
-                            val vm = CommunityBoardViewModel()
                             if (userVote == "BUY") {
-                                vm.cancelVotePost(context, post, "BUY") {
+                                viewModel.cancelVotePost(context, post, "BUY") {
                                     userVote = null
                                     onVoteSubmit()
                                 }
                             } else {
-                                vm.votePost(context, post, isBuy = true, oldVote = userVote) {
+                                viewModel.votePost(context, post, isBuy = true, oldVote = userVote) {
                                     userVote = "BUY"
                                     onVoteSubmit()
                                 }
@@ -645,7 +716,9 @@ fun ShouldIBuyVoteCard(
                     colors = ButtonDefaults.buttonColors(containerColor = if (userVote == "BUY") AccentOrange else if (userVote == "SKIP") NeutralGray50 else AccentOrangeSoft),
                     border = BorderStroke(1.dp, if (userVote == "BUY") AccentOrange else if (userVote == "SKIP") NeutralGray200 else AccentOrange),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .bounceClick { }
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.Default.ThumbUp, contentDescription = null, tint = if (userVote == "BUY") Color.White else if (userVote == "SKIP") NeutralGray500 else AccentOrange, modifier = Modifier.size(16.dp))
@@ -654,15 +727,15 @@ fun ShouldIBuyVoteCard(
                 }
                 Button(
                     onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         scope.launch {
-                            val vm = CommunityBoardViewModel()
                             if (userVote == "SKIP") {
-                                vm.cancelVotePost(context, post, "SKIP") {
+                                viewModel.cancelVotePost(context, post, "SKIP") {
                                     userVote = null
                                     onVoteSubmit()
                                 }
                             } else {
-                                vm.votePost(context, post, isBuy = false, oldVote = userVote) {
+                                viewModel.votePost(context, post, isBuy = false, oldVote = userVote) {
                                     userVote = "SKIP"
                                     onVoteSubmit()
                                 }
@@ -672,7 +745,9 @@ fun ShouldIBuyVoteCard(
                     colors = ButtonDefaults.buttonColors(containerColor = if (userVote == "SKIP") NeutralGray700 else NeutralGray50),
                     border = BorderStroke(1.dp, if (userVote == "SKIP") NeutralGray700 else NeutralGray200),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .bounceClick { }
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.Default.ThumbDown, contentDescription = null, tint = if (userVote == "SKIP") Color.White else NeutralGray500, modifier = Modifier.size(16.dp))

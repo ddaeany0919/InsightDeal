@@ -51,6 +51,12 @@ import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope
+import com.ddaeany0919.insightdeal.presentation.auth.dataStore
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.flow.firstOrNull
 
 private const val TAG_UI = "MainActivity"
 
@@ -88,6 +94,21 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val deviceUserId = generateDeviceUserId(this)
         currentIntent = intent
+        
+        // ⚡ [자동로그인 가드] 최초 기동 시 자동로그인이 꺼져있다면 세션을 안전하게 guest로 청소
+        lifecycleScope.launch {
+            val prefs = this@MainActivity.dataStore.data.firstOrNull()
+            if (prefs != null) {
+                val autoLogin = prefs[booleanPreferencesKey("auto_login_enabled")] ?: true
+                if (!autoLogin) {
+                    this@MainActivity.dataStore.edit { editPrefs ->
+                        editPrefs[stringPreferencesKey("username")] = "guest"
+                        editPrefs[stringPreferencesKey("nickname")] = "guest"
+                    }
+                    Log.d("AuthGuard", "AutoLogin is disabled. Cleaned session to guest on Cold Start.")
+                }
+            }
+        }
         
         // Android 13 이상에서 알림 권한 요청
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -142,9 +163,27 @@ class MainActivity : ComponentActivity() {
             // 보안 앱 잠금 상태 검사
             val context = this
             val prefs = remember { EncryptedPrefsManager.getEncryptedPrefs(context) }
-            val lockEnabled = remember { prefs.getBoolean("app_lock_enabled", false) }
-            val correctPin = remember { prefs.getString("app_lock_pin", "") ?: "" }
-            var isLocked by remember { mutableStateOf(lockEnabled && correctPin.isNotEmpty()) }
+            var correctPin by remember { mutableStateOf(prefs.getString("app_lock_pin", "") ?: "") }
+            var isLocked by remember { mutableStateOf(false) }
+
+            // 생명주기 및 백그라운드-포그라운드 전환 시 PIN 잠금 정밀 검사
+            val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+            DisposableEffect(lifecycleOwner) {
+                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                        val lockEnabled = prefs.getBoolean("app_lock_enabled", false)
+                        val pin = prefs.getString("app_lock_pin", "") ?: ""
+                        correctPin = pin
+                        if (lockEnabled && pin.isNotEmpty()) {
+                            isLocked = true
+                        }
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
 
             InsightDealTheme(
                 darkTheme = useDark,
@@ -257,10 +296,12 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
             composable("mypage") { 
                 com.ddaeany0919.insightdeal.presentation.mypage.MyPageScreen(
                     onNavigateToSettings = { navController.navigate("settings") },
+                    onNavigateToAuth = { navController.navigate("auth") },
                     onNavigateToWatchlist = { navController.navigate("watchlist") },
                     onNavigateToMyPosts = { navController.navigate("my_posts") },
                     onNavigateToMyComments = { navController.navigate("my_comments") },
-                    onNavigateToRecentDeals = { navController.navigate("recent_deals") }
+                    onNavigateToRecentDeals = { navController.navigate("recent_deals") },
+                    navController = navController
                 ) 
             }
             composable("my_posts") {
@@ -278,7 +319,13 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
             composable("settings") {
                 com.ddaeany0919.insightdeal.presentation.settings.SettingsScreen(
                     onBackClick = { navController.popBackStack() },
-                    onNavigateToKeywordManager = { navController.navigate("keyword_alarm") }
+                    onNavigateToKeywordManager = { navController.navigate("keyword_alarm") },
+                    onNavigateToAuth = { navController.navigate("auth") }
+                )
+            }
+            composable("auth") {
+                com.ddaeany0919.insightdeal.presentation.auth.AuthScreen(
+                    onBackClick = { navController.popBackStack() }
                 )
             }
             composable("keyword_alarm") {
