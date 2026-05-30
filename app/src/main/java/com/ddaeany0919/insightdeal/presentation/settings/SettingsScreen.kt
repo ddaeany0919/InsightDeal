@@ -515,6 +515,9 @@ fun SettingsScreen(
                 }
             }
 
+            // ==========================================
+            // 6. 계정 관리 / 데이터 파기 섹션 (보안성 강화 및 E2E 실시간 DB 반영)
+            // ==========================================
             Column {
                 SettingsSectionTitle("계정 관리")
                 Card(
@@ -537,53 +540,19 @@ fun SettingsScreen(
                             }
                         )
                         
-                        // 1단계: 본인 확인용 비밀번호 입력 다이얼로그 (2번째 캡처의 둥근 격리 박스 리듬 차용)
+                        // 1단계: 본인 확인용 비밀번호 입력 다이얼로그
                         if (showWithdrawPasswordDialog) {
                             AlertDialog(
                                 onDismissRequest = { showWithdrawPasswordDialog = false },
-                                title = { 
-                                    Text(
-                                        "회원 탈퇴 - 비밀번호 확인", 
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 18.sp
-                                    ) 
-                                },
+                                title = { Text("회원 탈퇴 - 비밀번호 확인", fontWeight = FontWeight.Bold) },
                                 text = {
-                                    Column(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        // 2번째 캡처 느낌의 연회색 둥근 격리 박스 디자인
-                                        Card(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(14.dp),
-                                            colors = CardDefaults.cardColors(
-                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                                            )
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(14.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Security,
-                                                    contentDescription = null,
-                                                    tint = brandAccent,
-                                                    modifier = Modifier.size(20.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(10.dp))
-                                                Text(
-                                                    text = "본인 확인 및 안전한 탈퇴를 위해 현재 계정의 비밀번호를 입력해 주세요.",
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    fontWeight = FontWeight.Medium,
-                                                    lineHeight = 18.sp
-                                                )
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(4.dp))
-
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        Text(
+                                            text = "본인 확인 및 안전한 탈퇴를 위해 현재 계정의 비밀번호를 입력해 주세요.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
                                         OutlinedTextField(
                                             value = withdrawPasswordInput,
                                             onValueChange = { withdrawPasswordInput = it },
@@ -600,11 +569,9 @@ fun SettingsScreen(
                                                     )
                                                 }
                                             },
-                                            shape = RoundedCornerShape(12.dp),
                                             colors = OutlinedTextFieldDefaults.colors(
                                                 focusedBorderColor = brandAccent,
-                                                focusedLabelColor = brandAccent,
-                                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                                                focusedLabelColor = brandAccent
                                             )
                                         )
                                     }
@@ -624,70 +591,25 @@ fun SettingsScreen(
                                     }
                                 },
                                 dismissButton = {
-                                    TextButton(
-                                        onClick = { showWithdrawPasswordDialog = false }
-                                    ) {
-                                        Text("취소", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    TextButton(onClick = { showWithdrawPasswordDialog = false }) {
+                                        Text("취소")
                                     }
-                                },
-                                shape = RoundedCornerShape(20.dp),
-                                containerColor = MaterialTheme.colorScheme.surface
+                                }
                             )
                         }
 
-                        // 2단계: 최종 오동작 방지 탈퇴 컨펌 다이얼로그 (2번째 캡처 느낌의 경고용 적색 격리 박스 차용)
+                        // 2단계: 최종 오동작 방지 탈퇴 컨펌 다이얼로그
                         if (showWithdrawConfirmDialog) {
                             AlertDialog(
                                 onDismissRequest = { showWithdrawConfirmDialog = false },
-                                title = { 
-                                    Text(
-                                        "회원 탈퇴 최종 확인", 
-                                        fontWeight = FontWeight.ExtraBold, 
-                                        color = MaterialTheme.colorScheme.error,
-                                        fontSize = 18.sp
-                                    ) 
-                                },
+                                title = { Text("회원 탈퇴 최종 확인", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error) },
                                 text = { 
-                                    Column(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        Text(
-                                            text = "정말 회원 탈퇴를 진행하시겠습니까?",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-
-                                        // 2번째 캡처 느낌의 경고 색상이 가미된 격리 박스
-                                        Card(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(14.dp),
-                                            colors = CardDefaults.cardColors(
-                                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
-                                            )
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(14.dp),
-                                                verticalAlignment = Alignment.Top
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Warning,
-                                                    contentDescription = "경고",
-                                                    tint = MaterialTheme.colorScheme.error,
-                                                    modifier = Modifier.size(20.dp).padding(top = 2.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(10.dp))
-                                                Text(
-                                                    text = "탈퇴 즉시 백엔드 데이터베이스의 회원 정보가 완전히 삭제(DB 반영)되며, 기기에 저장된 위시리스트, 최근 본 내역 및 모든 설정 데이터가 영구적으로 파기되어 다시는 복구할 수 없습니다.",
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    lineHeight = 18.sp
-                                                )
-                                            }
-                                        }
-                                    }
+                                    Text(
+                                        "정말 탈퇴하시겠습니까?\n\n" +
+                                        "탈퇴 즉시 백엔드 데이터베이스의 회원 정보가 완전히 삭제(DB 반영)되며, " +
+                                        "기기에 저장된 위시리스트, 최근 본 내역 및 모든 설정 데이터가 영구적으로 파기되어 다시는 복구할 수 없습니다.",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    ) 
                                 },
                                 confirmButton = {
                                     TextButton(
@@ -698,7 +620,7 @@ fun SettingsScreen(
                                                     val apiService = com.ddaeany0919.insightdeal.network.NetworkModule.createService<com.ddaeany0919.insightdeal.network.ApiService>()
                                                     val response = apiService.withdrawUser(
                                                         UserWithdrawRequest(
-                                                            username = savedUsername ?: "",
+                                                            username = savedUsername ?: "guest",
                                                             password = withdrawPasswordInput
                                                         )
                                                     )
@@ -733,14 +655,10 @@ fun SettingsScreen(
                                     }
                                 },
                                 dismissButton = {
-                                    TextButton(
-                                        onClick = { showWithdrawConfirmDialog = false }
-                                    ) {
-                                        Text("취소", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    TextButton(onClick = { showWithdrawConfirmDialog = false }) {
+                                        Text("취소")
                                     }
-                                },
-                                shape = RoundedCornerShape(20.dp),
-                                containerColor = MaterialTheme.colorScheme.surface
+                                }
                             )
                         }
                     }

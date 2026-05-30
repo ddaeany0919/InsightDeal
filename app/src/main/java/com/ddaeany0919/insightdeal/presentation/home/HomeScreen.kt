@@ -883,7 +883,7 @@ fun HomeScreen(
             ModalBottomSheet(
                 onDismissRequest = { showDealOptionsBottomSheet = false },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                containerColor = Color.Transparent, // 3번째 캡처처럼 뒷배경 투명감을 주고 박스 형태로 격리
+                containerColor = MaterialTheme.colorScheme.background, // 뒤에 배경(글씨, 카드)이 비치지 않도록 불투명한 배경색 지정
                 dragHandle = null, // 드래그 핸들 없음 (깔끔한 플랫 스타일)
                 windowInsets = WindowInsets(0) // 인셋 여백 초기화로 밀착 레이아웃 보장
             ) {
@@ -1751,33 +1751,53 @@ fun KeywordSettingsBottomSheet(
             }
             Text("원하는 키워드를 등록하면 특가가 떴을 때 즉시 푸시 알림을 쏴드립니다!", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top=8.dp, bottom=16.dp))
             
-            // 야간 알림 수신 동의 및 DND 상태 토글 UI
+            // 야간 알림 수신 동의 및 DND 상태 토글 UI (2번째 캡쳐 피드백 반영: 둥근 18.dp 연회색 박스형 카드 레이아웃)
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = if (dndEnabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha=0.3f) else MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).clickable { 
-                    keywordViewModel.updateDndSettings(
-                        enabled = !dndEnabled, 
-                        startTime = dndStartTime, 
-                        endTime = dndEndTime
-                    )
-                }
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+                    .clickable { 
+                        keywordViewModel.updateDndSettings(
+                            enabled = !dndEnabled, 
+                            startTime = dndStartTime, 
+                            endTime = dndEndTime
+                        )
+                    }
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically, 
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)
+                ) {
                     Checkbox(
                         checked = dndEnabled,
-                        onCheckedChange = { 
+                        onCheckedChange = { isChecked ->
                             keywordViewModel.updateDndSettings(
-                                enabled = it, 
+                                enabled = isChecked, 
                                 startTime = dndStartTime, 
                                 endTime = dndEndTime
                             )
-                        }
+                        },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Column {
-                        Text("야간(21시~08시) 알림 차단", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
-                        Text("야간 시간대에 수신을 일시적으로 제한합니다.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                        Text(
+                            text = "야간(21시~08시) 알림 차단", 
+                            fontWeight = FontWeight.Bold, 
+                            fontSize = 15.sp, 
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "야간 시간대에 수신을 일시적으로 제한합니다.", 
+                            fontSize = 12.sp, 
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             }

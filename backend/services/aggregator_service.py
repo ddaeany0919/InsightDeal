@@ -280,7 +280,17 @@ class AggregatorService:
 
         # 2. 중복 및 롤링 윈도우 클러스터링 체크 (Upsert 로직의 핵심)
         existing_deals = self.db.query(Deal).filter(Deal.post_link == url).all()
-        print(f"DEBUG: existing_deals based on post_link: {existing_deals}")
+        
+        # [이중 중복 방어 가드] 동일 커뮤니티 내 최근 24시간 이내 완전히 동일한 제목의 글이 있으면 중복으로 간주하여 Upsert 처리
+        if not existing_deals and raw_title:
+            from datetime import timedelta
+            existing_deals = self.db.query(Deal).filter(
+                Deal.source_community_id == community_id,
+                Deal.title == raw_title,
+                Deal.indexed_at >= datetime.utcnow() - timedelta(hours=24)
+            ).all()
+            
+        print(f"DEBUG: existing_deals based on post_link or title: {existing_deals}")
         
         # [24시간 롤링 윈도우 클러스터링]: 동일 URL이 아니더라도 24시간 내 동일 상품이면 병합 시도
         if not existing_deals:
