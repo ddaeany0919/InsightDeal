@@ -891,7 +891,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 20.dp),
+                        .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     // 둥근 그레이 박스 1 (관심 액션 그룹)
