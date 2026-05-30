@@ -83,13 +83,17 @@ class WishlistRepository(
     suspend fun createWishlist(
         keyword: String, 
         productUrl: String, 
-        targetPrice: Int
+        targetPrice: Int,
+        currentLowestPrice: Int? = null,
+        currentLowestPlatform: String? = null
     ) = withContext(Dispatchers.IO) {
-        Log.d(TAG, "createWishlist: Local db insert -> keyword=$keyword url=$productUrl target=$targetPrice")
+        Log.d(TAG, "createWishlist: Local db insert -> keyword=$keyword url=$productUrl target=$targetPrice lowest=$currentLowestPrice")
         val entity = WishlistEntity(
             keyword = keyword,
             productUrl = productUrl,
-            targetPrice = targetPrice
+            targetPrice = targetPrice,
+            currentLowestPrice = currentLowestPrice,
+            currentLowestPlatform = currentLowestPlatform
         )
         dao.insertWishlist(entity)
     }

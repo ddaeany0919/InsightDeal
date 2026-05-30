@@ -45,11 +45,11 @@ fun StandardWishlistCard(
 ) {
     val context = LocalContext.current
     val isDark = isSystemInDarkTheme()
-    val targetReached = item.isTargetReached || (item.currentLowestPrice != null && item.targetPrice >= item.currentLowestPrice)
-    val currentPrice = item.currentLowestPrice ?: 0
+    val currentPrice = item.currentLowestPrice ?: item.targetPrice
+    val targetReached = item.isTargetReached || (item.targetPrice >= currentPrice)
     val targetPrice = item.targetPrice
-    val discountRate = if (currentPrice > 0 && targetPrice > 0) {
-        ((targetPrice - currentPrice).toFloat() / targetPrice * 100).toInt()
+    val discountRate = if (item.currentLowestPrice != null && item.currentLowestPrice > 0 && targetPrice > 0) {
+        ((targetPrice - item.currentLowestPrice).toFloat() / targetPrice * 100).toInt()
     } else 0
     val timeFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm")
 
@@ -132,8 +132,8 @@ fun StandardWishlistCard(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom
             ) {
-                val displayPrice = checkResult?.currentPrice ?: item.currentLowestPrice
-                if (displayPrice != null && displayPrice > 0) {
+                val displayPrice = checkResult?.currentPrice ?: item.currentLowestPrice ?: item.targetPrice
+                if (displayPrice > 0) {
                     Text(
                         text = "${displayPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원",
                         fontSize = 22.sp,
@@ -180,7 +180,7 @@ fun StandardWishlistCard(
                 }
                 Spacer(Modifier.height(6.dp))
                 LinearProgressIndicator(
-                    progress = progress,
+                    progress = { progress },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(8.dp)

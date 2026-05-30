@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
+import androidx.security.crypto.MasterKey
 
 /**
  * 🔒 Keystore 기반 암호화 SharedPreferences 관리자 싱글톤
@@ -26,11 +26,13 @@ object EncryptedPrefsManager {
         return cachedPrefs ?: synchronized(this) {
             cachedPrefs ?: try {
                 Log.d(TAG, "Initializing EncryptedSharedPreferences...")
-                val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+                val masterKey = MasterKey.Builder(context.applicationContext)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
                 val prefs = EncryptedSharedPreferences.create(
-                    PREFS_NAME,
-                    masterKeyAlias,
                     context.applicationContext,
+                    PREFS_NAME,
+                    masterKey,
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
                 )

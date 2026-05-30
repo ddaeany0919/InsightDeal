@@ -263,7 +263,7 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
             TopAppBar(
                 title = {
                     Text(
-                        "Insight Deal",
+                        "찜한 목록",
                         fontWeight = FontWeight.Bold
                     )
                 },

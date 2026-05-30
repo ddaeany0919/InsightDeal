@@ -59,6 +59,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
+@Suppress("DEPRECATION")
 fun HomeScreen(
     navController: NavController, 
     viewModel: HomeViewModel = viewModel(),
@@ -548,7 +549,7 @@ fun HomeScreen(
                                                                             val item = (wishlistState as? WishlistUiState.Success)?.items?.find { it.productUrl == targetUrl }
                                                                             if (item != null) vm.deleteItem(item)
                                                                         } else {
-                                                                            vm.addItem(pick.title, targetUrl, pick.price.toInt())
+                                                                            vm.addItem(pick.title, targetUrl, pick.price.toInt(), pick.price.toInt(), pick.siteName)
                                                                         }
                                                                     }
                                                                 },
@@ -743,7 +744,7 @@ fun HomeScreen(
                                                     val item = (wishlistState as? WishlistUiState.Success)?.items?.find { it.productUrl == targetUrl }
                                                     if (item != null) vm.deleteItem(item)
                                                 } else {
-                                                    vm.addItem(deal.title, targetUrl, deal.price.toInt())
+                                                    vm.addItem(deal.title, targetUrl, deal.price.toInt(), deal.price.toInt(), deal.siteName)
                                                 }
                                             }
                                         }
@@ -911,7 +912,7 @@ fun HomeScreen(
                                             val item = (wishlistState as? WishlistUiState.Success)?.items?.find { it.productUrl == targetUrl }
                                             if (item != null) vm.deleteItem(item)
                                         } else {
-                                            vm.addItem(deal.title, targetUrl, deal.price.toInt())
+                                            vm.addItem(deal.title, targetUrl, deal.price.toInt(), deal.price.toInt(), deal.siteName)
                                         }
                                     }
                                 }
@@ -1078,7 +1079,6 @@ fun HomeScreen(
 
         // 🚨 신고 사유 선택 다이얼로그 (신고하기 클릭 시)
         if (showReportDialog != null) {
-            val deal = showReportDialog!!
             var selectedReason by remember { mutableStateOf(0) }
             val reasons = listOf(
                 "광고성 / 홍보성 / 도배성 게시글",
@@ -1194,6 +1194,7 @@ fun HomeDealCardSkeleton() {
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun DealCardComposable(
     deal: DealItem, 
     onDetailClick: () -> Unit = {}, 
@@ -2139,9 +2140,7 @@ fun BrandPlaceholder(
             // 📝 감성 자극 귀여운 텍스트 문구
             Text(
                 text = "이미지가 없어요 ㅠㅠ",
-                fontSize = 8.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White.copy(alpha = 0.95f),
+                style = textStyle,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis

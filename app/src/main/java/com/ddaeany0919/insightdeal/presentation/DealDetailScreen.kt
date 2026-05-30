@@ -145,7 +145,9 @@ fun DealDetailRoute(
                 wishlistViewModel.addItem(
                     keyword = deal.title,
                     productUrl = targetUrl,
-                    targetPrice = deal.price.toInt()
+                    targetPrice = deal.price.toInt(),
+                    currentLowestPrice = deal.price.toInt(),
+                    currentLowestPlatform = deal.siteName
                 )
             }
         },

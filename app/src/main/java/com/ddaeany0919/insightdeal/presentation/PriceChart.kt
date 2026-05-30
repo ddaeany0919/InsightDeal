@@ -147,10 +147,10 @@ fun PriceChart(
             val indicesToDraw = mutableListOf<Int>()
             if (dates.isNotEmpty()) {
                 indicesToDraw.add(dates.lastIndex)
-                var lastAddedLeftEdge = width - axisPaint.measureText(dates.last() ?: "")
+                var lastAddedLeftEdge = width - axisPaint.measureText(dates.last())
                 
                 for (i in dates.lastIndex - 1 downTo 0) {
-                    val safeDate = dates[i] ?: ""
+                    val safeDate = dates[i]
                     val x = i * xStep
                     val textWidth = axisPaint.measureText(safeDate)
                     val safeX = x.coerceIn(textWidth / 2f, width - textWidth / 2f)
@@ -165,7 +165,7 @@ fun PriceChart(
             indicesToDraw.reverse()
 
             indicesToDraw.forEach { i ->
-                val safeDate = dates[i] ?: ""
+                val safeDate = dates[i]
                 val x = i * xStep
                 val textWidth = axisPaint.measureText(safeDate)
                 val safeX = x.coerceIn(textWidth / 2f, width - textWidth / 2f)
@@ -190,8 +190,7 @@ fun PriceChart(
                 drawCircle(color = Color.White, radius = 3.dp.toPx(), center = point)
 
                 val priceText = formatPrice(prices[index].toLong(), currency)
-                val rawDate: String? = if (dates.isNotEmpty() && index < dates.size) dates[index] else ""
-                val dateText = rawDate ?: ""
+                val dateText = if (dates.isNotEmpty() && index < dates.size) dates[index] else ""
                 
                 val textPaint = Paint().apply {
                     color = primaryColor.toArgb()
@@ -208,13 +207,16 @@ fun PriceChart(
                 }
                 
                 // 말풍선 위치 (화면 상단으로 안 넘어가게 보정)
-                val tooltipY = max(80f, point.y - 50f)
+                val tooltipY = max(80f, point.y - 60f)
                 
                 // 텍스트가 좌우로 잘리지 않게 x 좌표 보정
-                val priceTextWidth = textPaint.measureText(priceText)
-                val textX = point.x.coerceIn(priceTextWidth / 2f + 10f, width - priceTextWidth / 2f - 10f)
+                val maxTextWidth = max(textPaint.measureText(priceText), datePaint.measureText(dateText))
+                val textX = point.x.coerceIn(maxTextWidth / 2f + 10f, width - maxTextWidth / 2f - 10f)
 
                 drawContext.canvas.nativeCanvas.drawText(priceText, textX, tooltipY, textPaint)
+                if (dateText.isNotEmpty()) {
+                    drawContext.canvas.nativeCanvas.drawText(dateText, textX, tooltipY + 32f, datePaint)
+                }
             }
         }
     }

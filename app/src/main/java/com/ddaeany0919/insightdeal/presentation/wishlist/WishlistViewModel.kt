@@ -109,10 +109,10 @@ class WishlistViewModel(
         }
     }
 
-    fun addItem(keyword: String, productUrl: String, targetPrice: Int) {
+    fun addItem(keyword: String, productUrl: String, targetPrice: Int, currentLowestPrice: Int? = null, currentLowestPlatform: String? = null) {
         viewModelScope.launch {
             try {
-                wishlistRepository.createWishlist(keyword, productUrl, targetPrice)
+                wishlistRepository.createWishlist(keyword, productUrl, targetPrice, currentLowestPrice, currentLowestPlatform)
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "아이템 추가 실패", e)
             }
@@ -130,7 +130,7 @@ class WishlistViewModel(
     }
 
     fun restoreItem(item: WishlistItem) {
-        addItem(item.keyword, item.productUrl, item.targetPrice)
+        addItem(item.keyword, item.productUrl, item.targetPrice, item.currentLowestPrice, item.currentLowestPlatform)
     }
 
     fun retry() {
