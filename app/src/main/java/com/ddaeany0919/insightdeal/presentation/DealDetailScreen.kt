@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -67,10 +68,14 @@ fun DealDetailRoute(
     wishlistViewModel: WishlistViewModel,
     onBack: () -> Unit,
     onOpenUrl: (String) -> Unit,
-    onNavigateToCommunity: () -> Unit
+    onNavigateToCommunity: () -> Unit,
+    onNavigateToWatchlist: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val wishlistState by wishlistViewModel.uiState.collectAsState()
+    
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(dealId) {
         viewModel.loadDealData(dealId)
@@ -149,11 +154,22 @@ fun DealDetailRoute(
                     currentLowestPrice = deal.price.toInt(),
                     currentLowestPlatform = deal.siteName
                 )
+                scope.launch {
+                    val result = snackbarHostState.showSnackbar(
+                        message = "관심 상품에 등록되었습니다 💖",
+                        actionLabel = "찜 목록 보기 🚀",
+                        duration = SnackbarDuration.Short
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        onNavigateToWatchlist()
+                    }
+                }
             }
         },
         onShare = { /* Todo */ },
         onOpenOrigin = onOpenUrl,
-        onNavigateToCommunity = onNavigateToCommunity
+        onNavigateToCommunity = onNavigateToCommunity,
+        snackbarHostState = snackbarHostState
     )
 }
 
@@ -171,9 +187,11 @@ fun DealDetailScreen(
     onBookmarkToggle: () -> Unit,
     onShare: () -> Unit,
     onOpenOrigin: (String) -> Unit,
-    onNavigateToCommunity: () -> Unit
+    onNavigateToCommunity: () -> Unit,
+    snackbarHostState: SnackbarHostState
 ) {
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             val targetUrl = remember(deal, mallPrices) {
                 deal.ecommerceUrl?.takeIf { it.isNotBlank() } 

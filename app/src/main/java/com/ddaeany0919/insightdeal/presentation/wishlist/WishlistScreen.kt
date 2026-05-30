@@ -167,86 +167,6 @@ fun AddWishlistDialog(
     }
 }
 
-@Composable
-fun DashboardHeader(items: List<WishlistItem>) {
-    val totalCount = items.size
-    val targetReachedCount = items.count { it.isTargetReached || (it.currentLowestPrice != null && it.targetPrice >= it.currentLowestPrice) }
-    val isDark = isSystemInDarkTheme()
-    
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E7EB)),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f) else Color(0xFFF2F4F7),
-            contentColor = MaterialTheme.colorScheme.onSurface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .padding(vertical = 20.dp, horizontal = 16.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "전체 상품", 
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-                Text(
-                    text = "$totalCount", 
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                )
-            }
-            
-            VerticalDivider(
-                modifier = Modifier.height(36.dp).width(1.dp), 
-                color = if (isDark) Color(0xFF3A3A3C) else Color(0xFFD1D5DB)
-            )
-            
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "목표 달성", 
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = "$targetReachedCount", 
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (targetReachedCount > 0) Color(0xFF3182F6) else MaterialTheme.colorScheme.onSurface
-                        )
-                    )
-                    if (targetReachedCount > 0) {
-                        Text("🎉", fontSize = 18.sp)
-                    }
-                }
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -293,7 +213,13 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    DashboardHeader(items = currentState.items)
+                    Text(
+                        text = "찜한 상품 (총 ${currentState.items.size}개)",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                    )
                 }
                 items(
                     count = lazyPagingItems.itemCount,

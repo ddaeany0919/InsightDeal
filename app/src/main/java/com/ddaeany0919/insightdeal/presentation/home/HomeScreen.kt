@@ -140,6 +140,8 @@ fun HomeScreen(
     var showWhyThisDealDialog by remember { mutableStateOf<DealItem?>(null) }
     var showReportDialog by remember { mutableStateOf<DealItem?>(null) }
     var showAuthRequiredDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     // [Epic 4] 쿠팡 파트너스 / 쿠팡 계정 로그인 (UI 제공)
     var showCoupangDialog by remember { mutableStateOf(false) }
@@ -550,6 +552,16 @@ fun HomeScreen(
                                                                             if (item != null) vm.deleteItem(item)
                                                                         } else {
                                                                             vm.addItem(pick.title, targetUrl, pick.price.toInt(), pick.price.toInt(), pick.siteName)
+                                                                            scope.launch {
+                                                                                val result = snackbarHostState.showSnackbar(
+                                                                                    message = "관심 상품에 등록되었습니다 💖",
+                                                                                    actionLabel = "찜 목록 보기 🚀",
+                                                                                    duration = SnackbarDuration.Short
+                                                                                )
+                                                                                if (result == SnackbarResult.ActionPerformed) {
+                                                                                    navController.navigate("watchlist")
+                                                                                }
+                                                                            }
                                                                         }
                                                                     }
                                                                 },
@@ -745,6 +757,16 @@ fun HomeScreen(
                                                     if (item != null) vm.deleteItem(item)
                                                 } else {
                                                     vm.addItem(deal.title, targetUrl, deal.price.toInt(), deal.price.toInt(), deal.siteName)
+                                                    scope.launch {
+                                                        val result = snackbarHostState.showSnackbar(
+                                                            message = "관심 상품에 등록되었습니다 💖",
+                                                            actionLabel = "찜 목록 보기 🚀",
+                                                            duration = SnackbarDuration.Short
+                                                        )
+                                                        if (result == SnackbarResult.ActionPerformed) {
+                                                            navController.navigate("watchlist")
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -913,6 +935,16 @@ fun HomeScreen(
                                             if (item != null) vm.deleteItem(item)
                                         } else {
                                             vm.addItem(deal.title, targetUrl, deal.price.toInt(), deal.price.toInt(), deal.siteName)
+                                            scope.launch {
+                                                val result = snackbarHostState.showSnackbar(
+                                                    message = "관심 상품에 등록되었습니다 💖",
+                                                    actionLabel = "찜 목록 보기 🚀",
+                                                    duration = SnackbarDuration.Short
+                                                )
+                                                if (result == SnackbarResult.ActionPerformed) {
+                                                    navController.navigate("watchlist")
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -1157,6 +1189,14 @@ fun HomeScreen(
                         Text("취소")
                     }
                 }
+            )
+
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 16.dp)
             )
         }
     }

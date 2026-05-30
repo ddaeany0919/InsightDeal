@@ -348,6 +348,9 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                     },
                     onNavigateToCommunity = {
                         navController.navigate("community")
+                    },
+                    onNavigateToWatchlist = {
+                        navController.navigate("watchlist")
                     }
                 )
             }

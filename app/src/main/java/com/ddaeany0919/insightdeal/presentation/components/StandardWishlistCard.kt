@@ -7,6 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,11 +47,6 @@ fun StandardWishlistCard(
     val context = LocalContext.current
     val isDark = isSystemInDarkTheme()
     val currentPrice = item.currentLowestPrice ?: item.targetPrice
-    val targetReached = item.isTargetReached || (item.targetPrice >= currentPrice)
-    val targetPrice = item.targetPrice
-    val discountRate = if (item.currentLowestPrice != null && item.currentLowestPrice > 0 && targetPrice > 0) {
-        ((targetPrice - item.currentLowestPrice).toFloat() / targetPrice * 100).toInt()
-    } else 0
     val timeFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm")
 
     Card(
@@ -81,28 +77,15 @@ fun StandardWishlistCard(
                         maxLines = 2
                     )
                     Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (targetReached || checkResult?.isTargetReached == true) {
-                            Surface(
-                                color = Color(0xFFE8F5E9),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Text(
-                                    text = "목표달성 🎉",
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2E7D32)
-                                )
-                            }
-                            Spacer(Modifier.width(8.dp))
-                        }
+                    val platformName = checkResult?.platform ?: item.currentLowestPlatform
+                    if (!platformName.isNullOrBlank() && platformName != "알수없음") {
+                        Spacer(Modifier.height(8.dp))
                         Surface(
                             color = if (isDark) Color(0xFF3A3A3C) else Color(0xFFE4E7EC),
                             shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
-                                text = checkResult?.platform ?: item.currentLowestPlatform ?: "알수없음",
+                                text = platformName,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -138,58 +121,19 @@ fun StandardWishlistCard(
                         text = "${displayPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = if (targetReached) Color(0xFF3182F6) else MaterialTheme.colorScheme.onSurface
+                        color = Color(0xFF3182F6)
                     )
-                    Spacer(Modifier.width(8.dp))
-                    if (discountRate > 0 && style == WishlistCardStyle.DETAILED) {
-                        Text(
-                            text = "$discountRate% ▼",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFF04438),
-                            modifier = Modifier.padding(bottom = 2.dp)
-                        )
-                    }
                 } else {
                     Text(
-                        text = "가격 확인 필요",
+                        text = "실시간 추적 중 🔍",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = "목표 ${item.targetPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 2.dp)
-                )
             }
 
             Spacer(Modifier.height(16.dp))
-            val progress = if (currentPrice > 0) {
-                (targetPrice.toFloat() / currentPrice.toFloat()).coerceIn(0f, 1f)
-            } else 0f
-            
-            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("목표 달성률", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
-                    Text("${(progress * 100).toInt()}%", fontSize = 12.sp, color = Color(0xFF3182F6), fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.height(6.dp))
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp)),
-                    color = if (progress >= 1f) Color(0xFF2E7D32) else Color(0xFF3182F6),
-                    trackColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E7EB)
-                )
-            }
-            Spacer(Modifier.height(4.dp))
             HorizontalDivider(color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E7EB), thickness = 1.dp)
             Spacer(Modifier.height(12.dp))
 
@@ -252,7 +196,11 @@ fun StandardWishlistCard(
                             enabled = !item.isLoading,
                             modifier = Modifier
                                 .size(36.dp)
-                                .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFE4E7EC), RoundedCornerShape(10.dp))
+                                .background(Color.Transparent)
+                                .border(
+                                    BorderStroke(1.dp, if (isDark) Color(0xFF3A3A3C) else Color(0xFFE5E7EB)),
+                                    RoundedCornerShape(10.dp)
+                                )
                         ) {
                             if (item.isLoading) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             else Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color(0xFF3182F6), modifier = Modifier.size(20.dp))
@@ -261,7 +209,11 @@ fun StandardWishlistCard(
                             onClick = { onDelete?.invoke() },
                             modifier = Modifier
                                 .size(36.dp)
-                                .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFE4E7EC), RoundedCornerShape(10.dp))
+                                .background(Color.Transparent)
+                                .border(
+                                    BorderStroke(1.dp, if (isDark) Color(0xFF3A3A3C) else Color(0xFFE5E7EB)),
+                                    RoundedCornerShape(10.dp)
+                                )
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFF04438), modifier = Modifier.size(20.dp))
                         }
