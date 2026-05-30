@@ -46,7 +46,6 @@ fun StandardWishlistCard(
 ) {
     val context = LocalContext.current
     val isDark = isSystemInDarkTheme()
-    val currentPrice = item.currentLowestPrice ?: item.targetPrice
     val timeFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm")
 
     Card(

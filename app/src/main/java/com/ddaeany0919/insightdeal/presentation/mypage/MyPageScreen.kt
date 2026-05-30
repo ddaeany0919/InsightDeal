@@ -70,7 +70,6 @@ fun MyPageScreen(
     LaunchedEffect(Unit) {
         NotificationHistoryManager.init(context)
     }
-    val notificationAlerts by NotificationHistoryManager.alerts.collectAsState()
     
     val recentDeals by com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager.recentDeals.collectAsState()
     
