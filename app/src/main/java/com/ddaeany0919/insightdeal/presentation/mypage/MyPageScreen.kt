@@ -122,7 +122,7 @@ fun MyPageScreen(
         )
     }
     
-    LaunchedEffect(isLoggedIn) {
+    LaunchedEffect(isLoggedIn, recentDeals) {
         if (isLoggedIn) {
             try {
                 val response = api.getCommunityHotDeals(limit = 50)
@@ -144,7 +144,26 @@ fun MyPageScreen(
                             }
                         } ?: true
                     }
-                    aiRecommendedDeals = freshDeals.sortedByDescending { it.discountRate ?: 0 }.take(3)
+                    
+                    // 최근 본 핫딜 중 상위 3개의 선호 카테고리 추출
+                    val preferredCategories = recentDeals.mapNotNull { it.category }.distinct().take(3)
+                    
+                    val recommended = if (preferredCategories.isNotEmpty()) {
+                        // 1단계: 선호 카테고리에 해당하는 핫딜 우선 추출 및 꿀점수 정렬
+                        val categoryMatched = freshDeals.filter { it.category in preferredCategories }
+                            .sortedWith(compareByDescending<com.ddaeany0919.insightdeal.models.DealItem> { it.honeyScore }.thenByDescending { it.discountRate ?: 0 })
+                        
+                        // 2단계: 3개가 부족할 시 전체 꿀점수 높은 딜로 보완
+                        val remainder = freshDeals.filter { it !in categoryMatched }
+                            .sortedWith(compareByDescending<com.ddaeany0919.insightdeal.models.DealItem> { it.honeyScore }.thenByDescending { it.discountRate ?: 0 })
+                        
+                        (categoryMatched + remainder).take(3)
+                    } else {
+                        // 최근 본 핫딜이 없을 시, 꿀점수(Honey Score)가 가장 높은 순으로 AI 추천
+                        freshDeals.sortedWith(compareByDescending<com.ddaeany0919.insightdeal.models.DealItem> { it.honeyScore }.thenByDescending { it.discountRate ?: 0 }).take(3)
+                    }
+                    
+                    aiRecommendedDeals = recommended
                 }
             } catch (e: Exception) {
                 // Ignore
@@ -1236,9 +1255,15 @@ fun MyPageScreen(
                                                     contentScale = androidx.compose.ui.layout.ContentScale.Crop
                                                 )
                                             } else {
-                                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                    Text("AI Pick", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF6B35))
-                                                }
+                                                com.ddaeany0919.insightdeal.presentation.home.BrandPlaceholder(
+                                                    siteName = deal.siteName,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White
+                                                    )
+                                                )
                                             }
                                         }
                                         Spacer(modifier = Modifier.width(12.dp))
