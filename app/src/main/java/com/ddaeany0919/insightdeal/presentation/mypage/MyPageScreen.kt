@@ -1170,7 +1170,7 @@ fun MyPageScreen(
                     ) {
                         Text("🤖", fontSize = 18.sp)
                         Text(
-                            text = "1:1 지능형 AI 추천 꿀딜 (AI Pick)",
+                            text = "AI 추천 꿀딜",
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Black,
                             color = MaterialTheme.colorScheme.onBackground
