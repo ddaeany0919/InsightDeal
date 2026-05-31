@@ -412,12 +412,16 @@ fun KeywordManagerScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
                                         Text(
                                             text = "야간 알림 차단 (방해금지 시간)", 
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 16.sp,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f, fill = false)
                                         )
                                         if (dndEnabled) {
                                             Spacer(modifier = Modifier.width(6.dp))
@@ -427,7 +431,7 @@ fun KeywordManagerScreen(
                                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
                                             ) {
                                                 Row(
-                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Box(
@@ -438,10 +442,12 @@ fun KeywordManagerScreen(
                                                     )
                                                     Spacer(modifier = Modifier.width(4.dp))
                                                     Text(
-                                                        text = "실시간 서버 동기화 완료",
+                                                        text = "동기화 완료",
                                                         fontSize = 9.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.primary
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        maxLines = 1,
+                                                        softWrap = false
                                                     )
                                                 }
                                             }

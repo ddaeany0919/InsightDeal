@@ -159,9 +159,12 @@ class BbasakBaseScraper(AsyncBaseScraper):
         soup = BeautifulSoup(html, 'html.parser')
         
         import re
-        # 이미지 파싱 (본문 영역 내에서만 추출)
+        # 이미지 파싱 (본문 영역 내에서만 추출, 빠삭의 디폴트 'B' 이미지 등 무효 썸네일 차단 필터 연동)
         valid_images = [urljoin("https://bbasak.com", img.get('src') or '') for img in soup.select('#board_view img') if img.get('src')]
-        valid_images = [img for img in valid_images if not re.search(r'icon|emoticon|expand|beautifulLine|util/|skin/|share/|btn_|footer|logo|layout|bg\.|mypage|member|board', img, re.IGNORECASE)]
+        valid_images = [
+            img for img in valid_images 
+            if not re.search(r'icon|emoticon|expand|beautifulLine|util/|skin/|share/|btn_|footer|logo|layout|bg\.|mypage|member|board|222E38587E38581', img, re.IGNORECASE)
+        ]
         
         # 실제 상품 이미지(ex: 업로드 본문이미지)가 우선되도록 정렬 (카톡/스크린샷 캡처 증빙 이미지는 후순위로 밀림)
         def image_score(url):

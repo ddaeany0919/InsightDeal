@@ -277,7 +277,7 @@ fun CommunityPostDetailScreen(
         modifier = Modifier.fillMaxSize().imePadding(),
         topBar = {
             TopAppBar(
-                title = { Text("살까말까 고민 상세", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                title = { Text("꿀딜 투표 상세", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
                 navigationIcon = {
                     IconButton(onClick = { 
                         navController?.navigate("community") {
@@ -467,7 +467,7 @@ fun CommunityPostDetailScreen(
                                         shape = RoundedCornerShape(20.dp)
                                     ) {
                                         Text(
-                                            text = "⚖️ 살까말까 고민",
+                                            text = "⚖️ 꿀딜 투표",
                                             color = AccentOrange,
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
@@ -946,7 +946,7 @@ fun ShouldIBuyDetailVotePanel(
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
-                        text = "실시간 살까말까 투표",
+                        text = "실시간 꿀딜 투표",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = NeutralGray900

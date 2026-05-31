@@ -654,7 +654,7 @@ private fun PriceHistoryInteractiveCard(
                     initialValue = 0.3f,
                     targetValue = 0.95f,
                     animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = 1500, easing = LinearOutSlowInEasing),
+                        animation = tween(durationMillis = 900, easing = LinearOutSlowInEasing),
                         repeatMode = RepeatMode.Reverse
                     ),
                     label = "pulseAlpha"
@@ -663,7 +663,7 @@ private fun PriceHistoryInteractiveCard(
                     initialValue = 0.97f,
                     targetValue = 1.01f,
                     animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
+                        animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
                         repeatMode = RepeatMode.Reverse
                     ),
                     label = "pulseScale"
@@ -810,7 +810,7 @@ private fun AIBuyerGuide(deal: DealItem, priceHistory: List<PriceHistoryPoint>, 
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = "AI 지름 타점 정밀 분석", 
+                        text = "AI 분석", 
                         style = MaterialTheme.typography.titleMedium, 
                         fontWeight = FontWeight.ExtraBold,
                         color = titleColor,
@@ -1032,7 +1032,15 @@ fun DealHeader(deal: DealItem) {
                 
                 val siteChips = remember(deal.siteNames, deal.siteName, surfaceVariant, onSurfaceVariant) {
                     val rawList = if (deal.siteNames.isNotEmpty()) deal.siteNames else deal.siteName.split(",").map { it.trim() }
-                    rawList.map { sName ->
+                    val distinctRawList = rawList.map { sName ->
+                        if (sName.contains(" - ")) {
+                            sName.substringBefore(" - ").trim()
+                        } else {
+                            sName.trim()
+                        }
+                    }.distinct()
+                    
+                    distinctRawList.map { sName ->
                         val siteNameLower = sName.lowercase(Locale.getDefault())
                         val (bgColor, textColor) = when {
                             siteNameLower.contains("뽐뿌") -> Color(0xFF1565C0) to Color.White

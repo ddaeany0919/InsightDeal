@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
@@ -33,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -198,7 +200,7 @@ fun CommunityBoardScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "살까말까 고민방",
+                            "꿀딜 투표소",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = NeutralGray900
@@ -239,7 +241,7 @@ fun CommunityBoardScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "투표 올리기", modifier = Modifier.size(20.dp))
-                    Text("고민 등록", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("투표 등록", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
             }
         },
@@ -310,13 +312,13 @@ fun CommunityBoardScreen(
                             }
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                "등록된 고민글이 없어요",
+                                "등록된 투표글이 없어요",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = NeutralGray900
                             )
                             Text(
-                                "살지 말지 망설여지는 특가 정보를 가장 먼저 물어보세요!",
+                                "구매 여부가 망설여지는 특가 정보를 가장 먼저 물어보세요!",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = NeutralGray500
                             )
@@ -337,7 +339,7 @@ fun CommunityBoardScreen(
                                         modifier = Modifier.size(16.dp),
                                         tint = AccentOrange
                                     )
-                                    Text("첫 고민 등록하기", fontWeight = FontWeight.Bold)
+                                    Text("첫 투표 등록하기", fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -381,7 +383,7 @@ fun CommunityBoardScreen(
                     Text("⚡ 소셜 로그인 시 이런 꿀 혜택을 드려요:", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = NeutralGray900)
                     Text("• 🍯 꿀딜 고민 등록 시 즉시 +10 내공 포인트 획득", fontSize = 13.sp, color = NeutralGray700)
                     Text("• 🔒 Lv.2 이상 도달 시 시크릿 특가 딜 & 할인 쿠폰 해제", fontSize = 13.sp, color = NeutralGray700)
-                    Text("• 🤖 나만을 위한 1:1 지능형 AI 추천 핫딜 피드 활성화", fontSize = 13.sp, color = NeutralGray700)
+                    Text("• 🤖 나만을 위한 AI 추천 꿀딜 피드 활성화", fontSize = 13.sp, color = NeutralGray700)
                     Text("• ⏱️ 기기 변경 시에도 안전한 클라우드 100% 자동 백업", fontSize = 13.sp, color = NeutralGray700)
                 }
             },
@@ -438,8 +440,33 @@ fun ShouldIBuyVoteCard(
     
     val animatedProgress by animateFloatAsState(
         targetValue = buyRatio,
-        animationSpec = tween(600),
+        animationSpec = spring(
+            dampingRatio = 0.55f, // 찰랑거리는 바운스 강도 극대화
+            stiffness = 120f      // 쫀득한 속도감
+        ),
         label = "progressAnimation"
+    )
+
+    // 엄지척 이모지 쫀득한 spring 튕김 애니메이션 상태 추가
+    val buyIconScale by animateFloatAsState(
+        targetValue = if (userVote == "BUY") 1.25f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = 250f),
+        label = "buyIconScale"
+    )
+    val buyIconRotation by animateFloatAsState(
+        targetValue = if (userVote == "BUY") -15f else 0f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = 200f),
+        label = "buyIconRotation"
+    )
+    val skipIconScale by animateFloatAsState(
+        targetValue = if (userVote == "SKIP") 1.25f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = 250f),
+        label = "skipIconScale"
+    )
+    val skipIconRotation by animateFloatAsState(
+        targetValue = if (userVote == "SKIP") 15f else 0f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = 200f),
+        label = "skipIconRotation"
     )
 
     var linkedDeal by remember { mutableStateOf<DealItem?>(null) }
@@ -507,7 +534,7 @@ fun ShouldIBuyVoteCard(
                         shape = RoundedCornerShape(20.dp)
                     ) {
                         Text(
-                            text = "⚖️ 살까말까 투표",
+                            text = "⚖️ 꿀딜 투표",
                             color = AccentOrange,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
@@ -721,7 +748,18 @@ fun ShouldIBuyVoteCard(
                         .bounceClick { }
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Default.ThumbUp, contentDescription = null, tint = if (userVote == "BUY") Color.White else if (userVote == "SKIP") NeutralGray500 else AccentOrange, modifier = Modifier.size(16.dp))
+                        Icon(
+                            imageVector = Icons.Default.ThumbUp, 
+                            contentDescription = null, 
+                            tint = if (userVote == "BUY") Color.White else if (userVote == "SKIP") NeutralGray500 else AccentOrange, 
+                            modifier = Modifier
+                                .size(16.dp)
+                                .graphicsLayer {
+                                    scaleX = buyIconScale
+                                    scaleY = buyIconScale
+                                    rotationZ = buyIconRotation
+                                }
+                        )
                         Text("살까 👍", color = if (userVote == "BUY") Color.White else if (userVote == "SKIP") NeutralGray500 else AccentOrange, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -750,7 +788,18 @@ fun ShouldIBuyVoteCard(
                         .bounceClick { }
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Default.ThumbDown, contentDescription = null, tint = if (userVote == "SKIP") Color.White else NeutralGray500, modifier = Modifier.size(16.dp))
+                        Icon(
+                            imageVector = Icons.Default.ThumbDown, 
+                            contentDescription = null, 
+                            tint = if (userVote == "SKIP") Color.White else NeutralGray500, 
+                            modifier = Modifier
+                                .size(16.dp)
+                                .graphicsLayer {
+                                    scaleX = skipIconScale
+                                    scaleY = skipIconScale
+                                    rotationZ = skipIconRotation
+                                }
+                        )
                         Text("말까 👎", color = if (userVote == "SKIP") Color.White else NeutralGray700, fontWeight = FontWeight.Bold)
                     }
                 }

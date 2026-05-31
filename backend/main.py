@@ -116,4 +116,17 @@ async def generic_exception_handler(request, exc):
     from fastapi.responses import JSONResponse
     return JSONResponse(status_code=500, content={"message": "Internal Server Error - Please contact admin."})
 
-# (?좏깮?곸쑝濡?lifespan, DB/?ㅽ겕?섑띁 珥덇린???깅룄 ?ш린??異붽? 媛??
+@app.on_event("startup")
+async def startup_event():
+    # 백엔드 서버가 완전히 가동된 직후, 딱 1회만 안전하게 데이터베이스 초기화(마이그레이션)를 수행합니다.
+    # 이를 통해 임포트 타임 동시성 락 및 무한 핫리로드 무한 부팅 에러를 완전히 차단합니다.
+    try:
+        from backend.database.session import db_manager
+        logger.info("🚀 [Startup] 백엔드 가동 즉시 안전 1회 DB 초기화 격발...")
+        if db_manager.test_connection():
+            db_manager.init_database()
+            logger.info("🚀 [Startup] 안전 DB 초기화 최종 성공!")
+        else:
+            logger.warning("🚀 [Startup] DB 연결 테스트 실패, 초기화를 생략하고 서버 기동을 지탱합니다.")
+    except Exception as e:
+        logger.error(f"🚀 [Startup] DB 초기화 중 오류 발생: {e}", exc_info=True)

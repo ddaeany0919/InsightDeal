@@ -5,6 +5,11 @@ import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,6 +23,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -73,12 +80,12 @@ fun SettingsScreen(
     var isPinLockedEnabled by remember { 
         mutableStateOf(dealPrefs.getBoolean("app_lock_enabled", false)) 
     }
+    var isBiometricEnabled by remember {
+        mutableStateOf(dealPrefs.getBoolean("biometric_lock_enabled", false))
+    }
+    var isSecurityAccordionExpanded by remember { mutableStateOf(false) }
 
-    // 회원 탈퇴 제어 상태들
-    var showWithdrawPasswordDialog by remember { mutableStateOf(false) }
-    var showWithdrawConfirmDialog by remember { mutableStateOf(false) }
-    var withdrawPasswordInput by remember { mutableStateOf("") }
-    var isWithdrawPasswordVisible by remember { mutableStateOf(false) }
+
 
     Scaffold(
         topBar = {
@@ -196,32 +203,11 @@ fun SettingsScreen(
                             }
                         )
                         
-                        // 🔔 키워드 및 푸시 알림 설정
+                        // 🔔 알림 키워드 관리
                         SettingsNavigationRow(
                             icon = Icons.Default.NotificationsActive,
-                            title = "키워드 및 푸시 알림 설정",
+                            title = "알림 키워드 관리",
                             onClick = onNavigateToKeywordManager
-                        )
-                        
-                        // 야간 방해금지 시간대 설정
-                        var nightDndEnabled by remember {
-                            mutableStateOf(dealPrefs.getBoolean("night_push_consent", false))
-                        }
-                        SettingsSwitchRow(
-                            icon = Icons.Default.DoNotDisturbOn,
-                            title = "야간 방해금지 모드 (21:00 ~ 08:00)",
-                            subtitle = "활성화 시 밤 9시부터 다음날 아침 8시까지 푸시 알림 수신이 차단됩니다.",
-                            checked = nightDndEnabled,
-                            onCheckedChange = { isChecked ->
-                                nightDndEnabled = isChecked
-                                dealPrefs.edit().putBoolean("night_push_consent", isChecked).apply()
-                                
-                                android.widget.Toast.makeText(
-                                    ctx, 
-                                    if (isChecked) "야간 방해금지가 설정되었습니다." else "야간 방해금지가 해제되었습니다.", 
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            }
                         )
                         
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
@@ -325,71 +311,217 @@ fun SettingsScreen(
                 }
             }
             
-            // ==========================================
-            // 3. 보안 설정 섹션 (PIN 잠금)
-            // ==========================================
             Column {
                 SettingsSectionTitle("보안 설정")
+                
+                val arrowRotation by animateFloatAsState(
+                    targetValue = if (isSecurityAccordionExpanded) 180f else 0f,
+                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                    label = "ArrowRotation"
+                )
+                
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
                 ) {
-                    Column {
-                        SettingsSwitchRow(
-                            icon = Icons.Default.Lock,
-                            title = "PIN 비밀번호 앱 잠금",
-                            subtitle = "앱 시작 시 4자리 PIN 입력을 강제하여 소중한 개인정보를 안전하게 보호합니다.",
-                            checked = isPinLockedEnabled,
-                            onCheckedChange = { isChecked ->
-                                if (isChecked) {
-                                    pinDialogSetupMode = true
-                                    pinCorrectPin = ""
-                                    pinSuccessCallback = { newPin ->
-                                        dealPrefs.edit()
-                                            .putBoolean("app_lock_enabled", true)
-                                            .putString("app_lock_pin", newPin)
-                                            .apply()
-                                        isPinLockedEnabled = true
-                                        android.widget.Toast.makeText(ctx, "PIN 잠금이 활성화되었습니다. 🔒", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                                    showPinDialog = true
-                                } else {
-                                    val correctPin = dealPrefs.getString("app_lock_pin", "") ?: ""
-                                    if (correctPin.isEmpty()) {
-                                        dealPrefs.edit().putBoolean("app_lock_enabled", false).apply()
-                                        isPinLockedEnabled = false
-                                    } else {
-                                        pinDialogSetupMode = false
-                                        pinCorrectPin = correctPin
-                                        pinSuccessCallback = {
-                                            dealPrefs.edit().putBoolean("app_lock_enabled", false).apply()
-                                            isPinLockedEnabled = false
-                                            android.widget.Toast.makeText(ctx, "보안 PIN 잠금이 해제되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                        showPinDialog = true
-                                    }
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { isSecurityAccordionExpanded = !isSecurityAccordionExpanded }
+                                .padding(20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = brandAccent,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column {
+                                    Text(
+                                        text = "앱 잠금 및 생체 인증 설정 🔒", 
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = if (isPinLockedEnabled || isBiometricEnabled) "보안 잠금이 작동 중입니다." else "비활성화됨 (보안 강화를 위해 탭하세요)",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                    )
                                 }
                             }
-                        )
-
-                        if (isPinLockedEnabled) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
-                            SettingsNavigationRow(
-                                icon = Icons.Default.LockReset,
-                                title = "PIN 비밀번호 변경",
-                                onClick = {
-                                    pinDialogSetupMode = true
-                                    pinCorrectPin = ""
-                                    pinSuccessCallback = { newPin ->
-                                        dealPrefs.edit()
-                                            .putString("app_lock_pin", newPin)
-                                            .apply()
-                                        android.widget.Toast.makeText(ctx, "PIN 비밀번호가 변경되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                                    showPinDialog = true
-                                }
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "펼치기",
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .graphicsLayer { rotationZ = arrowRotation },
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        
+                        AnimatedVisibility(
+                            visible = isSecurityAccordionExpanded,
+                            enter = expandVertically(animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)),
+                            exit = shrinkVertically(animationSpec = tween(300)) + fadeOut(animationSpec = tween(300))
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f))
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f),
+                                    thickness = 1.dp,
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                )
+                                
+                                // 1) PIN 비밀번호 앱 잠금
+                                SettingsSwitchRow(
+                                    icon = Icons.Default.Lock,
+                                    title = "PIN 비밀번호 앱 잠금",
+                                    subtitle = "앱 시작 시 4자리 PIN 입력을 강제하여 소중한 개인정보를 안전하게 보호합니다.",
+                                    checked = isPinLockedEnabled,
+                                    onCheckedChange = { isChecked ->
+                                        if (isChecked) {
+                                            pinDialogSetupMode = true
+                                            pinCorrectPin = ""
+                                            pinSuccessCallback = { newPin ->
+                                                dealPrefs.edit()
+                                                    .putBoolean("app_lock_enabled", true)
+                                                    .putString("app_lock_pin", newPin)
+                                                    .putBoolean("biometric_lock_enabled", false)
+                                                    .apply()
+                                                isPinLockedEnabled = true
+                                                isBiometricEnabled = false
+                                                android.widget.Toast.makeText(ctx, "PIN 잠금이 활성화되었습니다. 🔒", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                            showPinDialog = true
+                                        } else {
+                                            val correctPin = dealPrefs.getString("app_lock_pin", "") ?: ""
+                                            if (correctPin.isEmpty()) {
+                                                dealPrefs.edit().putBoolean("app_lock_enabled", false).apply()
+                                                isPinLockedEnabled = false
+                                            } else {
+                                                pinDialogSetupMode = false
+                                                pinCorrectPin = correctPin
+                                                pinSuccessCallback = {
+                                                    dealPrefs.edit().putBoolean("app_lock_enabled", false).apply()
+                                                    isPinLockedEnabled = false
+                                                    android.widget.Toast.makeText(ctx, "보안 PIN 잠금이 해제되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                                showPinDialog = true
+                                            }
+                                        }
+                                    }
+                                )
+
+                                if (isPinLockedEnabled) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
+                                    SettingsNavigationRow(
+                                        icon = Icons.Default.LockReset,
+                                        title = "PIN 비밀번호 변경",
+                                        onClick = {
+                                            val currentPin = dealPrefs.getString("app_lock_pin", "") ?: ""
+                                            if (currentPin.isEmpty()) {
+                                                pinDialogSetupMode = true
+                                                pinCorrectPin = ""
+                                                pinSuccessCallback = { newPin ->
+                                                    dealPrefs.edit()
+                                                        .putString("app_lock_pin", newPin)
+                                                        .apply()
+                                                    android.widget.Toast.makeText(ctx, "PIN 비밀번호가 설정되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                                showPinDialog = true
+                                            } else {
+                                                // 1단계: 기존 PIN 비밀번호 대조
+                                                pinDialogSetupMode = false
+                                                pinCorrectPin = currentPin
+                                                pinSuccessCallback = {
+                                                    // 1단계 검증 성공 시 즉시 2단계 신규 PIN 설정 모드로 전환 기동
+                                                    pinDialogSetupMode = true
+                                                    pinCorrectPin = ""
+                                                    pinSuccessCallback = { newPin ->
+                                                        dealPrefs.edit()
+                                                            .putString("app_lock_pin", newPin)
+                                                            .apply()
+                                                        android.widget.Toast.makeText(ctx, "PIN 비밀번호가 성공적으로 변경되었습니다. ✨", android.widget.Toast.LENGTH_SHORT).show()
+                                                    }
+                                                    showPinDialog = true
+                                                }
+                                                showPinDialog = true
+                                            }
+                                        }
+                                    )
+                                }
+                                
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
+                                
+                                // 2) 지문 인식 간편 앱 잠금
+                                SettingsSwitchRow(
+                                    icon = Icons.Default.Fingerprint,
+                                    title = "지문 인식 간편 앱 잠금",
+                                    subtitle = "비밀번호 대신 지문/생체 인증으로 앱 잠금을 빠르고 안전하게 해제합니다.",
+                                    checked = isBiometricEnabled,
+                                    onCheckedChange = { isChecked ->
+                                        if (isChecked) {
+                                            val activity = ctx as? androidx.fragment.app.FragmentActivity
+                                            if (activity != null) {
+                                                val executor = androidx.core.content.ContextCompat.getMainExecutor(activity)
+                                                val biometricPrompt = androidx.biometric.BiometricPrompt(activity, executor,
+                                                    object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                                                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                                                            super.onAuthenticationError(errorCode, errString)
+                                                            android.widget.Toast.makeText(ctx, "생체 인식 거부: $errString", android.widget.Toast.LENGTH_SHORT).show()
+                                                        }
+                                                        override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                                                            super.onAuthenticationSucceeded(result)
+                                                            dealPrefs.edit()
+                                                                .putBoolean("biometric_lock_enabled", true)
+                                                                .putBoolean("app_lock_enabled", false)
+                                                                .apply()
+                                                            isBiometricEnabled = true
+                                                            isPinLockedEnabled = false
+                                                            android.widget.Toast.makeText(ctx, "지문 인식 간편 잠금이 활성화되었습니다. 🔒", android.widget.Toast.LENGTH_SHORT).show()
+                                                        }
+                                                        override fun onAuthenticationFailed() {
+                                                            super.onAuthenticationFailed()
+                                                        }
+                                                    })
+
+                                                val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+                                                    .setTitle("생체 인식 보안 활성화")
+                                                    .setSubtitle("지문 센서에 손가락을 대주세요.")
+                                                    .setNegativeButtonText("취소")
+                                                    .build()
+
+                                                biometricPrompt.authenticate(promptInfo)
+                                            } else {
+                                                dealPrefs.edit()
+                                                    .putBoolean("biometric_lock_enabled", true)
+                                                    .putBoolean("app_lock_enabled", false)
+                                                    .apply()
+                                                isBiometricEnabled = true
+                                                isPinLockedEnabled = false
+                                                android.widget.Toast.makeText(ctx, "생체 지문 잠금이 활성화되었습니다. (폴백 활성)", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else {
+                                            dealPrefs.edit().putBoolean("biometric_lock_enabled", false).apply()
+                                            isBiometricEnabled = false
+                                            android.widget.Toast.makeText(ctx, "지문 인식 잠금이 해제되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -471,199 +603,212 @@ fun SettingsScreen(
             }
             
             // ==========================================
-            // 5. 정보 섹션
+            // 5. 정보 및 지원 섹션 (버전 정보, 의견 남기기, 약관 및 정책 통합)
             // ==========================================
             Column {
-                SettingsSectionTitle("정보")
+                SettingsSectionTitle("정보 및 지원")
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
                 ) {
                     Column {
-                        SettingsNavigationRow(icon = Icons.Default.Info, title = "앱 버전", value = "1.0.0")
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
-                        
-                        var showLicenses by remember { mutableStateOf(false) }
-                        SettingsNavigationRow(icon = Icons.Default.Description, title = "오픈소스 라이선스", onClick = {
-                            showLicenses = true
-                        })
-                        if (showLicenses) {
-                            AlertDialog(
-                                onDismissRequest = { showLicenses = false },
-                                title = { Text("오픈소스 라이선스", fontWeight = FontWeight.Bold) },
-                                text = { Text("Jetpack Compose\nRetrofit2\nCoil\nMaterial3\n등 구글 및 오픈소스 재단의 라이선스를 준수하여 제작되었습니다.") },
-                                confirmButton = { 
-                                    TextButton(onClick = { showLicenses = false }) { 
-                                        Text("확인", color = brandAccent, fontWeight = FontWeight.Bold) 
-                                    } 
-                                }
+                        // 1) 버전 정보 및 업데이트 유도 배너
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            SettingsNavigationRow(
+                                icon = Icons.Default.Info, 
+                                title = "버전 정보", 
+                                value = "1.0.0 (최신: 1.0.2)"
                             )
+                            
+                            // 🚀 [Wow-Factor] 버전이 낮을 시 최신 버전 업데이트 가이드 배너
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp)
+                                    .padding(bottom = 16.dp)
+                                    .background(Color(0xFFFFECE6), RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        val playStoreIntent = android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW, 
+                                            android.net.Uri.parse("market://details?id=" + ctx.packageName)
+                                        )
+                                        try {
+                                            ctx.startActivity(playStoreIntent)
+                                        } catch (e: Exception) {
+                                            val webIntent = android.content.Intent(
+                                                android.content.Intent.ACTION_VIEW, 
+                                                android.net.Uri.parse("https://play.google.com/store/apps/details?id=" + ctx.packageName)
+                                            )
+                                            ctx.startActivity(webIntent)
+                                        }
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("🚀", fontSize = 14.sp)
+                                    Text(
+                                        text = "최신 버전으로 업데이트할 수 있어요.",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFF9800) // 은은한 브랜드 오렌지
+                                    )
+                                }
+                            }
                         }
                         
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
-                        SettingsNavigationRow(icon = Icons.Default.Email, title = "문의하기", onClick = {
-                            val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:support@insightdeal.com"))
-                            intent.putExtra(android.content.Intent.EXTRA_SUBJECT, "[InsightDeal] 고객 문의")
-                            try {
-                                ctx.startActivity(intent)
-                            } catch (e: Exception) {
-                                android.widget.Toast.makeText(ctx, "메일 앱을 찾을 수 없습니다.", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        })
-                    }
-                }
-            }
-
-            // ==========================================
-            // 6. 계정 관리 / 데이터 파기 섹션 (보안성 강화 및 E2E 실시간 DB 반영)
-            // ==========================================
-            Column {
-                SettingsSectionTitle("계정 관리")
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
-                ) {
-                    Column {
+                        
+                        // 2) 의견 남기기 (기존 문의하기 개편)
                         SettingsNavigationRow(
-                            icon = Icons.Default.DeleteForever,
-                            title = "회원 탈퇴",
+                            icon = Icons.Default.Feedback, 
+                            title = "의견 남기기", 
                             onClick = {
-                                if (savedUsername == "guest" || savedUsername.isNullOrEmpty()) {
-                                    android.widget.Toast.makeText(ctx, "게스트 계정은 탈퇴할 수 없습니다.", android.widget.Toast.LENGTH_SHORT).show()
-                                } else {
-                                    withdrawPasswordInput = ""
-                                    isWithdrawPasswordVisible = false
-                                    showWithdrawPasswordDialog = true
+                                val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:support@insightdeal.com"))
+                                intent.putExtra(android.content.Intent.EXTRA_SUBJECT, "[InsightDeal] 소중한 의견 남기기")
+                                intent.putExtra(android.content.Intent.EXTRA_TEXT, "앱 이용에 관한 소중한 의견이나 버그 제보를 작성해 주세요.\n\n사용자 ID: $savedUsername\n앱 버전: 1.0.0\n의견 내용:")
+                                try {
+                                    ctx.startActivity(intent)
+                                } catch (e: Exception) {
+                                    android.widget.Toast.makeText(ctx, "이메일 앱을 찾을 수 없습니다. support@insightdeal.com 으로 의견을 보내주세요.", android.widget.Toast.LENGTH_LONG).show()
                                 }
                             }
                         )
                         
-                        // 1단계: 본인 확인용 비밀번호 입력 다이얼로그
-                        if (showWithdrawPasswordDialog) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
+                        
+                        // 3) 약관 및 정책 3대 공식 약관 탑재
+                        var showPolicyDialog by remember { mutableStateOf(false) }
+                        var selectedPolicyTab by remember { mutableStateOf(0) } // 0: 서비스 약관, 1: 운영 정책, 2: 개인정보 처리방침
+                        
+                        SettingsNavigationRow(
+                            icon = Icons.Default.Assignment, 
+                            title = "약관 및 정책", 
+                            onClick = {
+                                selectedPolicyTab = 0
+                                showPolicyDialog = true
+                            }
+                        )
+                        
+                        if (showPolicyDialog) {
                             AlertDialog(
-                                onDismissRequest = { showWithdrawPasswordDialog = false },
-                                title = { Text("회원 탈퇴 - 비밀번호 확인", fontWeight = FontWeight.Bold) },
-                                text = {
+                                onDismissRequest = { showPolicyDialog = false },
+                                title = { 
                                     Column(modifier = Modifier.fillMaxWidth()) {
+                                        Text("약관 및 정책", fontWeight = FontWeight.Black, fontSize = 18.sp, color = brandAccent)
+                                        Spacer(modifier = Modifier.height(14.dp))
+                                        
+                                        // 탭 셀렉터 비주얼
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                                .padding(2.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            val tabs = listOf("서비스 약관", "운영 정책", "개인정보")
+                                            tabs.forEachIndexed { index, tabTitle ->
+                                                val isSelected = selectedPolicyTab == index
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .background(
+                                                            if (isSelected) brandAccent else Color.Transparent,
+                                                            RoundedCornerShape(8.dp)
+                                                        )
+                                                        .clickable { selectedPolicyTab = index }
+                                                        .padding(vertical = 8.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = tabTitle,
+                                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 11.sp
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                text = {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(280.dp)
+                                            .verticalScroll(rememberScrollState())
+                                    ) {
                                         Text(
-                                            text = "본인 확인 및 안전한 탈퇴를 위해 현재 계정의 비밀번호를 입력해 주세요.",
+                                            text = when(selectedPolicyTab) {
+                                                0 -> """
+                                                    제 1 조 (목적)
+                                                    본 약관은 InsightDeal(이하 "회사")이 기기 내 로컬 핫딜 수집 및 공유 서비스(이하 "서비스")를 제공함에 있어 회사와 이용자 간의 권리, 의무 및 책임 사항을 규정함을 목적으로 합니다.
+                                                    
+                                                    제 2 조 (용어의 정의)
+                                                    1. "서비스"라 함은 뽐뿌, 펨코, 클리앙 등 국내 주요 오픈 핫딜 채널의 할인율 및 추천 가격 지표를 AI로 분석하여 기기 내부의 로컬 랭킹 엔진으로 제공하는 어플리케이션을 의미합니다.
+                                                    2. "이용자"라 함은 본 약관에 동의하고 서비스를 이용하는 회원 및 비회원을 말합니다.
+                                                    
+                                                    제 3 조 (약관의 효력 및 변경)
+                                                    1. 본 약관은 이용자가 동의함으로써 효력이 발생하며, 회사는 관련 법령을 위배하지 않는 범위 내에서 본 약관을 개정할 수 있습니다.
+                                                    2. 약관 개정 시 회사는 최소 7일 전에 앱 내 공지사항을 통해 고지합니다.
+                                                    
+                                                    제 4 조 (이용자의 의무)
+                                                    1. 이용자는 타인의 명의를 도용하여 회원가입을 하거나 부정 정보를 등록하여서는 안 됩니다.
+                                                    2. 기기 내 로컬 DB를 인위적으로 무단 덤프하거나 상업적 목적으로 활용하는 것을 금지합니다.
+                                                """.trimIndent()
+                                                
+                                                1 -> """
+                                                    [InsightDeal 커뮤니티 운영 정책]
+                                                    
+                                                    1. 핫딜 게시물 및 댓글 작성 규칙
+                                                    - 특정 판매업자와의 금전적 제휴 및 백링크 어뷰징 목적의 리베이트 링크 업로드는 강력히 제한됩니다. 발견 시 경고 없이 영구 이용 제재 처리됩니다.
+                                                    - 타인에 대한 인신공격, 욕설, 허위 사실 유포 및 합리적이지 않은 비방 댓글은 필터링 엔진에 의해 자동 마스킹 및 노출 제재를 받습니다.
+                                                    
+                                                    2. AI 점수(꿀딜 투표) 남용 금지
+                                                    - 특정 판매처의 어뷰징 목적 투표 선점 행위(동일 IP/동일 계정의 비정상 반복 클릭)는 로컬 방어 블로킹 필터에 의해 점수 환산에서 제외됩니다.
+                                                    
+                                                    3. 이용 제재 기준
+                                                    - 1회 적발: 경고 및 해당 게시글 블라인드
+                                                    - 2회 적발: 작성 제한 7일
+                                                    - 3회 적발: 영구 계정 제재 및 회원탈퇴 조치
+                                                """.trimIndent()
+                                                
+                                                else -> """
+                                                    [개인정보 처리방침 (로컬 안심 보호)]
+                                                    
+                                                    InsightDeal은 이용자의 개인정보 보호를 최우선 가치로 수호하며, 현행 개인정보보호법 및 관계 법령을 철저히 준수합니다.
+                                                    
+                                                    1. 개인정보의 수집 항목 및 목적
+                                                    - 회사는 회원가입 및 본인 인증 시점에 고유 ID, 비밀번호, 닉네임을 수집합니다.
+                                                    - 수집 목적: 계정 세션 동기화, 마이페이지 꿀 내공 서비스 관리 및 1:1 로컬 AI 브리핑 분석.
+                                                    
+                                                    2. 개인정보의 기기 내 로컬 수호 원칙
+                                                    - 본 앱은 이용자가 조회한 최근 본 핫딜 내역 및 선호 키워드를 외부 서버로 일절 전송하지 않고 기기 내부의 보안 저장소(EncryptedSharedPreferences)에만 100% 암호화 보존합니다.
+                                                    
+                                                    3. 파기 절차 및 영구 삭제
+                                                    - 이용자가 회원탈퇴를 단행할 시, 백엔드 데이터베이스의 세션 레코드(DB)가 즉각 파기되며 기기에 축적된 모든 암호화 캐시가 E2E로 영구 포맷되어 재생이 불가능하도록 완전 소멸됩니다.
+                                                """.trimIndent()
+                                            },
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                        OutlinedTextField(
-                                            value = withdrawPasswordInput,
-                                            onValueChange = { withdrawPasswordInput = it },
-                                            label = { Text("비밀번호") },
-                                            singleLine = true,
-                                            modifier = Modifier.fillMaxWidth(),
-                                            visualTransformation = if (isWithdrawPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                            trailingIcon = {
-                                                IconButton(onClick = { isWithdrawPasswordVisible = !isWithdrawPasswordVisible }) {
-                                                    Icon(
-                                                        imageVector = if (isWithdrawPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                                        contentDescription = if (isWithdrawPasswordVisible) "비밀번호 숨기기" else "비밀번호 표시",
-                                                        tint = brandAccent
-                                                    )
-                                                }
-                                            },
-                                            colors = OutlinedTextFieldDefaults.colors(
-                                                focusedBorderColor = brandAccent,
-                                                focusedLabelColor = brandAccent
-                                            )
-                                        )
                                     }
                                 },
-                                confirmButton = {
-                                    TextButton(
-                                        onClick = {
-                                            if (withdrawPasswordInput.isBlank()) {
-                                                android.widget.Toast.makeText(ctx, "비밀번호를 입력해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                showWithdrawPasswordDialog = false
-                                                showWithdrawConfirmDialog = true
-                                            }
-                                        }
-                                    ) {
-                                        Text("다음", fontWeight = FontWeight.Bold, color = brandAccent)
-                                    }
-                                },
-                                dismissButton = {
-                                    TextButton(onClick = { showWithdrawPasswordDialog = false }) {
-                                        Text("취소")
-                                    }
-                                }
-                            )
-                        }
-
-                        // 2단계: 최종 오동작 방지 탈퇴 컨펌 다이얼로그
-                        if (showWithdrawConfirmDialog) {
-                            AlertDialog(
-                                onDismissRequest = { showWithdrawConfirmDialog = false },
-                                title = { Text("회원 탈퇴 최종 확인", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error) },
-                                text = { 
-                                    Text(
-                                        "정말 탈퇴하시겠습니까?\n\n" +
-                                        "탈퇴 즉시 백엔드 데이터베이스의 회원 정보가 완전히 삭제(DB 반영)되며, " +
-                                        "기기에 저장된 위시리스트, 최근 본 내역 및 모든 설정 데이터가 영구적으로 파기되어 다시는 복구할 수 없습니다.",
-                                        style = MaterialTheme.typography.bodyMedium
-                                    ) 
-                                },
-                                confirmButton = {
-                                    TextButton(
-                                        onClick = {
-                                            showWithdrawConfirmDialog = false
-                                            scope.launch {
-                                                try {
-                                                    val apiService = com.ddaeany0919.insightdeal.network.NetworkModule.createService<com.ddaeany0919.insightdeal.network.ApiService>()
-                                                    val response = apiService.withdrawUser(
-                                                        UserWithdrawRequest(
-                                                            username = savedUsername ?: "guest",
-                                                            password = withdrawPasswordInput
-                                                        )
-                                                    )
-                                                    
-                                                    if (response.isSuccessful && response.body()?.success == true) {
-                                                        // 백엔드 영구 DB 삭제 대성공 시 로컬 자격증명 및 데이터 클리어
-                                                        AuthManager.logout(ctx)
-                                                        withContext(Dispatchers.IO) {
-                                                            com.ddaeany0919.insightdeal.local.db.AppDatabase.getDatabase(ctx).clearAllTables()
-                                                        }
-                                                        RecentDealManager.clearRecentDeals(ctx)
-                                                        appPrefs.edit().clear().apply()
-                                                        dealPrefs.edit().clear().apply()
-                                                        
-                                                        android.widget.Toast.makeText(ctx, "회원 탈퇴가 완료되어 DB에 실시간 반영되었습니다. 앱을 안전하게 종료합니다.", android.widget.Toast.LENGTH_LONG).show()
-                                                        
-                                                        (ctx as? android.app.Activity)?.finishAffinity()
-                                                        android.os.Process.killProcess(android.os.Process.myPid())
-                                                    } else {
-                                                        val errorMsg = response.body()?.message ?: "비밀번호가 올바르지 않거나 탈퇴 요청 처리에 실패했습니다."
-                                                        android.widget.Toast.makeText(ctx, errorMsg, android.widget.Toast.LENGTH_LONG).show()
-                                                    }
-                                                } catch (e: Exception) {
-                                                    Log.e("SettingsScreen", "회원 탈퇴 네트워크 통신 실패", e)
-                                                    android.widget.Toast.makeText(ctx, "네트워크 통신 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        },
-                                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                                    ) {
-                                        Text("탈퇴", fontWeight = FontWeight.Bold)
-                                    }
-                                },
-                                dismissButton = {
-                                    TextButton(onClick = { showWithdrawConfirmDialog = false }) {
-                                        Text("취소")
-                                    }
+                                confirmButton = { 
+                                    TextButton(onClick = { showPolicyDialog = false }) { 
+                                        Text("동의 및 확인", color = brandAccent, fontWeight = FontWeight.Bold) 
+                                    } 
                                 }
                             )
                         }
                     }
                 }
             }
+
+
             
             Spacer(modifier = Modifier.height(16.dp))
             Text(

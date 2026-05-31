@@ -102,8 +102,8 @@ class AggregatorService:
         elif provided_price > 0:
             # 타이틀 가격과 스크래퍼가 제공한 가격(본문 등)에 큰 차이가 있으면 모음전(멀티 옵션)으로 간주
             if title_price > 0 and abs(title_price - provided_price) / max(title_price, provided_price) > 0.1:
-                print(f"DEBUG 💡 [가격 불일치 감지] 타이틀: {title_price}, 본문: {provided_price}")
-                logger.info(f"💡 [가격 불일치 감지] 타이틀: {title_price}, 본문: {provided_price}. 모음전으로 간주하여 대표 가격을 {title_price}로 고정합니다.")
+                print(f"DEBUG [가격 불일치 감지] 타이틀: {title_price}, 본문: {provided_price}")
+                logger.info(f"[가격 불일치 감지] 타이틀: {title_price}, 본문: {provided_price}. 모음전으로 간주하여 대표 가격을 {title_price}로 고정합니다.")
                 final_price = title_price
                 currency = title_currency
                 
@@ -170,7 +170,7 @@ class AggregatorService:
             try:
                 target_url = scraped_data.get("ecommerce_link")
                 if 'coupang' not in target_url: # 쿠팡은 WAF 방어가 100%이므로 제외
-                    logger.info(f"🕸️ 정규식 실패. 쇼핑몰({target_url})에 직접 침투하여 메타태그 스나이핑 시도...")
+                    logger.info(f"[Spider] 정규식 실패. 쇼핑몰({target_url})에 직접 침투하여 메타태그 스나이핑 시도...")
                     req = urllib.request.Request(target_url, headers={'User-Agent': 'Mozilla/5.0'})
                     with urllib.request.urlopen(req, timeout=3) as res:
                         soup = BeautifulSoup(res.read(), 'html.parser')
@@ -178,17 +178,17 @@ class AggregatorService:
                         meta_price = soup.find('meta', property='product:price:amount') or soup.find('meta', property='og:price:amount')
                         if meta_price and meta_price.get('content'):
                             final_price = int(float(meta_price['content'].replace(',', '')))
-                            logger.info(f"🎯 쇼핑몰 메타태그에서 가격 적중! {final_price}원")
+                            logger.info(f"[Hit] 쇼핑몰 메타태그에서 가격 적중! {final_price}원")
             except Exception as e:
                 logger.debug(f"쇼핑몰 메타 스나이핑 실패: {e}")
                 
         # 산술/논리 검증: 원화(KRW) 기준 터무니없이 낮은 가격(예: 100원 미만)은 추출 오류나 적립금액(53원 등)일 확률이 높으므로 0으로 보정
         if currency == "KRW" and final_price > 0 and final_price < 100:
-            logger.info(f"⚠️ 가격 비정상 감지 ({final_price}원). 오류 또는 포인트성 숫자로 간주하여 0원으로 초기화.")
+            logger.info(f"[Warning] 가격 비정상 감지 ({final_price}원). 오류 또는 포인트성 숫자로 간주하여 0원으로 초기화.")
             final_price = 0
         # 상한선 검증: 너무 터무니없이 높은 가격(예: 500만원 초과)은 상품 코드가 잘못 파싱된 경우일 확률이 높으므로 0으로 보정
         elif currency == "KRW" and final_price > 5000000:
-            logger.info(f"⚠️ 가격 비정상 감지 ({final_price}원). 오류 또는 상품코드로 간주하여 0원으로 초기화.")
+            logger.info(f"[Warning] 가격 비정상 감지 ({final_price}원). 오류 또는 상품코드로 간주하여 0원으로 초기화.")
             final_price = 0
 
         price = final_price
@@ -196,7 +196,7 @@ class AggregatorService:
         # 🚨 스팸 및 공지사항 / 게시판 뻘글 필터링
         spam_keywords = ["공지", "질문", "투패", "몰테일", "폐업", "출고", "지연", "지쟈스", "배대지", "안내", "도와주세요", "어떤가요", "입고금지", "수익링크", "바이럴", "금지조치", "활동내역", "제재조치"]
         if any(keyword in raw_title for keyword in spam_keywords) or (price == 0 and "?" in raw_title):
-            logger.info(f"🗑️ [스팸 필터 처리됨] 핫딜이 아닌 게시판 정보 스킵: {raw_title}")
+            logger.info(f"[Spam Filtered] 핫딜이 아닌 게시판 정보 스킵: {raw_title}")
             return None
         
         # 스크래퍼 단에서 명시적으로 수집한 카테고리가 있다면 전달
@@ -268,7 +268,7 @@ class AggregatorService:
             ).first()
             
             if recent_duplicate and recent_duplicate.ai_summary:
-                logger.info(f"♻️ 글로벌 캐싱 적중! 중복 핫딜의 AI 분석을 복사합니다: {ecommerce_url}")
+                logger.info(f"[Global Cache Hit] 중복 핫딜의 AI 분석을 복사합니다: {ecommerce_url}")
                 cached_ai_summary = recent_duplicate.ai_summary
                 if final_price == 0 and recent_duplicate.price and recent_duplicate.price != "0":
                     price = int(recent_duplicate.price)
@@ -339,14 +339,14 @@ class AggregatorService:
                             # 겹치는 비율이 높은지 검사 (유사 상품군으로 100% 확증)
                             all_overlap = input_tokens.intersection(d_tokens)
                             if len(all_overlap) >= 3:
-                                logger.info(f"🔮 [초지능형 토큰 병합 적중] 유사도가 매우 높은 동일 핫딜 감지하여 병합! 원제: '{raw_title}' ➔ 기존딜: '{d.title}'")
+                                logger.info(f"[Token Merge Hit] 유사도가 매우 높은 동일 핫딜 감지하여 병합! 원제: '{raw_title}' ➔ 기존딜: '{d.title}'")
                                 target_deals = [d]
                                 break
 
                 
             if target_deals:
                 # 롤링 윈도우 병합 발생! 가장 최근(마지막) 딜을 대상으로 갱신을 수행하여 윈도우를 연장시킴
-                logger.info(f"🔄 [롤링 윈도우 클러스터링] 타 게시글({url})이지만 동일 상품으로 판단하여 병합 시도: {normalized.name}")
+                logger.info(f"[Rolling Window Clustering] 타 게시글({url})이지만 동일 상품으로 판단하여 병합 시도: {normalized.name}")
                 existing_deals = [max(target_deals, key=lambda d: d.indexed_at if d.indexed_at else datetime.min)]
         print(f"DEBUG: existing_deals after rolling window: {existing_deals}")
         if existing_deals:
@@ -373,7 +373,7 @@ class AggregatorService:
                  # 가격 갱신: 더 저렴한 가격이 등장했을 때 (최저가 갱신) 또는 동일 URL 게시글이 수정되었을 때
                  if len(existing_deals) == 1 and price > 0:
                      if price < old_price:
-                         logger.info(f"💸 [최저가 갱신!] 기존 {old_price}원 -> 새 핫딜 {price}원 (URL 교체: {url})")
+                         logger.info(f"[Lowest Price Updated!] 기존 {old_price}원 -> 새 핫딜 {price}원 (URL 교체: {url})")
                          existing_deal.price = str(price)
                          existing_deal.post_link = url # 유저가 구매하러 갈 링크도 더 싼 곳으로 교체
                          price_changed = True
@@ -547,8 +547,8 @@ class AggregatorService:
             import asyncio
             import google.generativeai as genai
             
-            print(f"🤖 가격 누락 또는 모음전 감지! Gemini 1.5/2.0(최신)으로 정밀 파싱 시작... (원제: {raw_title})")
-            logger.info(f"🤖 가격 누락 또는 모음전 감지! Gemini 1.5/2.0(최신)으로 정밀 파싱 시작... (원제: {raw_title})")
+            print(f"[AI] 가격 누락 또는 모음전 감지! Gemini 1.5/2.0(최신)으로 정밀 파싱 시작... (원제: {raw_title})")
+            logger.info(f"[AI] 가격 누락 또는 모음전 감지! Gemini 1.5/2.0(최신)으로 정밀 파싱 시작... (원제: {raw_title})")
             
             prompt = f"""
             넌 쇼핑몰 핫딜 데이터 추출 AI야. 다음 게시글 내용(HTML)과 제목을 읽고, 판매 중인 상품의 이름과 가격을 정확히 뽑아서 순수 JSON 배열만 반환해.
@@ -584,7 +584,7 @@ class AggregatorService:
                 try:
                     api_key = get_random_gemini_key()
                     if not api_key:
-                        logger.info("⚠️ API 키 없음. 상품 자동 분리를 건너뜁니다.")
+                        logger.info("[Warning] API 키 없음. 상품 자동 분리를 건너뜁니다.")
                         break
                         
                     genai.configure(api_key=api_key)
@@ -596,8 +596,8 @@ class AggregatorService:
                     parsed = json.loads(text_resp)
                     if isinstance(parsed, list) and len(parsed) > 0:
                         split_items = parsed
-                        print(f"✅ Gemini 자동 분할/단일화 성공! {len(split_items)}개 상품 추출됨")
-                        logger.info(f"✅ Gemini 자동 분할/단일화 성공! {len(split_items)}개 상품 추출됨")
+                        print(f"[AI Success] Gemini 자동 분할/단일화 성공! {len(split_items)}개 상품 추출됨")
+                        logger.info(f"[AI Success] Gemini 자동 분할/단일화 성공! {len(split_items)}개 상품 추출됨")
                     break
                 except Exception as e:
                     error_msg = str(e).lower()
@@ -619,7 +619,7 @@ class AggregatorService:
                     logger.error(f"Gemini 분할 실패: {e}")
                     break
             else:
-                logger.info("⚠️ API 키 없음. 상품 자동 분리를 건너뜁니다.")
+                logger.info("[Warning] API 키 없음. 상품 자동 분리를 건너뜁니다.")
                 split_items = []
         inserted_deals = []
         
@@ -776,4 +776,4 @@ class AggregatorService:
         )
         self.db.add(history)
         self.db.commit()
-        logger.info(f"📈 [Price History] 최저가 역사 기록! Deal ID {deal_id} -> {price:,}원")
+        logger.info(f"[Price History] 최저가 역사 기록! Deal ID {deal_id} -> {price:,}원")

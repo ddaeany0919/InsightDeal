@@ -39,7 +39,7 @@ class QuasarzoneScraper(AsyncBaseScraper):
             title_span = title_element.select_one('span.ellipsis-with-reply-cnt')
             full_title = title_span.get_text(strip=True) if title_span else title_element.get_text(strip=True)
 
-            if "게시판 규정" in full_title or "이용안내" in full_title:
+            if "게시판 규정" in full_title or "이용안내" in full_title or "블라인드" in full_title:
                 return None
 
             price = 0

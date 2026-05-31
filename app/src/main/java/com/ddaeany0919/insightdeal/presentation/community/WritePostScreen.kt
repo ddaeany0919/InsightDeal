@@ -277,7 +277,7 @@ fun WritePostScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (postId == null) "⚖️ 살까말까 고민 올리기" else "게시글 수정", fontWeight = FontWeight.Bold) },
+                title = { Text(if (postId == null) "⚖️ 꿀딜 투표 올리기" else "게시글 수정", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { navController?.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로 가기")
@@ -358,14 +358,14 @@ fun WritePostScreen(
                     }
                     Column {
                         Text(
-                            text = "⚖️ 살까말까 고민방 가이드",
+                            text = "⚖️ 꿀딜 투표 가이드",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = AccentOrange
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "살까 말까 망설여지는 특가 핫딜을 공유하고 글을 남겨주세요. 지름 고수들의 투표와 날카로운 피드백으로 고민을 해결해 드립니다!",
+                            text = "구매 여부가 망설여지는 특가 핫딜을 공유하고 글을 남겨주세요. 지름 고수들의 투표와 날카로운 피드백으로 고민을 해결해 드립니다!",
                             style = MaterialTheme.typography.bodyMedium,
                             color = NeutralGray700,
                             lineHeight = 20.sp

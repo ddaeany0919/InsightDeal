@@ -57,4 +57,10 @@ object RecentDealManager {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         prefs.edit().remove(KEY_RECENT_DEALS).apply()
     }
+
+    fun updateRecentDeals(context: Context, newList: List<DealItem>) {
+        _recentDeals.value = newList
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_RECENT_DEALS, gson.toJson(newList)).apply()
+    }
 }

@@ -366,7 +366,7 @@ def build_dsu(deals, time_window_days=1):
 @router.get("/top-hot-deals")
 async def get_top_hot_deals(db: Session = Depends(get_db_session)):
     try:
-        from sqlalchemy import and_, or_
+        from sqlalchemy import and_, or_, not_
         query = db.query(models.Deal).join(models.Community)
         # ⏰ 24시간 제한을 48시간으로 완화하여 어제 올라온 고품질 핫딜도 함께 구제
         time_limit = datetime.utcnow() - timedelta(hours=48)
@@ -380,7 +380,8 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                 # 🧹 깨진 인코딩 깨짐(?곷┰)을 한글 '적립'으로 올바르게 보정
                 models.Deal.category != "적립",
                 models.Deal.category != "이벤트",
-                models.Deal.category != "적립/이벤트"
+                models.Deal.category != "적립/이벤트",
+                not_(models.Deal.title.like("%블라인드%"))
             )
         ).order_by(models.Deal.indexed_at.desc()).limit(1000).all()
 
@@ -413,10 +414,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                 if any(kw in deal.title for kw in ["네이버페이", "네이버하이", "네이버적립", "일일적립"]):
                     image_url = "https://img2.quasarzone.com/editor/2023/12/11/49841804f3d132d75a6c11b1510af812.png"
                 else:
-                    import urllib.parse
-                    fallback_text = (deal.community.name or "D")[0].upper()
-                    encoded_name = urllib.parse.quote(fallback_text)
-                    image_url = f"https://ui-avatars.com/api/?name={encoded_name}&background=e2e8f0&color=475569&size=200&font-size=0.5"
+                    image_url = None
 
             if cluster_key in cluster_map:
                 existing = cluster_map[cluster_key]
@@ -534,6 +532,10 @@ async def get_hot_deals(
 ):
     try:
         query = db.query(models.Deal).join(models.Community)
+        
+        # 블라인드 처리된 게시글은 어떤 카테고리에서든 전역 제외 (신뢰성 보존)
+        from sqlalchemy import not_
+        query = query.filter(not_(models.Deal.title.like("%블라인드%")))
         
         if category and category not in ["전체", ""]:
             # ??移댄뀒怨좊━紐낆쓣 ?ㅽ겕?섑띁 移댄뀒怨좊━/?ㅼ썙??諛곗뿴濡?留ㅽ븨
@@ -679,10 +681,7 @@ async def get_hot_deals(
                 if any(kw in deal.title for kw in ["네이버페이", "네이버하이", "네이버적립", "일일적립"]):
                     image_url = "https://img2.quasarzone.com/editor/2023/12/11/49841804f3d132d75a6c11b1510af812.png"
                 else:
-                    import urllib.parse
-                    fallback_text = (deal.community.name or "D")[0].upper()
-                    encoded_name = urllib.parse.quote(fallback_text)
-                    image_url = f"https://ui-avatars.com/api/?name={encoded_name}&background=e2e8f0&color=475569&size=200&font-size=0.5"
+                    image_url = None
 
             # UI瑜??꾪빐 ?쒕ぉ?먯꽌 媛寃??쒓렇 ?좊━湲?
             clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:달러|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()

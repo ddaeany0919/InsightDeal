@@ -28,12 +28,9 @@ class DatabaseManager:
         
         default_db_path = os.path.join(backend_dir, "insight_deal.db")
         
-        database_url = os.getenv("DATABASE_URL")
-        # 호스트 PC에서 도커용 postgres URL로 접속을 시도하면 연결 오류가 나므로 로컬에선 SQLite 강제 처리
-        # 단, 도커 컨테이너 내부일 때는 그대로 PostgreSQL(postgres:5432)을 사용합니다.
-        is_docker = os.path.exists('/.dockerenv')
-        if not is_docker and (not database_url or "postgres:5432" in database_url):
-            database_url = f"sqlite:///{default_db_path}"
+        # 호스트 PC와 도커 환경 전체에서 100% 데이터 실시간 동기화 및 중복 스킵(Skip) 연동을 위해 
+        # 데이터베이스 URL을 SQLite(default_db_path)로 완전 일원화하여 단일화합니다.
+        database_url = f"sqlite:///{default_db_path}"
             
         logger.info(f"📊 데이터베이스 연결 시도: {database_url}")
         
@@ -199,17 +196,8 @@ SessionLocal = db_manager.SessionLocal
 engine = db_manager.engine
 get_db = get_db_session  # wishlist.py 등에서 사용하는 get_db import 오류 해결
 
-# 데이터베이스 사전 초기화 (import 시)
-if __name__ != "__main__":
-    # 서버 시작 시 자동 초기화
-    try:
-        if not db_manager.test_connection():
-            logger.warning("⚠️ 데이터베이스 연결에 실패했지만 계속 진행")
-        else:
-            db_manager.init_database()
-    except Exception as e:
-        logger.error(f"❌ 데이터베이스 초기화 중 오류: {e}")
-        logger.warning("⚠️ 데이터베이스 오류가 발생했지만 서버는 계속 실행됩니다")
+# 데이터베이스 사전 초기화 (import 시) - 동시성 락 및 무한 핫리로드 방지를 위해 임포트 타임 자동 초기화는 폐기합니다.
+# 초기화는 FastAPI startup 라이프사이클에서 안전하게 딱 1회만 격행하도록 main.py에 이송 완료했습니다.
 
 # CLI 실행용
 if __name__ == "__main__":

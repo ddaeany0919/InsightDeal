@@ -77,6 +77,7 @@ fun HomeScreen(
     }
     
     val context = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val networkMonitor = remember { NetworkMonitor(context) }
     val isOnline by networkMonitor.isOnline.collectAsState(initial = true)
     val isDark = isSystemInDarkTheme()
@@ -101,6 +102,7 @@ fun HomeScreen(
     
     // ✨ Paging3 Lazy 아이템 콜렉팅 및 상태 구독
     val dealsPagingItems = viewModel.dealsPagingData.collectAsLazyPagingItems()
+    val listState = rememberLazyListState()
     
     // [Epic 3] 키워드 설정 다이얼로그 상태
     var showKeywordDialog by remember { mutableStateOf(false) }
@@ -149,10 +151,13 @@ fun HomeScreen(
         CoupangSettingsDialog(onDismiss = { showCoupangDialog = false })
     }
 
-    // ✨ Pull-to-refresh 상태 관리
+    // ✨ Pull-to-refresh 및 커스텀 새로고침 상태 통합 관리 (로고 터치 연동)
     val pullRefreshState = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
+    var isCustomRefreshing by remember { mutableStateOf(false) }
+
     if (pullRefreshState.isRefreshing) {
         LaunchedEffect(true) {
+            isCustomRefreshing = true
             dealsPagingItems.refresh()
             viewModel.fetchTopHotDeals()
         }
@@ -160,6 +165,9 @@ fun HomeScreen(
     LaunchedEffect(dealsPagingItems.loadState.refresh) {
         if (dealsPagingItems.loadState.refresh !is LoadState.Loading) {
             pullRefreshState.endRefresh()
+            // 부드럽고 고급스러운 화면 트랜지션을 위해 350ms 극미세 지연 가미
+            kotlinx.coroutines.delay(350)
+            isCustomRefreshing = false
         }
     }
 
@@ -216,7 +224,21 @@ fun HomeScreen(
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically, 
-                        modifier = Modifier.bounceClick { viewModel.selectCategory("전체") }
+                        modifier = Modifier.bounceClick {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            // 🧡 대표님 피드백: 투박한 토스트 대신 귀여운 불꽃 로딩 시트 가동
+                            isCustomRefreshing = true
+                            scope.launch {
+                                viewModel.selectCategory("전체")
+                                try {
+                                    listState.animateScrollToItem(0)
+                                } catch (e: Exception) {
+                                    // 안전성 확보
+                                }
+                                dealsPagingItems.refresh()
+                                viewModel.fetchTopHotDeals()
+                            }
+                        }
                     ) {
                         Text(
                             text = "🔥 InsightDeal",
@@ -337,6 +359,7 @@ fun HomeScreen(
             }
 
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -398,7 +421,9 @@ fun HomeScreen(
                                                     .data(proxiedPickUrl)
                                                     .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
                                                     .setHeader("Referer", pick.postUrl ?: "https://insightdeal.com/")
-                                                    .crossfade(true).build()
+                                                    .crossfade(true)
+                                                    .precision(coil.size.Precision.EXACT)
+                                                    .build()
                                             }
 
                                             val priceText = remember(pick.id, pick.price, pick.currency, pick.category, pick.title) {
@@ -794,11 +819,14 @@ fun HomeScreen(
         }
     }
 
-        // ✨ PullToRefresh Indicator
+        // ✨ PullToRefresh Indicator - 기본 동그라미 스피너는 비주얼 노이즈이므로 제거하고, 
+        // 🧡 대표님 피드백에 따라 오직 귀여운 불꽃 애니메이션 오버레이만 노출하도록 단일화합니다.
+        /*
         androidx.compose.material3.pulltorefresh.PullToRefreshContainer(
             modifier = Modifier.align(Alignment.TopCenter),
             state = pullRefreshState,
         )
+        */
 
         // 💡 [법적 필수] 제휴 마케팅 수수료 우아한 고지 BottomSheet UI
         if (showCommissionSheet) {
@@ -1199,6 +1227,96 @@ fun HomeScreen(
                     .padding(bottom = 16.dp)
             )
         }
+
+        // 🧡 대표님 헌정: 귀여운 불꽃 캐릭터 펄싱 애니메이션 새로고침 오버레이 뷰
+        AnimatedVisibility(
+            visible = isCustomRefreshing,
+            enter = androidx.compose.animation.fadeIn(animationSpec = tween(300)),
+            exit = androidx.compose.animation.fadeOut(animationSpec = tween(300))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.18f)) // 🧡 대표님 피드백: 개방성과 시원함을 주기 위해 대폭 투명하게 딤 완화!
+                    .pointerInput(Unit) {}, // 뒷배경 클릭/스크롤 전면 차단 가드
+                contentAlignment = Alignment.Center
+            ) {
+                // 무한 펄싱 바운싱 애니메이션 정의
+                val infiniteTransition = rememberInfiniteTransition(label = "flame_pulse")
+                val scale by infiniteTransition.animateFloat(
+                    initialValue = 0.9f,
+                    targetValue = 1.2f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(650, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "flame_scale"
+                )
+                val alpha by infiniteTransition.animateFloat(
+                    initialValue = 0.7f,
+                    targetValue = 1.0f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(650, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "flame_alpha"
+                )
+
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        // 🧡 대표님 피드백: 카드 자체에도 은은한 투명도를 적용하여 유리(Glassmorphism) 같은 품격 극대화
+                        containerColor = if (isDark) Color(0xFF1E1E1E).copy(alpha = 0.88f) else Color.White.copy(alpha = 0.92f)
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+                    modifier = Modifier
+                        .width(260.dp)
+                        .padding(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp, horizontal = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        // 펄싱 튀는 귀여운 불꽃
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .graphicsLayer(
+                                    scaleX = scale,
+                                    scaleY = scale,
+                                    alpha = alpha
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = "🔥", fontSize = 48.sp)
+                        }
+                        
+                        Spacer(modifier = Modifier.height(20.dp))
+                        
+                        Text(
+                            text = "새로고침 중입니다...",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDark) Color.White else Color(0xFF191F28),
+                            textAlign = TextAlign.Center
+                        )
+                        
+                        Spacer(modifier = Modifier.height(6.dp))
+                        
+                        Text(
+                            text = "잠시만 기다려주세요",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isDark) Color(0xFF9E9E9E) else Color(0xFF6B7684),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1273,14 +1391,21 @@ fun DealCardComposable(
                 .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
                 .setHeader("Referer", deal.postUrl ?: "https://insightdeal.com/")
                 .crossfade(true)
+                .precision(coil.size.Precision.EXACT)
                 .build()
         }
     }
 
-    // 4. 출처 뱃지 목록 캐싱
+    // 4. 출처 뱃지 목록 캐싱 (디코드 및 서브 출처 잘린 동일 명칭의 중복 뱃지 완전 소탕)
     val sourcesToRender = remember(deal.id, deal.sources, deal.siteName, deal.postUrl) {
         val rawSources = if (!deal.sources.isNullOrEmpty()) deal.sources else listOf(com.ddaeany0919.insightdeal.models.DealSource(deal.siteName, deal.postUrl ?: ""))
-        rawSources.distinctBy { it.siteName }
+        rawSources.distinctBy { source ->
+            if (source.siteName.contains(" - ")) {
+                source.siteName.substringBefore(" - ").trim()
+            } else {
+                source.siteName.trim()
+            }
+        }
     }
 
     // 5. 배송비 연산 캐싱
@@ -1333,7 +1458,7 @@ fun DealCardComposable(
             deal.honeyScore >= 70 -> "상위 20%"
             else -> "평이"
         }
-        if (percentileText == "평이") "📊 AI 가격 메리트 (${deal.honeyScore}점)" else "💡 AI 가격 메리트: $percentileText 저렴! (${deal.honeyScore}점)"
+        if (percentileText == "평이") "📊 AI 가격 메리트 (${deal.honeyScore}점)" else "💡 AI 가격 메리트: $percentileText 추천! (${deal.honeyScore}점)"
     }
 
     val cardBgColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f) else Color.White
@@ -1593,6 +1718,7 @@ fun DealCardComposable(
                                     .crossfade(400)
                                     .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
                                     .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                                    .precision(coil.size.Precision.EXACT)
                                     .build(),
                                 contentDescription = "Full Product Image",
                                 modifier = Modifier
@@ -2050,7 +2176,7 @@ fun BrandPlaceholder(
     textStyle: TextStyle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
 ) {
     val siteLower = siteName.lowercase(Locale.getDefault())
-    val (colors, siteLabel) = remember(siteLower) {
+    val (colors, _) = remember(siteLower) {
         when {
             siteLower.contains("뽐뿌") -> listOf(Color(0xFF1976D2), Color(0xFF0D47A1)) to "뽐뿌"
             siteLower.contains("퀘이사존") -> listOf(Color(0xFFFFB74D), Color(0xFFE65100)) to "퀘존"
@@ -2177,24 +2303,12 @@ fun BrandPlaceholder(
 
             Spacer(modifier = Modifier.height(2.dp))
             
-            // 📝 감성 자극 귀여운 텍스트 문구
+            // 📝 직관적이고 세련된 이미지 없음 문구 (잘림 없이 다 노출되도록 처리)
             Text(
-                text = "이미지가 없어요 ㅠㅠ",
+                text = "이미지 없음",
                 style = textStyle,
                 textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            
-            Spacer(modifier = Modifier.height(1.dp))
-
-            // 🏷️ 출처 라벨 표시
-            Text(
-                text = "($siteLabel)",
-                fontSize = 7.sp,
-                fontWeight = FontWeight.Normal,
-                color = Color.White.copy(alpha = 0.7f),
-                textAlign = TextAlign.Center
+                maxLines = 1
             )
         }
     }
