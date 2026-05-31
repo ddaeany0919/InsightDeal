@@ -1305,7 +1305,7 @@ fun MyPageScreen(
                                             )
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
-                                                text = "${formatPrice(deal.price)}원",
+                                                text = formatPrice(deal.price),
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.ExtraBold,
                                                 color = MaterialTheme.colorScheme.onSurface

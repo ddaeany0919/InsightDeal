@@ -23,7 +23,7 @@ fun formatPrice(price: Long?, currency: String? = "KRW"): String {
             else -> String.format(Locale.getDefault(), "%,d원", price)
         }
     } else {
-        "본문 참조"
+        "가격 확인 필요"
     }
 }
 

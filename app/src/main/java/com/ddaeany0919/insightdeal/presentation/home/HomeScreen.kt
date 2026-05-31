@@ -439,7 +439,7 @@ fun HomeScreen(
                                                     listOf("무료", "공짜", "배포", "나눔", "0원", "일시무료", "쿠폰").any { pick.title.contains(it) }) {
                                                     "무료 (쿠폰/공짜)"
                                                 } else {
-                                                    "정보 확인필요"
+                                                    "금액 확인 필요"
                                                 }
                                             }
 
@@ -1445,7 +1445,7 @@ fun DealCardComposable(
             listOf("무료", "공짜", "배포", "나눔", "0원", "일시무료", "쿠폰").any { deal.title.contains(it) }) {
             "무료 (쿠폰/공짜)"
         } else {
-            "정보 확인필요"
+            "금액 확인 필요"
         }
     }
 

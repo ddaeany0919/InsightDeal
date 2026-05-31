@@ -261,7 +261,7 @@ fun HotDealCard(deal: HotDealDto, onClick: () -> Unit = {}) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val priceText = if (deal.price == 0) {
                             if (deal.category == "이벤트" || deal.title.contains("무료") || deal.title.contains("쿠폰")) "무료 (쿠폰/이벤트)"
-                            else "정보 확인필요"
+                            else "금액 확인 필요"
                         } else {
                             String.format(java.util.Locale.getDefault(), "%,d원", deal.price)
                         }
