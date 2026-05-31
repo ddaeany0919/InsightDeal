@@ -7,7 +7,7 @@ import android.util.Log
 import android.Manifest
 import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -69,7 +69,7 @@ fun generateDeviceUserId(context: Context): String {
     }
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
@@ -166,15 +166,50 @@ class MainActivity : ComponentActivity() {
             var correctPin by remember { mutableStateOf(prefs.getString("app_lock_pin", "") ?: "") }
             var isLocked by remember { mutableStateOf(false) }
 
-            // 생명주기 및 백그라운드-포그라운드 전환 시 PIN 잠금 정밀 검사
+            // 생명주기 및 백그라운드-포그라운드 전환 시 PIN 및 생체 잠금 정밀 검사
             val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
             DisposableEffect(lifecycleOwner) {
                 val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                     if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                        val lockEnabled = prefs.getBoolean("app_lock_enabled", false)
+                        val pinLockEnabled = prefs.getBoolean("app_lock_enabled", false)
+                        val bioLockEnabled = prefs.getBoolean("biometric_lock_enabled", false)
                         val pin = prefs.getString("app_lock_pin", "") ?: ""
                         correctPin = pin
-                        if (lockEnabled && pin.isNotEmpty()) {
+                        
+                        if (bioLockEnabled) {
+                            val biometricManager = androidx.biometric.BiometricManager.from(context)
+                            val authenticators = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
+                            
+                            if (biometricManager.canAuthenticate(authenticators) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
+                                isLocked = true // 일단 잠금
+                                val executor = androidx.core.content.ContextCompat.getMainExecutor(context)
+                                val biometricPrompt = androidx.biometric.BiometricPrompt(context, executor,
+                                    object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                                            super.onAuthenticationError(errorCode, errString)
+                                            // 지문 인증 실패/취소 시 PIN 다이얼로그로 수동 폴백
+                                            android.widget.Toast.makeText(context, "생체 인증 실패: PIN으로 잠금을 해제해 주세요. 🔒", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                        override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                                            super.onAuthenticationSucceeded(result)
+                                            isLocked = false // 잠금 해제!
+                                        }
+                                    })
+                                
+                                val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+                                    .setTitle("앱 보안 잠금 해제")
+                                    .setSubtitle("지문 센서에 터치하거나 취소하여 PIN 번호로 해제하세요.")
+                                    .setNegativeButtonText("PIN 번호 입력")
+                                    .build()
+                                
+                                biometricPrompt.authenticate(promptInfo)
+                            } else {
+                                // 하드웨어 미지원 등으로 생체 인증이 불가능할 경우 PIN 잠금으로 자동 폴백
+                                if (pin.isNotEmpty()) {
+                                    isLocked = true
+                                }
+                            }
+                        } else if (pinLockEnabled && pin.isNotEmpty()) {
                             isLocked = true
                         }
                     }

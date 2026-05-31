@@ -474,45 +474,56 @@ fun SettingsScreen(
                                     checked = isBiometricEnabled,
                                     onCheckedChange = { isChecked ->
                                         if (isChecked) {
-                                            val activity = ctx as? androidx.fragment.app.FragmentActivity
-                                            if (activity != null) {
-                                                val executor = androidx.core.content.ContextCompat.getMainExecutor(activity)
-                                                val biometricPrompt = androidx.biometric.BiometricPrompt(activity, executor,
-                                                    object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
-                                                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                                                            super.onAuthenticationError(errorCode, errString)
-                                                            android.widget.Toast.makeText(ctx, "생체 인식 거부: $errString", android.widget.Toast.LENGTH_SHORT).show()
-                                                        }
-                                                        override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
-                                                            super.onAuthenticationSucceeded(result)
-                                                            dealPrefs.edit()
-                                                                .putBoolean("biometric_lock_enabled", true)
-                                                                .putBoolean("app_lock_enabled", false)
-                                                                .apply()
-                                                            isBiometricEnabled = true
-                                                            isPinLockedEnabled = false
-                                                            android.widget.Toast.makeText(ctx, "지문 인식 간편 잠금이 활성화되었습니다. 🔒", android.widget.Toast.LENGTH_SHORT).show()
-                                                        }
-                                                        override fun onAuthenticationFailed() {
-                                                            super.onAuthenticationFailed()
-                                                        }
-                                                    })
-
-                                                val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
-                                                    .setTitle("생체 인식 보안 활성화")
-                                                    .setSubtitle("지문 센서에 손가락을 대주세요.")
-                                                    .setNegativeButtonText("취소")
-                                                    .build()
-
-                                                biometricPrompt.authenticate(promptInfo)
+                                            // 하드웨어 및 지문 등록 여부 선행 검사 가드레일 작동
+                                            val biometricManager = androidx.biometric.BiometricManager.from(ctx)
+                                            val authenticators = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or 
+                                                                 androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                                            
+                                            if (biometricManager.canAuthenticate(authenticators) != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
+                                                isBiometricEnabled = false
+                                                dealPrefs.edit().putBoolean("biometric_lock_enabled", false).apply()
+                                                android.widget.Toast.makeText(ctx, "기기에서 생체 인식 센서를 지원하지 않거나 등록된 지문이 없습니다. 🔒", android.widget.Toast.LENGTH_LONG).show()
                                             } else {
-                                                dealPrefs.edit()
-                                                    .putBoolean("biometric_lock_enabled", true)
-                                                    .putBoolean("app_lock_enabled", false)
-                                                    .apply()
-                                                isBiometricEnabled = true
-                                                isPinLockedEnabled = false
-                                                android.widget.Toast.makeText(ctx, "생체 지문 잠금이 활성화되었습니다. (폴백 활성)", android.widget.Toast.LENGTH_SHORT).show()
+                                                val activity = ctx as? androidx.fragment.app.FragmentActivity
+                                                if (activity != null) {
+                                                    val executor = androidx.core.content.ContextCompat.getMainExecutor(activity)
+                                                    val biometricPrompt = androidx.biometric.BiometricPrompt(activity, executor,
+                                                        object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                                                            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                                                                super.onAuthenticationError(errorCode, errString)
+                                                                android.widget.Toast.makeText(ctx, "생체 인식 거부: $errString", android.widget.Toast.LENGTH_SHORT).show()
+                                                            }
+                                                            override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                                                                super.onAuthenticationSucceeded(result)
+                                                                dealPrefs.edit()
+                                                                    .putBoolean("biometric_lock_enabled", true)
+                                                                    .putBoolean("app_lock_enabled", false)
+                                                                    .apply()
+                                                                isBiometricEnabled = true
+                                                                isPinLockedEnabled = false
+                                                                android.widget.Toast.makeText(ctx, "지문 인식 간편 잠금이 활성화되었습니다. 🔒", android.widget.Toast.LENGTH_SHORT).show()
+                                                            }
+                                                            override fun onAuthenticationFailed() {
+                                                                super.onAuthenticationFailed()
+                                                            }
+                                                        })
+
+                                                    val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+                                                        .setTitle("생체 인식 보안 활성화")
+                                                        .setSubtitle("지문 센서에 손가락을 대주세요.")
+                                                        .setNegativeButtonText("취소")
+                                                        .build()
+
+                                                    biometricPrompt.authenticate(promptInfo)
+                                                } else {
+                                                    dealPrefs.edit()
+                                                        .putBoolean("biometric_lock_enabled", true)
+                                                        .putBoolean("app_lock_enabled", false)
+                                                        .apply()
+                                                    isBiometricEnabled = true
+                                                    isPinLockedEnabled = false
+                                                    android.widget.Toast.makeText(ctx, "생체 지문 잠금이 활성화되었습니다. (폴백 활성)", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
                                             }
                                         } else {
                                             dealPrefs.edit().putBoolean("biometric_lock_enabled", false).apply()

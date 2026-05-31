@@ -1918,6 +1918,10 @@ fun KeywordSettingsBottomSheet(
             }
             Text("원하는 키워드를 등록하면 특가가 떴을 때 즉시 푸시 알림을 쏴드립니다!", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top=8.dp, bottom=16.dp))
             
+            val context = LocalContext.current
+            val formattedStartTime = dndStartTime.split(":").firstOrNull()?.let { "${it}시" } ?: dndStartTime
+            val formattedEndTime = dndEndTime.split(":").firstOrNull()?.let { "${it}시" } ?: dndEndTime
+
             // 야간 알림 수신 동의 및 DND 상태 토글 UI (2번째 캡쳐 피드백 반영: 둥근 18.dp 연회색 박스형 카드 레이아웃)
             Surface(
                 shape = RoundedCornerShape(18.dp),
@@ -1926,11 +1930,44 @@ fun KeywordSettingsBottomSheet(
                     .fillMaxWidth()
                     .padding(bottom = 16.dp)
                     .clickable { 
-                        keywordViewModel.updateDndSettings(
-                            enabled = !dndEnabled, 
-                            startTime = dndStartTime, 
-                            endTime = dndEndTime
-                        )
+                        val startParts = dndStartTime.split(":")
+                        val startHour = startParts.firstOrNull()?.toIntOrNull() ?: 22
+                        val startMinute = startParts.getOrNull(1)?.toIntOrNull() ?: 0
+
+                        val endParts = dndEndTime.split(":")
+                        val endHour = endParts.firstOrNull()?.toIntOrNull() ?: 8
+                        val endMinute = endParts.getOrNull(1)?.toIntOrNull() ?: 0
+
+                        android.app.TimePickerDialog(
+                            context,
+                            { _, pickedStartHour, pickedStartMinute ->
+                                val formattedStart = String.format("%02d:%02d", pickedStartHour, pickedStartMinute)
+                                
+                                android.app.TimePickerDialog(
+                                    context,
+                                    { _, pickedEndHour, pickedEndMinute ->
+                                        val formattedEnd = String.format("%02d:%02d", pickedEndHour, pickedEndMinute)
+                                        keywordViewModel.updateDndSettings(
+                                            enabled = true,
+                                            startTime = formattedStart,
+                                            endTime = formattedEnd
+                                        )
+                                    },
+                                    endHour,
+                                    endMinute,
+                                    true
+                                ).apply {
+                                    setTitle("야간 알림 차단 종료 시간")
+                                    show()
+                                }
+                            },
+                            startHour,
+                            startMinute,
+                            true
+                        ).apply {
+                            setTitle("야간 알림 차단 시작 시간")
+                            show()
+                        }
                     }
             ) {
                 Row(
@@ -1954,14 +1991,14 @@ fun KeywordSettingsBottomSheet(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "야간(21시~08시) 알림 차단", 
+                            text = "야간(${formattedStartTime}~${formattedEndTime}) 알림 차단", 
                             fontWeight = FontWeight.Bold, 
                             fontSize = 15.sp, 
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "야간 시간대에 수신을 일시적으로 제한합니다.", 
+                            text = "해당 시간대에 수신을 제한합니다. (탭하여 시간 변경)", 
                             fontSize = 12.sp, 
                             color = MaterialTheme.colorScheme.error
                         )

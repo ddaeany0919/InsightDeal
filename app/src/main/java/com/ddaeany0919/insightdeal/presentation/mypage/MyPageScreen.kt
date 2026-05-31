@@ -1195,7 +1195,18 @@ fun MyPageScreen(
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         if (isLoggedIn) {
+                            val badgePulseTransition = rememberInfiniteTransition(label = "pulse")
+                            val badgeAlpha by badgePulseTransition.animateFloat(
+                                initialValue = 0.4f,
+                                targetValue = 1.0f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(durationMillis = 1000, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Reverse
+                                ),
+                                label = "pulse_alpha"
+                            )
                             Surface(
+                                modifier = Modifier.graphicsLayer { alpha = badgeAlpha },
                                 shape = RoundedCornerShape(20.dp),
                                 color = Color(0xFFFFECE6)
                             ) {
