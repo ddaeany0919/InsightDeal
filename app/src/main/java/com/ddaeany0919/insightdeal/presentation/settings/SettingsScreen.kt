@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ddaeany0919.insightdeal.presentation.theme.ThemeManager
 import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
+import com.ddaeany0919.insightdeal.presentation.bounceClick
 import coil.imageLoader
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -916,7 +917,7 @@ fun SettingsNavigationRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .bounceClick(scaleDown = 0.96f) { onClick() }
             .padding(20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

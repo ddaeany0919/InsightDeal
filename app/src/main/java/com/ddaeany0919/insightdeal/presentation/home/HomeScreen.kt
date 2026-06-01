@@ -2422,7 +2422,11 @@ fun BrandPlaceholder(
             // 📝 직관적이고 세련된 이미지 없음 문구 (잘림 없이 다 노출되도록 처리)
             Text(
                 text = "이미지 없음",
-                style = textStyle,
+                style = textStyle.copy(
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.5).sp
+                ),
                 textAlign = TextAlign.Center,
                 maxLines = 1
             )
