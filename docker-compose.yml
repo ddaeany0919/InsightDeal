@@ -87,6 +87,26 @@ services:
     healthcheck:
       disable: true
 
+  frontend:
+    build:
+      context: ./frontend-web
+      dockerfile: Dockerfile
+    container_name: insightdeal-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - DOCKER_ENV=true
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend-web:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - insightdeal-network
+    restart: unless-stopped
+
 volumes:
   postgres_data:
 

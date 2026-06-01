@@ -312,23 +312,28 @@ class FmkoreaScraper(AsyncBaseScraper):
         soup = BeautifulSoup(html, 'html.parser')
         
         ecommerce_link = ""
-        # 펨코 핫딜의 아웃링크는 보통 외부 도메인을 가리키는 a 태그입니다.
-        for a in soup.select('a'):
+        # 1. 펨코 리디렉터 링크 또는 hotdeal_info 내의 구매 링크를 최우선 수색!
+        for a in soup.select('.hotdeal_info a, a'):
             href = a.get('href', '')
-            if href.startswith('http') and 'fmkorea.com' not in href and 'saedu.naver.com' not in href and 'ader.naver.com' not in href:
-                if 'link.fmkorea.org' in href:
-                    import urllib.parse
-                    parsed_url = urllib.parse.urlparse(href)
-                    query_params = urllib.parse.parse_qs(parsed_url.query)
-                    target_url = query_params.get('url', [''])[0]
-                    if target_url:
-                        ecommerce_link = target_url
-                        break
-                else:
-                    ecommerce_link = href
+            if not href:
+                continue
+            
+            # 펨코 리디렉터 도메인 정밀 매칭 (link.fmkorea.org 또는 link.fmkorea.com)
+            if 'link.fmkorea.org' in href or 'link.fmkorea.com' in href:
+                import urllib.parse
+                parsed_url = urllib.parse.urlparse(href)
+                query_params = urllib.parse.parse_qs(parsed_url.query)
+                target_url = query_params.get('url', [''])[0] or query_params.get('target', [''])[0]
+                if target_url:
+                    ecommerce_link = target_url
                     break
+            
+            # 리디렉터가 아닌 일반 쇼핑몰 직접 링크
+            elif href.startswith('http') and 'fmkorea.com' not in href and 'fmkorea.org' not in href and 'saedu.naver.com' not in href and 'ader.naver.com' not in href:
+                ecommerce_link = href
+                break
         
-        # a 태그로 못 찾았을 경우, 텍스트(본문)에 포함된 URL 정규식 탐색
+        # 2. a 태그로 못 찾았을 경우, 텍스트(본문)에 포함된 URL 정규식 탐색
         if not ecommerce_link:
             content_area = soup.select_one('.xe_content') or soup.select_one('.rd_body')
             if content_area:
@@ -336,7 +341,7 @@ class FmkoreaScraper(AsyncBaseScraper):
                 # http(s) 링크 찾기
                 url_matches = re.findall(r'(https?://[^\s]+)', text_content)
                 for m in url_matches:
-                    if 'fmkorea.com' not in m and 'saedu.naver.com' not in m:
+                    if 'fmkorea.com' not in m and 'fmkorea.org' not in m and 'saedu.naver.com' not in m:
                         ecommerce_link = m
                         break
                 # http 없이 도메인만 적힌 경우 (예: m.smartstore.naver.com/...)

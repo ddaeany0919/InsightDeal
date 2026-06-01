@@ -5,8 +5,9 @@
     <exclude domain="sharedpref" path="device.xml" />
     <exclude domain="sharedpref" path="sensitive_data.xml" />
     
-    <!-- Include database files -->
+    <!-- Include database and file domains with strict excludes -->
     <include domain="database" />
+    <include domain="file" path="." />
     
     <!-- Exclude specific files that shouldn't be backed up -->
     <exclude domain="file" path="cache" />

@@ -487,11 +487,12 @@ fun HomeScreen(
                                             val pick = topPicks[index]
                                             
                                             // 스크롤 시 문자열 가공 오버헤드 방지를 위한 캐싱
-                                            val proxiedPickUrl = remember(pick.id, pick.imageUrl) {
+                                            val proxiedPickUrl = remember(pick.id, pick.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
                                                 val fallbackPickImg = "https://placehold.co/400x300/E2E8F0/A0AEC0?text=Deal"
                                                 val rawPickUrl = pick.imageUrl.takeIf { !it.isNullOrBlank() } ?: fallbackPickImg
-                                                if (rawPickUrl.contains("bbasak.com") || rawPickUrl.contains("ppomppu.co.kr") || rawPickUrl.contains("fmkorea.com")) {
-                                                    "http://192.168.0.36:8000/api/proxy-image?url=${java.net.URLEncoder.encode(rawPickUrl, "UTF-8")}"
+                                                if (!rawPickUrl.isNullOrBlank() && rawPickUrl.startsWith("http")) {
+                                                    val baseUrl = com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl().removeSuffix("/")
+                                                    "$baseUrl/api/proxy-image?url=${java.net.URLEncoder.encode(rawPickUrl, "UTF-8")}"
                                                 } else rawPickUrl
                                             }
 
@@ -1452,13 +1453,11 @@ fun DealCardComposable(
                 && deal.honeyScore >= 100
     }
 
-    // 2. 이미지 URL 프록시 캐싱
+    // 2. 이미지 URL 직접 바인딩으로 쾌속화 (백엔드 프록시 서버 거침 지연 및 누수 완전 척결)
     val proxiedUrl = remember(deal.id, deal.imageUrl) {
         val rawUrl = deal.imageUrl
         if (rawUrl.isNullOrBlank()) null
-        else if (rawUrl.contains("bbasak.com") || rawUrl.contains("ppomppu.co.kr") || rawUrl.contains("fmkorea.com")) {
-            "http://192.168.0.36:8000/api/proxy-image?url=${java.net.URLEncoder.encode(rawUrl, "UTF-8")}"
-        } else rawUrl
+        else rawUrl
     }
 
     // 3. 이미지 Request 캐싱
@@ -1781,11 +1780,12 @@ fun DealCardComposable(
                                 textStyle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
                             )
                         } else {
-                            val proxiedExpandedUrl = remember(deal.id, deal.imageUrl) {
+                            val proxiedExpandedUrl = remember(deal.id, deal.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
                                 val rawImageUrl = deal.imageUrl
                                 if (rawImageUrl.isNullOrBlank()) ""
-                                else if (rawImageUrl.contains("bbasak.com") || rawImageUrl.contains("ppomppu.co.kr") || rawImageUrl.contains("fmkorea.com")) {
-                                    "http://192.168.0.36:8000/api/proxy-image?url=${java.net.URLEncoder.encode(rawImageUrl, "UTF-8")}"
+                                else if (!rawImageUrl.isNullOrBlank() && rawImageUrl.startsWith("http")) {
+                                    val baseUrl = com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl().removeSuffix("/")
+                                    "$baseUrl/api/proxy-image?url=${java.net.URLEncoder.encode(rawImageUrl, "UTF-8")}"
                                 } else rawImageUrl
                             }
                             AsyncImage(

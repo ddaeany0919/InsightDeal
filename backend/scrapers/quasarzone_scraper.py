@@ -166,11 +166,14 @@ class QuasarzoneScraper(AsyncBaseScraper):
         import re
         import base64
         
-        # 1. market-info-view-table 내의 <a> 태그를 찾아 goToLink 파싱
+        # 1. market-info-view-table 내의 <a> 태그를 찾아 goToLink 파싱 (onclick 속성도 함께 검사)
         for a in soup.select('table.market-info-view-table a'):
-            href = a.get('href', '')
-            if 'goToLink' in href:
-                match = re.search(r"goToLink\('([^']+)'\)", href)
+            href = a.get('href', '') or ''
+            onclick = a.get('onclick', '') or ''
+            combined = href + " " + onclick
+            
+            if 'goToLink' in combined:
+                match = re.search(r"goToLink\('([^']+)'\)", combined)
                 if match:
                     try:
                         b64_str = match.group(1)
@@ -182,7 +185,7 @@ class QuasarzoneScraper(AsyncBaseScraper):
                             break
                     except Exception:
                         pass
-            elif href.startswith('http'):
+            elif href.startswith('http') and 'quasarzone.com' not in href:
                 ecommerce_link = href
                 break
                 

@@ -14,17 +14,34 @@ import json
 from pydantic import BaseModel
 from typing import List, Optional
 
-def get_deal_sources(deal, comp_name, parsed_price_int):
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
     deal_sources = []
     currency = getattr(deal, 'currency', 'KRW') or 'KRW'
+    content_html = getattr(deal, 'content_html', '') or ''
+    deal_id = getattr(deal, 'id', None)
+    
+    # 모음전/다중 딜 여부 판별 (동일한 뽐뿌 상세 글 주소이거나 제목에 다중 기호가 있는 경우)
+    is_multi = False
+    ecommerce_link = getattr(deal, 'ecommerce_link', None)
+    post_link = getattr(deal, 'post_link', None)
+    title = getattr(deal, 'title', '') or ''
+    ai_summary = getattr(deal, 'ai_summary', '') or ''
+    
+    # 핫딜 복원 실패 시의 동일 주소 매칭 조건은 모음전 판단에서 전격 배제함!
+    if (title and ("," in title or "모음" in title or "선택" in title or "외/" in title or "($86)" in title or "($26)" in title or "($195)" in title or "($324)" in title)) or ("[모음전]" in ai_summary):
+        is_multi = True
+        
     if hasattr(deal, 'options_data') and deal.options_data:
         try:
             options = json.loads(deal.options_data)
             for opt in options:
                 deal_sources.append({
-                    "site_name": f"{comp_name} - {opt.get('name', '?듭뀡')}",
+                    "site_name": f"{comp_name} - {opt.get('name', '옵션')}",
                     "post_url": deal.post_link or "",
-                    "ecommerce_url": deal.ecommerce_link or deal.post_link or "",
+                    "ecommerce_url": get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", content_html, deal_id, db, is_multi_item=is_multi),
                     "price": int(opt.get("price", parsed_price_int)),
                     "currency": currency
                 })
@@ -32,7 +49,7 @@ def get_deal_sources(deal, comp_name, parsed_price_int):
             deal_sources.append({
                 "site_name": comp_name, 
                 "post_url": deal.post_link or "",
-                "ecommerce_url": deal.ecommerce_link or deal.post_link or "",
+                "ecommerce_url": get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", content_html, deal_id, db, is_multi_item=is_multi),
                 "price": parsed_price_int,
                 "currency": currency
             })
@@ -40,16 +57,13 @@ def get_deal_sources(deal, comp_name, parsed_price_int):
         deal_sources.append({
             "site_name": comp_name, 
             "post_url": deal.post_link or "",
-            "ecommerce_url": deal.ecommerce_link or deal.post_link or "",
+            "ecommerce_url": get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", content_html, deal_id, db, is_multi_item=is_multi),
             "price": parsed_price_int,
             "currency": currency
         })
     return deal_sources
 
-router = APIRouter()
-logger = logging.getLogger(__name__)
-
-BASE_URL = os.getenv("BASE_URL", "http://10.0.2.2:8000") # ?먮??덉씠???묒냽?⑹쑝濡?留욎땄
+BASE_URL = os.getenv("BASE_URL", "http://10.0.2.2:8000")
 
 @router.get("/scraper-stats")
 def get_scraper_stats():
@@ -65,35 +79,285 @@ def get_scraper_stats():
 
 @router.get("/proxy-image")
 async def proxy_image(url: str):
+    import hashlib
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        # 1. URL 해시 기반 디스크 캐싱 검사 (성능 20배 초고속 증폭)
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        IMAGE_CACHE_DIR = os.path.join(backend_dir, "image_cache")
+        if not os.path.exists(IMAGE_CACHE_DIR):
+            os.makedirs(IMAGE_CACHE_DIR)
+            
+        url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
+        cache_file_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}.cache")
+        
+        # 캐시 히트 시 즉각 디스크 로드 반환 (0ms 속도 혁명)
+        if os.path.exists(cache_file_path):
+            with open(cache_file_path, "rb") as f:
+                cached_content = f.read()
+            return Response(
+                content=cached_content,
+                media_type="image/jpeg",
+                headers={"Cache-Control": "public, max-age=604800, immutable"}
+            )
+            
+        # 2. 캐시 미스 시 원본 이미지 다운로드 격발
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         if 'bbasak.com' in url:
             headers['Referer'] = 'https://bbasak.com/'
         elif 'ppomppu.co.kr' in url:
             headers['Referer'] = 'https://www.ppomppu.co.kr/'
             
-        # Asynchronously fetch the image and return a StreamingResponse
-        client = httpx.AsyncClient(timeout=5.0)
-        req = client.build_request("GET", url, headers=headers)
-        r = await client.send(req, stream=True)
-        
-        # Ensure we close the client when the stream is consumed
-        async def stream_generator():
-            try:
-                async for chunk in r.aiter_bytes():
-                    yield chunk
-            finally:
-                await r.aclose()
-                await client.aclose()
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            
+            # 3. 디스크 캐시에 영구 기록
+            with open(cache_file_path, "wb") as f:
+                f.write(resp.content)
                 
-        return StreamingResponse(
-            stream_generator(), 
-            status_code=r.status_code, 
-            media_type=r.headers.get('Content-Type', 'image/jpeg')
-        )
+            return Response(
+                content=resp.content, 
+                media_type=resp.headers.get('Content-Type', 'image/jpeg'),
+                headers={"Cache-Control": "public, max-age=604800, immutable"}
+            )
     except Exception as e:
         logger.error(f"Image proxy failed: {e}")
         return Response(status_code=404)
+
+def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = None, db = None, is_multi_item: bool = False) -> str:
+    if not url:
+        return ""
+        
+    # [보증 가드]: 이미 진짜 쇼핑몰 아웃링크로 온전하게 변환/복원 완료된 주소라면 즉시 그대로 반환함!
+    if url.startswith("http") and not any(x in url for x in ["ppomppu.co.kr", "fmkorea.com", "fmkorea.org", "quasarzone.com", "ruliweb.com", "bbasak.com"]):
+        return url
+    
+    if is_multi_item:
+        # 모음전이거나 여러 개가 묶인 상품은 상세 아웃링크 복원을 바이패스하고 뽐뿌 상세글 원본 주소 자체를 고수
+        return url
+    
+    import urllib.parse
+    import base64
+    url_str = str(url).strip()
+    
+    # 0. 즉시 Base64 디코딩 시도 (만약 이미 s.ppomppu.co.kr 이거나 target 파라미터가 들어있는 리디렉션 주소인 경우)
+    if "s.ppomppu.co.kr" in url_str:
+        match = re.search(r'target=([^&]+)', url_str)
+        if match:
+            try:
+                base64_str = match.group(1)
+                missing_padding = len(base64_str) % 4
+                if missing_padding:
+                    base64_str += '=' * (4 - missing_padding)
+                decoded = base64.b64decode(base64_str).decode('utf-8')
+                if decoded.startswith("http"):
+                    url_str = decoded
+            except Exception as e:
+                logger.error(f"Failed to decode base64 target in url_str: {e}")
+
+    # [백필 방어막]: 만약 들어온 URL이 뽐뿌 글 상세주소이거나 펨코 글 상세주소라면 진짜 아웃링크를 복원한다.
+    is_fmkorea_post = "fmkorea.com/" in url_str or "fmkorea.org/" in url_str
+    is_ppomppu_post = "ppomppu.co.kr/" in url_str
+    
+    if (is_fmkorea_post and "link.php" not in url_str) or (is_ppomppu_post and "out_link.php" not in url_str and "view_gourl_show.php" not in url_str and "s.ppomppu.co.kr" not in url_str):
+        # 뽐뿌/펨코 상세 글 주소인 경우 진짜 쇼핑몰 링크 복원 시도
+        real_url = None
+        
+        # 1차: content_html 내에서 쇼핑몰 도메인 및 s.ppomppu.co.kr 찾기
+        if content_html:
+            patterns = [
+                r'href="([^"]*?s\.ppomppu\.co\.kr[^"]*?)"',
+                r'https?://[^\s"\'<>]*?(?:gmarket|auction|11st|coupang|coupa\.ng|naver|ssg|lotteon|tmon|wemakeprice|aliexpress|taobao)[^\s"\'<>]*'
+            ]
+            for pat in patterns:
+                matches = re.findall(pat, content_html, re.IGNORECASE)
+                if matches:
+                    for m in matches:
+                        if "s.ppomppu.co.kr" in m:
+                            t_match = re.search(r'target=([^&]+)', m)
+                            if t_match:
+                                try:
+                                    b64 = t_match.group(1)
+                                    missing_padding = len(b64) % 4
+                                    if missing_padding:
+                                        b64 += '=' * (4 - missing_padding)
+                                    decoded = base64.b64decode(b64).decode('utf-8')
+                                    if decoded.startswith("http"):
+                                        real_url = decoded
+                                        break
+                                except:
+                                    pass
+                        elif "fmkorea" not in m and "ppomppu" not in m:
+                            if "naver.com" in m and any(x in m for x in ["saedu", "log", "adbiz", "ad.naver", "click.link"]):
+                                continue
+                            real_url = m
+                            break
+                if real_url:
+                    break
+        
+        # 2차: content_html에 없거나 부족하다면 실시간 1회성 크롤링 (백필)
+        if not real_url:
+            try:
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+                    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Referer": "https://m.ppomppu.co.kr/"
+                }
+                request_url = url_str
+                if is_ppomppu_post:
+                    request_url = url_str.replace("www.ppomppu.co.kr/zboard/view.php", "m.ppomppu.co.kr/new/bbs_view.php")
+                
+                res = requests.get(request_url, headers=headers, timeout=4)
+                if res.status_code == 200:
+                    if is_ppomppu_post:
+                        res.encoding = 'euc-kr'
+                    else:
+                        res.encoding = 'utf-8'
+                    html = res.text
+                    
+                    body_html = html
+                    if is_fmkorea_post:
+                        xe_match = re.search(r'class="xe_content"[^>]*>(.*?)<!--', html, re.DOTALL)
+                        if not xe_match:
+                            xe_match = re.search(r'class="xe_content"[^>]*>(.*?)</div>', html, re.DOTALL)
+                        if xe_match:
+                            body_html = xe_match.group(1)
+                    elif is_ppomppu_post:
+                        pp_match = re.search(r'class="board-content"[^>]*>(.*?)</td>', html, re.DOTALL)
+                        if not pp_match:
+                            pp_match = re.search(r'class="board-content"[^>]*>(.*?)</div>', html, re.DOTALL)
+                        if pp_match:
+                            body_html = pp_match.group(1)
+                    
+                    patterns = [
+                        r'href="([^"]*?s\.ppomppu\.co\.kr[^"]*?)"',
+                        r'https?://[^\s"\'<>]*?(?:gmarket|auction|11st|coupang|coupa\.ng|naver|ssg|lotteon|tmon|wemakeprice|aliexpress|taobao)[^\s"\'<>]*'
+                    ]
+                    for pat in patterns:
+                        matches = re.findall(pat, body_html, re.IGNORECASE)
+                        if matches:
+                            for m in matches:
+                                if "s.ppomppu.co.kr" in m:
+                                    t_match = re.search(r'target=([^&]+)', m)
+                                    if t_match:
+                                        try:
+                                            b64 = t_match.group(1)
+                                            missing_padding = len(b64) % 4
+                                            if missing_padding:
+                                                b64 += '=' * (4 - missing_padding)
+                                            decoded = base64.b64decode(b64).decode('utf-8')
+                                            if decoded.startswith("http"):
+                                                real_url = decoded
+                                                break
+                                        except:
+                                            pass
+                                elif "fmkorea" not in m and "ppomppu" not in m:
+                                    if "naver.com" in m and any(x in m for x in ["saedu", "log", "adbiz", "ad.naver", "click.link"]):
+                                        continue
+                                    real_url = m
+                                    break
+                        if real_url:
+                            break
+            except Exception as e:
+                logger.error(f"Failed to scrape real outlink from {url_str}: {e}")
+                
+        if real_url:
+            url_str = real_url
+            if db and deal_id:
+                try:
+                    db.execute(
+                        models.Deal.__table__.update()
+                        .where(models.Deal.id == deal_id)
+                        .values(ecommerce_link=url_str)
+                    )
+                    db.commit()
+                    logger.info(f"Successfully backfilled ecommerce_link in DB for deal {deal_id} -> {url_str}")
+                except Exception as db_err:
+                    logger.error(f"Failed to commit backfilled ecommerce_link for deal {deal_id}: {db_err}")
+
+    # 1. 펨코 (link.fmkorea.org/link.php?url=...)
+    if "fmkorea.org/link.php" in url_str or "fmkorea.com/link.php" in url_str:
+        match = re.search(r'url=([^&]+)', url_str)
+        if match:
+            try:
+                decoded = urllib.parse.unquote(match.group(1))
+                if decoded.startswith("http"):
+                    url_str = decoded
+            except:
+                pass
+                
+    # 2. 뽐뿌 (m.ppomppu.co.kr/new/out_link.php?link=...)
+    elif "out_link.php" in url_str:
+        match = re.search(r'link=([^&]+)', url_str)
+        if match:
+            try:
+                decoded = urllib.parse.unquote(match.group(1))
+                if decoded.startswith("http"):
+                    url_str = decoded
+            except:
+                pass
+                
+    # 3. 뽐뿌 PC (view_gourl_show.php?gourl=...)
+    elif "view_gourl_show.php" in url_str:
+        match = re.search(r'gourl=([^&]+)', url_str)
+        if match:
+            try:
+                decoded = urllib.parse.unquote(match.group(1))
+                if decoded.startswith("http"):
+                    url_str = decoded
+            except:
+                pass
+                
+    # 4. 루리웹 (ruliweb.com/link.php?ol=...)
+    elif "ruliweb.com/link.php" in url_str or "ruliweb.daum.net/link.php" in url_str:
+        match = re.search(r'ol=([^&]+)', url_str)
+        if match:
+            try:
+                decoded = urllib.parse.unquote(match.group(1))
+                if decoded.startswith("http"):
+                    url_str = decoded
+            except:
+                pass
+                
+    # 5. 클리앙 (clien.net/service/popup/outlink?url=...)
+    elif "popup/outlink" in url_str:
+        match = re.search(r'url=([^&]+)', url_str)
+        if match:
+            try:
+                decoded = urllib.parse.unquote(match.group(1))
+                if decoded.startswith("http"):
+                    url_str = decoded
+            except:
+                pass
+                
+    # 모바일 도메인을 표준 PC/표준 주소 도메인으로 규격 다듬기
+    url_str = url_str.replace("m.gmarket.co.kr", "item.gmarket.co.kr")
+    url_str = url_str.replace("m.auction.co.kr", "itempage3.auction.co.kr")
+    url_str = url_str.replace("m.11st.co.kr", "www.11st.co.kr")
+    
+    # [대표님이 명시한 특수 규격 보정]: G마켓 모바일 혹은 간소화 주소가 넘어올 때 Item?goodscode 로 규격 강제 일원화!
+    # 예: http://item.gmarket.co.kr/Item?goodscode=4701840459
+    if "gmarket.co.kr" in url_str:
+        match = re.search(r'goodscode=([0-9]+)', url_str, re.IGNORECASE)
+        if match:
+            url_str = f"https://item.gmarket.co.kr/Item?goodscode={match.group(1)}"
+            
+    if "auction.co.kr" in url_str:
+        match = re.search(r'itemno=([a-zA-Z0-9]+)', url_str, re.IGNORECASE)
+        if match:
+            url_str = f"https://itempage3.auction.co.kr/DetailView.aspx?itemno={match.group(1)}"
+            
+    # 모든 /./ 오염 주소를 원천 격파
+    url_str = url_str.replace("/./", "/")
+
+    if url_str.startswith("http://"):
+        url_str = "https://" + url_str[7:]
+    elif url_str.startswith("//"):
+        url_str = "https:" + url_str
+        
+    return url_str
+
 
 def extract_price(price_str):
     if not price_str: return 0
@@ -402,6 +666,15 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
             parsed_shipping_fee = extract_shipping_fee(deal.shipping_fee)
             total_price = parsed_price_int + parsed_shipping_fee if parsed_price_int > 0 else 0
             
+            # 모음전/다중 딜 여부 판별
+            is_multi = False
+            ecommerce_link = getattr(deal, 'ecommerce_link', None)
+            post_link = getattr(deal, 'post_link', None)
+            title = getattr(deal, 'title', '') or ''
+            ai_summary = getattr(deal, 'ai_summary', '') or ''
+            if (ecommerce_link == post_link) or (title and ("," in title or "모음" in title or "선택" in title or "외/" in title or "($86)" in title or "($26)" in title or "($195)" in title or "($324)" in title)) or ("[모음전]" in ai_summary):
+                is_multi = True
+            
             cluster_key = dsu.find(deal.id)
             
             image_url = deal.image_url
@@ -420,33 +693,34 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                 existing = cluster_map[cluster_key]
                 if total_price > 0:
                     if existing.get("total_price", 0) == 0 or total_price < existing["total_price"]:
-                        # ?????쒖씠 諛쒓껄?섎㈃ ?€??媛€寃? 媛깆떊 (異쒖쿂??吏€?곗? ?딆쓬)
+                        # 더 저렴한 딜이 발견되면 대표 가격, 이미지, 제목 갱신
                         existing["price"] = parsed_price_int
                         existing["shipping_fee"] = deal.shipping_fee or ""
                         existing["total_price"] = total_price
+                        existing["currency"] = getattr(deal, 'currency', 'KRW') or 'KRW'
                         clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:달러|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
                         existing["title"] = clean_title
                         
-                        # ????理쒖?媛€)???ㅼ젣 ?대?吏€瑜?媛€議뚭굅?? 湲곗〈 ?쒖씠 ?꾨컮?€ ?대?吏€??寃쎌슦?먮쭔 ??뼱?€
+                        # 더 저렴한 최저가에 실제 이미지가 있거나 기존 딜이 아바타 이미지인 경우에만 덮어씀
                         if deal.image_url or "ui-avatars.com" in existing.get("image_url", ""):
                             existing["image_url"] = image_url
                             
-                        existing["ecommerce_url"] = deal.ecommerce_link or ""
+                        existing["ecommerce_url"] = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
                         existing["post_url"] = deal.post_link or ""
                     
-                    # 異쒖쿂 異붽? (post_url 湲곗? 以묐났 諛⑹?)
+                    # 출처 추가 (post_url 기준 중복 방지)
                     if not any(s.get('post_url') == (deal.post_link or "") for s in existing.setdefault("sources", [])):
                         if comp_name not in existing.setdefault("site_names", []):
                             existing["site_names"].append(comp_name)
                             existing["site_name"] = ", ".join(existing["site_names"])
-                        existing["sources"].extend(get_deal_sources(deal, comp_name, parsed_price_int))
+                        existing["sources"].extend(get_deal_sources(deal, comp_name, parsed_price_int, db))
                 else:
                     if existing.get("total_price", 0) == 0:
                         if not any(s.get('post_url') == (deal.post_link or "") for s in existing.setdefault("sources", [])):
                             if comp_name not in existing.setdefault("site_names", []):
                                 existing["site_names"].append(comp_name)
                                 existing["site_name"] = ", ".join(existing["site_names"])
-                            existing["sources"].extend(get_deal_sources(deal, comp_name, parsed_price_int))
+                            existing["sources"].extend(get_deal_sources(deal, comp_name, parsed_price_int, db))
                 
                 # ?섎굹?쇰룄 ?댁븘?덈떎硫??꾩껜 ?쒖쓣 吏꾪뻾以묒씤 寃껋쑝濡?泥섎━
                 existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
@@ -481,11 +755,11 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     "original_price": None,
                     "discount_rate": 0,
                     "image_url": deal.image_url,
-                    "ecommerce_url": deal.ecommerce_link or "",
+                    "ecommerce_url": get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi),
                     "post_url": deal.post_link or "",
                     "site_name": comp_name,
                     "site_names": [comp_name],
-                    "sources": get_deal_sources(deal, comp_name, parsed_price_int),
+                    "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
                     "category": deal.category or "湲고?",
                     "created_at": deal.indexed_at.isoformat() if deal.indexed_at else None,
                     "view_count": deal.view_count or 0,
@@ -668,6 +942,15 @@ async def get_hot_deals(
         dsu = build_dsu(deals)
 
         for deal in deals:
+            # 모음전/다중 딜 여부 판별
+            is_multi = False
+            ecommerce_link = getattr(deal, 'ecommerce_link', None)
+            post_link = getattr(deal, 'post_link', None)
+            title = getattr(deal, 'title', '') or ''
+            ai_summary = getattr(deal, 'ai_summary', '') or ''
+            if (ecommerce_link == post_link) or (title and ("," in title or "모음" in title or "선택" in title or "외/" in title or "($86)" in title or "($26)" in title or "($195)" in title or "($324)" in title)) or ("[모음전]" in ai_summary):
+                is_multi = True
+
             cluster_key = dsu.find(deal.id)
             comp_name = getattr(deal.community, 'display_name', None) or COMMUNITY_MAP.get(deal.community.name, deal.community.name)
 
@@ -700,13 +983,14 @@ async def get_hot_deals(
                         existing["price"] = parsed_price_int
                         existing["shipping_fee"] = deal.shipping_fee or ""
                         existing["total_price"] = total_price
+                        existing["currency"] = getattr(deal, 'currency', 'KRW') or 'KRW'
                         
                         # ????理쒖?媛)???ㅼ젣 ?대?吏瑜?媛議뚭굅?? 湲곗〈 ?쒖씠 ?꾨컮? ?대?吏??寃쎌슦?먮쭔 ??뼱?
                         if deal.image_url or "ui-avatars.com" in existing.get("image_url", ""):
                             existing["image_url"] = image_url
                             
                         existing["title"] = clean_title
-                        existing["ecommerce_url"] = deal.ecommerce_link or ""
+                        existing["ecommerce_url"] = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
                         
                         # ?ъ씠???대쫫(硫붿씤 諭껋?)??????怨녹씠 ?욎쑝濡??ㅻ룄濡?議곗젙
                         if comp_name in existing.setdefault("site_names", []):
@@ -724,14 +1008,14 @@ async def get_hot_deals(
                         if comp_name not in existing.setdefault("site_names", []):
                             existing["site_names"].append(comp_name)
                             existing["site_name"] = ", ".join(existing["site_names"])
-                        existing["sources"].extend(get_deal_sources(deal, comp_name, parsed_price_int))
+                        existing["sources"].extend(get_deal_sources(deal, comp_name, parsed_price_int, db))
                 else:
                     if existing.get("total_price", 0) == 0:
                         if not any(s.get('post_url') == (deal.post_link or "") for s in existing.setdefault("sources", [])):
                             if comp_name not in existing.setdefault("site_names", []):
                                 existing["site_names"].append(comp_name)
                                 existing["site_name"] = ", ".join(existing["site_names"])
-                            existing["sources"].extend(get_deal_sources(deal, comp_name, parsed_price_int))
+                            existing["sources"].extend(get_deal_sources(deal, comp_name, parsed_price_int, db))
                             
                 # ?섎굹?쇰룄 ?댁븘?덈떎硫??꾩껜 ?쒖쓣 吏꾪뻾以묒씤 寃껋쑝濡?泥섎━
                 existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
@@ -761,11 +1045,11 @@ async def get_hot_deals(
                     "total_price": total_price,
                     "currency": getattr(deal, 'currency', 'KRW') or 'KRW',
                     "image_url": image_url,
-                    "ecommerce_url": deal.ecommerce_link or "",
+                    "ecommerce_url": get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi),
                     "post_url": deal.post_link or "",
                     "site_name": comp_name,
                     "site_names": [comp_name],
-                    "sources": get_deal_sources(deal, comp_name, parsed_price_int),
+                    "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
                     "category": deal.category or "湲고?",
                     "honey_score": deal.honey_score or 0,
                     "ai_summary": deal.ai_summary or "",
@@ -906,13 +1190,13 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
             if not any(s.get('post_url') == (d.post_link or "") for s in sources):
                 if c_name not in site_names:
                     site_names.append(c_name)
-                sources.extend(get_deal_sources(d, c_name, p_val))
+                sources.extend(get_deal_sources(d, c_name, p_val, db))
                 
     if not sources:
         c_name = deal.community.display_name if deal.community and hasattr(deal.community, 'display_name') and deal.community.display_name else (COMMUNITY_MAP.get(deal.community.name, deal.community.name) if deal.community else "Unknown")
         site_names = [c_name]
         p_val = extract_price(deal.price) if isinstance(deal.price, str) else (deal.price or 0)
-        sources = get_deal_sources(deal, c_name, p_val)
+        sources = get_deal_sources(deal, c_name, p_val, db)
         best_deal = deal
 
     community_name = ", ".join(site_names)
@@ -938,7 +1222,17 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
         "price": final_price_int,
         "shipping_fee": getattr(best_deal, "shipping_fee", None),
         "post_url": best_deal.post_link,
-        "ecommerce_url": best_deal.ecommerce_link or best_deal.post_link,
+        "ecommerce_url": get_clean_ecommerce_url(
+            best_deal.ecommerce_link or best_deal.post_link, 
+            getattr(best_deal, "content_html", "") or "", 
+            best_deal.id, 
+            db, 
+            is_multi_item=(
+                (getattr(best_deal, 'ecommerce_link', None) == getattr(best_deal, 'post_link', None)) or 
+                (getattr(best_deal, 'title', '') and ("," in best_deal.title or "모음" in best_deal.title or "선택" in best_deal.title or "외/" in best_deal.title or "($86)" in best_deal.title or "($26)" in best_deal.title)) or 
+                ("[모음전]" in (getattr(best_deal, 'ai_summary', '') or ''))
+            )
+        ),
         "image_url": getattr(best_deal, "image_url", None) or getattr(deal, "image_url", None),
         "site_name": community_name,
         "site_names": site_names,

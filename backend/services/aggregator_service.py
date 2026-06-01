@@ -557,8 +557,9 @@ class AggregatorService:
             🚨 [아주 중요한 단일화 예외 규칙] 🚨
             1. 만약 게시글 본문에 각 상품별 구매 링크가 개별적으로 존재하지 않고, 오직 1개의 대표 구매 링크만 존재하는 '모음전(옵션 선택형)'이라면, 절대 상품을 여러 개로 분리하지 마! 
             무조건 전체를 대표하는 이름으로 단일 객체(1개)만 반환해. (예: "무파마 삼겹살 외 14종 모음전")
-            2. [거대 모음전 방지 룰]: 본문에 개별 링크가 각각 존재하더라도, 발견된 상품의 총 개수가 6개 이상(6, 7, 30개 등)이면 절대로 쪼개지 마라! 이 경우에도 무조건 전체를 대표하는 1개의 객체(단일 핫딜)로 합쳐서 반환해야 한다. (쪼개는 것은 5개 이하일 때만 허용)
+            2. [거대 모음전 방지 룰]: 본문에 개별 링크가 각각 존재하더라도, 발견된 상품의 총 개수가 30개 이상(30개 등)이면 절대로 쪼개지 마라! 이 경우에도 무조건 전체를 대표하는 1개의 객체(단일 핫딜)로 합쳐서 반환해야 한다. (쪼개는 것은 29개 이하일 때 허용)
             위 1번이나 2번에 해당하는 단일화 케이스일 경우, 포함된 세부 상품들의 대표적인 목록이나 특징을 'ai_summary' 속성에 3줄 요약으로 보기 좋게 작성해줘. (예: "🔥 [모음전] 레데리2(1.8만), 스택랜드(4천) 등 30종 할인")
+
             
             [가격 추출 필수 규칙]
             1. '59요금제' 같은 휴대폰 요금제의 경우 월 요금인 59000 처럼 계산해서 적어줘.
@@ -654,10 +655,11 @@ class AggregatorService:
                     # 본문 내 첨부된 이미지 추출 (Gemini가 빈 문자열 반환 시 대비)
                     extracted_img = ""
                     if content_html:
-                        img_matches = re.findall(r'https?://[^\s,]+(?:jpg|jpeg|png|gif)', content_html, re.IGNORECASE)
+                        img_matches = re.findall(r'https?://[^\s,"\'<>]+?\.(?:jpg|jpeg|png|gif|webp|bmp)', content_html, re.IGNORECASE)
                         if img_matches:
                             # 인덱스에 맞춰 이미지 매핑 시도, 없으면 첫 번째 이미지
                             extracted_img = img_matches[idx] if idx < len(img_matches) else img_matches[0]
+
                             
                     # 브랜드 및 모델명 메타 정보 추출
                     brand_info = {"brand": "", "model_code": ""}
@@ -717,15 +719,22 @@ class AggregatorService:
                 except Exception as e:
                     logger.error(f"Error extracting brand/model for single deal: {e}")
 
+                # [대표님 초정밀 안전 장치]: 쪼개지지 않는 모음전이거나, 단일 등록인 모음전(is_multi_item)인 경우,
+                # 아웃링크를 이상한 디코딩 주소로 억지 매핑하지 않고, 뽐뿌 상세 원본글 주소(url)로 강제 고정하여 복원성을 100% 사수한다!
+                single_ecommerce_link = scraped_data.get("ecommerce_link") or url
+                if is_multi_item:
+                    single_ecommerce_link = url
+
                 new_deal = Deal(
                     source_community_id=community_id,
                     title=raw_title,
                     price=str(final_price) if final_price else "0",
                     currency=currency,
                     post_link=url,
-                    ecommerce_link=scraped_data.get("ecommerce_link") or url,
+                    ecommerce_link=single_ecommerce_link,
                     shop_name=shop_name,
                     shipping_fee=shipping_fee,
+
                     is_closed=is_closed,
                     category=final_category,
                     base_product_name=normalized.name,

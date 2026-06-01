@@ -42,6 +42,30 @@
 -keep class * implements com.google.gson.JsonSerializer
 -keep class * implements com.google.gson.JsonDeserializer
 
-# Models
+# Models & Network (DDAEANY0919)
 -keep class com.ddaeany0919.insightdeal.models.** { *; }
 -keep class com.ddaeany0919.insightdeal.network.** { *; }
+-keep class com.ddaeany0919.insightdeal.data.** { *; }
+
+# Room Database
+-keep class * extends androidx.room.RoomDatabase
+-keep class * implements androidx.room.RoomOpenHelper
+-dontwarn androidx.room.**
+
+# WorkManager
+-keep class * extends androidx.work.ListenableWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+-dontwarn androidx.work.**
+
+# Coil Image Loader
+-keep class io.coilkt.** { *; }
+-dontwarn coil.**
+
+# MPAndroidChart
+-keep class com.github.mikephil.charting.** { *; }
+-dontwarn com.github.mikephil.charting.**
+
+# Vico Charts
+-keep class com.patrykandpatrick.vico.** { *; }
+-dontwarn com.patrykandpatrick.vico.**

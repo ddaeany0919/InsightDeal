@@ -83,13 +83,17 @@ class PpomppuScraper(AsyncBaseScraper):
             extracted_price = 0
             extracted_currency = "KRW"
             
-            usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
-            if not usd_match:
-                usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', full_title, re.IGNORECASE)
+            is_overseas = (self.platform_name == "뽐뿌해외")
+            
+            usd_match = None
+            if is_overseas:
+                usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
+                if not usd_match:
+                    usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', full_title, re.IGNORECASE)
                 
             price_match = re.search(r'([\d,]+(?:원|만원))', full_title)
             
-            if usd_match:
+            if is_overseas and usd_match:
                 try:
                     val = float(usd_match.group(1).replace(',', ''))
                     extracted_price = int(val * 100)
@@ -108,7 +112,7 @@ class PpomppuScraper(AsyncBaseScraper):
                     if nums: extracted_price = int(''.join(nums))
 
             # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
-            if extracted_currency == "KRW" and extracted_price > 0 and extracted_price <= 10000:
+            if is_overseas and extracted_currency == "KRW" and extracted_price > 0 and extracted_price <= 10000:
                 if any(kw in full_title for kw in ['알리', '코인', '큐텐', '직구', '알익']):
                     extracted_currency = "USD"
                     extracted_price = int(extracted_price * 100)
@@ -208,16 +212,26 @@ class PpomppuScraper(AsyncBaseScraper):
         soup = BeautifulSoup(html, 'html.parser')
         
         ecommerce_link = ""
-        link_tag = soup.select_one('.word')
+        # 1. 뽐뿌 아웃링크는 .word 클래스 또는 .word_break a 태그에 고정 수집됩니다.
+        link_tag = soup.select_one('.word, .word_break a')
         if link_tag and link_tag.get('href') and 'http' in link_tag['href']:
             ecommerce_link = link_tag['href']
-        else:
+            
+        # 2. 없으면 전체 a 태그 중 외부 쇼핑몰 직접 주소 또는 뽐뿌 리디렉터 수색
+        if not ecommerce_link:
             for a in soup.find_all('a'):
-                href = a.get('href', '')
+                href = a.get('href', '') or ''
+                if not href:
+                    continue
+                # 뽐뿌 리디렉터 또는 외부 쇼핑몰 링크 (ppomppu.co.kr, ppomppu8.co.kr 등 내부 링크 배제)
                 if 's.ppomppu.co.kr' in href:
                     ecommerce_link = href
                     break
+                elif href.startswith('http') and 'ppomppu.co.kr' not in href and 'ppomppu4.co.kr' not in href and 'ppomppu8.co.kr' not in href:
+                    ecommerce_link = href
+                    break
                     
+        # 3. 뽐뿌 리디렉터 해독 (base64 target 디코딩)
         if "s.ppomppu.co.kr" in ecommerce_link:
             import urllib.parse
             import base64
@@ -282,16 +296,20 @@ class PpomppuScraper(AsyncBaseScraper):
         # 예: 15,000원, 23,500 원, 49900원 등
         extracted_currency = "KRW"
         
+        is_overseas = (self.platform_name == "뽐뿌해외")
+        
         # [방어막 추가]: 본문 파싱 전 URL 소거 처리! (링크 내의 숫자 오인 차단)
         cleaned_body_text = re.sub(r'https?://[^\s]+', '', body_text)
         
-        usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', cleaned_body_text, re.IGNORECASE)
-        if not usd_match:
-            usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', cleaned_body_text, re.IGNORECASE)
+        usd_match = None
+        if is_overseas:
+            usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', cleaned_body_text, re.IGNORECASE)
+            if not usd_match:
+                usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', cleaned_body_text, re.IGNORECASE)
             
         price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', cleaned_body_text)
         
-        if usd_match:
+        if is_overseas and usd_match:
             try:
                 val = float(usd_match.group(1).replace(',', ''))
                 price_fallback = int(val * 100)
@@ -334,9 +352,15 @@ class PpomppuScraper(AsyncBaseScraper):
             
         posted_at_iso = None
         html_text = soup.get_text(separator=' ', strip=True)
+        # 1차: 등록일 키워드 기반 상세 매칭
         dates = re.findall(r'등록일\s*[:\s]*(\d{4}-\d{2}-\d{2}\s*\d{2}:\d{2}(?::\d{2})?)', html_text)
         if dates:
             posted_at_iso = self.parse_time_str(dates[0])
+        else:
+            # 2차 폴백: 등록일 키워드가 없는 순수 날짜/시간 형식 추출 (글쓴이 옆 2026-06-01 22:19 포맷 방어)
+            naive_dates = re.findall(r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?)', html_text)
+            if naive_dates:
+                posted_at_iso = self.parse_time_str(naive_dates[0])
             
         # [CEO 피드백: 모음전 분할을 위해 텍스트 길이 충분한 본문을 content_html로 반환]
         return {
