@@ -82,11 +82,16 @@ fun HomeScreen(
     val isOnline by networkMonitor.isOnline.collectAsState(initial = true)
     val isDark = isSystemInDarkTheme()
     
+    var isNotificationPermissionGranted by remember {
+        mutableStateOf(androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled())
+    }
+    
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                isNotificationPermissionGranted = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
                 val prefs = context.getSharedPreferences("app", android.content.Context.MODE_PRIVATE)
                 val disabledPlatforms = prefs.getStringSet("disabled_platforms", emptySet()) ?: emptySet()
                 val allPlatforms = listOf("뽐뿌", "퀘이사존", "펨코", "루리웹", "클리앙", "알리뽐뿌", "빠삭국내", "빠삭해외")
@@ -271,8 +276,6 @@ fun HomeScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showCoupangDialog = true }) { Icon(Icons.Default.ShoppingCart, "쿠팡 연동") }
-                    
                     val alertsCount = notificationAlerts.size
                     Box(
                         modifier = Modifier
@@ -353,6 +356,82 @@ fun HomeScreen(
                             color = Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = isOnline && !isNotificationPermissionGranted,
+                enter = androidx.compose.animation.expandVertically(
+                    expandFrom = Alignment.Top,
+                    animationSpec = androidx.compose.animation.core.tween(300)
+                ) + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.shrinkVertically(
+                    shrinkTowards = Alignment.Top,
+                    animationSpec = androidx.compose.animation.core.tween(300)
+                ) + androidx.compose.animation.fadeOut()
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            val intent = android.content.Intent().apply {
+                                action = android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                                putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            }
+                            try {
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                val fallbackIntent = android.content.Intent().apply {
+                                    action = android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                                    data = android.net.Uri.fromParts("package", context.packageName, null)
+                                }
+                                context.startActivity(fallbackIntent)
+                            }
+                        },
+                    color = if (isDark) Color(0xFF2E7D32).copy(alpha = 0.85f) else Color(0xFFE8F5E9),
+                    shadowElevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.NotificationsActive,
+                                contentDescription = "Notification Warning",
+                                tint = if (isDark) Color.White else Color(0xFF2E7D32),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "알림 권한이 꺼져 있어 특가를 놓치고 있어요 🔔",
+                                    color = if (isDark) Color.White else Color(0xFF1B5E20),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "터치하여 실시간 핫딜 알림을 켜고 스마트하게 절약해보세요.",
+                                    color = if (isDark) Color.White.copy(alpha = 0.8f) else Color(0xFF388E3C),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "이동",
+                            tint = if (isDark) Color.White.copy(alpha = 0.7f) else Color(0xFF2E7D32),
+                            modifier = Modifier.size(12.dp)
                         )
                     }
                 }
