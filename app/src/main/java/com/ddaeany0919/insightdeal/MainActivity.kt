@@ -177,18 +177,18 @@ class MainActivity : FragmentActivity() {
                         correctPin = pin
                         
                         if (bioLockEnabled) {
-                            val biometricManager = androidx.biometric.BiometricManager.from(context)
+                            val biometricManager = androidx.biometric.BiometricManager.from(this@MainActivity)
                             val authenticators = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
                             
                             if (biometricManager.canAuthenticate(authenticators) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
                                 isLocked = true // 일단 잠금
-                                val executor = androidx.core.content.ContextCompat.getMainExecutor(context)
-                                val biometricPrompt = androidx.biometric.BiometricPrompt(context, executor,
+                                val executor = androidx.core.content.ContextCompat.getMainExecutor(this@MainActivity)
+                                val biometricPrompt = androidx.biometric.BiometricPrompt(this@MainActivity, executor,
                                     object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
                                         override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                                             super.onAuthenticationError(errorCode, errString)
                                             // 지문 인증 실패/취소 시 PIN 다이얼로그로 수동 폴백
-                                            android.widget.Toast.makeText(context, "생체 인증 실패: PIN으로 잠금을 해제해 주세요. 🔒", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(this@MainActivity, "생체 인증 실패: PIN으로 잠금을 해제해 주세요. 🔒", android.widget.Toast.LENGTH_SHORT).show()
                                         }
                                         override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
                                             super.onAuthenticationSucceeded(result)
