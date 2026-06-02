@@ -71,6 +71,12 @@ class PpomppuScraper(AsyncBaseScraper):
                  image_url = img_td['src']
                  if image_url.startswith('//'): image_url = "https:" + image_url
                  elif not image_url.startswith('http'): image_url = urljoin("https://www.ppomppu.co.kr", image_url)
+                 
+                 # 📸 [화질 대부활 가드] 뽐뿌의 찌그러진 저화질 _thumb/, thumb/, small_ 등의 노이즈를 완전히 걷어내고 100% 무결한 고화질 원본 주소로 변환!
+                 if "ppomppu" in image_url:
+                     image_url = image_url.replace("_thumb/", "").replace("thumb/", "")
+                     image_url = image_url.replace("/small_", "/").replace("small_", "")
+                     image_url = image_url.replace("_thumb.", ".")
 
             # 만약 썸네일 주소가 투명 이미지이거나 아이콘, 또는 노이미지 엑스박스면 비움 처리
             if image_url:
@@ -286,6 +292,11 @@ class PpomppuScraper(AsyncBaseScraper):
                 # 이모티콘, 스티커, 로고, 프로필 등 배제
                 if any(x in src_lower for x in ['emoticon', 'sticker', 'transparent', 'logo', 'icon', 'reply', 'blank', 'avatar', 'profile']):
                     continue
+                # 📸 [상세 고화질 변환] 상세페이지 본문 썸네일 내의 _thumb/, thumb/, small_ 등 저화질 노이즈도 100% 무결한 고화질 원본 주소로 자동 환원!
+                if "ppomppu" in src:
+                    src = src.replace("_thumb/", "").replace("thumb/", "")
+                    src = src.replace("/small_", "/").replace("small_", "")
+                    src = src.replace("_thumb.", ".")
                 images.append(src)
                 if not image_url:
                     image_url = src
