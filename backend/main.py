@@ -68,7 +68,10 @@ def read_root():
 
 # 전역 HTTP 클라이언트를 생성하여 연결 대기(Connection Pooling) 사용
 # 이미지 로딩 시 SSL 핸드셰이크 오버헤드를 대폭 줄이고 속도를 높임
-proxy_client = httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=50, max_connections=100))
+proxy_client = httpx.AsyncClient(
+    limits=httpx.Limits(max_keepalive_connections=50, max_connections=100),
+    follow_redirects=True
+)
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -93,11 +96,24 @@ async def proxy_image(url: str):
             )
             
         # 2. 캐시 미스 시 원본 이미지 다운로드 격발
-        referer = "https://m.ppomppu.co.kr/" if "ppomppu.co.kr" in url else url
+        headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Mobile Safari/537.36", "Accept": "image/webp,image/avif,image/*,*/*;q=0.8"}
+        if "ppomppu.co.kr" in url:
+            headers["Referer"] = "https://www.ppomppu.co.kr/"
+        elif "fmkorea.com" in url or "fmkorea.org" in url:
+            headers["Referer"] = "https://www.fmkorea.com/"
+        elif "quasarzone.com" in url:
+            headers["Referer"] = "https://quasarzone.com/"
+        elif "ruliweb.com" in url:
+            headers["Referer"] = "https://bbs.ruliweb.com/"
+        elif "bbasak.com" in url:
+            headers["Referer"] = "https://bbasak.com/"
+        else:
+            headers["Referer"] = url
+
         resp = await proxy_client.get(
             url, 
-            timeout=5.0,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": referer}
+            timeout=3.0,
+            headers=headers
         )
         resp.raise_for_status()
         content_type = resp.headers.get("Content-Type", "image/jpeg")

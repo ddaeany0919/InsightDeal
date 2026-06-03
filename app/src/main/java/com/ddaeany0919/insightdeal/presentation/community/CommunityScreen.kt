@@ -261,7 +261,7 @@ fun HotDealCard(deal: HotDealDto, onClick: () -> Unit = {}) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val priceText = if (deal.price == 0) {
                             if (deal.category == "이벤트" || deal.title.contains("무료") || deal.title.contains("쿠폰")) "무료 (쿠폰/이벤트)"
-                            else "금액 확인 필요"
+                            else "가격 확인 필요"
                         } else {
                             String.format(java.util.Locale.getDefault(), "%,d원", deal.price)
                         }
@@ -285,7 +285,7 @@ fun HotDealCard(deal: HotDealDto, onClick: () -> Unit = {}) {
                         if (!hideShipping) {
                             val trimmed = deal.shippingFee?.trim() ?: "정보 없음"
                             val displayShipping = when {
-                                trimmed == "정보 없음" || trimmed.isEmpty() -> "확인 필요"
+                                trimmed == "정보 없음" || trimmed.isEmpty() -> "배송비 확인 필요"
                                 trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
                                 trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료 ")
                                 trimmed == "유료" || trimmed == "유료배송" -> "유료"

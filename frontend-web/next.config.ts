@@ -14,7 +14,6 @@ console.log(`[Next.js Rewrite Engine] Configured rewrite destination to: ${backe
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  turbopack: {},
   eslint: {
     // 빌드 시 ESLint 통과를 보장하여 불필요한 이스케이프 참사 방어
     ignoreDuringBuilds: true,

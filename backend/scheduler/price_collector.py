@@ -59,7 +59,9 @@ class PriceCollectionScheduler:
             
             logger.info("✅ Price collection scheduler started")
             
-            # 즉시 한 번 실행
+            # 즉시 한 번 실행 (핫딜 수집, 삭제/종료 딜 검사, 가격 추적)
+            await self.scrape_new_deals()
+            await self.check_deleted_or_closed_deals()
             await self.collect_active_prices()
             
         except Exception as e:
@@ -108,7 +110,15 @@ class PriceCollectionScheduler:
             name='New Deal Scraping'
         )
         
-        # 5. 데이터 정리 - 매일 새벽 3시
+        # 5. 삭제되거나 종료된 딜 점검 - 30분마다
+        self.scheduler.add_job(
+            self.check_deleted_or_closed_deals,
+            trigger=IntervalTrigger(minutes=30),
+            id='check_deleted_or_closed_deals',
+            name='Check Deleted/Closed Deals'
+        )
+        
+        # 6. 데이터 정리 - 매일 새벽 3시
         self.scheduler.add_job(
             self.cleanup_old_data,
             trigger=CronTrigger(hour=3, minute=0),
@@ -116,7 +126,7 @@ class PriceCollectionScheduler:
             name='Database Cleanup'
         )
         
-        logger.info("📋 Registered 5 scheduled jobs")
+        logger.info("📋 Registered 6 scheduled jobs")
     
     async def collect_active_prices(self):
         """활성 추적 상품들의 가격 수집"""
@@ -292,6 +302,86 @@ class PriceCollectionScheduler:
         except Exception as e:
             logger.error(f"❌ Deal scraping failed: {e}")
     
+    async def check_deleted_or_closed_deals(self):
+        """삭제되거나 종료된 딜 점검 (과거 핫딜 3일 이내 품절 상태 검증)"""
+        logger.info("🔍 Starting deleted or closed deals check...")
+        
+        from datetime import datetime, timedelta
+        from database.models import Deal
+        import httpx
+        from bs4 import BeautifulSoup
+        
+        try:
+            with create_db_session() as session:
+                target_date = datetime.utcnow() - timedelta(days=14)
+                deals = session.query(Deal).filter(
+                    Deal.is_closed == False, 
+                    Deal.indexed_at >= target_date
+                ).order_by(Deal.indexed_at.desc()).limit(150).all()
+                
+                if not deals:
+                    logger.info("📋 No active deals to check for closure")
+                    return
+                
+                closed_count = 0
+                headers = {"User-Agent": "Mozilla/5.0"}
+                
+                async with httpx.AsyncClient(headers=headers, timeout=5.0) as client:
+                    for deal in deals:
+                        try:
+                            req_headers = headers.copy()
+                            if "ppomppu" in deal.post_link:
+                                req_headers["Referer"] = "https://www.ppomppu.co.kr/"
+                            elif "bbasak" in deal.post_link:
+                                req_headers["Referer"] = "https://bbasak.com/"
+                                
+                            resp = await client.get(deal.post_link, headers=req_headers)
+                            if resp.status_code == 404:
+                                deal.is_closed = True
+                                closed_count += 1
+                                continue
+                                
+                            resp_text = resp.text
+                            if "dispMemberLoginForm" in str(resp.url) or "dispMemberLoginForm" in resp_text:
+                                deal.is_closed = True
+                                closed_count += 1
+                                continue
+
+                            if any(kw in resp_text for kw in [
+                                "해당 문서가 존재하지 않습니다", 
+                                "해당 문서는 존재하지 않습니다",
+                                "삭제되었거나 존재하지 않는",
+                                "존재하지 않는 게시물",
+                                "삭제된 게시글",
+                                "삭제된 글",
+                                "선택하신 게시물이 존재하지 않습니다",
+                                "선택하신 게시물이 존재하지 않습니다(1)"
+                            ]):
+                                deal.is_closed = True
+                                closed_count += 1
+                                continue
+                                
+                            soup = BeautifulSoup(resp.content, 'html.parser')
+                            title_tag = soup.title.string if soup.title else ""
+                            
+                            if any(kw in title_tag for kw in ["종료", "마감", "품절", "블라인드", "삭제"]):
+                                deal.is_closed = True
+                                closed_count += 1
+                                continue
+                                
+                        except Exception as e:
+                            logger.error(f"❌ Error checking deal {deal.id}: {e}")
+                            
+                    if closed_count > 0:
+                        session.commit()
+                        
+                logger.info(
+                    f"✅ Closed deals check completed: {closed_count} deals marked as closed/deleted"
+                )
+                
+        except Exception as e:
+            logger.error(f"❌ Closed deals check failed: {e}")
+            
     async def cleanup_old_data(self):
         """오래된 데이터 정리 (90일 이상)"""
         logger.info("🗑️ Starting database cleanup...")

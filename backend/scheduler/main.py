@@ -103,8 +103,12 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                             ).first()
                     
                     if not existing_deal:
-                        # 1. 완전한 신규 딜인 경우 ➔ 상세 페이지(HTML, AI 등) 초고속 파싱 및 신규 등록 (Lazy Load)
-                        detail = await scraper.get_detail(normalized_url)
+                        # 1. 완전한 신규 딜인 경우 ➔ 상세 페이지(HTML, AI 등) 파싱
+                        # (최적화) 1~3페이지 게시글만 상세 파싱(고화질/컨텐츠 추출) 수행하여 속도 향상
+                        detail = {}
+                        if item.get("page", 1) <= 3:
+                            detail = await scraper.get_detail(normalized_url)
+                        
                         if detail:
                             # 상세 페이지 내부의 외부 링크가 있다면 그것도 정규화
                             if detail.get("ecommerce_link"):
@@ -214,6 +218,7 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                             check_db.close()
                             
                         for item in unique_items:
+                            item['page'] = page
                             await queue.put(item)
                             
                         # 핫딜 종료/점수 강등 상태 업데이트를 위해 페이지 조기 종료 스킵 (1~3페이지 모두 스캔 보장)
@@ -278,11 +283,12 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
         return 0
 
 async def validate_closed_deals():
-    """과거 핫딜(3일 이내) 품절 상태(Ping) 검증 데몬"""
+    """과거 핫딜(3일 이내) 품절 상태(Ping) 검증 데몬 (병합 서브 딜 및 삭제 뱃지 실시간 소거 및 자가치유 탑재)"""
     from datetime import datetime, timedelta
     from backend.database.models import Deal
-    import httpx
+    from curl_cffi.requests import AsyncSession
     from bs4 import BeautifulSoup
+    import asyncio
 
     db = SessionLocal()
     try:
@@ -294,36 +300,145 @@ async def validate_closed_deals():
         ).order_by(Deal.indexed_at.desc()).limit(150).all()
         
         closed_count = 0
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        }
         
-        async with httpx.AsyncClient(headers=headers, timeout=5.0) as client:
+        async with AsyncSession(impersonate='chrome120', timeout=10.0) as client:
             for deal in deals:
                 try:
-                    req_headers = headers.copy()
-                    if "ppomppu" in deal.post_link:
-                        req_headers["Referer"] = "https://www.ppomppu.co.kr/"
-                    elif "bbasak" in deal.post_link:
-                        req_headers["Referer"] = "https://bbasak.com/"
-                        
-                    resp = await client.get(deal.post_link, headers=req_headers)
-                    if resp.status_code == 404:
-                        deal.is_closed = True
-                        closed_count += 1
-                        continue
-                        
-                    soup = BeautifulSoup(resp.content, 'html.parser')
-                    title_tag = soup.title.string if soup.title else ""
+                    # 1. 핑 테스트 헬퍼 함수
+                    async def check_url_deleted(url: str) -> bool:
+                        if not url or url == "#":
+                            return True
+                        if "fmkorea" in url:
+                            # fmkorea는 스크래퍼에서 차단을 완벽히 통제하므로 일단 무조건 안전으로 살려둠 (430 차단 방지)
+                            return False
+                        try:
+                            await asyncio.sleep(0.4)
+                            req_headers = headers.copy()
+                            if "ppomppu" in url:
+                                req_headers["Referer"] = "https://www.ppomppu.co.kr/"
+                            elif "quasarzone" in url:
+                                req_headers["Referer"] = "https://quasarzone.com/"
+                            elif "bbasak" in url:
+                                req_headers["Referer"] = "https://bbasak.com/"
+                            elif "ruliweb" in url:
+                                req_headers["Referer"] = "https://bbs.ruliweb.com/"
+                                
+                            resp = await client.get(url, headers=req_headers)
+                            if resp.status_code == 404:
+                                return True
+                            elif resp.status_code in [403, 430]:
+                                # 안티봇 차단 시 일단 삭제되지 않은 것으로 간주 (False)
+                                return False
+                                
+                            resp_text = resp.text
+                            
+                            # 퀘이사존 글 삭제 튕김 경고창 스크립트 시그니처 감지 (200 OK 상태 코드 우회 방어)
+                            if "quasarzone" in url:
+                                if "history.back();" in resp_text and "location.href = redirect;" in resp_text:
+                                    return True
+
+                            if "dispMemberLoginForm" in str(resp.url) or "dispMemberLoginForm" in resp_text:
+                                return True
+                            
+                            if any(kw in resp_text for kw in [
+                                "해당 문서가 존재하지 않습니다", 
+                                "해당 문서는 존재하지 않습니다",
+                                "삭제되었거나 존재하지 않는",
+                                "존재하지 않는 게시물",
+                                "삭제된 게시글",
+                                "삭제된 글"
+                            ]):
+                                return True
+                                
+                            soup = BeautifulSoup(resp.content, 'html.parser')
+                            title_tag = soup.title.string if soup.title else ""
+                            if any(kw in title_tag for kw in ["종료", "마감", "품절", "블라인드", "삭제"]):
+                                return True
+                                
+                            return False
+                        except Exception as e:
+                            logger.error(f"[Validator Ping Error] {url}: {e}")
+                            return False # 핑 전송 에러 시 일단 살아있는 것으로 임시 판정
+
+                    # 2. 대표 딜 링크 삭제 감증
+                    is_repr_deleted = await check_url_deleted(deal.post_link)
+
+                    # 3. 병합된 서브 커뮤니티 주소들 순회 검증 및 정제
+                    merged_changed = False
+                    valid_merged = []
                     
-                    if any(kw in title_tag for kw in ["종료", "마감", "품절", "블라인드", "삭제"]):
-                        deal.is_closed = True
-                        closed_count += 1
-                        continue
-                        
-                except Exception:
-                    pass
+                    if deal.merged_communities:
+                        merged_items = [item.strip() for item in deal.merged_communities.split(",") if item.strip()]
+                        for item in merged_items:
+                            parts = item.split("::")
+                            if len(parts) < 2:
+                                valid_merged.append(item)
+                                continue
+                            
+                            cid = parts[0]
+                            sub_url = parts[1]
+                            
+                            is_sub_deleted = await check_url_deleted(sub_url)
+                            if is_sub_deleted:
+                                merged_changed = True
+                                logger.info(f"🗑️ [Validator] 삭제된 병합 딜 링크 감지되어 제거: ID {cid} -> {sub_url}")
+                            else:
+                                valid_merged.append(item)
+                                
+                    new_merged_str = ",".join(valid_merged) if valid_merged else None
+                    if new_merged_str != deal.merged_communities:
+                        deal.merged_communities = new_merged_str
+                        merged_changed = True
+
+                    # 4. 분기 및 자가치유 작동
+                    if is_repr_deleted:
+                        if valid_merged:
+                            # 🔄 자가치유 작동: 대표 딜은 삭제되었지만 살아있는 서브 딜이 존재함 -> 서브 딜로 대표 정보 승격
+                            chosen_item = valid_merged[0]
+                            parts = chosen_item.split("::")
+                            new_cid = int(parts[0])
+                            new_url = parts[1]
+                            
+                            # 기존 대표 딜을 백업
+                            old_cid = deal.source_community_id
+                            old_url = deal.post_link
+                            
+                            # 대표 정보 교체
+                            deal.source_community_id = new_cid
+                            deal.post_link = new_url
+                            
+                            # ⏰ 승격될 서브 딜의 실제 작성 시간(indexed_at)을 DB에서 조회하여 대표 딜의 시간으로 갱신
+                            sub_deal_in_db = db.query(Deal).filter(Deal.post_link == new_url).first()
+                            if sub_deal_in_db and sub_deal_in_db.indexed_at:
+                                deal.indexed_at = sub_deal_in_db.indexed_at
+                                logger.info(f"⏰ [Validator-Healing] 대표 딜의 indexed_at 시간을 서브 딜의 시간({sub_deal_in_db.indexed_at})으로 동기화 완료")
+                            
+                            # merged_communities 재정리
+                            valid_merged.remove(chosen_item)
+                            
+                            # 기존 대표 딜이 비록 삭제되었더라도 이력 차원에서 merged_communities로 밀어주거나 혹은 제외 (여기서는 완전 제외 처리)
+                            deal.merged_communities = ",".join(valid_merged) if valid_merged else None
+                            
+                            logger.info(f"🔄 [Validator-Healing] 대표 딜 삭제 감지 -> 서브 딜로 대표 교체 승격 완료! ({old_url} -> {new_url})")
+                            db.commit()
+                        else:
+                            # 대표 및 모든 서브 딜이 전원 삭제됨 -> 핫딜 최종 종료 처리
+                            deal.is_closed = True
+                            closed_count += 1
+                            db.commit()
+                            logger.info(f"🚫 [Validator-Closed] 대표 및 서브 딜 모두 삭제 감지 -> 핫딜 종료: {deal.title}")
+                    else:
+                        if merged_changed:
+                            db.commit()
+                            logger.info(f"💾 [Validator-Sync] 서브 딜 링크 일부 삭제로 merged_communities 갱신 완료: {deal.title}")
+                            
+                except Exception as deal_err:
+                    logger.error(f"[Validator Deal Error] Deal ID {deal.id}: {deal_err}")
                     
-        if closed_count > 0:
-            db.commit()
         logger.info(f"✅ 상태 검증 완료: 총 {len(deals)}개 핑(Ping) 테스트 수행 -> {closed_count}개 품절 처리")
     except Exception as e:
         logger.error(f"❌ 상태 검증 데몬 에러: {e}")
@@ -414,8 +529,8 @@ def start_scheduler():
     scheduler = AsyncIOScheduler()
     # 핫딜 수집 데몬 (5분 주기)
     scheduler.add_job(run_pipeline_job, 'interval', minutes=5, id='hotdeal_pipeline')
-    # 과거 딜 품절 검증 데몬 (7분 주기)
-    scheduler.add_job(validate_closed_deals, 'interval', minutes=7, id='hotdeal_validator')
+    # 과거 딜 품절 검증 데몬 (20분 주기)
+    scheduler.add_job(validate_closed_deals, 'interval', minutes=20, id='hotdeal_validator')
     # 펨코 실시간 급상승 검색어 수집 (1시간 주기, 정각 실행)
     scheduler.add_job(update_fmkorea_trending_keywords, 'cron', minute=0, id='fmkorea_trending')
     # 📈 네이버 쇼핑 시장 최저가 추적 배치 (매일 새벽 4시 실행)

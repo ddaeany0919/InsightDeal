@@ -8,7 +8,7 @@ import logging
 import os
 import re
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import json
 from pydantic import BaseModel
@@ -61,6 +61,38 @@ def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
             "price": parsed_price_int,
             "currency": currency
         })
+        
+    # [백그라운드 병합 딜(merged_communities) 소스 복원 로직 추가]
+    if hasattr(deal, 'merged_communities') and deal.merged_communities and db:
+        COMMUNITY_MAP = {
+            "fmkorea": "에펀", "ppomppu": "뽐뻐", "ruliweb": "루리웹",
+            "clien": "클리앙", "quasarzone": "퀘이사존", "ali_ppomppu": "알리뽐뻐",
+            "bbasak_domestic": "빠삭국내", "bbasak_overseas": "빠삭해외"
+        }
+        for merge_item in deal.merged_communities.split(','):
+            merge_item = merge_item.strip()
+            if not merge_item: continue
+            
+            parts = merge_item.split("::")
+            try:
+                cid = int(parts[0])
+                merge_post_url = parts[1] if len(parts) > 1 else deal.post_link
+            except:
+                continue
+            
+            merged_comm = db.query(models.Community).filter(models.Community.id == cid).first()
+            if merged_comm:
+                m_name = merged_comm.display_name or COMMUNITY_MAP.get(merged_comm.name, merged_comm.name)
+                # 동일 사이트 이름이 이미 없으면 추가
+                if not any(s.get("site_name") == m_name for s in deal_sources):
+                    deal_sources.append({
+                        "site_name": m_name,
+                        "post_url": merge_post_url or "",
+                        "ecommerce_url": get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", content_html, deal_id, db, is_multi_item=is_multi),
+                        "price": parsed_price_int,
+                        "currency": currency
+                    })
+    
     return deal_sources
 
 BASE_URL = os.getenv("BASE_URL", "http://10.0.2.2:8000")
@@ -106,6 +138,12 @@ async def proxy_image(url: str):
             headers['Referer'] = 'https://bbasak.com/'
         elif 'ppomppu.co.kr' in url:
             headers['Referer'] = 'https://www.ppomppu.co.kr/'
+        elif 'fmkorea.com' in url or 'fmkorea.org' in url:
+            headers['Referer'] = 'https://www.fmkorea.com/'
+        elif 'quasarzone.com' in url:
+            headers['Referer'] = 'https://quasarzone.com/'
+        elif 'ruliweb.com' in url:
+            headers['Referer'] = 'https://bbs.ruliweb.com/'
             
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(url, headers=headers)
@@ -194,76 +232,13 @@ def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = Non
                             break
                 if real_url:
                     break
-        
-        # 2차: content_html에 없거나 부족하다면 실시간 1회성 크롤링 (백필)
-        if not real_url:
-            try:
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-                    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-                    "Referer": "https://m.ppomppu.co.kr/"
-                }
-                request_url = url_str
-                if is_ppomppu_post:
-                    request_url = url_str.replace("www.ppomppu.co.kr/zboard/view.php", "m.ppomppu.co.kr/new/bbs_view.php")
-                
-                res = requests.get(request_url, headers=headers, timeout=4)
-                if res.status_code == 200:
-                    if is_ppomppu_post:
-                        res.encoding = 'euc-kr'
-                    else:
-                        res.encoding = 'utf-8'
-                    html = res.text
                     
-                    body_html = html
-                    if is_fmkorea_post:
-                        xe_match = re.search(r'class="xe_content"[^>]*>(.*?)<!--', html, re.DOTALL)
-                        if not xe_match:
-                            xe_match = re.search(r'class="xe_content"[^>]*>(.*?)</div>', html, re.DOTALL)
-                        if xe_match:
-                            body_html = xe_match.group(1)
-                    elif is_ppomppu_post:
-                        pp_match = re.search(r'class="board-content"[^>]*>(.*?)</td>', html, re.DOTALL)
-                        if not pp_match:
-                            pp_match = re.search(r'class="board-content"[^>]*>(.*?)</div>', html, re.DOTALL)
-                        if pp_match:
-                            body_html = pp_match.group(1)
-                    
-                    patterns = [
-                        r'href="([^"]*?s\.ppomppu\.co\.kr[^"]*?)"',
-                        r'https?://[^\s"\'<>]*?(?:gmarket|auction|11st|coupang|coupa\.ng|naver|ssg|lotteon|tmon|wemakeprice|aliexpress|taobao)[^\s"\'<>]*'
-                    ]
-                    for pat in patterns:
-                        matches = re.findall(pat, body_html, re.IGNORECASE)
-                        if matches:
-                            for m in matches:
-                                if "s.ppomppu.co.kr" in m:
-                                    t_match = re.search(r'target=([^&]+)', m)
-                                    if t_match:
-                                        try:
-                                            b64 = t_match.group(1)
-                                            missing_padding = len(b64) % 4
-                                            if missing_padding:
-                                                b64 += '=' * (4 - missing_padding)
-                                            decoded = base64.b64decode(b64).decode('utf-8')
-                                            if decoded.startswith("http"):
-                                                real_url = decoded
-                                                break
-                                        except:
-                                            pass
-                                elif "fmkorea" not in m and "ppomppu" not in m:
-                                    if "naver.com" in m and any(x in m for x in ["saedu", "log", "adbiz", "ad.naver", "click.link"]):
-                                        continue
-                                    real_url = m
-                                    break
-                        if real_url:
-                            break
-            except Exception as e:
-                logger.error(f"Failed to scrape real outlink from {url_str}: {e}")
-                
+        # 2차 실시간 파싱(requests.get)은 API 블로킹(응답 지연 및 새로고침 무한루프)을 유발하므로 제거함.
         if real_url:
             url_str = real_url
+            if "aliexpress" in url_str and "af=" not in url_str:
+                url_str += "&af=insightdeal" if "?" in url_str else "?af=insightdeal"
+                
             if db and deal_id:
                 try:
                     db.execute(
@@ -356,6 +331,10 @@ def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = Non
     elif url_str.startswith("//"):
         url_str = "https:" + url_str
         
+    # [아웃링크 오염 원천 봉쇄 가드]: 복원에 최종 실패하여 여전히 커뮤니티 글 주소라면 빈 문자열 반환
+    if any(x in url_str for x in ["ppomppu.co.kr", "fmkorea.com", "fmkorea.org", "quasarzone.com", "ruliweb.com", "bbasak.com", "clien.net"]):
+        return ""
+
     return url_str
 
 
@@ -458,7 +437,6 @@ def get_normalized_url(deal):
     if "link.php" in url or "out.php" in url:
         return None
         
-    # [정밀 정규화 추가]: 최종 반환 전 normalize_url을 거쳐 끝단 슬래시(/) 및 프로토콜을 완벽히 규격화!
     from backend.core.url_utils import normalize_url
     return normalize_url(url)
 
@@ -511,12 +489,10 @@ def has_quantity_conflict(words_a, words_b):
 
 def has_model_conflict(words_a, words_b):
     """Check model number conflicts between two word sets"""
-    # 영숫자 조합 5자 이상 단어 = 모델번호 후보 (한글 제외, ASCII 영문+숫자만 허용)
     def get_model_codes(words):
         import re
         codes = set()
         for w in words:
-            # 영문+숫자 혼합, 5자 이상, 순수 숫자나 순수 영문 아닌 것 (한글/유니코드 글자 제외)
             if (len(w) >= 5
                     and re.match(r'^[a-zA-Z0-9]+$', w)
                     and any(c.isdigit() for c in w)
@@ -531,16 +507,41 @@ def has_model_conflict(words_a, words_b):
     codes_a = get_model_codes(words_a)
     codes_b = get_model_codes(words_b)
 
-    # ?묒そ 紐⑤몢 紐⑤뜽 肄붾뱶媛 ?덈뒗??援먯쭛?⑹씠 ?놁쑝硫??ㅻⅨ ?곹뭹
     if codes_a and codes_b and not codes_a.intersection(codes_b):
         return True
+    return False
+
+def has_brand_or_keyword_conflict(words_a, words_b):
+    brands = {
+        "펩시", "코카콜라", "코카", "칠성", "스프라이트", "가래떡", "만두", "피자", "치킨", "라면", "신라면", 
+        "불닭", "햇반", "오뚜기밥", "아디다스", "나이키", "뉴발란스", "푸마", "울트라기어", "아이맥", "imac", 
+        "맥북", "그램", "갤럭시", "아이폰", "아이패드", "에어팟", "버즈", "닌텐도", "플레이스테이션", "ps5", 
+        "xbox", "엑스박스", "조청", "떡", "갑오징어", "오징어"
+    }
+    
+    words_a_lower = {w.lower() for w in words_a}
+    words_b_lower = {w.lower() for w in words_b}
+    
+    brands_a = {w for w in words_a_lower if w in brands or any(b in w for b in brands)}
+    brands_b = {w for w in words_b_lower if w in brands or any(b in w for b in brands)}
+    
+    if brands_a and brands_b:
+        has_overlap = False
+        for ba in brands_a:
+            for bb in brands_b:
+                if ba in bb or bb in ba:
+                    has_overlap = True
+                    break
+            if has_overlap:
+                break
+        if not has_overlap:
+            return True
     return False
 
 def build_dsu(deals, time_window_days=1):
     dsu = DSU()
     url_to_deal = {}
     
-    # name_clusters = list of dicts: {'id': deal.id, 'words': set_of_words, 'times': [datetime, ...]}
     name_clusters = []
     
     for deal in deals:
@@ -549,46 +550,49 @@ def build_dsu(deals, time_window_days=1):
         n_name = get_normalized_base_name(deal)
         deal_time = deal.indexed_at
         
-        # 1. ?꾨꼍?섍쾶 ?숈씪??URL??寃쎌슦 臾띠쓬 (?? ?대쫫??理쒖냼?쒖쓽 援먯쭛?⑹씠 ?덇퀬 ?섎웾 異⑸룎???놁뼱????
-        curr_words_set = set(n_name.split('_')) if n_name else set()
-        curr_sc = n_name.replace('_', '') if n_name else ""
+        curr_words_set = set(n_name.split(' ')) if n_name else set()
+        curr_sc = n_name.replace(' ', '') if n_name else ""
         
-        if n_url:
+        if n_url and not any(x in n_url for x in ["ppomppu", "fmkorea", "ruliweb", "quasarzone", "clien", "bbasak"]):
             n_url_key = n_url
             if n_url_key in url_to_deal:
                 for past_id, past_words_set in url_to_deal[n_url_key]:
                     if curr_words_set and past_words_set:
                         intersection = len(curr_words_set.intersection(past_words_set))
                         union = len(curr_words_set.union(past_words_set))
-                        is_detailed_url = len(n_url_key) > 30 or any(kw in n_url_key for kw in ["/app/", "/products/", "/item/", "/goods/"])
-                        if (intersection > 0 and (intersection / union) >= 0.1) or is_detailed_url:
-                            if not has_quantity_conflict(curr_words_set, past_words_set) and not has_model_conflict(curr_words_set, past_words_set):
-                                dsu.union(deal.id, past_id)
-                                break
-                    else:
-                        dsu.union(deal.id, past_id)
-                        break
+                        
+                        # 고유 쇼핑몰 상품 ID 패턴이 포함되었는지 판단
+                        is_exact_id = any(prefix in n_url_key for prefix in ["gmarket_", "auction_", "11st_", "coupang_", "aliexpress_", "ohouse_"])
+                        
+                        if is_exact_id:
+                            # 100% 신뢰 가능한 고유 상품 ID가 일치할 때는 단어 싱크로율이 40% 이상만 되어도 안전하게 병합
+                            if union > 0 and (intersection / union) >= 0.4:
+                                if not has_quantity_conflict(curr_words_set, past_words_set) and not has_model_conflict(curr_words_set, past_words_set) and not has_brand_or_keyword_conflict(curr_words_set, past_words_set):
+                                    dsu.union(deal.id, past_id)
+                                    break
+                        else:
+                            # 일반 도메인 수준 매칭은 단어 싱크로율이 극도로 정밀(80% 이상)할 때만 제한적으로 병합
+                            if union > 0 and (intersection / union) >= 0.8:
+                                if not has_quantity_conflict(curr_words_set, past_words_set) and not has_model_conflict(curr_words_set, past_words_set) and not has_brand_or_keyword_conflict(curr_words_set, past_words_set):
+                                    dsu.union(deal.id, past_id)
+                                    break
             if n_url_key not in url_to_deal:
                 url_to_deal[n_url_key] = []
             url_to_deal[n_url_key].append((deal.id, curr_words_set))
             
-        # 2. ?대쫫 湲곕컲 Jaccard ?좎궗??留ㅼ묶 (?⑥뼱??60% ?댁긽???쇱튂?섎㈃ 媛숈? ?곹뭹)
         if n_name:
             words_set = curr_words_set
             matched = False
             for cluster in name_clusters:
-                # ?쒓컙 泥댄겕: ?대윭?ㅽ꽣???랁븳 ?쒕뱾???쒓컙 以??섎굹?쇰룄 36?쒓컙 ?대궡?몄? ?뺤씤 (??1.5??泥댁씤 ?덉슜)
                 time_diff_ok = False
                 if deal_time:
                     for c_time in cluster.get('times', []):
                         if c_time and abs((deal_time - c_time).total_seconds()) <= time_window_days * 24 * 3600:
                             time_diff_ok = True
                             break
-                    # ?대윭?ㅽ꽣???쒓컙???녿뒗 寃쎌슦(?덉쇅???곹솴) ?덉슜
                     if not cluster.get('times'):
                         time_diff_ok = True
                 else:
-                    # ???먯껜???쒓컙???녿뒗 寃쎌슦 ?덉슜
                     time_diff_ok = True
                 
                 if not time_diff_ok:
@@ -606,10 +610,10 @@ def build_dsu(deals, time_window_days=1):
                 if curr_sc and cluster.get('sc') and curr_sc == cluster['sc']:
                     sc_match = True
                 
-                # 1. Jaccard ?좎궗??50% ?댁긽
-                # 2. ?꾩뼱?곌린 類€ ?꾩쟾 ?쇱튂
-                # 3. ?쒖そ???ㅻⅨ履쎌쓽 80% ?댁긽 ?ы븿?섎뒗 遺€遺꾩쭛?⑹씠硫댁꽌 理쒖냼 3?⑥뼱 ?댁긽 寃뱀튌 ??(湲??쒕ぉ vs 吏㏃? ?쒕ぉ 洹밸났)
-                if jaccard >= 0.5 or sc_match or (subset_ratio >= 0.8 and intersection >= 3):
+                # 1. Jaccard 유사도 75% 이상
+                # 2. 띄어쓰기 뺀 완전 일치
+                # 3. 한쪽이 다른쪽의 90% 이상 포함하는 부분집합이면서 최소 4단어 이상 겹칠 때 (긴 제목 vs 짧은 제목 극복)
+                if jaccard >= 0.75 or sc_match or (subset_ratio >= 0.9 and intersection >= 4):
                     if not has_quantity_conflict(words_set, cluster['words']) and not has_model_conflict(words_set, cluster['words']):
                         dsu.union(deal.id, cluster['id'])
                         if deal_time:
@@ -702,7 +706,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                         existing["title"] = clean_title
                         
                         # 더 저렴한 최저가에 실제 이미지가 있거나 기존 딜이 아바타 이미지인 경우에만 덮어씀
-                        if deal.image_url or "ui-avatars.com" in existing.get("image_url", ""):
+                        if deal.image_url or "ui-avatars.com" in (existing.get("image_url", "") or ""):
                             existing["image_url"] = image_url
                             
                         existing["ecommerce_url"] = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
@@ -761,7 +765,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     "site_names": [comp_name],
                     "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
                     "category": deal.category or "湲고?",
-                    "created_at": deal.indexed_at.isoformat() if deal.indexed_at else None,
+                    "created_at": (deal.indexed_at.strftime('%Y-%m-%dT%H:%M:%SZ')) if deal.indexed_at else None,
                     "view_count": deal.view_count or 0,
                     "like_count": buy_count,
                     "comment_count": deal.comment_count or 0,
@@ -778,8 +782,9 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
         filtered_result = []
         for deal_dict in grouped_result:
             if deal_dict.get("created_at"):
-                dt = datetime.fromisoformat(deal_dict["created_at"])
-                # ?€?꾩〈 ?뺣낫媛€ ?덉쑝硫??쒓굅 ??鍮꾧탳
+                # [호환성 방어]: 파이썬 3.9 이하 환경을 위해 'Z'를 '+00:00'으로 변환하여 안전하게 파싱합니다.
+                dt = datetime.fromisoformat(deal_dict["created_at"].replace("Z", "+00:00"))
+                # 타임존 정보가 있으면 제거 후 비교
                 if dt.tzinfo:
                     dt = dt.replace(tzinfo=None)
                 if dt >= cutoff:
@@ -986,7 +991,7 @@ async def get_hot_deals(
                         existing["currency"] = getattr(deal, 'currency', 'KRW') or 'KRW'
                         
                         # ????理쒖?媛)???ㅼ젣 ?대?吏瑜?媛議뚭굅?? 湲곗〈 ?쒖씠 ?꾨컮? ?대?吏??寃쎌슦?먮쭔 ??뼱?
-                        if deal.image_url or "ui-avatars.com" in existing.get("image_url", ""):
+                        if deal.image_url or "ui-avatars.com" in (existing.get("image_url", "") or ""):
                             existing["image_url"] = image_url
                             
                         existing["title"] = clean_title
@@ -999,7 +1004,7 @@ async def get_hot_deals(
                         existing["site_name"] = ", ".join(existing["site_names"])
                     else:
                         # ??鍮꾩떬 ?쒖씠?쇰룄 ?ㅼ젣 ?대?吏媛 ?덇퀬, 湲곗〈 ?대?吏媛 ?꾨컮??쇰㈃ ?ㅼ젣 ?대?吏濡?蹂닿컯
-                        if deal.image_url and "ui-avatars.com" in existing.get("image_url", ""):
+                        if deal.image_url and "ui-avatars.com" in (existing.get("image_url", "") or ""):
                             existing["image_url"] = image_url
 
                     
@@ -1037,6 +1042,20 @@ async def get_hot_deals(
                     buy_count += reaction.positive_reactions
                     save_count = reaction.negative_reactions
 
+                site_names_list = [comp_name]
+                if getattr(deal, 'merged_communities', None):
+                    for cid_str in deal.merged_communities.split(','):
+                        try:
+                            cid = int(cid_str.strip())
+                            # get name from db
+                            merged_comm = db.query(models.Community).filter(models.Community.id == cid).first()
+                            if merged_comm:
+                                m_name = merged_comm.display_name or COMMUNITY_MAP.get(merged_comm.name, merged_comm.name)
+                                if m_name not in site_names_list:
+                                    site_names_list.append(m_name)
+                        except:
+                            pass
+
                 deal_dict = {
                     "id": deal.id,
                     "title": clean_title,
@@ -1047,15 +1066,15 @@ async def get_hot_deals(
                     "image_url": image_url,
                     "ecommerce_url": get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi),
                     "post_url": deal.post_link or "",
-                    "site_name": comp_name,
-                    "site_names": [comp_name],
+                    "site_name": ", ".join(site_names_list),
+                    "site_names": site_names_list,
                     "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
-                    "category": deal.category or "湲고?",
+                    "category": deal.category or "기타",
                     "honey_score": deal.honey_score or 0,
                     "ai_summary": deal.ai_summary or "",
                     "content_html": getattr(deal, "content_html", "") or "",
                     "is_closed": getattr(deal, 'is_closed', False),
-                    "created_at": deal.indexed_at.isoformat() if deal.indexed_at else None,
+                    "created_at": (deal.indexed_at.strftime('%Y-%m-%dT%H:%M:%SZ')) if deal.indexed_at else None,
                     "view_count": deal.view_count or 0,
                     "comment_count": deal.comment_count or 0,
                     "like_count": buy_count,

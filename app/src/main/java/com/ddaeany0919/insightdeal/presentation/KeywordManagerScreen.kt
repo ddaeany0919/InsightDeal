@@ -13,9 +13,13 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.shrinkHorizontally
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -33,6 +37,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material3.*
@@ -64,6 +69,7 @@ fun KeywordManagerScreen(
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
     val username by AuthManager.getUsername(context).collectAsState(initial = "admin")
     val isLoggedIn = username != "guest" && !username.isNullOrEmpty()
     
@@ -463,6 +469,7 @@ fun KeywordManagerScreen(
                                 Switch(
                                     checked = dndEnabled,
                                     onCheckedChange = {
+                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                         viewModel.updateDndSettings(enabled = it, startTime = dndStartTime, endTime = dndEndTime)
                                     },
                                     colors = SwitchDefaults.colors(
@@ -702,6 +709,7 @@ fun KeywordManagerScreen(
                                     Switch(
                                         checked = selectedDaySetting.enabled,
                                         onCheckedChange = { isChecked ->
+                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                             val updated = selectedDaySetting.copy(enabled = isChecked)
                                             val newSettings = updateWeekDndSetting(weekDndSettings, selectedDayKey, updated)
                                             viewModel.updateWeekDndSettings(newSettings)
@@ -863,7 +871,7 @@ fun KeywordManagerScreen(
                     )
                 }
 
-                // 키워드 리스트 (LazyColumn의 중첩 스크롤 방지를 위해, LazyColumn의 하위 item으로 KeywordItem을 Loop 렌더링)
+                // 키워드 리스트 (LazyColumn 중첩 스크롤 방지를 위해 단일 item 내 FlowRow 칩셋 배치로 리팩토링)
                 if (keywords.isEmpty()) {
                     item {
                         Box(
@@ -882,12 +890,67 @@ fun KeywordManagerScreen(
                         }
                     }
                 } else {
-                    items(keywords, key = { it.id }) { keyword ->
-                        KeywordItem(
-                            keyword = keyword.keyword,
-                            onDelete = { viewModel.deleteKeyword(keyword.keyword) },
-                            isEnabled = !isLoading
-                        )
+                    item {
+                        @OptIn(ExperimentalLayoutApi::class)
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            keywords.forEach { keyword ->
+                                var isVisible by remember(keyword.id) { mutableStateOf(true) }
+                                
+                                AnimatedVisibility(
+                                    visible = isVisible,
+                                    enter = fadeIn() + expandHorizontally(expandFrom = Alignment.CenterHorizontally),
+                                    exit = fadeOut() + shrinkHorizontally(animationSpec = tween(300))
+                                ) {
+                                    InputChip(
+                                        selected = true,
+                                        onClick = {
+                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        },
+                                        label = {
+                                            Text(
+                                                text = keyword.keyword,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "삭제",
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .clickable(enabled = !isLoading) {
+                                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                                        isVisible = false
+                                                        // 300ms 소멸 애니메이션 대기 후 서버 삭제 격발
+                                                        coroutineScope.launch {
+                                                            delay(300)
+                                                            viewModel.deleteKeyword(keyword.keyword)
+                                                        }
+                                                    }
+                                            )
+                                        },
+                                        colors = InputChipDefaults.inputChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                                            selectedLabelColor = MaterialTheme.colorScheme.primary,
+                                            selectedTrailingIconColor = MaterialTheme.colorScheme.primary
+                                        ),
+                                        border = InputChipDefaults.inputChipBorder(
+                                            enabled = true,
+                                            selected = true,
+                                            selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                                            selectedBorderWidth = 1.dp
+                                        ),
+                                        shape = RoundedCornerShape(30.dp),
+                                        modifier = Modifier.padding(vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

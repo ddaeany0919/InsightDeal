@@ -85,6 +85,23 @@ fun HomeScreen(
     var isNotificationPermissionGranted by remember {
         mutableStateOf(androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled())
     }
+
+    // Android 13+ 알림 런타임 권한 요청 Compose 런처
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        isNotificationPermissionGranted = isGranted
+    }
+
+    var showPrePermissionDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("app", android.content.Context.MODE_PRIVATE)
+        val hasShown = prefs.getBoolean("has_shown_pre_permission_dialog", false)
+        if (!isNotificationPermissionGranted && !hasShown) {
+            showPrePermissionDialog = true
+        }
+    }
     
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
 
@@ -109,6 +126,145 @@ fun HomeScreen(
     val dealsPagingItems = viewModel.dealsPagingData.collectAsLazyPagingItems()
     val listState = rememberLazyListState()
     
+    // Toss 스타일 프리미엄 소프트 가이드 알림 권한 팝업 UI
+    if (showPrePermissionDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showPrePermissionDialog = false
+                val prefs = context.getSharedPreferences("app", android.content.Context.MODE_PRIVATE)
+                prefs.edit().putBoolean("has_shown_pre_permission_dialog", true).apply()
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPrePermissionDialog = false
+                        val prefs = context.getSharedPreferences("app", android.content.Context.MODE_PRIVATE)
+                        prefs.edit().putBoolean("has_shown_pre_permission_dialog", true).apply()
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Text("알림 켜기", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showPrePermissionDialog = false
+                        val prefs = context.getSharedPreferences("app", android.content.Context.MODE_PRIVATE)
+                        prefs.edit().putBoolean("has_shown_pre_permission_dialog", true).apply()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "나중에 설정할게요",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        fontSize = 14.sp
+                    )
+                }
+            },
+            title = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        Color(0xFF3A7BD5),
+                                        Color(0xFF3A6073)
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.NotificationsActive,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "특가 타이밍을 가장 먼저 알려드릴게요",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 24.sp
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                ) {
+                    Text(
+                        text = "알림을 허용하시면 이런 혜택을 드려요.",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    
+                    val benefits = listOf(
+                        "등록한 키워드의 초특가 딜 실시간 매칭 알림",
+                        "야간 차단 및 방해금지 시간 설정으로 수면 방해 방지",
+                        "품절 대란 핫딜 정보 선착순 1초 컷 진입"
+                    )
+                    benefits.forEach { benefit ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = benefit,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Text(
+                        text = "본 알림 서비스는 정보통신망법(제50조)을 준수하며, 야간 시간대(21:00 ~ 익일 08:00)의 광고성 푸시는 수신 동의 여부와 관계없이 설정된 방해금지 규칙에 따라 완전히 필터링됩니다.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        lineHeight = 16.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            },
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+    }
+
     // [Epic 3] 키워드 설정 다이얼로그 상태
     var showKeywordDialog by remember { mutableStateOf(false) }
     if (showKeywordDialog) {
@@ -234,14 +390,23 @@ fun HomeScreen(
                             // 🧡 대표님 피드백: 투박한 토스트 대신 귀여운 불꽃 로딩 시트 가동
                             isCustomRefreshing = true
                             scope.launch {
-                                viewModel.selectCategory("전체")
                                 try {
-                                    listState.animateScrollToItem(0)
-                                } catch (e: Exception) {
-                                    // 안전성 확보
+                                    viewModel.selectCategory("전체")
+                                    try {
+                                        listState.animateScrollToItem(0)
+                                    } catch (_: Exception) {
+                                        // 안전성 확보
+                                    }
+                                    dealsPagingItems.refresh()
+                                    viewModel.fetchTopHotDeals()
+                                    // ⏱️ [타임아웃 안전망]: 10초 내에 loadState가 완료되지 않으면 강제 해제
+                                    kotlinx.coroutines.delay(10_000)
+                                    if (isCustomRefreshing) {
+                                        isCustomRefreshing = false
+                                    }
+                                } catch (_: Exception) {
+                                    isCustomRefreshing = false
                                 }
-                                dealsPagingItems.refresh()
-                                viewModel.fetchTopHotDeals()
                             }
                         }
                     ) {
@@ -534,7 +699,7 @@ fun HomeScreen(
                                                 else {
                                                     val trimmed = pick.shippingFee?.trim() ?: "정보 없음"
                                                     when {
-                                                        trimmed == "정보 없음" || trimmed.isEmpty() -> "확인 필요"
+                                                        trimmed == "정보 없음" || trimmed.isEmpty() -> "배송비 확인 필요"
                                                         trimmed.contains("와우") -> "와우무료"
                                                         trimmed.contains("스마일") || trimmed.contains("스클") -> "스클무료"
                                                         trimmed.contains("우주패스") -> "우주패스"
@@ -542,7 +707,7 @@ fun HomeScreen(
                                                         trimmed.startsWith("0원/") || trimmed.startsWith("0원+") || trimmed.startsWith("0/") || trimmed.startsWith("0+") -> trimmed.replaceFirst(Regex("^0(원)?\\s*"), "무료 ")
                                                         trimmed == "유료" || trimmed == "유료배송" -> "유료"
                                                         trimmed.all { it.isDigit() || it == ',' } -> "${trimmed}원"
-                                                        else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
+                                                        else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료").replace(Regex("(이상|미만|이하)(0원?)?\\s*무료"), "$1 무료").replace(Regex("(\\d+[만천])(이상|미만|이하)"), "$1원$2").trim()
                                                     }
                                                 }
                                             }
@@ -1453,11 +1618,18 @@ fun DealCardComposable(
                 && deal.honeyScore >= 100
     }
 
-    // 2. 이미지 URL 직접 바인딩으로 쾌속화 (백엔드 프록시 서버 거침 지연 및 누수 완전 척결)
-    val proxiedUrl = remember(deal.id, deal.imageUrl) {
+    // 2. 이미지 URL을 백엔드 프록시를 통해 안전하고 쨍하게 100% 로딩 (디스크 캐싱 및 헤더 우회 탑재)
+    val proxiedUrl = remember(deal.id, deal.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
         val rawUrl = deal.imageUrl
         if (rawUrl.isNullOrBlank()) null
-        else rawUrl
+        else if (rawUrl.startsWith("http")) {
+            try {
+                val baseUrl = com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl().removeSuffix("/")
+                "$baseUrl/api/proxy-image?url=${java.net.URLEncoder.encode(rawUrl, "UTF-8")}"
+            } catch (e: Exception) {
+                rawUrl
+            }
+        } else rawUrl
     }
 
     // 3. 이미지 Request 캐싱
@@ -1496,7 +1668,7 @@ fun DealCardComposable(
         else {
             val trimmed = deal.shippingFee?.trim() ?: "정보 없음"
             when {
-                trimmed == "정보 없음" || trimmed.isEmpty() -> "확인 필요"
+                trimmed == "정보 없음" || trimmed.isEmpty() -> "배송비 확인 필요"
                 trimmed.contains("와우") -> "와우무료"
                 trimmed.contains("스마일") || trimmed.contains("스클") -> "스클무료"
                 trimmed.contains("우주패스") -> "우주패스"
@@ -1504,7 +1676,7 @@ fun DealCardComposable(
                 trimmed.startsWith("0원/") || trimmed.startsWith("0원+") || trimmed.startsWith("0/") || trimmed.startsWith("0+") -> trimmed.replaceFirst(Regex("^0(원)?\\s*"), "무료 ")
                 trimmed == "유료" || trimmed == "유료배송" -> "유료"
                 trimmed.all { it.isDigit() || it == ',' } -> "${trimmed}원"
-                else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
+                else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료").replace(Regex("(이상|미만|이하)(0원?)?\\s*무료"), "$1 무료").replace(Regex("(\\d+[만천])(이상|미만|이하)"), "$1원$2").trim()
             }
         }
     }
@@ -1523,7 +1695,7 @@ fun DealCardComposable(
             listOf("무료", "공짜", "배포", "나눔", "0원", "일시무료", "쿠폰").any { deal.title.contains(it) }) {
             "무료 (쿠폰/공짜)"
         } else {
-            "금액 확인 필요"
+            "가격 확인 필요"
         }
     }
 
@@ -1567,7 +1739,23 @@ fun DealCardComposable(
                             textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         )
                     } else {
-                        Box(modifier = Modifier.size(80.dp)) {
+                        Box(modifier = Modifier
+                            .size(80.dp)
+                            .clickable {
+                                try {
+                                    val targetUrl = deal.ecommerceUrl?.takeIf { it.isNotBlank() }?.replace(":443", "") ?: deal.postUrl
+                                    if (!targetUrl.isNullOrBlank()) {
+                                        var finalUrl = if (targetUrl.startsWith("http")) targetUrl else "https://$targetUrl"
+                                        if (finalUrl.contains("bbasak.com") && !finalUrl.contains("device=pc")) {
+                                            finalUrl += if (finalUrl.contains("?")) "&device=pc" else "?device=pc"
+                                        }
+                                        onOpenUrl(finalUrl)
+                                    }
+                                } catch (e: Exception) {
+                                    android.widget.Toast.makeText(context, "브라우저 앱을 열 수 없습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
                             SubcomposeAsyncImage(
                                 model = imageRequest,
                                 contentDescription = deal.title,
@@ -1623,24 +1811,20 @@ fun DealCardComposable(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 sourcesToRender.forEach { source ->
-                                    val displaySiteName = remember(source.siteName) {
-                                        if (source.siteName.contains(" - ")) {
-                                            source.siteName.substringBefore(" - ").trim()
-                                        } else {
-                                            source.siteName
-                                        }
+                                    val displaySiteName = if (source.siteName.contains(" - ")) {
+                                        source.siteName.substringBefore(" - ").trim()
+                                    } else {
+                                        source.siteName
                                     }
-                                    val (containerColor, contentColor) = remember(displaySiteName, isDark) {
-                                        val siteNameLower = displaySiteName.lowercase(Locale.getDefault())
-                                        when {
-                                            siteNameLower.contains("뽐뿌") -> Color(0xFF1565C0) to Color.White
-                                            siteNameLower.contains("퀘이사존") -> Color(0xFFE65100) to Color.White
-                                            siteNameLower.contains("루리웹") -> Color(0xFF0D47A1) to Color.White
-                                            siteNameLower.contains("펨코") || siteNameLower.contains("에펨코리아") -> Color(0xFF0288D1) to Color.White
-                                            siteNameLower.contains("빠삭") -> Color(0xFFC2185B) to Color.White
-                                            siteNameLower.contains("클리앙") -> Color(0xFF37474F) to Color.White
-                                            else -> if (isDark) Color(0xFF424242) to Color.White else Color(0xFFE0E0E0) to Color.Black
-                                        }
+                                    val siteNameLower = displaySiteName.lowercase(Locale.getDefault())
+                                    val (containerColor, contentColor) = when {
+                                        siteNameLower.contains("뽐뿌") -> Color(0xFF1565C0) to Color.White
+                                        siteNameLower.contains("퀘이사존") -> Color(0xFFE65100) to Color.White
+                                        siteNameLower.contains("루리웹") -> Color(0xFF0D47A1) to Color.White
+                                        siteNameLower.contains("펨코") || siteNameLower.contains("에펨코리아") -> Color(0xFF0288D1) to Color.White
+                                        siteNameLower.contains("빠삭") -> Color(0xFFC2185B) to Color.White
+                                        siteNameLower.contains("클리앙") -> Color(0xFF37474F) to Color.White
+                                        else -> if (isDark) Color(0xFF424242) to Color.White else Color(0xFFE0E0E0) to Color.Black
                                     }
 
                                     Surface(

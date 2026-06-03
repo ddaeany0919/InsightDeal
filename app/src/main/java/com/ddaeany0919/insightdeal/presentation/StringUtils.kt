@@ -33,13 +33,14 @@ fun formatPrice(price: Long?, currency: String? = "KRW"): String {
  */
 fun formatRelativeTime(updatedAt: String): String {
     return try {
-        // 백엔드 날짜 형식(예: 2026-05-27T23:45:00+09:00)을 타임존 오프셋 보존하며 파싱합니다.
+        // 백엔드 날짜 형식(예: 2026-05-27T23:45:00Z 또는 +09:00)을 타임존 오프셋 보존하며 파싱합니다.
         val parsedTime = try {
             java.time.OffsetDateTime.parse(updatedAt)
         } catch (e: Exception) {
             // 오프셋이 없는 naive datetime(예: 2026-05-27T15:10:00) 형식에 대응하는 2단계 예외 안전망
+            // [정밀 보정]: 백엔드 DB의 naive datetime은 100% UTC 시각이므로 KST로 오역되지 않도록 UTC로 강제 인지합니다!
             val local = java.time.LocalDateTime.parse(updatedAt)
-            local.atZone(java.time.ZoneId.systemDefault()).toOffsetDateTime()
+            local.atZone(java.time.ZoneOffset.UTC).toOffsetDateTime()
         }
         
         // 동일한 시간대 기준으로 현재 시각을 구합니다.
@@ -54,11 +55,9 @@ fun formatRelativeTime(updatedAt: String): String {
             diffInMinutes < 1 -> "방금 전"
             diffInMinutes < 60 -> "${diffInMinutes}분 전"
             diffInHours < 24 -> "${diffInHours}시간 전"
-            diffInDays < 7 -> "${diffInDays}일 전"
-            else -> {
-                val formatter = java.time.format.DateTimeFormatter.ofPattern("MM.dd", Locale.getDefault())
-                parsedTime.format(formatter)
-            }
+            diffInDays < 30 -> "${diffInDays}일 전"
+            diffInDays < 365 -> "${diffInDays / 30}달 전"
+            else -> "${diffInDays / 365}년 전"
         }
     } catch (e: Exception) {
         "알 수 없음"

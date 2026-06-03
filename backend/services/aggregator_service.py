@@ -49,12 +49,12 @@ class AggregatorService:
         match = re.search(r'\(\s*\$?\s*((?:[\d,]+|[\d,]*\.[\d]+)(?:원|달러|유로|€)?)(?:\s*/\s*([^\)]*))?\)', raw_title)
         if match:
             extracted_price = match.group(1).replace(',', '')
-            if '달러' in extracted_price or '.' in extracted_price or '$' in raw_title:
+            if '달러' in extracted_price or '.' in extracted_price or '$' in match.group(0):
                 title_currency = "USD"
                 extracted_price = extracted_price.replace('달러', '').replace('$', '').strip()
                 if extracted_price.replace('.', '', 1).isdigit():
                     title_price = round(float(extracted_price) * 100)
-            elif '유로' in extracted_price or '€' in raw_title:
+            elif '유로' in extracted_price or '€' in match.group(0):
                 title_currency = "EUR"
                 extracted_price = extracted_price.replace('유로', '').replace('€', '').strip()
                 if extracted_price.replace('.', '', 1).isdigit():
@@ -69,6 +69,7 @@ class AggregatorService:
 
         # 2. 괄호 외 만/원/달러/유로 파싱
         if title_price == 0:
+            title_currency = "KRW"
             match_man = re.search(r'([\d,]*\.[\d]+|[\d,]+)만(?!\s*(원\s*)?(할인|적립|쿠폰|캐시백|이상|권))', raw_title)
             if match_man:
                 title_price = int(float(match_man.group(1).replace(',', '')) * 10000)
@@ -250,7 +251,7 @@ class AggregatorService:
         posted_dt = None
         if posted_at_iso:
             try:
-                posted_dt = datetime.fromisoformat(posted_at_iso)
+                posted_dt = datetime.fromisoformat(posted_at_iso.replace("Z", "+00:00"))
                 # Ensure datetime has UTC timezone info before storing
                 if posted_dt.tzinfo is None:
                     posted_dt = posted_dt.replace(tzinfo=timezone.utc)
@@ -277,6 +278,7 @@ class AggregatorService:
                     final_category = recent_duplicate.category
 
         content_html = scraped_data.get("content_html", scraped_data.get("content", ""))
+        image_url = scraped_data.get("image_url")
 
         # 2. 중복 및 롤링 윈도우 클러스터링 체크 (Upsert 로직의 핵심)
         existing_deals = self.db.query(Deal).filter(Deal.post_link == url).all()
@@ -326,7 +328,6 @@ class AggregatorService:
                     return {token for token in cleaned.split() if len(token) >= 2 and token not in ["to", "and", "or", "for", "pcs"]}
 
                 input_tokens = get_clean_tokens(raw_title)
-                
                 # 핵심 키워드(예: Toocki, 100W, ugreen, acer 등 브랜드/숫자스펙)를 반드시 담고 있어야 함
                 core_keywords = {tk for tk in input_tokens if re.search(r'[0-9]+[wWdD]?|[a-zA-Z]{4,}', tk)}
                 
@@ -375,15 +376,39 @@ class AggregatorService:
                      if price < old_price:
                          logger.info(f"[Lowest Price Updated!] 기존 {old_price}원 -> 새 핫딜 {price}원 (URL 교체: {url})")
                          existing_deal.price = str(price)
+                         
+                         # 기존 링크를 백업
+                         if existing_deal.source_community_id:
+                             curr_merged = existing_deal.merged_communities or ""
+                             merged_list = curr_merged.split(",") if curr_merged else []
+                             if not any(item.startswith(f"{existing_deal.source_community_id}::") or item == str(existing_deal.source_community_id) for item in merged_list):
+                                 merged_list.append(f"{existing_deal.source_community_id}::{existing_deal.post_link}")
+                                 existing_deal.merged_communities = ",".join(merged_list)
+                         
                          existing_deal.post_link = url # 유저가 구매하러 갈 링크도 더 싼 곳으로 교체
                          price_changed = True
                      elif existing_deal.post_link == url and str(existing_deal.price) != str(price):
                          existing_deal.price = str(price)
                          price_changed = True
                      
-                 if image_url and not existing_deal.image_url:
-                     existing_deal.image_url = image_url
-                     
+                 # 📸 [고화질 이미지 덮어쓰기 가드]
+                 # 기존에 이미지가 없거나, 기존 이미지가 찌그러진 저화질 썸네일이고 새 이미지는 고화질 원본인 경우 강제 갱신!
+                 if image_url:
+                     is_low_quality = lambda u: any(x in u.lower() for x in ['_thumb', 'thumb/', 'small_', '_70x50', '_120x90', '_150x150', 'crop.webp', 'filesn', 'zboard/data/ppomppu'])
+                     is_high_quality = lambda u: any(x in u.lower() for x in ['files/attach', 'ruliweb.com/img', 'quasarzone.com/editor', 'quasarzone.com/qb_saleinfo'])
+                     if not existing_deal.image_url:
+                         existing_deal.image_url = image_url
+                     elif is_low_quality(existing_deal.image_url) and not is_low_quality(image_url):
+                         existing_deal.image_url = image_url
+                     elif not is_low_quality(existing_deal.image_url) and is_low_quality(image_url):
+                         # 🎯 이미 고화질이 선점되어 있는데 저화질이 순회에서 들어오면 덮어쓰지 않고 절대 무시!
+                         pass
+                     elif is_high_quality(existing_deal.image_url) and not is_high_quality(image_url):
+                          # 🎯 기존에 상세 페이지 고화질 원본이 선점되어 있는데, 뽐뿌 썸네일 등 일반 이미지가 들어오면 무시!
+                          pass
+                     elif existing_deal.image_url != image_url:
+                         existing_deal.image_url = image_url
+                    
                  if scraped_data.get("ecommerce_link") and not existing_deal.ecommerce_link:
                      existing_deal.ecommerce_link = scraped_data.get("ecommerce_link")
                  
@@ -409,6 +434,16 @@ class AggregatorService:
                      existing_deal.currency = currency
 
                  existing_deal.is_closed = is_closed
+
+                 # [다중 커뮤니티 병합 정보 저장]
+                 if existing_deal.source_community_id != community_id:
+                     curr_merged = existing_deal.merged_communities or ""
+                     merged_list = curr_merged.split(",") if curr_merged else []
+                     # URL과 함께 저장하여 프론트엔드에서 클릭 시 이동할 수 있도록 함
+                     if not any(item.startswith(f"{community_id}::") or item == str(community_id) for item in merged_list):
+                         merged_list.append(f"{community_id}::{url}")
+                         existing_deal.merged_communities = ",".join(merged_list)
+
                  # [Smart Shipping Fee Merge Guard]
                  # 새로 긁어온 배송비가 '정보 없음'이고 기존에 이미 유효한 배송 정보가 기재되어 있다면 덮어쓰지 않고 기존 값 유지!
                  if shipping_fee and shipping_fee != "정보 없음":
@@ -462,6 +497,9 @@ class AggregatorService:
                      else:
                          existing_deal.honey_score = max(calc_score, existing_deal.honey_score)
                  
+                 # 🎯 [is_super_hotdeal 필드 동기화 추가]
+                 existing_deal.is_super_hotdeal = bool(scraped_data.get("is_super_hotdeal"))
+                 
                  if price_changed and price > 0:
                      self._insert_price_history(existing_deal.id, price)
 
@@ -514,11 +552,8 @@ class AggregatorService:
 
         # 커뮤니티 추천수/조회수/인기마크 기반 슈퍼 핫딜 판별
         if scraped_data.get("is_super_hotdeal"):
-            # 무조건 100점이 아니라, 가격이 평균치보다 비싸서 점수가 까였다면 핫딜 마크를 부여하되 100점은 주지 않음
-            if honey_score < 80:
-                honey_score = max(honey_score, 85)
-            else:
-                honey_score = 100
+            # 🎯 [CEO 정책 결정]: 커뮤니티 100% 핫딜 판별 기준 충족 시 가격 감점 무시하고 무조건 100점 부여!
+            honey_score = 100
                 
             if ai_summary is None:
                 ai_summary = "🔥 [커뮤니티 인기] "
@@ -531,7 +566,9 @@ class AggregatorService:
         # 2. 본문 텍스트 내에서 정규식으로 '원' 단위 숫자 패턴 갯수 추출
         price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+)\s*원', content_html) if content_html else []
         
-        is_multi_item = ("(" in raw_title and "다양" in raw_title) or raw_title.count(".") >= 2 or "모음" in raw_title or "선택" in raw_title or "," in raw_title or len(price_matches) >= 3
+        # 핫픽스: 가격에 들어간 1000단위 구분 쉼표(예: 6,590원)가 제목 쉼표 조건에 걸리는 오인식 원천 제거
+        clean_title_for_multi = re.sub(r'\d,\d', '', raw_title)
+        is_multi_item = ("(" in raw_title and "다양" in raw_title) or raw_title.count(".") >= 2 or "모음" in raw_title or "선택" in raw_title or "," in clean_title_for_multi or len(price_matches) >= 3
         is_missing_price = (price == 0)
         
         # [핵심 로직] 가격이 아예 없거나(0원), 다중 상품일 가능성이 높으면 AI를 가동하여 분할(Split) 및 가격 추출을 시도합니다.
@@ -623,6 +660,7 @@ class AggregatorService:
                 logger.info("[Warning] API 키 없음. 상품 자동 분리를 건너뜁니다.")
                 split_items = []
         inserted_deals = []
+        deals_to_push = []
         
         if split_items:
             for idx, item in enumerate(split_items):
@@ -696,6 +734,13 @@ class AggregatorService:
                     self.db.refresh(new_deal)
                     if item_price > 0: self._insert_price_history(new_deal.id, item_price)
                     inserted_deals.append(new_deal)
+                    deals_to_push.append({
+                        "id": new_deal.id,
+                        "title": new_deal.title,
+                        "price": new_deal.price,
+                        "shop_name": new_deal.shop_name,
+                        "post_link": new_deal.post_link
+                    })
                 except Exception as e:
                     self.db.rollback()
                     logger.error(f"Error inserting split item '{derived_title}': {e}")
@@ -721,9 +766,11 @@ class AggregatorService:
 
                 # [대표님 초정밀 안전 장치]: 쪼개지지 않는 모음전이거나, 단일 등록인 모음전(is_multi_item)인 경우,
                 # 아웃링크를 이상한 디코딩 주소로 억지 매핑하지 않고, 뽐뿌 상세 원본글 주소(url)로 강제 고정하여 복원성을 100% 사수한다!
+                # 🎯 단, 유효한 외부 쇼핑몰 아웃링크가 확보되었다면(뽐뿌 도메인이 아닌 외부 주소) 그 외부 주소를 사수한다!
                 single_ecommerce_link = scraped_data.get("ecommerce_link") or url
                 if is_multi_item:
-                    single_ecommerce_link = url
+                    if not single_ecommerce_link or 'ppomppu.co.kr' in single_ecommerce_link:
+                        single_ecommerce_link = url
 
                 new_deal = Deal(
                     source_community_id=community_id,
@@ -736,6 +783,7 @@ class AggregatorService:
                     shipping_fee=shipping_fee,
 
                     is_closed=is_closed,
+                    is_super_hotdeal=bool(scraped_data.get("is_super_hotdeal")),
                     category=final_category,
                     base_product_name=normalized.name,
                     image_url=image_url,
@@ -761,20 +809,59 @@ class AggregatorService:
                 logger.error(f"Error inserting deal '{raw_title}': {e}")
                 return None
             
-            # [Epic 3] 비동기 백그라운드 워커 패턴으로 푸시 알림 발송 위임
+            inserted_deals.append(new_deal)
+            deals_to_push.append({
+                "id": new_deal.id,
+                "title": new_deal.title,
+                "price": new_deal.price,
+                "shop_name": new_deal.shop_name,
+                "post_link": new_deal.post_link
+            })
+            
+        # [Epic 3] 신규 인서트된 모든 딜(AI 분할 딜 포함)에 대해 푸시 알림 비동기 격발
+        if deals_to_push:
             import asyncio
             from concurrent.futures import ThreadPoolExecutor
+            from backend.services.notification_service import NotificationService
             
             if not hasattr(self.__class__, '_push_executor'):
                 self.__class__._push_executor = ThreadPoolExecutor(max_workers=5)
             
-            from backend.services.push_worker import background_trigger_keyword_alarms
+            def trigger_push_task(deal_id, title, price, shop_name, post_link):
+                from backend.database.session import SessionLocal
+                db_session = SessionLocal()
+                try:
+                    price_val = 0
+                    try:
+                        price_val = int(price) if str(price).isdigit() else 0
+                    except Exception:
+                        pass
+                    NotificationService.process_new_deal(
+                        deal_id=deal_id,
+                        title=title,
+                        price=price_val,
+                        site_name=shop_name or "HotDeal",
+                        deal_url=post_link,
+                        db=db_session
+                    )
+                except Exception as ex:
+                    logger.error(f"Push dispatch error in executor: {ex}")
+                finally:
+                    db_session.close()
+
             loop = asyncio.get_event_loop()
-            loop.run_in_executor(self.__class__._push_executor, background_trigger_keyword_alarms, new_deal.id)
-            
-            inserted_deals.append(new_deal)
-            
-        logger.debug(f"🔗 딜 분석 및 DB 병합 완료: 총 {len(inserted_deals)}개 인서트")
+            for d_info in deals_to_push:
+                loop.run_in_executor(
+                    self.__class__._push_executor, 
+                    trigger_push_task, 
+                    d_info["id"], 
+                    d_info["title"], 
+                    d_info["price"], 
+                    d_info["shop_name"], 
+                    d_info["post_link"]
+                )
+
+        logger.debug(f"[Merge Complete] Deal analysis and DB merge completed: {len(inserted_deals)} inserted")
         return inserted_deals[0] if inserted_deals else None
 
     def _insert_price_history(self, deal_id: int, price: int):

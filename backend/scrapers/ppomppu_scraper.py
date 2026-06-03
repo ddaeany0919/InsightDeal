@@ -50,9 +50,23 @@ class PpomppuScraper(AsyncBaseScraper):
             parsed_href = urlparse(href)
             qs = parse_qs(parsed_href.query)
             
-            # [HOTFIX] 핫딜 게시판이 아닌 다른 포럼(예: 해외포럼 id=oversea) 게시글이 핫딜 리스트에 추천글로 섞이는 현상 방지
+            # [HOTFIX] 현재 스크래핑 중인 게시판 ID와 일치하는 게시글만 수집하도록 보정 (타 게시판 추천글/광고글 섞임 차단!)
+            allowed_board_ids = []
+            if hasattr(self, 'list_urls') and self.list_urls:
+                for u in self.list_urls:
+                    q = parse_qs(urlparse(u).query)
+                    bid = q.get('id', [None])[0]
+                    if bid: allowed_board_ids.append(bid)
+            if hasattr(self, 'list_url') and self.list_url:
+                q = parse_qs(urlparse(self.list_url).query)
+                bid = q.get('id', [None])[0]
+                if bid and bid not in allowed_board_ids: allowed_board_ids.append(bid)
+                
+            if not allowed_board_ids:
+                allowed_board_ids = ['ppomppu']
+                
             board_id = qs.get('id', [''])[0]
-            if board_id not in ['ppomppu', 'ppomppu4', 'ppomppu8']:
+            if board_id not in allowed_board_ids:
                 return None
                 
             qs.pop('page', None)
@@ -64,19 +78,34 @@ class PpomppuScraper(AsyncBaseScraper):
             
             # 🖼️ 썸네일 추출 시도 
             image_url = ""
-            img_td = row.select_one('td img.thumb_border')
-            if not img_td: img_td = row.select_one('img')
+            img_td = None
+            
+            # 리스트 tr 내의 이미지 태그들 중 썸네일 확률이 높은 이미지를 정확하게 우선 스캐닝합니다.
+            img_tags = row.select('img')
+            for img in img_tags:
+                src = img.get('src') or ''
+                if any(x in src.lower() for x in ['_thumb', 'data3', 'noimage', 'data/']):
+                    img_td = img
+                    break
+                    
+            if not img_td:
+                img_td = row.select_one('td img.thumb_border')
+            if not img_td:
+                img_td = row.select_one('img')
             
             if img_td and img_td.has_attr('src'):
                  image_url = img_td['src']
                  if image_url.startswith('//'): image_url = "https:" + image_url
                  elif not image_url.startswith('http'): image_url = urljoin("https://www.ppomppu.co.kr", image_url)
                  
-                 # 📸 [화질 대부활 가드] 뽐뿌의 찌그러진 저화질 _thumb/, thumb/, small_ 등의 노이즈를 완전히 걷어내고 100% 무결한 고화질 원본 주소로 변환!
+                 # [E2E 과거 글 차단 2차 철벽 가드]: 썸네일 주소에 과거 년도가 포함된 경우 수집 원천 차단
+                 # ⚠️ 현재 연도와 작년은 허용! (range 상한을 current_year - 1 로 설정하여 올해/작년 이미지 오차단 방지)
                  if "ppomppu" in image_url:
-                     image_url = image_url.replace("_thumb/", "").replace("thumb/", "")
-                     image_url = image_url.replace("/small_", "/").replace("small_", "")
-                     image_url = image_url.replace("_thumb.", ".")
+                     from datetime import datetime as dt_img
+                     img_current_year = dt_img.now().year
+                     if any(f"/{yr}/" in image_url for yr in [str(y) for y in range(2000, img_current_year - 1)]):
+                         logger.info(f"[뽐뿌] 이미지 내 과거 연도 감지로 수집 스킵: {full_title} ({image_url})")
+                         return None
 
             # 만약 썸네일 주소가 투명 이미지이거나 아이콘, 또는 노이미지 엑스박스면 비움 처리
             if image_url:
@@ -89,7 +118,7 @@ class PpomppuScraper(AsyncBaseScraper):
             extracted_price = 0
             extracted_currency = "KRW"
             
-            is_overseas = (self.platform_name == "뽐뿌해외")
+            is_overseas = (self.platform_name in ["뽐뿌해외", "알리뽐뿌"])
             
             usd_match = None
             if is_overseas:
@@ -102,7 +131,7 @@ class PpomppuScraper(AsyncBaseScraper):
             if is_overseas and usd_match:
                 try:
                     val = float(usd_match.group(1).replace(',', ''))
-                    extracted_price = int(val * 100)
+                    extracted_price = round(val * 100)
                     if '유로' in full_title or '€' in full_title:
                         extracted_currency = "EUR"
                     else:
@@ -170,6 +199,9 @@ class PpomppuScraper(AsyncBaseScraper):
             time_str = ""
             for td in time_tds:
                 txt = td.get_text(strip=True)
+                # [버그 예방] 조회수나 큰 숫자가 든 열을 배제하여 2012년 오역 참사를 방어합니다.
+                if len(txt) > 20 or txt.isdigit():
+                    continue
                 if ':' in txt or '/' in txt or '-' in txt:
                     # 추천수(11 - 0) 필터링
                     if re.search(r'\d+\s*-\s*\d+', txt) and not re.search(r'\d{4}-\d{2}-\d{2}', txt):
@@ -179,6 +211,15 @@ class PpomppuScraper(AsyncBaseScraper):
 
             if time_str:
                 posted_at_iso = self.parse_time_str(time_str)
+
+            # [과거 글 수집 원천 배제 가드]: 뽐뿌 하단의 아주 과거(2012년 등) 박제글 수집 배제
+            # ⚠️ 현재 연도와 작년은 정상 게시글이므로 차단하면 안 됨! (range 상한을 current_year - 1 로 설정)
+            if posted_at_iso:
+                from datetime import datetime as dt
+                current_year = dt.now().year
+                if any(posted_at_iso.startswith(str(yr)) for yr in range(2000, current_year - 1)):
+                    logger.info(f"[뽐뿌] 아주 과거의 딜 차단 (수집 스킵): {full_title} ({posted_at_iso})")
+                    return None
 
             # 제목 앞 대괄호 분류 파싱
             scraped_category = None
@@ -213,15 +254,24 @@ class PpomppuScraper(AsyncBaseScraper):
         """
         상세 페이지에 접속하여 본문(HTML)과 추가 추출 정보(예: 쿠폰, 배송비)를 가져옵니다.
         """
-        html = await self.fetch_html(url)
+        headers = self._get_headers()
+        headers["Referer"] = self.list_url  # 봇 차단 및 로그인 리다이렉트 방지를 위한 Referer 설정
+        html = await self.fetch_html(url, headers=headers)
         if not html: return {}
         soup = BeautifulSoup(html, 'html.parser')
         
         ecommerce_link = ""
-        # 1. 뽐뿌 아웃링크는 .word 클래스 또는 .word_break a 태그에 고정 수집됩니다.
-        link_tag = soup.select_one('.word, .word_break a')
-        if link_tag and link_tag.get('href') and 'http' in link_tag['href']:
-            ecommerce_link = link_tag['href']
+        # 1. 뽐뿌 개편 레이아웃 상단 구매 링크 (.topTitle-box, .topTitle-mainbox, .topTitle-link) 및 구형 레이아웃 (.word, .word_break a)
+        # 닉네임(baseList-name), 프로필 등 오탐지 방지 위해 후보 a태그 중 실제 아웃링크(http)만 엄격 필터링
+        # s.ppomppu.co.kr 은 리디렉터이므로 허용하고, 일반 뽐뿌 내부 도메인은 엄격 제외
+        link_tags = soup.select('.topTitle-box a, .topTitle-mainbox a, .topTitle-link a, .word, .word_break a, .word a')
+        for tag in link_tags:
+            href = tag.get('href', '') or ''
+            if href.startswith('http'):
+                is_valid_outlink = 's.ppomppu.co.kr' in href or not any(x in href for x in ['ppomppu.co.kr', 'ppomppu4.co.kr', 'ppomppu8.co.kr', 'javascript:', '#'])
+                if is_valid_outlink:
+                    ecommerce_link = href
+                    break
             
         # 2. 없으면 전체 a 태그 중 외부 쇼핑몰 직접 주소 또는 뽐뿌 리디렉터 수색
         if not ecommerce_link:
@@ -241,14 +291,17 @@ class PpomppuScraper(AsyncBaseScraper):
         if "s.ppomppu.co.kr" in ecommerce_link:
             import urllib.parse
             import base64
+            ecommerce_link_clean = ecommerce_link.replace("&amp;", "&").replace("&AMP;", "&")
             try:
-                parsed_url = urllib.parse.urlparse(ecommerce_link)
-                if 'target' in parsed_url.query:
-                    query_params = urllib.parse.parse_qs(parsed_url.query)
-                    encoded_target = query_params.get("target", [None])[0]
-                    if encoded_target:
-                        encoded_target += '=' * (-len(encoded_target) % 4)
-                        ecommerce_link = base64.b64decode(encoded_target).decode('utf-8')
+                parsed_url = urllib.parse.urlparse(ecommerce_link_clean)
+                query_params = urllib.parse.parse_qs(parsed_url.query)
+                encoded_target = query_params.get("target", [None])[0] or query_params.get("amp;target", [None])[0]
+                if encoded_target:
+                    encoded_target = encoded_target.strip()
+                    encoded_target += '=' * (-len(encoded_target) % 4)
+                    decoded_url = base64.b64decode(encoded_target).decode('utf-8')
+                    if decoded_url and decoded_url.startswith('http'):
+                        ecommerce_link = decoded_url
             except Exception:
                 pass
                 
@@ -264,15 +317,17 @@ class PpomppuScraper(AsyncBaseScraper):
             for a in content_element.find_all('a'):
                 href = a.get('href', '')
                 if "s.ppomppu.co.kr" in href:
+                    href_clean = href.replace("&amp;", "&").replace("&AMP;", "&")
                     try:
-                        parsed_url = urllib.parse.urlparse(href)
-                        if 'target' in parsed_url.query:
-                            query_params = urllib.parse.parse_qs(parsed_url.query)
-                            encoded_target = query_params.get("target", [None])[0]
-                            if encoded_target:
-                                encoded_target += '=' * (-len(encoded_target) % 4)
-                                decoded = base64.b64decode(encoded_target).decode('utf-8')
-                                if decoded: href = decoded
+                        parsed_url = urllib.parse.urlparse(href_clean)
+                        query_params = urllib.parse.parse_qs(parsed_url.query)
+                        encoded_target = query_params.get("target", [None])[0] or query_params.get("amp;target", [None])[0]
+                        if encoded_target:
+                            encoded_target = encoded_target.strip()
+                            encoded_target += '=' * (-len(encoded_target) % 4)
+                            decoded = base64.b64decode(encoded_target).decode('utf-8')
+                            if decoded and decoded.startswith('http'):
+                                href = decoded
                     except: pass
                 # a 태그 내용을 "[텍스트](링크)" 형태로 변경
                 new_text = f"{a.get_text()} (링크: {href})"
@@ -292,7 +347,7 @@ class PpomppuScraper(AsyncBaseScraper):
                 # 이모티콘, 스티커, 로고, 프로필 등 배제
                 if any(x in src_lower for x in ['emoticon', 'sticker', 'transparent', 'logo', 'icon', 'reply', 'blank', 'avatar', 'profile']):
                     continue
-                # 📸 [상세 고화질 변환] 상세페이지 본문 썸네일 내의 _thumb/, thumb/, small_ 등 저화질 노이즈도 100% 무결한 고화질 원본 주소로 자동 환원!
+                # 📸 [상세 고화질 변환 활성화]: 이제 프록시가 작동하므로 고해상도 이미지를 추출합니다.
                 if "ppomppu" in src:
                     src = src.replace("_thumb/", "").replace("thumb/", "")
                     src = src.replace("/small_", "/").replace("small_", "")
@@ -307,7 +362,7 @@ class PpomppuScraper(AsyncBaseScraper):
         # 예: 15,000원, 23,500 원, 49900원 등
         extracted_currency = "KRW"
         
-        is_overseas = (self.platform_name == "뽐뿌해외")
+        is_overseas = (self.platform_name in ["뽐뿌해외", "알리뽐뿌"])
         
         # [방어막 추가]: 본문 파싱 전 URL 소거 처리! (링크 내의 숫자 오인 차단)
         cleaned_body_text = re.sub(r'https?://[^\s]+', '', body_text)
@@ -323,7 +378,7 @@ class PpomppuScraper(AsyncBaseScraper):
         if is_overseas and usd_match:
             try:
                 val = float(usd_match.group(1).replace(',', ''))
-                price_fallback = int(val * 100)
+                price_fallback = round(val * 100)
                 if '유로' in body_text or '€' in body_text:
                     extracted_currency = "EUR"
                 else:
@@ -372,7 +427,23 @@ class PpomppuScraper(AsyncBaseScraper):
             naive_dates = re.findall(r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?)', html_text)
             if naive_dates:
                 posted_at_iso = self.parse_time_str(naive_dates[0])
+                
+        # [과거 날짜 세컨드 가드] 상세 페이지에서 구한 시간이 과거 연도인 경우 무효화
+        # ⚠️ 현재 연도와 작년은 정상 게시글이므로 무효화하면 안 됨!
+        if posted_at_iso:
+            from datetime import datetime as dt
+            current_year = dt.now().year
+            if any(posted_at_iso.startswith(str(yr)) for yr in range(2000, current_year - 1)):
+                logger.info(f"[뽐뿌 상세] 과거 날짜 감지로 무효화: {posted_at_iso}")
+                posted_at_iso = None
             
+        # 📸 [고화질 썸네일 복구 가드]: 아웃링크(ecommerce_link)가 있으면 항상 고화질 og:image 조회를 시도하고 확보 시 우선 덮어쓰기
+        if ecommerce_link:
+            og_img = await self.fetch_og_image(ecommerce_link)
+            if og_img:
+                logger.info(f"✨ [뽐뿌 og:image] 외부 아웃링크에서 고화질 썸네일 확보: {og_img}")
+                image_url = og_img
+
         # [CEO 피드백: 모음전 분할을 위해 텍스트 길이 충분한 본문을 content_html로 반환]
         return {
             "ecommerce_link": ecommerce_link, 

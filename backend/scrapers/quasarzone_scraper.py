@@ -81,6 +81,9 @@ class QuasarzoneScraper(AsyncBaseScraper):
             if image_url.endswith('?'):
                 image_url = image_url[:-1]
                 
+            if image_url and "thumb_" in image_url:
+                image_url = image_url.replace("thumb_", "")
+                
             category = None
             category_span = row.select_one('span.category')
             if category_span:
@@ -213,18 +216,39 @@ class QuasarzoneScraper(AsyncBaseScraper):
             if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):
                 shipping_fee = "무료배송"
                     
-        # 4. 본문 내용 (content_html) 파싱
+        # 4. 본문 내용 (content_html) 파싱 및 고화질 이미지 추출
         content_html = ""
+        image_url = ""
         org_content = soup.find(id='org_contents')
         if org_content:
             from bs4 import BeautifulSoup as BS
             # org_contents는 보통 textarea 등이며 텍스트로 HTML을 담고 있음
             inner_soup = BS(org_content.get_text(), 'html.parser')
             content_html = inner_soup.get_text(separator=' ', strip=True)
+            img_tag = inner_soup.select_one('img')
+            if img_tag and img_tag.get('src'):
+                image_url = img_tag['src']
             
         if not content_html:
             content_area = soup.select_one('.view-content')
             if content_area:
                 content_html = content_area.get_text(separator=' ', strip=True)
+                if not image_url:
+                    img_tag = content_area.select_one('img')
+                    if img_tag and img_tag.get('src'):
+                        image_url = img_tag['src']
 
-        return {"ecommerce_link": ecommerce_link, "shipping_fee": shipping_fee, "content_html": content_html}
+        if image_url:
+            if image_url.startswith('//'):
+                image_url = "https:" + image_url
+            elif not image_url.startswith('http'):
+                image_url = urljoin("https://quasarzone.com", image_url)
+            if "thumb_" in image_url:
+                image_url = image_url.replace("thumb_", "")
+
+        return {
+            "ecommerce_link": ecommerce_link, 
+            "shipping_fee": shipping_fee, 
+            "content_html": content_html,
+            "image_url": image_url
+        }

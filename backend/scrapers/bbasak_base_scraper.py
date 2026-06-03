@@ -159,24 +159,38 @@ class BbasakBaseScraper(AsyncBaseScraper):
         soup = BeautifulSoup(html, 'html.parser')
         
         import re
-        # 이미지 파싱 (본문 영역 내에서만 추출, 빠삭의 디폴트 'B' 이미지 등 무효 썸네일 차단 필터 연동)
-        valid_images = [urljoin("https://bbasak.com", img.get('src') or '') for img in soup.select('#board_view img') if img.get('src')]
-        valid_images = [
-            img for img in valid_images 
-            if not re.search(r'icon|emoticon|expand|beautifulLine|util/|skin/|share/|btn_|footer|logo|layout|bg\.|mypage|member|board|222E38587E38581', img, re.IGNORECASE)
-        ]
-        
-        # 실제 상품 이미지(ex: 업로드 본문이미지)가 우선되도록 정렬 (카톡/스크린샷 캡처 증빙 이미지는 후순위로 밀림)
-        def image_score(url):
-            url_lower = url.lower()
-            if 'kakao' in url_lower or 'screenshot' in url_lower or 'capture' in url_lower:
-                return 10  # 아주 낮음
-            if 'ckeditor' in url_lower:
-                return 1   # 본문 삽입 이미지 (보통 상품 이미지 확률이 가장 높음)
-            return 5       # 일반 첨부파일
+        # 이미지 필터 정의 (기존 필터와 동일)
+        def is_valid_image(img_url):
+            if not img_url:
+                return False
+            img_url = urljoin("https://bbasak.com", img_url)
+            return not re.search(r'icon|emoticon|expand|beautifulLine|util/|skin/|share/|btn_|footer|logo|layout|bg\.|mypage|member|board|222E38587E38581', img_url, re.IGNORECASE)
+
+        # 1. 상품정보 이미지 (div.alignC) 내에서 유효한 이미지 우선 추출
+        product_images = []
+        for img in soup.select('div.alignC img'):
+            src = img.get('src')
+            if src and is_valid_image(src):
+                product_images.append(urljoin("https://bbasak.com", src))
+
+        if product_images:
+            # 상품정보에 이미지가 있으면 해당 이미지 사용! (여러 개면 첫 번째)
+            image_url = product_images[0]
+        else:
+            # 2. 상품정보에 이미지가 없으면 내용 탭 및 전체 본문 이미지 활용 (기존 Fallback 로직)
+            valid_images = [urljoin("https://bbasak.com", img.get('src') or '') for img in soup.select('#board_view img') if img.get('src')]
+            valid_images = [img for img in valid_images if is_valid_image(img)]
             
-        valid_images.sort(key=image_score)
-        image_url = valid_images[0] if valid_images else ""
+            def image_score(url):
+                url_lower = url.lower()
+                if 'kakao' in url_lower or 'screenshot' in url_lower or 'capture' in url_lower:
+                    return 10  # 아주 낮음
+                if 'ckeditor' in url_lower:
+                    return 1   # 본문 삽입 이미지 (보통 상품 이미지 확률이 가장 높음)
+                return 5       # 일반 첨부파일
+                
+            valid_images.sort(key=image_score)
+            image_url = valid_images[0] if valid_images else ""
         
         # 외부 쇼핑몰 링크 추출 (본문 영역 내에서만 추출)
         ecommerce_link = ""
@@ -266,5 +280,12 @@ class BbasakBaseScraper(AsyncBaseScraper):
         if not shipping_fee:
             if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):
                 shipping_fee = "무료배송"
-        
+
+        # 📸 [고화질 썸네일 복구 가드]: 본문에 이미지가 없거나 cache 관련 썸네일인 경우, 아웃링크 og:image 추출
+        if (not image_url or "cache" in image_url) and ecommerce_link:
+            og_img = await self.fetch_og_image(ecommerce_link)
+            if og_img:
+                logger.info(f"✨ [빠삭 og:image] 외부 아웃링크에서 고화질 썸네일 확보: {og_img}")
+                image_url = og_img
+
         return {"image_url": image_url, "ecommerce_link": ecommerce_link, "price": price_fallback, "currency": extracted_currency, "shipping_fee": shipping_fee}

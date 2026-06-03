@@ -128,3 +128,37 @@ def delete_keyword(req: KeywordReq, db: Session = Depends(get_db_session)):
         db.delete(kw)
         db.commit()
     return {"success": True, "message": "Keyword removed"}
+
+class RegisterWebPushReq(BaseModel):
+    endpoint: str
+    keys: dict
+
+@router.post("/register-web")
+def register_web_push(req: RegisterWebPushReq, db: Session = Depends(get_db_session)):
+    import json
+    sub_str = json.dumps(req.dict())
+    
+    # endpoint 주소를 고유식별 해시로 변환하여 매핑/생성
+    endpoint_hash = req.endpoint.split("/")[-1][:100]
+    device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == f"web_{endpoint_hash}").first()
+    if not device:
+        device = models.DeviceToken(
+            device_uuid=f"web_{endpoint_hash}",
+            web_push_subscription=sub_str,
+            is_active=True
+        )
+        db.add(device)
+    else:
+        device.web_push_subscription = sub_str
+        device.is_active = True
+    db.commit()
+    return {"success": True, "message": "Web Push subscription registered"}
+
+@router.delete("/register-web")
+def delete_web_push(endpoint: str, db: Session = Depends(get_db_session)):
+    endpoint_hash = endpoint.split("/")[-1][:100]
+    device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == f"web_{endpoint_hash}").first()
+    if device:
+        device.web_push_subscription = None
+        db.commit()
+    return {"success": True, "message": "Web Push subscription removed"}

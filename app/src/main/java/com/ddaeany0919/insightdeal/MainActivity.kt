@@ -110,10 +110,10 @@ class MainActivity : FragmentActivity() {
             }
         }
         
-        // Android 13 이상에서 알림 권한 요청
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
+        // Android 13 이상에서 알림 권한 요청 (소프트 가이드 Pre-Permission Dialog 가드 처리를 위해 최초 쌩 권한 요청은 제거)
+        // if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        //     requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        // }
 
         // Initialize Recent Deals & Notification History
         com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager.init(this)

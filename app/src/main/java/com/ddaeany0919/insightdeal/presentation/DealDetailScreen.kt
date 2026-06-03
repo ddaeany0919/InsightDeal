@@ -297,7 +297,7 @@ fun DealDetailScreen(
         ) {
             // 고유한 key 및 contentType을 선언하여 스크롤 시 Compose 아이템의 재활용 성능을 극대화
             item(key = "deal_header", contentType = "header") {
-                DealHeader(deal)
+                DealHeader(deal, onOpenOrigin)
             }
             item(key = "price_chart", contentType = "chart") { 
                 PriceHistoryInteractiveCard(
@@ -998,14 +998,21 @@ private fun MallPriceTable(mallPrices: List<MallPrice>, onOpenOrigin: (String) -
 }
 
 @Composable
-fun DealHeader(deal: DealItem) {
+fun DealHeader(deal: DealItem, onOpenOrigin: (String) -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
         if (!deal.imageUrl.isNullOrEmpty()) {
             Card(
                 shape = RoundedCornerShape(20.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val targetUrl = deal.ecommerceUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl ?: ""
+                        if (targetUrl.isNotBlank()) {
+                            onOpenOrigin(targetUrl)
+                        }
+                    }
             ) {
                 AsyncImage(
                     model = deal.imageUrl,
@@ -1080,7 +1087,7 @@ fun DealHeader(deal: DealItem) {
                     } else {
                         val trimmed = deal.shippingFee?.trim() ?: "정보 없음"
                         when {
-                            trimmed == "정보 없음" || trimmed.isEmpty() -> "확인 필요"
+                            trimmed == "정보 없음" || trimmed.isEmpty() -> "배송비 확인 필요"
                             trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
                             trimmed.matches(Regex("^0(원)?\\s*(/|\\+).*")) -> trimmed.replace(Regex("^0(원)?\\s*"), "무료 ")
                             trimmed == "유료" || trimmed == "유료배송" -> "유료"

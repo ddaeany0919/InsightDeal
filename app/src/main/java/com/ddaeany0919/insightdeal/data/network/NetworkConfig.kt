@@ -148,9 +148,26 @@ object NetworkConfig {
 
     /**
      * 현재 캐시되어 작동이 증명된 최적 백엔드 서버 주소를 반환합니다.
-     * 만약 세팅되지 않았다면 BuildConfig.BASE_URL을 폴백으로 리턴합니다.
+     * 에뮬레이터 환경인 경우, 루프백 안전 연결(10.0.2.2)을 최우선 보증합니다.
      */
     fun getActiveServerUrl(): String {
-        return cachedServerUrl ?: "http://192.168.0.36:8000/"
+        val cached = cachedServerUrl
+        if (cached != null) return cached
+        
+        // 에뮬레이터 환경 정밀 감지 가드
+        val isEmulator = android.os.Build.FINGERPRINT.startsWith("generic")
+                || android.os.Build.FINGERPRINT.startsWith("unknown")
+                || android.os.Build.MODEL.contains("google_sdk")
+                || android.os.Build.MODEL.contains("Emulator")
+                || android.os.Build.MODEL.contains("Android SDK built for x86")
+                || android.os.Build.MANUFACTURER.contains("Genymotion")
+                || (android.os.Build.BRAND.startsWith("generic") && android.os.Build.DEVICE.startsWith("generic"))
+                || "google_sdk" == android.os.Build.PRODUCT
+                
+        return if (isEmulator) {
+            "http://10.0.2.2:8000/"
+        } else {
+            "http://192.168.0.36:8000/"
+        }
     }
 }

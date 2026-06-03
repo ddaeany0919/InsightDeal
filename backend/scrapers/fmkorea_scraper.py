@@ -8,71 +8,68 @@ logger = logging.getLogger(__name__)
 
 class FmkoreaScraper(AsyncBaseScraper):
     def __init__(self, community_id: int):
-        # 펨코는 Cloudflare 방어가 강하므로 딜레이를 늘리고 동시성을 낮춥니다.
-        super().__init__("펨코", max_concurrent_requests=2)
+        # 펨코는 Cloudflare 방어가 강하므로 동시성을 1로 제한하고 딜레이를 대폭 늘립니다.
+        super().__init__("펨코", max_concurrent_requests=1)
         self.community_id = community_id
         self.list_url = "https://www.fmkorea.com/hotdeal"
         self.pop_url = "https://www.fmkorea.com/index.php?mid=hotdeal&sort_index=pop&order_type=desc"
         self.parsing_pop = False
 
-    def _get_headers(self) -> dict:
-        """펨코리아 전용 (Cloudflare 430 차단 우회를 위한 특수 헤더 추가)"""
-        headers = super()._get_headers()
-        headers.update({
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "Sec-Ch-Ua": "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\"",
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": "\"Windows\"",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Upgrade-Insecure-Requests": "1"
-        })
-        return headers
+    async def __aenter__(self):
+        await super().__aenter__()
+        return self
 
-    async def fetch_html(self, url: str):
-        """Selenium Stealth를 이용한 동적 렌더링 우회"""
+    def _get_headers(self) -> dict:
+        return {}
+
+    async def fetch_html(self, url: str) -> str:
+        """펨코리아 전용: Cloudflare WAF 430 차단 우회를 위해 selenium-stealth 헤드리스 크롬 수집기 가동"""
+        logger.info(f"[{self.platform_name}] Selenium-Stealth 헤드리스 크롬 수집 가동 - {url}")
         import asyncio
+        import time
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium_stealth import stealth
         
-        def _selenium_fetch():
-            from selenium import webdriver
-            from selenium.webdriver.chrome.options import Options
-            from selenium_stealth import stealth
-            import time
+        def _sync_fetch():
+            chrome_options = Options()
+            chrome_options.add_argument("--headless=new")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--disable-gpu")
             
-            options = Options()
-            options.add_argument('--headless')
-            options.add_argument('--disable-gpu')
-            options.add_argument('--no-sandbox')
-            options.add_argument('--disable-dev-shm-usage')
-            
-            driver = webdriver.Chrome(options=options)
-            
-            stealth(driver,
+            driver = webdriver.Chrome(options=chrome_options)
+            try:
+                stealth(driver,
                     languages=["ko-KR", "ko"],
                     vendor="Google Inc.",
                     platform="Win32",
                     webgl_vendor="Intel Inc.",
                     renderer="Intel Iris OpenGL Engine",
                     fix_hairline=True,
-                    )
-            try:
+                )
                 driver.get(url)
-                time.sleep(3) # CF 통과 및 렌더링 대기
-                html = driver.page_source
-                if '에펨코리아 보안 시스템' in html:
-                    logger.warning(f"[펨코] Selenium Stealth로도 차단됨: {url}")
-                    return ""
+                
+                # Cloudflare WAF 챌린지 통과를 위한 동적 폴링 대기 루프 (최대 12초)
+                start_time = time.time()
+                html = ""
+                while time.time() - start_time < 12.0:
+                    html = driver.page_source
+                    # XE 게시판 테이블(bd_lst) 또는 모바일 핫딜 아이템(hotdeal_info), 혹은 글자수 3만자 이상 로드 시 성공 판정
+                    if len(html) > 30000 or "bd_lst" in html or "hotdeal_info" in html:
+                        logger.info(f"[{self.platform_name}] Cloudflare 챌린지 우회 통과 성공 (대기: {time.time() - start_time:.2f}초)")
+                        break
+                    time.sleep(0.5)
                 return html
-            except Exception as e:
-                logger.error(f"[펨코] Selenium 에러: {e}")
-                return ""
             finally:
                 driver.quit()
                 
-        # 동기 함수인 Selenium 스크래퍼를 비동기 루프에서 안전하게 실행 (쓰레드 분리)
-        return await asyncio.to_thread(_selenium_fetch)
+        loop = asyncio.get_event_loop()
+        try:
+            return await loop.run_in_executor(None, _sync_fetch)
+        except Exception as e:
+            logger.error(f"[{self.platform_name}] Selenium-Stealth 수집 중 예외 발생: {e}")
+            return ""
 
     async def parse_list(self, html: str) -> list[dict]:
         """펨코리아 게시판 리스트에서 타겟 데이터 추출 (비동기 처리)"""
@@ -165,6 +162,7 @@ class FmkoreaScraper(AsyncBaseScraper):
                 if any(x in img_url_lower for x in ['transparent', 'blank', 'logo', 'icon', 'empty']) or image_url.startswith('data:') or 'base64' in img_url_lower:
                     image_url = ""
 
+
             # 상세 페이지에서 ecommerce_link와 본문 파싱
             # 가격 및 배송비 파싱 (hotdeal_info)
             extracted_price = 0
@@ -253,13 +251,10 @@ class FmkoreaScraper(AsyncBaseScraper):
                 l_txt = voted_el.get_text(strip=True).replace('추천', '').replace(',', '').strip()
                 if l_txt.isdigit(): like_count = int(l_txt)
                 
-            # 펨코 핫딜 게시판 목록 자체에 '포텐' 뱃지가 있는 경우 우선 반영
+            # 펨코 핫딜 게시판 목록 자체에 '포텐' 뱃지가 있는 경우 우선 반영 (포텐 뱃지독점)
             is_poten = False
             poten_span = row.select_one('span.STAR-BEST')
             if poten_span and '포텐' in poten_span.get_text(strip=True):
-                is_poten = True
-            elif getattr(self, "parsing_pop", False):
-                # 인기(포텐) 게시판에서 긁어오면 모두 포텐으로 인정
                 is_poten = True
 
             # 실제 게시글 작성 시간 추출 (KST 기준을 UTC로 변환하여 저장)
@@ -307,10 +302,21 @@ class FmkoreaScraper(AsyncBaseScraper):
 
     async def get_detail(self, url: str) -> dict:
         """펨코리아 상세 페이지 데이터 파싱 로직"""
+        # WAF 레이트 리밋(430) 차단 방지를 위한 강제 서핑 딜레이 주입
+        import asyncio
+        import random
+        await asyncio.sleep(random.uniform(2.5, 4.5))
+        
         html = await self.fetch_html(url)
         if not html: return {}
+        
+        # 글 삭제 / 해당 문서 존재하지 않음 감지 시 즉각 종료 처리 반환
+        if "해당 문서가 존재하지 않습니다" in html or "해당 문서는 존재하지 않습니다" in html:
+            return {"is_closed": True}
+            
         soup = BeautifulSoup(html, 'html.parser')
         
+        is_closed = False
         ecommerce_link = ""
         # 1. 펨코 리디렉터 링크 또는 hotdeal_info 내의 구매 링크를 최우선 수색!
         for a in soup.select('.hotdeal_info a, a'):
@@ -523,10 +529,16 @@ class FmkoreaScraper(AsyncBaseScraper):
         if cat_el:
             category_text = cat_el.get_text(strip=True)
             
-        is_closed = False
         # 본문 단순 언급(예: '어제 품절됨') 오탐지를 방지하기 위해 명확한 시스템 메시지나 종료 알림만 체크
         if soup.find(string=re.compile(r'종료된 핫딜입니다')):
             is_closed = True
+
+        # 📸 [고화질 썸네일 복구 가드]: 아웃링크(ecommerce_link)가 있으면 항상 고화질 og:image 조회를 시도하고 확보 시 우선 덮어쓰기
+        if ecommerce_link:
+            og_img = await self.fetch_og_image(ecommerce_link)
+            if og_img:
+                logger.info(f"✨ [펨코 og:image] 외부 아웃링크에서 고화질 썸네일 확보: {og_img}")
+                image_url = og_img
 
         ret_data = {
             "ecommerce_link": ecommerce_link,

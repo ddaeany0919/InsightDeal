@@ -18,6 +18,14 @@ import {
   RefreshCw
 } from "lucide-react";
 
+interface DealSource {
+  site_name: string;
+  post_url: string;
+  ecommerce_url?: string;
+  price?: number;
+  currency?: string;
+}
+
 interface Deal {
   id: number;
   community_name: string;
@@ -34,6 +42,7 @@ interface Deal {
   originalDate?: string;
   honeyScore?: number;
   aiSummary?: string;
+  sources?: DealSource[];
 }
 
 // 📦 AI 핫딜 판독기 키워드별 맞춤 데모 데이터
@@ -350,6 +359,14 @@ function PriceTrendChart({ basePrice, dealId, onHistoryStatus }: { basePrice: an
   );
 }
 
+const getProxyImageUrl = (url: string | null) => {
+  if (!url) return "";
+  if (url.includes("bbasak.com") || url.includes("ppomppu.co.kr")) {
+    return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+};
+
 export default function Home() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -521,7 +538,8 @@ export default function Home() {
           originalDate: d.created_at || d.originalDate,
           currency: d.currency || "KRW",
           honeyScore: d.honey_score || d.honeyScore || 0,
-          aiSummary: d.ai_summary || d.aiSummary || ""
+          aiSummary: d.ai_summary || d.aiSummary || "",
+          sources: d.sources || []
         };
       });
       
@@ -1360,7 +1378,7 @@ export default function Home() {
                   >
                     <div className="deal-image-wrapper">
                       {deal.image_url ? (
-                        <img src={deal.image_url} alt={deal.title} className="deal-image" loading="lazy" referrerPolicy="no-referrer" />
+                        <img src={getProxyImageUrl(deal.image_url)} alt={deal.title} className="deal-image" loading="lazy" referrerPolicy="no-referrer" />
                       ) : (
                         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-sub)', background: 'var(--badge-bg)', fontSize: '0.8rem', fontWeight: 600 }}>
                           이미지 없음
@@ -1370,42 +1388,63 @@ export default function Home() {
                     <div className="deal-info">
                       <div>
                         <div className="deal-meta">
-                          <span 
-                            className="deal-source"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (deal.post_link && deal.post_link !== "#") {
-                                window.open(deal.post_link, "_blank", "noopener,noreferrer");
-                              } else {
-                                showToast("출처 커뮤니티 원글 링크를 찾을 수 없습니다. ⚠️");
+                          {(() => {
+                            const badgeSources = (deal.sources && deal.sources.length > 0)
+                              ? deal.sources
+                              : deal.community_name.split(', ').map(cName => ({ site_name: cName, post_url: deal.post_link }));
+
+                            const uniqueBadgeSources: any[] = [];
+                            badgeSources.forEach((src: any) => {
+                              const nameClean = src.site_name ? src.site_name.replace(/ - .*$/, '').trim() : '';
+                              if (!uniqueBadgeSources.some((x: any) => (x.site_name ? x.site_name.replace(/ - .*$/, '').trim() : '') === nameClean)) {
+                                uniqueBadgeSources.push(src);
                               }
-                            }}
-                            title="커뮤니티 원문 글 보러가기 🔗"
-                            style={{ 
-                              cursor: 'pointer', 
-                              transition: 'all 0.2s ease',
-                              background: 'rgba(59, 130, 246, 0.15)',
-                              color: '#60a5fa',
-                              border: '1px solid rgba(59, 130, 246, 0.25)',
-                              padding: '2px 8px',
-                              borderRadius: '6px',
-                              fontWeight: 800,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '3px'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = 'rgba(59, 130, 246, 0.28)';
-                              e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)';
-                              e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.25)';
-                            }}
-                          >
-                            {deal.community_name} 🔗
-                          </span>
+                            });
+
+                            return uniqueBadgeSources.map((source: any, idx: number) => {
+                              const displaySiteName = source.site_name ? source.site_name.replace(/ - .*$/, '').trim() : '';
+                              return (
+                                <span 
+                                  key={idx}
+                                  className="deal-source"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    const targetUrl = source.post_url || deal.post_link;
+                                    if (targetUrl && targetUrl !== "#") {
+                                      window.open(targetUrl, "_blank", "noopener,noreferrer");
+                                    } else {
+                                      showToast("출처 커뮤니티 원글 링크를 찾을 수 없습니다. ⚠️");
+                                    }
+                                  }}
+                                  title={`${displaySiteName} 원문 글 보러가기 🔗`}
+                                  style={{ 
+                                    cursor: 'pointer', 
+                                    transition: 'all 0.2s ease',
+                                    background: 'rgba(59, 130, 246, 0.15)',
+                                    color: '#60a5fa',
+                                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                                    padding: '2px 8px',
+                                    borderRadius: '6px',
+                                    fontWeight: 800,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px'
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(59, 130, 246, 0.28)';
+                                    e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)';
+                                    e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.25)';
+                                  }}
+                                >
+                                  {displaySiteName} 🔗
+                                </span>
+                              );
+                            });
+                          })()}
                           <span>•</span>
                           <span>{getLiveTimeAgo(deal.originalDate, deal.scraped_at)}</span>
                         </div>
