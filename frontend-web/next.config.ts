@@ -12,9 +12,11 @@ const backendUrl = isDocker ? "http://backend:8080" : "http://localhost:8080";
 
 console.log(`[Next.js Rewrite Engine] Configured rewrite destination to: ${backendUrl}`);
 
+const isVercel = process.env.VERCEL === "1";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone",
+  ...(isVercel ? {} : { output: "standalone" }),
   eslint: {
     // 빌드 시 ESLint 통과를 보장하여 불필요한 이스케이프 참사 방어
     ignoreDuringBuilds: true,
