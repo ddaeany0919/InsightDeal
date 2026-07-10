@@ -6,7 +6,9 @@ import {
   Heart,
   Bell,
   RefreshCw,
-  Settings
+  Settings,
+  Search,
+  X
 } from "lucide-react";
 import Link from "next/link";
 
@@ -38,6 +40,7 @@ export default function Home() {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   
   // 🔄 무한 스크롤(Infinite Scroll) 지능형 연쇄 스펙 탑재
   const [hasMore, setHasMore] = useState(true);
@@ -133,7 +136,8 @@ export default function Home() {
       const limit = 20;
       
       // 🚀 백엔드 API 페이지네이션 쿼리 격발
-      const url = `/api/community/hot-deals?limit=${limit}&offset=${offset}${apiCategory ? `&category=${encodeURIComponent(apiCategory)}` : ""}`;
+      const queryParam = searchQuery.trim() ? `&keyword=${encodeURIComponent(searchQuery.trim())}` : "";
+      const url = `/api/community/hot-deals?limit=${limit}&offset=${offset}${apiCategory ? `&category=${encodeURIComponent(apiCategory)}` : ""}${queryParam}`;
       const res = await fetch(url);
       
       if (!res.ok) throw new Error("API Offline");
@@ -320,9 +324,20 @@ export default function Home() {
   };
 
   const handleTabChange = (tab: string) => {
+    setSearchQuery(""); // 카테고리 탭 이동 시 기존 검색어 리셋
     setActiveTab(tab);
     setDeals([]);
     setHasMore(true);
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setDeals([]);
+    setHasMore(true);
+    // 상태 비동기성 예외 방어를 위해 약간의 딜레이 후 실시간 핫딜 Fetch 호출
+    setTimeout(() => {
+      fetchLiveDeals(true, 0, activeTab);
+    }, 20);
   };
 
   useEffect(() => {
@@ -562,6 +577,37 @@ export default function Home() {
               `}</style>
             </button>
           </div>
+
+          {/* 🔍 실시간 특가 검색창 (Toss Style Glassmorphism) */}
+          <form onSubmit={handleSearchSubmit} className="search-container">
+            <div className="search-bar-wrapper">
+              <Search size={18} className="search-icon" />
+              <input
+                type="text"
+                placeholder="찾으시는 특가 상품을 입력하세요 (예: 참치, 닭가슴살, 게이밍 모니터...)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="search-input"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setDeals([]);
+                    setHasMore(true);
+                    setTimeout(() => {
+                      fetchLiveDeals(true, 0, activeTab);
+                    }, 50);
+                  }}
+                  className="search-clear-btn"
+                >
+                  <X size={16} />
+                </button>
+              )}
+              <button type="submit" className="search-submit-btn">검색</button>
+            </div>
+          </form>
 
           {/* 카테고리 탭 목록 */}
           <div className="tabs-container">

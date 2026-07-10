@@ -860,3 +860,95 @@ body {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }
 }
+
+/* 🔍 Toss 스타일 글래스모피즘 실시간 검색창 */
+.search-container {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto 32px auto;
+}
+
+.search-bar-wrapper {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--card-border);
+  border-radius: 20px;
+  padding: 6px 12px 6px 18px;
+  gap: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(12px);
+}
+
+.search-bar-wrapper:focus-within {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 8px 30px rgba(var(--accent-rgb), 0.15);
+  transform: translateY(-2px);
+}
+
+.search-icon {
+  color: var(--text-sub);
+  flex-shrink: 0;
+  transition: color 0.3s ease;
+}
+
+.search-bar-wrapper:focus-within .search-icon {
+  color: var(--accent);
+}
+
+.search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 10px 0;
+  color: var(--text-main);
+  font-size: 1rem;
+  font-weight: 600;
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: var(--text-sub);
+  font-weight: 500;
+}
+
+.search-clear-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  color: var(--text-sub);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.search-clear-btn:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+}
+
+.search-submit-btn {
+  background: var(--primary-gradient);
+  color: white;
+  font-weight: 700;
+  padding: 8px 20px;
+  border-radius: 14px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.15);
+}
+
+.search-submit-btn:hover {
+  transform: scale(1.03);
+  box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.25);
+}
+
+.search-submit-btn:active {
+  transform: scale(0.97);
+}
