@@ -42,14 +42,14 @@ export default function Hero() {
   return (
     <section className="hero-section">
       <div className="hero-text-area">
-        <div className="hero-badge">⚡ AI 실시간 핫딜 무결점 가이드</div>
+        <div className="hero-badge">⚡ 실시간 커뮤니티 특가 모아보기</div>
         <h1 className="hero-title">
           핫딜을 찾는 <span>가장 세련된 방법</span>
         </h1>
         <p className="hero-subtitle">
-          뽐뿌, 퀘이사존, 펨코, 클리앙 등 커뮤니티의 핫딜을 AI가 실시간으로 수집하고,
-          역대 최저가 달성 확률과 가성비 점수를 판독해 알려드립니다.
-          이제 가격 짤림과 뒷북 구매 없이 단번에 스마트 컨슈머로 도약하세요!
+          뽐뿌, 펨코, 퀘이사존, 클리앙 등 주요 커뮤니티의 특가 정보를 실시간으로 수집하여
+          역대 최저가 여부와 가성비 점수를 보기 쉽게 알려줍니다.
+          품절되기 전에 원하는 핫딜을 더 빠르고 정확하게 찾아보세요.
         </p>
         <div className="hero-download-buttons">
           <button className="btn-primary" onClick={() => alert("Google Play 출시 준비 중입니다! 🤖")}>
