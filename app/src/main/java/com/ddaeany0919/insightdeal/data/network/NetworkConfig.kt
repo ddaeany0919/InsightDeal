@@ -37,12 +37,9 @@ object NetworkConfig {
         
         // 1순위 이하 잠재 IP 리스트
         val potentials = listOf(
+            "3.35.205.24",  // AWS Lightsail Production IP
             "192.168.0.4",  // Old configured IP
             "192.168.0.36", // Current PC IP
-            "192.168.0.1",  // Router/gateway
-            "192.168.1.1",  // Alternative router
-            "192.168.1.100", // Common PC IP
-            "192.168.0.100", // Alternative PC IP
             "10.0.2.2"      // Emulator fallback
         )
         
@@ -154,20 +151,6 @@ object NetworkConfig {
         val cached = cachedServerUrl
         if (cached != null) return cached
         
-        // 에뮬레이터 환경 정밀 감지 가드
-        val isEmulator = android.os.Build.FINGERPRINT.startsWith("generic")
-                || android.os.Build.FINGERPRINT.startsWith("unknown")
-                || android.os.Build.MODEL.contains("google_sdk")
-                || android.os.Build.MODEL.contains("Emulator")
-                || android.os.Build.MODEL.contains("Android SDK built for x86")
-                || android.os.Build.MANUFACTURER.contains("Genymotion")
-                || (android.os.Build.BRAND.startsWith("generic") && android.os.Build.DEVICE.startsWith("generic"))
-                || "google_sdk" == android.os.Build.PRODUCT
-                
-        return if (isEmulator) {
-            "http://10.0.2.2:8080/"
-        } else {
-            "http://192.168.0.36:8080/"
-        }
+        return "http://3.35.205.24:8080/"
     }
 }

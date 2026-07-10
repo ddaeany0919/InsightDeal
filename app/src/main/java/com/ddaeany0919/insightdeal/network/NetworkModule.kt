@@ -17,8 +17,8 @@ object NetworkModule {
     
     internal const val TAG = "NetworkModule"
     
-    // PC 로컬 IP 주소로 변경하여 모바일 기기에서 원격으로 접속할 수 있도록 설정
-    private const val BASE_URL = "http://192.168.0.36:8080/"
+    // AWS Lightsail 상용 API 서버 IP 주소로 지정
+    private const val BASE_URL = "http://3.35.205.24:8080/"
     
     // 타임아웃 설정 (AI 파서 사용 시 긴 응답 시간 고려)
     private const val CONNECT_TIMEOUT = 120L
