@@ -162,10 +162,10 @@ export default function PriceTrendChart({ basePrice, dealId, onHistoryStatus }: 
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             <span style={{ fontSize: "0.92rem", fontWeight: 900, color: "var(--text-main)" }}>
-              AI 가격 이력 차트 빌딩 중
+              가격 변동 분석 중
             </span>
             <p style={{ fontSize: "0.8rem", color: "var(--text-sub)", lineHeight: "1.5", maxWidth: "340px", margin: "0 auto", fontWeight: 600 }}>
-              AI가 스마트 수집 로봇을 통해 이 상품의 역대 가격 변동 데이터를 백그라운드에서 실시간 적재하고 있습니다. 차트가 완성되는 대로 곧 보여드릴게요!
+              이 상품의 가격 변동 데이터를 실시간 수집 및 분석하고 있습니다. 분석이 완료되는 대로 가격 차트를 보여드릴게요.
             </p>
           </div>
         </div>

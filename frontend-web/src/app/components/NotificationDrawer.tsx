@@ -37,7 +37,7 @@ export default function NotificationDrawer({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Bell size={20} color="var(--accent)" />
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 900 }}>실시간 알림 허브</h3>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 900 }}>실시간 알림</h3>
           </div>
           <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-sub)' }}>
             ✕
@@ -45,7 +45,7 @@ export default function NotificationDrawer({
         </div>
 
         <p style={{ fontSize: '0.88rem', color: 'var(--text-sub)', lineHeight: 1.5 }}>
-          인사이트딜 AI 수집 엔진이 국내 커뮤니티에서 초단위로 포착해 알림을 격발한 최근 푸시 히스토리입니다. 알림 클릭 시 AI 판독 리포트로 즉시 랜딩됩니다.
+          국내 커뮤니티에서 실시간 수집해 보내드린 최근 알림 내역입니다. 알림을 클릭하시면 가성비 분석 결과를 확인하실 수 있습니다.
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

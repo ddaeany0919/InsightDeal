@@ -804,7 +804,7 @@ export default function Home() {
                         }}
                       >
                         <RefreshCw size={14} />
-                        <span>상세보기 & AI 판독 🔮</span>
+                        <span>상세보기 & 가성비 분석 📊</span>
                       </button>
                     </div>
                   </a>
@@ -863,7 +863,7 @@ export default function Home() {
           <p style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
             <span>© 2026 InsightDeal. All rights reserved.</span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-sub)' }}>
-              ⚡ AI 실시간 핫딜 판독 & 스마트 키워드 알림 플랫폼, 인사이트딜
+              ⚡ 실시간 커뮤니티 특가 및 알림 서비스, 인사이트딜
             </span>
             <span style={{ display: 'flex', gap: '16px', fontSize: '0.82rem', marginTop: '4px' }}>
               <button onClick={() => setIsWishlistOpen(true)} style={{ color: '#EF4444', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -883,7 +883,7 @@ export default function Home() {
         </footer>
       </div>
 
-      {/* 🔮 AI 상세 판독 리포트 모달 */}
+      {/* 📊 상세 가격 분석 모달 */}
       <DealDetailModal 
         deal={selectedDeal} 
         onClose={() => setSelectedDeal(null)} 

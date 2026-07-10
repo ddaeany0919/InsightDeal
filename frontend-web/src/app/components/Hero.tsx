@@ -75,10 +75,10 @@ export default function Hero() {
             <div className="glass-panel" style={{ padding: "14px", borderRadius: "18px", display: "flex", flexDirection: "column", gap: "8px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                 <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#10b981" }}></div>
-                <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#10b981" }}>실시간 스마트 키워드</span>
+                <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#10b981" }}>등록한 알림 키워드</span>
               </div>
-              <span style={{ fontSize: "0.85rem", fontWeight: 800 }}>"맥북 프로" 최저가 포착 알림</span>
-              <span style={{ fontSize: "0.75rem", color: "var(--text-sub)" }}>5초 전 알림 완료</span>
+              <span style={{ fontSize: "0.85rem", fontWeight: 800 }}>"맥북 프로" 최저가 알림 도착</span>
+              <span style={{ fontSize: "0.75rem", color: "var(--text-sub)" }}>방금 전 알림</span>
             </div>
 
             <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-sub)", marginTop: "4px" }}>오늘의 강력 추천 딜</div>

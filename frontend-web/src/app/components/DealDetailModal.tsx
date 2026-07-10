@@ -73,17 +73,17 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
         <div className="ai-metric-item" style={{ width: '100%', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '16px', padding: '16px' }}>
           <div className="ai-metric-label" style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent)', fontWeight: 700 }}>
             <Zap size={14} fill="currentColor" />
-            <span>AI 가격 판독 결론</span>
+            <span>AI 가성비 분석 결과</span>
           </div>
           <div style={{ fontSize: '0.92rem', fontWeight: 600, marginTop: '6px', lineHeight: '1.5', color: 'var(--text-main)' }}>
             {hasChartData ? (
               <p>
-                본 핫딜은 [{deal.community_name}]에서 포착되었으며, 7일 전 유통가 대비 <strong>약 22%의 극적인 가격 인하율</strong>을 보이고 있습니다.
-                동일 제품군 역대 최저가 분포선과 결합했을 때 'S급 가성비 타점'으로 도출되며 재고 소진 시까지 강력 추천해 드립니다.
+                본 특가는 [{deal.community_name}]에 등록되었으며, 이전 유통가 대비 <strong>약 22% 가량 저렴한 가격대</strong>를 보이고 있습니다.
+                역대 최저가 비교 시 가성비가 매우 좋은 가격대로 분석되어 추천합니다.
               </p>
             ) : (
               <p style={{ color: 'var(--text-sub)', fontWeight: 500 }}>
-                현재 이 상품의 역대 가격 변동 및 최저가 데이터 분석이 진행 중입니다. AI 스마트 수집 로봇이 추가 변동 데이터를 적재 완료하는 대로 실시간 가성비 분석 결과와 S급 타점 보고서가 즉시 노출됩니다.
+                현재 이 상품의 역대 가격 변동 데이터를 분석 중입니다. 가격 정보 수집 및 분석이 완료되는 대로 가성비 점수와 결과를 곧 보여드릴게요.
               </p>
             )}
           </div>
