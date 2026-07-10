@@ -30,7 +30,8 @@ _cache_last_updated = None
 
 def refresh_keyword_cache(db: Session):
     global _keyword_cache, _cache_last_updated
-    now = datetime.datetime.now()
+    kst = datetime.timezone(datetime.timedelta(hours=9))
+    now = datetime.datetime.now(kst)
     # 5초 주기로 캐시를 자동 리프레시하여 DB I/O 부하 억제
     if _cache_last_updated and (now - _cache_last_updated).total_seconds() < 5:
         return
@@ -103,8 +104,9 @@ class NotificationService:
     def dispatch_alert(deal_id: int, keyword: str, title: str, price: int, site_name: str, deal_url: str, device: dict):
         """FCM 및 Web Push 발송 라우팅 및 야간 방해금지 홀딩 루프"""
         # ⏰ 야간 시간대 체크 (KST 기준 21:00 ~ 익일 08:00)
-        # 현재는 로컬 시간대 기준 KST 환산
-        now = datetime.datetime.now()
+        # UTC 시차 방지를 위해 KST 타임존(UTC+9)을 명시적으로 적용
+        kst = datetime.timezone(datetime.timedelta(hours=9))
+        now = datetime.datetime.now(kst)
         hour = now.hour
         is_night_time = hour >= 21 or hour < 8
         

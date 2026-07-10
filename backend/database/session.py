@@ -26,11 +26,11 @@ class DatabaseManager:
         base_dir = os.path.dirname(backend_dir)
         load_dotenv(os.path.join(base_dir, '.env'))
         
-        default_db_path = os.path.join(backend_dir, "insight_deal.db")
-        
-        # 호스트 PC와 도커 환경 전체에서 100% 데이터 실시간 동기화 및 중복 스킵(Skip) 연동을 위해 
-        # 데이터베이스 URL을 SQLite(default_db_path)로 완전 일원화하여 단일화합니다.
-        database_url = f"sqlite:///{default_db_path}"
+        # 환경변수에서 DATABASE_URL을 가져오고, 없으면 SQLite 기본 경로 사용
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            default_db_path = os.path.join(backend_dir, "insight_deal.db")
+            database_url = f"sqlite:///{default_db_path}"
             
         logger.info(f"📊 데이터베이스 연결 시도: {database_url}")
         

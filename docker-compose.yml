@@ -37,11 +37,11 @@ services:
       - NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
       - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
       - PYTHONPATH=/:/app
-      - BASE_URL=http://192.168.0.36:8000
+      - BASE_URL=http://192.168.0.36:8080
       - HEADLESS=true
     shm_size: '2gb'
     ports:
-      - "0.0.0.0:8000:8000"
+      - "0.0.0.0:8080:8080"
     volumes:
       - ./backend:/app
       - ./backend:/backend
@@ -50,9 +50,9 @@ services:
     networks:
       - insightdeal-network
     restart: unless-stopped
-    command: python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
+    command: python -m uvicorn main:app --host 0.0.0.0 --port 8080 --workers 2
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/api/health" ]
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/api/health" ]
       interval: 30s
       timeout: 10s
       retries: 3

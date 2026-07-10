@@ -483,6 +483,19 @@ fun HomeScreen(
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .bounceClick { navController.navigate("keyword_alarm") }
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = "키워드 알림 설정",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
             )
 
@@ -882,6 +895,63 @@ fun HomeScreen(
                                 color = if (isDark) MaterialTheme.colorScheme.outlineVariant else Color.LightGray, 
                                 modifier = Modifier.padding(horizontal = 4.dp)
                             )
+                            Spacer(Modifier.height(8.dp))
+                            
+                            // 🔔 실시간 키워드 알림 설정 유도 배너 (Toss 스타일)
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .bounceClick { navController.navigate("keyword_alarm") }
+                                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f) else Color(0xFFF2F4F6)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isDark) Color(0xFF2C2C2E) else Color.White),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.NotificationsActive,
+                                            contentDescription = "알림",
+                                            tint = if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "놓치기 아까운 특가, 알림으로 받으세요",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "실시간 키워드 알림 설정하기",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (isDark) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f) else Color(0xFF4E5968)
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowRight,
+                                        contentDescription = "이동",
+                                        tint = if (isDark) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) else Color(0xFF8B95A1),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
                             Spacer(Modifier.height(8.dp))
                             Text("실시간 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(start = 4.dp), color = MaterialTheme.colorScheme.onSurface)
                         }

@@ -88,41 +88,45 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
-        Log.d(TAG, "📨 FCM 메시지 수신: ${remoteMessage.from}")
-
-        // 📥 데이터 수신 즉시 로컬 보관함에 적재 연동
-        val title = remoteMessage.notification?.title 
-            ?: remoteMessage.data["title"] 
-            ?: "InsightDeal 알림"
-        val keyword = remoteMessage.data["keyword"] 
-            ?: remoteMessage.data["category"] 
-            ?: "핫딜"
-        val dealUrl = remoteMessage.data["ecommerce_url"] 
-            ?: remoteMessage.data["post_url"] 
-            ?: "https://insightdeal.com"
-
         try {
-            NotificationHistoryManager.init(applicationContext)
-            NotificationHistoryManager.addAlert(applicationContext, title, keyword, dealUrl)
-            Log.d(TAG, "✅ FCM 수신 알림 로컬 보관함 적재 성공")
+            Log.d(TAG, "📨 FCM 메시지 수신: ${remoteMessage.from}")
+
+            // 📥 데이터 수신 즉시 로컬 보관함에 적재 연동
+            val title = remoteMessage.notification?.title 
+                ?: remoteMessage.data["title"] 
+                ?: "InsightDeal 알림"
+            val keyword = remoteMessage.data["keyword"] 
+                ?: remoteMessage.data["category"] 
+                ?: "핫딜"
+            val dealUrl = remoteMessage.data["ecommerce_url"] 
+                ?: remoteMessage.data["post_url"] 
+                ?: "https://insightdeal.com"
+
+            try {
+                NotificationHistoryManager.init(applicationContext)
+                NotificationHistoryManager.addAlert(applicationContext, title, keyword, dealUrl)
+                Log.d(TAG, "✅ FCM 수신 알림 로컬 보관함 적재 성공")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ FCM 수신 알림 로컬 보관함 적재 중 에러", e)
+            }
+
+            // 데이터 페이로드 처리
+            if (remoteMessage.data.isNotEmpty()) {
+                Log.d(TAG, "📊 데이터 페이로드: ${remoteMessage.data}")
+                handleDataMessage(remoteMessage.data)
+            }
+
+            // 알림 페이로드 처리 (앱이 포그라운드일 때도 표시)
+            remoteMessage.notification?.let { notification ->
+                Log.d(TAG, "🔔 알림 페이로드: ${notification.title}")
+                showSmartNotification(
+                    title = notification.title ?: "InsightDeal",
+                    body = notification.body ?: "새로운 알림이 있습니다",
+                    data = remoteMessage.data
+                )
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ FCM 수신 알림 로컬 보관함 적재 중 에러", e)
-        }
-
-        // 데이터 페이로드 처리
-        if (remoteMessage.data.isNotEmpty()) {
-            Log.d(TAG, "📊 데이터 페이로드: ${remoteMessage.data}")
-            handleDataMessage(remoteMessage.data)
-        }
-
-        // 알림 페이로드 처리 (앱이 포그라운드일 때도 표시)
-        remoteMessage.notification?.let { notification ->
-            Log.d(TAG, "🔔 알림 페이로드: ${notification.title}")
-            showSmartNotification(
-                title = notification.title ?: "InsightDeal",
-                body = notification.body ?: "새로운 알림이 있습니다",
-                data = remoteMessage.data
-            )
+            Log.e(TAG, "❌ FCM 메시지 수신 처리 중 치명적 에러 발생: ${e.message}", e)
         }
     }
 
@@ -247,6 +251,38 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
+    private fun checkTimeInDndRange(
+        currentHour: Int,
+        currentMinute: Int,
+        startTime: String,
+        endTime: String
+    ): Boolean {
+        return try {
+            val startParts = startTime.split(":")
+            val endParts = endTime.split(":")
+            if (startParts.size < 2 || endParts.size < 2) return false
+            
+            val startHour = startParts[0].toIntOrNull() ?: 21
+            val startMinute = startParts[1].toIntOrNull() ?: 0
+            val endHour = endParts[0].toIntOrNull() ?: 8
+            val endMinute = endParts[1].toIntOrNull() ?: 0
+
+            val currentTimeMin = currentHour * 60 + currentMinute
+            val startTimeMin = startHour * 60 + startMinute
+            val endTimeMin = endHour * 60 + endMinute
+
+            if (startTimeMin <= endTimeMin) {
+                currentTimeMin in startTimeMin..endTimeMin
+            } else {
+                currentTimeMin >= startTimeMin || currentTimeMin <= endTimeMin
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ DND 시간 범위 계산 중 에러: ${e.message}", e)
+            val currentTimeMin = currentHour * 60 + currentMinute
+            currentTimeMin >= 21 * 60 || currentTimeMin < 8 * 60
+        }
+    }
+
     private fun showSmartNotification(
         title: String,
         body: String,
@@ -255,14 +291,17 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         priority: Int = NotificationCompat.PRIORITY_DEFAULT,
         autoCancel: Boolean = true
     ) {
-        // ⏰ 야간 시간대 체크 (21:00 ~ 08:00)
-        val calendar = Calendar.getInstance()
-        val hour = calendar.get(Calendar.HOUR_OF_DAY)
-        val isNightTime = hour >= 21 || hour < 8
-
-        // 🔒 보안 스토리지를 통해 야간 수신 동의 여부 로드 (백그라운드 스레드 Keystore 예외 방지 Fallback 적용)
+        // 🔒 보안 스토리지를 통해 야간 수신 동의 및 DND 설정 로드 (백그라운드 스레드 Keystore 예외 방지 Fallback 적용)
         val prefs = EncryptedPrefsManager.getEncryptedPrefs(applicationContext)
         val nightPushConsent = prefs.getBoolean("night_push_consent", false)
+        val dndStartTime = prefs.getString("dnd_start_time", "21:00") ?: "21:00"
+        val dndEndTime = prefs.getString("dnd_end_time", "08:00") ?: "08:00"
+
+        // ⏰ 야간 시간대 체크 (DND 동적 판단 적용)
+        val calendar = Calendar.getInstance()
+        val hour = calendar.get(Calendar.HOUR_OF_DAY)
+        val minute = calendar.get(Calendar.MINUTE)
+        val isNightTime = checkTimeInDndRange(hour, minute, dndStartTime, dndEndTime)
 
         if (isNightTime) {
             if (!nightPushConsent) {

@@ -31,9 +31,9 @@ android {
             buildConfigField "boolean", "DEBUG_MODE", "false"
         }
         debug {
-            buildConfigField "String", "BASE_URL", '"http://192.168.0.4:8000/"'
+            buildConfigField "String", "BASE_URL", '"http://192.168.0.4:8080/"'
             buildConfigField "String", "DEV_SERVER_IP", '"192.168.0.4"'
-            buildConfigField "String", "EMULATOR_BASE_URL", '"http://10.0.2.2:8000/"'
+            buildConfigField "String", "EMULATOR_BASE_URL", '"http://10.0.2.2:8080/"'
             buildConfigField "String", "VERSION_NAME", '"1.0.0-debug"'
             buildConfigField "boolean", "DEBUG_MODE", "true"
         }

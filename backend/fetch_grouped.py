@@ -3,7 +3,7 @@ import json
 
 def get_grouped_deals():
     try:
-        req = urllib.request.Request('http://localhost:8000/api/community/hot-deals?limit=200')
+        req = urllib.request.Request('http://localhost:8080/api/community/hot-deals?limit=200')
         with urllib.request.urlopen(req) as response:
             data = json.loads(response.read().decode('utf-8'))
             deals = data.get('deals', [])

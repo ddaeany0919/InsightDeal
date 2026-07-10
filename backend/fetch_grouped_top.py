@@ -4,7 +4,7 @@ import sys
 
 def get_grouped_deals():
     try:
-        req = urllib.request.Request('http://localhost:8000/api/community/top-hot-deals')
+        req = urllib.request.Request('http://localhost:8080/api/community/top-hot-deals')
         with urllib.request.urlopen(req) as response:
             data = json.loads(response.read().decode('utf-8'))
             deals = data.get('deals', [])

@@ -190,6 +190,127 @@ fun DealDetailScreen(
     onNavigateToCommunity: () -> Unit,
     snackbarHostState: SnackbarHostState
 ) {
+    // 🛡️ 제휴 수수료 고지 BottomSheet 상태 관리
+    var showAffiliateSheet by remember { mutableStateOf(false) }
+    var pendingUrl by remember { mutableStateOf<String?>(null) }
+    val affiliateSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val affiliateScope = rememberCoroutineScope()
+
+    // 🛡️ 제휴 수수료 고지 ModalBottomSheet (전자상거래법 준수)
+    if (showAffiliateSheet && pendingUrl != null) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showAffiliateSheet = false
+                pendingUrl = null
+            },
+            sheetState = affiliateSheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 4.dp,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // 아이콘 + 타이틀
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = "외부 쇼핑몰 이동 안내",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                // 고지 본문
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "본 링크를 통해 상품을 구매하시면, 인사이트딜이 판매자로부터 소정의 제휴 수수료를 받을 수 있습니다.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 22.sp
+                        )
+                        Text(
+                            text = "이는 사용자의 구매 가격에 영향을 미치지 않으며, 서비스 운영 및 콘텐츠 품질 향상을 위해 사용됩니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 20.sp
+                        )
+                    }
+                }
+
+                // CTA 버튼
+                Button(
+                    onClick = {
+                        val url = pendingUrl
+                        affiliateScope.launch {
+                            affiliateSheetState.hide()
+                        }.invokeOnCompletion {
+                            showAffiliateSheet = false
+                            pendingUrl = null
+                            if (url != null) onOpenOrigin(url)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ShoppingCart,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "확인하고 이동하기 🚀",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                }
+
+                // 닫기 링크
+                TextButton(
+                    onClick = {
+                        showAffiliateSheet = false
+                        pendingUrl = null
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "취소",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
@@ -219,7 +340,10 @@ fun DealDetailScreen(
                                 ),
                                 shape = RoundedCornerShape(16.dp)
                             )
-                            .bounceClick { onOpenOrigin(targetUrl) },
+                            .bounceClick {
+                                pendingUrl = targetUrl
+                                showAffiliateSheet = true
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Row(

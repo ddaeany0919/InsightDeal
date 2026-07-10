@@ -1,10 +1,14 @@
 package com.ddaeany0919.insightdeal.local.db
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.time.LocalDateTime
 
-@Entity(tableName = "wishlist")
+@Entity(
+    tableName = "wishlist",
+    indices = [Index(value = ["createdAt"])]
+)
 data class WishlistEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,

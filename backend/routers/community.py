@@ -95,7 +95,7 @@ def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
     
     return deal_sources
 
-BASE_URL = os.getenv("BASE_URL", "http://10.0.2.2:8000")
+BASE_URL = os.getenv("BASE_URL", "http://10.0.2.2:8080")
 
 @router.get("/scraper-stats")
 def get_scraper_stats():

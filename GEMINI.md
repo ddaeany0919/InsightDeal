@@ -15,3 +15,45 @@
 
 ## 3. 🧹 임시 파일(Temp File) 자동 청소 엄수
 - 회의록 파일(`agent_workspace/00_Agent_Live_Chat.md`)에 텍스트를 덧붙이기 위해 `append_log.py` 따위의 **임시 파이썬 스크립트**를 생성해서 실행하는 방식을 썼다면, 로그 갱신이 끝난 즉시 `Remove-Item` 이나 `os.remove` 명령어 등을 사용해서 그 쓸데없는 임시 파이썬 파일을 **무조건 영구 삭제(Delete)**하여 프로젝트 폴더를 더럽히지 마라. 쓰레기를 남기는 것은 중범죄다!
+
+## 🚀 4. 배포 무결성 및 로컬 포트 준수 규칙 (영구 준수)
+1. **로컬 백엔드 서버 및 연동 포트는 반드시 8080 포트를 사용한다.**
+   - 윈도우 호스트와 WSL2 간의 `wslrelay` 잔상으로 인해 포트 8000번 바인딩 오류가 발생할 수 있습니다.
+   - 로컬 구동 시 백엔드는 포트 8080으로 기동하고, 아래의 4개 연동 설정 파일은 반드시 포트 8080을 바라보도록 정합성을 고수해야 합니다.
+     - 웹 리라이트 타겟: `next.config.ts`
+     - 웹 푸시 API: `frontend-web/src/app/api/push-register/route.ts`
+     - 앱 그레이들 변수: `app/build.gradle` (BASE_URL 및 EMULATOR_BASE_URL)
+     - 앱 네트워크 및 리포지토리: `NetworkConfig.kt`, `PriceHistoryRepository.kt`, `NetworkModule.kt`
+
+2. **Next.js 16 빌드 시 Turbopack-Webpack 충돌 회피 설정을 유지한다.**
+   - `@ducanh2912/next-pwa` 라이브러리의 커스텀 Webpack 설정과 Next.js 16의 기본 Turbopack 컴파일러 빌드 간의 충돌 에러를 막기 위해, `next.config.ts` 내부의 `nextConfig` 객체 안에 비어있는 `turbopack: {}` 속성을 무조건 정의하여 컴파일 무결성을 사수해야 합니다.
+
+## 🎯 5. 기획 제약 및 가격 비교 컴포넌트 배제 규칙 (영구 준수)
+1. **대형 쇼핑몰 및 네이버 쇼핑 실시간 가격 비교 연동은 개발 대상에서 전면 제외한다.**
+   - 매칭 정확도 신뢰성 확보 및 구체적인 시나리오 기획 정립 전까지는 외부 쇼핑몰 가격비교 API 연동 및 관련 차트 컴포넌트(`PriceComparison`)를 개발하지 않습니다.
+   - 향후 다른 개발자나 에이전트가 이를 자의적으로 다시 이식하거나 복구하지 않도록 철저히 차단합니다.
+
+2. **상세 보기 화면(웹/앱)은 오직 3대 핵심 뼈대 구성으로만 간소화하여 집중 설계한다.**
+   - 상세 보기 화면은 아래 3가지 요소만을 Vanilla CSS 및 Compose Material 3 규격에 맞게 큼직하고 세련되게 렌더링하는 데 화력을 집중합니다.
+     - 핫딜 상세 본문 내용 (`content_html` / `contentHtml` 텍스트 영역)
+     - 원본 커뮤니티 게시글 바로가기 링크 버튼
+     - 구매처 다이렉트 링크 아웃 버튼 (`ecommerce_link` / `ecommerceLink` 아웃링크 API 바인딩)
+
+## 🔧 6. 파일 수정 시 인코딩 안전 규칙 (영구 준수)
+- PowerShell의 `Set-Content`, `Out-File` 등으로 **한글이 포함된 소스 코드 파일을 직접 수정하는 것을 금지**한다.
+- 대량 줄 삭제/이동이 필요할 때는 반드시 **Node.js 스크립트** (`fs.readFileSync` + `fs.writeFileSync` with `'utf8'`)를 사용한다.
+- 단일 블록 수정은 Antigravity의 `replace_file_content` / `multi_replace_file_content` 도구를 사용한다.
+
+## 📂 7. 웹 프론트엔드 컴포넌트 분리 구조 (영구 준수)
+- `frontend-web/src/app/lib/types.ts` — 공유 TypeScript 인터페이스 (Deal, AIDemoResult 등)
+- `frontend-web/src/app/lib/utils.ts` — 공유 유틸 함수 (formatPrice, categorizeDeal, getProxyImageUrl)
+- `frontend-web/src/app/components/` — 분리된 React 컴포넌트 (PriceTrendChart.tsx 등)
+- `frontend-web/src/app/page.tsx` — 메인 페이지 (분리된 모듈을 import하여 사용)
+- 새 컴포넌트 추가 시 반드시 위 구조를 따르고, page.tsx에 인라인으로 작성하지 않는다.
+
+## 📋 8. v1.1 에픽 진행 상황 (자동 업데이트)
+- ✅ 에픽 1: 프로젝트 위생 정리 (47파일 237MB 삭제, .gitignore 강화)
+- ✅ 에픽 2: Play Store 출시 준비 (Splash/아이콘/ProGuard 확인, 데드코드 제거)
+- ✅ 에픽 3: 웹 리팩토링 (types/utils/PriceTrendChart 및 모달/AI판독기/히어로 컴포넌트 분리 완료)
+- ✅ 에픽 4: Docker 포트 정합성 (8000→8080 통일)
+- ⛔ 에픽 5: C2C 플랫폼 통합 (폐기 — 당근/번개장터 약관 위반 및 소송 리스크)

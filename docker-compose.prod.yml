@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL 데이터베이스 (클라우드 스케일업 준비용)
+  # 초기에는 로컬 SQLite를 쓰려면 이 db 서비스를 주석처리하거나 배포 env에 DATABASE_URL을 명시하지 않으면 됩니다.
+  # 만약 RDS를 쓰지 않고 단일 서버 내에 저비용 PostgreSQL을 기동할 때 활성화할 수 있도록 기본 템플릿을 탑재합니다.
+  db:
+    image: postgres:15-alpine
+    container_name: insightdeal_db_prod
+    environment:
+      - POSTGRES_USER=insight_user
+      - POSTGRES_PASSWORD=insight_secure_pass_123
+      - POSTGRES_DB=insight_deal
+      - TZ=Asia/Seoul
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: always
+    # 저사양 메모리 서버(t3.micro 등)에서 가벼운 기동을 위해 리소스 한계값 템플릿 정의
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # 2. FastAPI 백엔드 API 서버 (포트 8080 통일 규격)
+  api:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: insightdeal_api_prod
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/app
+    environment:
+      - TZ=Asia/Seoul
+      - DOCKER_ENV=true
+      # 초기 비용 최소화 단계: 주석 처리 시 기본값인 SQLite(insight_deal.db)로 자동 롤백 작동
+      # 사용량이 많아져 DB 전환 시 아래 DATABASE_URL 주석을 해제하여 사용
+      # - DATABASE_URL=postgresql://insight_user:insight_secure_pass_123@db:5432/insight_deal
+    depends_on:
+      - db
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  # 3. 크롤링 수집 및 알림 엔진 스케줄러
+  scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: insightdeal_scheduler_prod
+    command: ["python", "scheduler/main.py"]
+    volumes:
+      - ./backend:/app
+    environment:
+      - TZ=Asia/Seoul
+      - DOCKER_ENV=true
+      # - DATABASE_URL=postgresql://insight_user:insight_secure_pass_123@db:5432/insight_deal
+    depends_on:
+      - db
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  # 4. Next.js 웹 프론트엔드 (Standalone 3단계 경량 멀티스테이지)
+  web:
+    build:
+      context: ./frontend-web
+      dockerfile: Dockerfile
+    container_name: insightdeal_web_prod
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DOCKER_ENV=true
+      - TZ=Asia/Seoul
+      - PORT=3000
+    depends_on:
+      - api
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  pgdata:

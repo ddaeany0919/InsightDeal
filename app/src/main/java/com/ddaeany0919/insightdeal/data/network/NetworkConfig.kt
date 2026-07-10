@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
  */
 object NetworkConfig {
     private const val TAG = "NetworkConfig"
-    private const val SERVER_PORT = 8000
+    private const val SERVER_PORT = 8080
     
     // 활성 서버 URL 메모리 캐시 가드
     @Volatile
@@ -165,9 +165,9 @@ object NetworkConfig {
                 || "google_sdk" == android.os.Build.PRODUCT
                 
         return if (isEmulator) {
-            "http://10.0.2.2:8000/"
+            "http://10.0.2.2:8080/"
         } else {
-            "http://192.168.0.36:8000/"
+            "http://192.168.0.36:8080/"
         }
     }
 }

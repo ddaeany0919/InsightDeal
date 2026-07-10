@@ -389,7 +389,8 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                     }
                 )
             }
-            composable("product_detail/{productId}") { Box { Text("상품 상세 화면") } }
+            // product_detail - 향후 확장 예정 (현재 미사용)
+            // composable("product_detail/{productId}") { ... }
             composable("theme_settings") { com.ddaeany0919.insightdeal.presentation.settings.ThemeSettingsScreen(onBackClick = { navController.popBackStack() }) }
             composable(
                 route = "webview/{url}",

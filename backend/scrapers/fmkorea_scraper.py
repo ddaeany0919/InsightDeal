@@ -22,55 +22,6 @@ class FmkoreaScraper(AsyncBaseScraper):
     def _get_headers(self) -> dict:
         return {}
 
-    async def fetch_html(self, url: str) -> str:
-        """펨코리아 전용: Cloudflare WAF 430 차단 우회를 위해 selenium-stealth 헤드리스 크롬 수집기 가동"""
-        logger.info(f"[{self.platform_name}] Selenium-Stealth 헤드리스 크롬 수집 가동 - {url}")
-        import asyncio
-        import time
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-        from selenium_stealth import stealth
-        
-        def _sync_fetch():
-            chrome_options = Options()
-            chrome_options.add_argument("--headless=new")
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--disable-gpu")
-            
-            driver = webdriver.Chrome(options=chrome_options)
-            try:
-                stealth(driver,
-                    languages=["ko-KR", "ko"],
-                    vendor="Google Inc.",
-                    platform="Win32",
-                    webgl_vendor="Intel Inc.",
-                    renderer="Intel Iris OpenGL Engine",
-                    fix_hairline=True,
-                )
-                driver.get(url)
-                
-                # Cloudflare WAF 챌린지 통과를 위한 동적 폴링 대기 루프 (최대 12초)
-                start_time = time.time()
-                html = ""
-                while time.time() - start_time < 12.0:
-                    html = driver.page_source
-                    # XE 게시판 테이블(bd_lst) 또는 모바일 핫딜 아이템(hotdeal_info), 혹은 글자수 3만자 이상 로드 시 성공 판정
-                    if len(html) > 30000 or "bd_lst" in html or "hotdeal_info" in html:
-                        logger.info(f"[{self.platform_name}] Cloudflare 챌린지 우회 통과 성공 (대기: {time.time() - start_time:.2f}초)")
-                        break
-                    time.sleep(0.5)
-                return html
-            finally:
-                driver.quit()
-                
-        loop = asyncio.get_event_loop()
-        try:
-            return await loop.run_in_executor(None, _sync_fetch)
-        except Exception as e:
-            logger.error(f"[{self.platform_name}] Selenium-Stealth 수집 중 예외 발생: {e}")
-            return ""
-
     async def parse_list(self, html: str) -> list[dict]:
         """펨코리아 게시판 리스트에서 타겟 데이터 추출 (비동기 처리)"""
         soup = BeautifulSoup(html, 'html.parser')
