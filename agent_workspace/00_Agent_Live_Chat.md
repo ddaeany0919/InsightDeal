@@ -920,3 +920,17 @@ PM은 이 내용을 정리하여 CEO(사용자) 보고 후 승인을 대기하�
   - 웹 검색창 하단에 동일한 디자인의 실시간 급상승 검색어 티커 바와 `전체 순위` 아코디언(좌측 1~5위, 우측 6~10위 세로 배열)을 추가했습니다.
 - **🛡️ [DevOps & QA (`assembleRelease`, `npm run build`)]**:
   - Next.js 16 프로덕션 정적/동적 빌드(`npm run build`) 및 Android R8/ProGuard 릴리즈 빌드(`.\gradlew.bat assembleRelease`) 모두 에러 0건으로 통과했습니다.
+
+
+---
+
+## 🔍 [최근 검색어(Recent Search) 칩 & 개별/전체 삭제 + 원격 저장소 Push + 앱인토스(Apps in Toss) 입점 검토] (2026-11-02)
+
+- **📱 [안드로이드 리드 (`SearchAutoComplete.kt`, `AdvancedSearchScreen.kt`)]**:
+  - `SearchAutoComplete`에 `removeFromSearchHistory(query)` 및 `clearSearchHistory()`를 추가하고, `쌀`, `배`, `꿀` 같은 1글자 완성형 한글 검색어도 최근 검색 기록에 정상 저장되도록 개선했습니다.
+  - `AdvancedSearchScreen`의 `"실시간 인기 검색어"` 상단에 **"최근 검색어"** 섹션을 배치하여, 최근 검색한 키워드를 알약형 칩으로 원클릭 재검색하거나 우측 `×` 버튼으로 개별 삭제 및 `"전체 삭제"`할 수 있도록 구현했습니다.
+- **🌐 [웹 프론트엔드 리드 (`frontend-web/src/app/page.tsx`)]**:
+  - 웹 검색창 바로 아래에도 `localStorage`(`insightdeal_recent_searches`) 기반 **"최근 검색어"** 칩 바(개별 `×` 삭제 및 `"전체 삭제"` 지원)를 동일하게 연동했습니다.
+- **🚀 [기획 PM & CTO — 앱인토스(Apps in Toss) 입점 타당성 분석]**:
+  - 구글 플레이 스토어는 개인 개발자 계정 생성 시 $25 등록비와 **'최소 12명 테스터 · 14일 비공개 테스트'** 의무 허들이 존재하는 반면, **앱인토스(Apps in Toss, `developers-apps-in-toss.toss.im`)**는 별도의 스토어 가입비 없이 우리가 이미 구축해 둔 **Next.js 16 웹 프론트엔드(`frontend-web`)를 WebView 미니앱으로 바로 패키징하여 입점**할 수 있습니다.
+  - 특히 우리 웹/앱의 디자인 시스템(`#3182F6` 토스 블루, `#191F28` 차콜 텍스트, `#F2F4F6` 배경, `Pretendard` 타이포그래피)이 이미 **토스 TDS(Toss Design System)** 규격과 완벽히 부합하므로 디자인 검수 통과에 매우 유리합니다.

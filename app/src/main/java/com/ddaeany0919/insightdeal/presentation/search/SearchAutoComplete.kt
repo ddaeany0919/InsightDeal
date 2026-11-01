@@ -6,7 +6,6 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.text.Normalizer
 
 /**
  * 🔍 스마트 검색 자동완성 엔진
@@ -133,22 +132,45 @@ class SearchAutoComplete private constructor(private val context: Context) {
      * 📝 검색 기록 추가 및 학습
      */
     fun addToSearchHistory(query: String) {
-        if (query.length < 2) return
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return
+        if (trimmed.length < 2 && trimmed[0] !in '가'..'힣') return
         
         val currentHistory = _searchHistory.value.toMutableList()
-        currentHistory.remove(query) // 중복 제거
-        currentHistory.add(0, query) // 맨 앞에 추가
+        currentHistory.remove(trimmed) // 중복 제거
+        currentHistory.add(0, trimmed) // 맨 앞에 추가
         
-        // 최대 50개까지만 유지
-        val limitedHistory = currentHistory.take(50)
+        // 최대 20개까지만 유지
+        val limitedHistory = currentHistory.take(20)
         
         _searchHistory.value = limitedHistory
         saveSearchHistory(limitedHistory)
         
         // Trie에도 추가
-        addKeywordToTrie(query)
+        addKeywordToTrie(trimmed)
         
-        Log.d(TAG, "📝 검색 기록 추가: $query")
+        Log.d(TAG, "📝 검색 기록 추가: $trimmed")
+    }
+
+    /**
+     * 🗑️ 개별 검색 기록 삭제
+     */
+    fun removeFromSearchHistory(query: String) {
+        val currentHistory = _searchHistory.value.toMutableList()
+        if (currentHistory.remove(query)) {
+            _searchHistory.value = currentHistory
+            saveSearchHistory(currentHistory)
+            Log.d(TAG, "🗑️ 검색 기록 삭제: $query")
+        }
+    }
+
+    /**
+     * 🧹 전체 검색 기록 초기화
+     */
+    fun clearSearchHistory() {
+        _searchHistory.value = emptyList()
+        saveSearchHistory(emptyList())
+        Log.d(TAG, "🧹 전체 검색 기록 삭제 완료")
     }
     
     /**

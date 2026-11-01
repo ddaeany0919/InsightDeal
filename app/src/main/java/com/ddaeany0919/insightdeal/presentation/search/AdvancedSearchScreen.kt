@@ -13,6 +13,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.TrendingUp
@@ -23,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -55,6 +58,9 @@ fun AdvancedSearchScreen(
     var isSearching by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(initialQuery.isNotBlank()) }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val context = LocalContext.current
+    val searchAutoComplete = remember(context) { SearchAutoComplete.getInstance(context) }
+    val searchHistory by searchAutoComplete.searchHistory.collectAsState()
     val isDark = MaterialTheme.colorScheme.background.red < 0.2f
     
     // 재사용할 HomeViewModel 상태
@@ -91,6 +97,7 @@ fun AdvancedSearchScreen(
             searchQuery = androidx.compose.ui.text.input.TextFieldValue(trimmed)
             isSearching = true
             keyboardController?.hide()
+            searchAutoComplete.addToSearchHistory(trimmed)
             viewModel.searchDeals(trimmed)
         } else if (trimmed.isEmpty()) {
             isSearching = false
@@ -100,9 +107,11 @@ fun AdvancedSearchScreen(
 
     LaunchedEffect(initialQuery) {
         if (initialQuery.isNotBlank() && isMeaningfulQuery(initialQuery)) {
-            searchQuery = androidx.compose.ui.text.input.TextFieldValue(initialQuery.trim())
+            val trimmed = initialQuery.trim()
+            searchQuery = androidx.compose.ui.text.input.TextFieldValue(trimmed)
             isSearching = true
-            viewModel.searchDeals(initialQuery.trim())
+            searchAutoComplete.addToSearchHistory(trimmed)
+            viewModel.searchDeals(trimmed)
         } else if (searchQuery.text.isEmpty()) {
             viewModel.searchDeals("")
         }
@@ -259,6 +268,98 @@ fun AdvancedSearchScreen(
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
+
+                    // 최근 검색어 섹션 (개별 삭제 X 및 전체 삭제 지원)
+                    if (searchHistory.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 18.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "최근 검색어",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 15.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Text(
+                                text = "전체 삭제",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                                modifier = Modifier
+                                    .clickable { searchAutoComplete.clearSearchHistory() }
+                                    .padding(vertical = 2.dp, horizontal = 4.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        FlowRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            searchHistory.take(10).forEach { historyKw ->
+                                Surface(
+                                    shape = RoundedCornerShape(999.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = historyKw,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.clickable { performSearch(historyKw) }
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .background(
+                                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                                                    shape = CircleShape
+                                                )
+                                                .clickable { searchAutoComplete.removeFromSearchHistory(historyKw) },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "$historyKw 삭제",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(22.dp))
+                    }
 
                     // 실시간 급상승 검색어 Top 10 보드 헤더
                     Row(
@@ -453,8 +554,16 @@ fun AdvancedSearchScreen(
                             if (deal != null) {
                                 DealCardComposable(
                                     deal = deal,
-                                    onDetailClick = { navController.navigate("deal_detail/${deal.id}") },
+                                    onDetailClick = {
+                                        if (isMeaningfulQuery(searchQuery.text)) {
+                                            searchAutoComplete.addToSearchHistory(searchQuery.text.trim())
+                                        }
+                                        navController.navigate("deal_detail/${deal.id}")
+                                    },
                                     onOpenUrl = { url ->
+                                        if (isMeaningfulQuery(searchQuery.text)) {
+                                            searchAutoComplete.addToSearchHistory(searchQuery.text.trim())
+                                        }
                                         val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")
                                         navController.navigate("webview/$encodedUrl")
                                     }

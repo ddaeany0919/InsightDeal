@@ -47,6 +47,7 @@ export default function Home() {
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [popularKeywords, setPopularKeywords] = useState<string[]>([
     "제로콜라", "로봇청소기", "아이폰", "모니터", "닭가슴살", "물티슈", "에어팟", "갤럭시"
   ]);
@@ -425,8 +426,40 @@ export default function Home() {
     setHasMore(true);
   };
 
+  const saveRecentSearch = (rawKw: string) => {
+    const trimmed = rawKw.trim();
+    if (!trimmed) return;
+    setRecentSearches((prev) => {
+      const next = [trimmed, ...prev.filter((item) => item !== trimmed)].slice(0, 8);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("insightdeal_recent_searches", JSON.stringify(next));
+      }
+      return next;
+    });
+  };
+
+  const removeRecentSearch = (kw: string) => {
+    setRecentSearches((prev) => {
+      const next = prev.filter((item) => item !== kw);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("insightdeal_recent_searches", JSON.stringify(next));
+      }
+      return next;
+    });
+  };
+
+  const clearRecentSearches = () => {
+    setRecentSearches([]);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("insightdeal_recent_searches");
+    }
+  };
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (searchQuery.trim()) {
+      saveRecentSearch(searchQuery.trim());
+    }
     setDeals([]);
     setHasMore(true);
     fetchLiveDeals(true, 0, activeTab, activePlatform, searchQuery);
@@ -434,6 +467,7 @@ export default function Home() {
 
   const handleSelectPopularKeyword = (kw: string) => {
     setSearchQuery(kw);
+    saveRecentSearch(kw);
     setDeals([]);
     setHasMore(true);
     fetchLiveDeals(true, 0, activeTab, activePlatform, kw);
@@ -518,6 +552,13 @@ export default function Home() {
       if (savedAlerts) {
         try {
           setAlerts(JSON.parse(savedAlerts));
+        } catch (e) {}
+      }
+      const savedRecent = localStorage.getItem("insightdeal_recent_searches");
+      if (savedRecent) {
+        try {
+          const parsed = JSON.parse(savedRecent);
+          if (Array.isArray(parsed)) setRecentSearches(parsed.slice(0, 8));
         } catch (e) {}
       }
     }
@@ -987,6 +1028,88 @@ export default function Home() {
               </button>
             </div>
           </form>
+
+          {/* 최근 검색어 (개별 X 삭제 및 전체 삭제 지원) */}
+          {recentSearches.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "8px",
+                flexWrap: "wrap",
+                marginBottom: "12px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "0.76rem", fontWeight: 800, color: "var(--text-sub)", marginRight: "2px" }}>
+                  최근 검색어
+                </span>
+                {recentSearches.map((kw) => {
+                  const isSelected = searchQuery === kw;
+                  return (
+                    <div
+                      key={kw}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "4px 8px 4px 11px",
+                        borderRadius: "999px",
+                        fontSize: "0.77rem",
+                        fontWeight: isSelected ? 800 : 600,
+                        background: isSelected ? "rgba(var(--accent-rgb), 0.12)" : "var(--card-bg)",
+                        color: isSelected ? "var(--accent)" : "var(--text-main)",
+                        border: isSelected ? "1px solid var(--accent)" : "1px solid var(--card-border)",
+                      }}
+                    >
+                      <span
+                        onClick={() => handleSelectPopularKeyword(kw)}
+                        style={{ cursor: "pointer" }}
+                      >
+                        {kw}
+                      </span>
+                      <button
+                        type="button"
+                        title={`${kw} 삭제`}
+                        onClick={() => removeRecentSearch(kw)}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: "16px",
+                          height: "16px",
+                          borderRadius: "50%",
+                          border: "none",
+                          background: "transparent",
+                          color: "var(--text-muted)",
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={clearRecentSearches}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--text-muted)",
+                  fontSize: "0.74rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  padding: "2px 4px",
+                }}
+              >
+                전체 삭제
+              </button>
+            </div>
+          )}
 
           {/* 검색어 입력 시 원클릭 키워드 알림 등록 배너 */}
           {searchQuery.trim() && (
