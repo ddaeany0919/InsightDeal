@@ -1,9 +1,15 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
-from database.session import get_db_session
-from database.models import Product, ProductPriceHistory
-from models.product_models import ProductLinkRequest, ProductAnalysisResponse
-from services.product_analyzer_service import ProductAnalyzerService
+try:
+    from backend.database.session import get_db_session
+    from backend.database.models import Product, ProductPriceHistory
+    from backend.models.product_models import ProductLinkRequest, ProductAnalysisResponse
+    from backend.services.product_analyzer_service import ProductAnalyzerService
+except ImportError:
+    from database.session import get_db_session
+    from database.models import Product, ProductPriceHistory
+    from models.product_models import ProductLinkRequest, ProductAnalysisResponse
+    from services.product_analyzer_service import ProductAnalyzerService
 
 router = APIRouter()
 

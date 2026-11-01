@@ -22,5 +22,7 @@ class AlippomppuScraper(PpomppuScraper):
             # 'FS' or 'Free' in title means Free Shipping
             if re.search(r'\b(?:FS|Free|무배|무료배송|무료)\b', full_title, re.IGNORECASE):
                 deal["shipping_fee"] = "무료배송"
+            if (deal.get("like_count") or 0) >= 8 or (deal.get("view_count") or 0) >= 2500:
+                deal["is_super_hotdeal"] = True
                 
         return deals

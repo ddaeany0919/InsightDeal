@@ -35,12 +35,12 @@ object NetworkConfig {
             Log.e(TAG, "BuildConfig IP 추출 실패", e)
         }
         
-        // 1순위 이하 잠재 IP 리스트
+        // 1순위 이하 잠재 IP 리스트 (에뮬레이터/로컬 우선)
         val potentials = listOf(
-            "3.35.205.24",  // AWS Lightsail Production IP
-            "192.168.0.4",  // Old configured IP
+            "10.0.2.2",     // Emulator loopback to host PC
+            "127.0.0.1",    // ADB reverse port forwarding
             "192.168.0.36", // Current PC IP
-            "10.0.2.2"      // Emulator fallback
+            "3.35.205.24"   // AWS Lightsail Production IP
         )
         
         potentials.forEach { ip ->
@@ -151,6 +151,6 @@ object NetworkConfig {
         val cached = cachedServerUrl
         if (cached != null) return cached
         
-        return "http://3.35.205.24:8080/"
+        return com.ddaeany0919.insightdeal.BuildConfig.BASE_URL
     }
 }

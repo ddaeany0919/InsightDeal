@@ -4,44 +4,13 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
 
-    <!-- Shopping Bag Handle -->
+    <!-- Unified Karrot SEED Warm Orange Rounded Square Badge (#FF6F0F) -->
     <path
-        android:strokeColor="@color/primary_orange"
-        android:strokeWidth="1.0"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:fillColor="#00000000"
-        android:pathData="M 8.5 8 V 6 C 8.5 4.067 10.067 2.5 12 2.5 C 13.933 2.5 15.5 4.067 15.5 6 V 8" />
+        android:fillColor="#FF6F0F"
+        android:pathData="M7,2h10c2.76,0 5,2.24 5,5v10c0,2.76 -2.24,5 -5,5H7c-2.76,0 -5,-2.24 -5,-5V7c0,-2.76 2.24,-5 5,-5z" />
 
-    <!-- Shopping Bag Body -->
+    <!-- White Price Tag (Material LocalOffer Silhouette, Centered & Scaled) -->
     <path
-        android:strokeColor="@color/primary_orange"
-        android:strokeWidth="1.1"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:fillColor="#00000000"
-        android:pathData="M 5 8 L 19 8 L 18 20.5 C 18 21.328 17.328 22 16.5 22 L 7.5 22 C 6.672 22 6 21.328 6 20.5 Z" />
-
-    <!-- Flame Outline -->
-    <path
-        android:strokeColor="@color/primary_orange"
-        android:strokeWidth="0.8"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:fillColor="#00000000"
-        android:pathData="M 12 10.5 C 12 10.5 9 13.5 9 15.5 C 9 17.1568 10.3431 18.5 12 18.5 C 13.6569 18.5 15 17.1568 15 15.5 C 15 13.5 12 10.5 12 10.5 Z" />
-
-    <!-- Inner Flame Detail -->
-    <path
-        android:strokeColor="@color/primary_orange"
-        android:strokeWidth="0.7"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:fillColor="#00000000"
-        android:pathData="M 12 13.5 C 12 13.5 10.5 15 10.5 16 C 10.5 16.828 11.171 17.5 12 17.5 C 12.828 17.5 13.5 16.828 13.5 16 C 13.5 15 12 13.5 12 13.5 Z" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M17.65,12.82l-5.47,-5.47C11.96,7.13 11.66,7 11.33,7H7.2C6.54,7 6,7.54 6,8.2v4.13c0,0.33 0.13,0.63 0.35,0.85l5.47,5.47c0.47,0.47 1.23,0.47 1.7,0l4.13,-4.13c0.47,-0.47 0.47,-1.23 0,-1.7zM8.7,10.6c-0.66,0 -1.2,-0.54 -1.2,-1.2s0.54,-1.2 1.2,-1.2 1.2,0.54 1.2,1.2 -0.54,1.2 -1.2,1.2z" />
 </vector>
-
-
-
-
-

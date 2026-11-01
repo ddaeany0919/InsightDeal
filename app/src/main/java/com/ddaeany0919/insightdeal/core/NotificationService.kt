@@ -172,7 +172,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
             ((oldPrice - newPrice) * 100 / oldPrice)
         } else 0
 
-        val title = "💰 가격 하락 알림"
+        val title = "가격 하락 알림"
         val body = "$productName\n" +
                 "${formatPrice(oldPrice)} → ${formatPrice(newPrice)}\n" +
                 "${dropPercent}% 할인! 지금이 구매 기회입니다!"
@@ -191,7 +191,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         val targetPrice = data["target_price"]?.toIntOrNull() ?: 0
         val currentPrice = data["current_price"]?.toIntOrNull() ?: 0
 
-        val title = "🎯 목표가격 달성!"
+        val title = "설정한 목표가에 도달했어요"
         val body = "$productName\n" +
                 "목표: ${formatPrice(targetPrice)}\n" +
                 "현재: ${formatPrice(currentPrice)}\n" +
@@ -212,11 +212,11 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         val currentPrice = data["current_price"]?.toIntOrNull() ?: 0
         val period = data["period"] ?: "30일"
 
-        val title = "⭐ 역대 최저가 달성!"
+        val title = "역대 최저가 달성"
         val body = "$productName\n" +
                 "현재가격: ${formatPrice(currentPrice)}\n" +
-                "최근 $period 중 최저가입니다!\n" +
-                "놓치면 후회할 기회입니다!"
+                "최근 $period 중 최저가입니다.\n" +
+                "특가 정보를 확인해 보세요."
 
         showSmartNotification(
             title = title,

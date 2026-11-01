@@ -10,6 +10,460 @@ import re
 
 logger = logging.getLogger(__name__)
 
+def _decode_and_clean_shop_url(u: str) -> str:
+    if not u:
+        return ""
+    u = u.strip().rstrip(".,;)>]")
+    if "s.ppomppu.co.kr" in u:
+        m = re.search(r"target=([^&]+)", u)
+        if m:
+            try:
+                import base64
+                b64 = m.group(1)
+                pad = len(b64) % 4
+                if pad:
+                    b64 += "=" * (4 - pad)
+                dec = base64.b64decode(b64).decode("utf-8", errors="ignore")
+                if dec.startswith("http"):
+                    u = dec
+            except Exception:
+                pass
+    elif "link.php" in u and ("url=" in u or "ol=" in u):
+        m = re.search(r"(?:url|ol)=([^&]+)", u)
+        if m:
+            try:
+                import urllib.parse
+                dec = urllib.parse.unquote(m.group(1))
+                if dec.startswith("http"):
+                    u = dec
+            except Exception:
+                pass
+    u = u.replace("/./", "/")
+    return u
+
+
+_FAKE_OPTION_NAME_RE = re.compile(
+    r"^(?:앱?기본가(?:격)?|최종가(?:격)?|최종혜택가|체감가(?:격)?|할인가(?:격)?|쿠폰가(?:격)?|정상가(?:격)?|판매가(?:격)?|행사가(?:격)?|앱사용가|판매자할인|스토어쿠폰|코인할인|장바구니|결제시?|무료배송|배송비|택배비|합계|총\s*금액|kg|g|ml|l|개|입|미|팩|박스)$",
+    re.IGNORECASE,
+)
+
+_PURE_QTY_OPTION_RE = re.compile(
+    r"^\d+(?:\.\d+)?\s*(?:개|입|팩|봉|병|캔|통|박스|세트|롤|포|매|구|미|kg|g|ml|l)(?:\s*세트|\s*구성)?$",
+    re.IGNORECASE,
+)
+
+_PROSE_NOISE_SUBSTRINGS = (
+    "기본가", "앱기본가", "최종가", "기본가격", "앱사용가", "판매자할인", "스토어쿠폰", "코인할인",
+    "리뷰 작성", "텍스트 리뷰", "포토/동영상", "네이버페이 포인트", "받으시고", "받으세요",
+    "추천릴레이", "무료배송", "감사제", "기대는 안되긴", "미당 약", "종류들은", "제품이고",
+    "(링크", "링크:", "결제 시", "할인코드", "장바구니 담고", "가격이 좋은데", "돈없어서", "작년에 똑같은거"
+)
+
+
+def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str = "") -> str:
+    """제목 앞머리의 [쇼핑몰] 대괄호 또는 구매 링크 도메인에서 쇼핑몰명을 정규화하여 추출합니다."""
+    if current_shop and current_shop.strip() and current_shop.strip() not in ("정보 없음", "-", "기타"):
+        return current_shop.strip()
+
+    non_mall_brackets = {
+        "끌올", "초특가", "특가", "알리특가", "알뜰특가", "코인딜", "골드박스", "핫딜", "직구", "해외직구", "역대급", "품절", "종료", "마감", "모음", "모음전",
+        "광군제", "빅스마일", "빅스마일데이", "무료", "무배", "무료배송", "할인", "타임딜", "원두모음", "다이슨부품", "기타",
+        "공동구매", "선착순", "쿠폰", "이벤트", "체험단", "앱테크", "적립", "국내핫딜", "해외핫딜"
+    }
+    mall_alias_map = {
+        "지마켓": "G마켓", "g마켓": "G마켓", "gmarket": "G마켓",
+        "옥션": "옥션", "11번가": "11번가", "쿠팡": "쿠팡", "롯데온": "롯데온",
+        "네이버": "네이버", "스마트스토어": "네이버", "네쇼라": "네이버", "넾다세일": "네이버",
+        "오늘의집": "오늘의집", "알리": "알리익스프레스", "알리익스프레스": "알리익스프레스",
+        "티몬": "티몬", "위메프": "위메프", "인터파크": "인터파크", "ssg": "SSG", "쓱": "SSG", "신세계몰": "신세계몰", "이마트몰": "이마트몰",
+        "무신사": "무신사", "29cm": "29CM", "토스": "토스", "토스쇼핑": "토스", "톡딜": "톡딜", "카카오": "카카오", "카카오톡딜": "톡딜", "카카오선물하기": "카카오",
+        "우체국쇼핑": "우체국쇼핑", "우체국": "우체국쇼핑", "하이마트": "하이마트", "롯데하이마트": "하이마트",
+        "cj온스타일": "CJ온스타일", "cjonstyle": "CJ온스타일", "gs샵": "GS샵", "gsshop": "GS샵",
+        "현대hmall": "현대Hmall", "hmall": "현대Hmall", "컬리": "컬리", "마켓컬리": "컬리",
+        "아마존": "아마존", "큐텐": "큐텐", "qoo10": "큐텐", "테무": "테무",
+        "스팀": "스팀", "steam": "스팀", "에픽게임즈": "에픽게임즈", "에픽": "에픽게임즈",
+        "올리브영": "올리브영", "다이소": "다이소몰", "다이소몰": "다이소몰", "코스트코": "코스트코", "홈플러스": "홈플러스"
+    }
+
+    if raw_title:
+        m_br = re.match(r"^\s*\[([^\]]{1,16})\]", raw_title)
+        if m_br:
+            cand = m_br.group(1).strip()
+            cand_clean = re.sub(r"\s+", "", cand).lower()
+            if cand_clean not in non_mall_brackets:
+                for k, v in mall_alias_map.items():
+                    if k == cand_clean or k in cand_clean:
+                        return v
+                if len(cand) <= 10 and not any(ch.isdigit() for ch in cand if cand != "11번가" and cand.upper() != "29CM"):
+                    return cand
+
+    u = (ecommerce_link or "").lower()
+    domain_map = [
+        ("aliexpress.", "알리익스프레스"),
+        ("gmarket.co.kr", "G마켓"),
+        ("auction.co.kr", "옥션"),
+        ("11st.co.kr", "11번가"),
+        ("coupang.com", "쿠팡"),
+        ("lotteon.com", "롯데온"),
+        ("smartstore.naver.com", "네이버"),
+        ("brand.naver.com", "네이버"),
+        ("shopping.naver.com", "네이버"),
+        ("ssg.com", "SSG"),
+        ("ohou.se", "오늘의집"),
+        ("musinsa.com", "무신사"),
+        ("29cm.co.kr", "29CM"),
+        ("store.kakao.com", "톡딜"),
+        ("toss.im", "토스"),
+        ("epost.go.kr", "우체국쇼핑"),
+        ("e-himart.co.kr", "하이마트"),
+        ("cjonstyle.com", "CJ온스타일"),
+        ("gsshop.com", "GS샵"),
+        ("hmall.com", "현대Hmall"),
+        ("kurly.com", "컬리"),
+        ("qoo10.", "큐텐"),
+        ("amazon.", "아마존"),
+        ("steampowered.com", "스팀"),
+        ("epicgames.com", "에픽게임즈"),
+        ("oliveyoung.co.kr", "올리브영"),
+        ("daisomall.co.kr", "다이소몰"),
+        ("costco.co.kr", "코스트코"),
+        ("homeplus.co.kr", "홈플러스"),
+    ]
+    for dom, sname in domain_map:
+        if dom in u:
+            return sname
+    return ""
+
+
+def _is_valid_option_name(name: str) -> bool:
+    if not name:
+        return False
+    n = name.strip()
+    if len(n) < 2 or len(n) > 65:
+        return False
+    if _FAKE_OPTION_NAME_RE.match(n):
+        return False
+    if any(sub in n for sub in _PROSE_NOISE_SUBSTRINGS):
+        return False
+    if re.search(r"(?:은|는|이|가|약|가격이|대비|같아요|네요|입니다|합니다|세요|군요|더라고요|드려요|드립니다|공동구매|총정리|기획전|모음전|못감|헤헷)[.!?~]*\s*$", n):
+        return False
+    if any(k in n for k in ("가능성이 높지만", "변동될 수", "공개됩니다", "참고만하세요", "해결방법", "똑같은거탔었는데")):
+        return False
+    return True
+
+
+def extract_structured_multi_options(raw_title: str, content_html: str, default_currency: str = "KRW", default_url: str = "") -> list[dict]:
+    """
+    제목 또는 본문(content_html)에서 다중 상품/옵션 목록과 개별 가격 및 구매 링크를 규칙 기반으로 정밀 추출합니다.
+    (AI 쿼터 소진/키 부재 시에도 100% 동작 보장)
+    """
+    if raw_title and any(k in raw_title for k in ("선착순 쿠폰", "할인코드", "쿠폰 받기", "쿠폰 미리", "쿠폰 받아두세요", "프로모션 코드")) and not re.search(r'[\d,]+\s*(?:원|만|\$|달러|유로|€)', raw_title):
+        return []
+
+    options: list[dict] = []
+    seen_keys = set()
+
+    # 제목에서 기본 대표 상품명(수량만 적힌 옵션에 보충할 용도) 추출
+    base_title_prefix = re.sub(r'^\s*\[[^\]]+\]\s*', '', raw_title or '').strip()
+    base_title_prefix = re.sub(r'\([^\)]*\)|\[[^\]]*\]|/.*$', '', base_title_prefix).strip()
+    base_title_prefix = re.sub(r'(?:[\d,]+\s*원|\$\s*[\d.]+).*$', '', base_title_prefix).strip(' -·,~')
+
+    def parse_price_token(token_str: str, fallback_curr: str = "KRW") -> tuple[int, str]:
+        if not token_str:
+            return 0, fallback_curr
+        s = token_str.strip()
+        if any(c in s for c in ('$', '달러', 'usd', 'USD')):
+            m = re.search(r'[\d,]+(?:\.\d+)?', s)
+            if m:
+                return round(float(m.group(0).replace(',', '')) * 100), "USD"
+        if any(c in s for c in ('€', '유로', 'eur', 'EUR')):
+            m = re.search(r'[\d,]+(?:\.\d+)?', s)
+            if m:
+                return round(float(m.group(0).replace(',', '')) * 100), "EUR"
+        if '만' in s:
+            m = re.search(r'[\d,]+(?:\.\d+)?', s)
+            if m:
+                return int(float(m.group(0).replace(',', '')) * 10000), "KRW"
+        if '원' in s:
+            m = re.search(r'[\d,]+', s)
+            if m:
+                return int(m.group(0).replace(',', '')), "KRW"
+        m = re.search(r'[\d,]+(?:\.\d+)?', s)
+        if m:
+            raw_num = m.group(0).replace(',', '')
+            if '.' in raw_num and fallback_curr in ("USD", "EUR"):
+                return round(float(raw_num) * 100), fallback_curr
+            if raw_num.isdigit():
+                val = int(raw_num)
+                return val, fallback_curr
+        return 0, fallback_curr
+
+    url_pattern = re.compile(r'(https?://[^\s\)\"\'<>]+)')
+    community_hosts = ('ppomppu.co.kr', 'fmkorea.com', 'fmkorea.org', 'ruliweb.com', 'quasarzone.com', 'clien.net', 'bbasak.com', 'daumcdn.net')
+    image_exts = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.avif')
+
+    raw_lines = []
+    blocks = []
+    body_shop_urls = []
+
+    if content_html:
+        from bs4 import BeautifulSoup
+        # 본문 텍스트에 이미 혼입된 에펨코리아 댓글 영역(추천수 0 ... (2026-10-30 ...)) 및 첨부 이미지 꼬리표 사전 절단
+        clean_html_source = re.split(r'\[첨부된 이미지|추천수\s*\d+\s*비추천수|\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\)', content_html)[0]
+        if "<" in clean_html_source and ">" in clean_html_source:
+            soup = BeautifulSoup(clean_html_source, 'html.parser')
+            for cmt_node in soup.select('.fdb_lst_ul, #cmtPosition, .comment_list, .fdb_v2'):
+                cmt_node.decompose()
+            raw_text_body = soup.get_text(separator='\n')
+        else:
+            raw_text_body = clean_html_source
+        raw_text_body = re.sub(r'(\(링크:\s*https?://[^\s\)]+\)|https?://[^\s\)\"\'<>]+)\s+', r'\1\n', raw_text_body)
+        raw_lines = [ln.strip() for ln in raw_text_body.splitlines() if ln.strip()]
+
+        def is_noise_line(line: str) -> bool:
+            if len(line) < 2 or len(line) > 160:
+                return True
+            low = line.lower()
+            if low.startswith('[첨부된 이미지'):
+                return True
+            if any(w in low for w in (
+                '게시글 신고 기능 안내', '신고버튼을 누르면', '빠삭 운영진', '링크오류시', '링크가 열리지 않는다면',
+                '사파리에서 링크', '링크 꾹 눌러', '알리앱 꾹 눌러서', '예열기간:', '세일기간:', '사용기간:',
+                '주요 페이지 바로가기', '메인 기획전', '알리가 차 쏜다', '쿠폰 센터', '선착순, 앱전용',
+                '전상품 적용 가능', '해외직구 상품 전용', '한국발송 상품 전용', '프로모션 코드',
+                '이상 구매 시', '이상 결제 시', '이상 -$', '이상 -1만', '이상 -2만', '이상 -8천', '이상 -7천', '이상 -2800',
+                '포토 리뷰 1,000원 차이', '체감가는 천원 더 높습니다', '가격은 대략적인 예상치', '환율 변동에 따라', '표기된 가격은 예상가'
+            )):
+                return True
+            if re.match(r'^(?:링크|링크\s*\d+|구매\s*링크|\d+\s*순위|\|)$', line.strip()):
+                return True
+            if re.match(r'^(배송비|택배비|무료배송|무배|결제|카드|쿠폰|할인코드|\d+\.\s*결제|\d+\.\s*알리)', line) and not re.search(r'[가-힣a-zA-Z]{3,}.*\d+.*원', line):
+                return True
+            return False
+
+        current_lines = []
+        for idx_ln, ln in enumerate(raw_lines):
+            if ln.startswith('[첨부된 이미지'):
+                break
+            raw_found = url_pattern.findall(ln)
+            cleaned_urls = []
+            for u in raw_found:
+                cu = _decode_and_clean_shop_url(u)
+                if not cu:
+                    continue
+                if any(h in cu.lower() for h in community_hosts):
+                    continue
+                if cu.lower().split('?')[0].endswith(image_exts):
+                    continue
+                cleaned_urls.append(cu)
+
+            text_only = url_pattern.sub('', ln).replace('(링크:', '').replace('()', '').strip(' -·:[]>')
+            if idx_ln == 0 and not text_only and cleaned_urls:
+                continue
+
+            if text_only and not is_noise_line(text_only):
+                current_lines.append(text_only)
+            if cleaned_urls:
+                blocks.append((current_lines, cleaned_urls[0]))
+                body_shop_urls.append((" ".join(current_lines), cleaned_urls[0]))
+                current_lines = []
+
+    cleaned_default_url = _decode_and_clean_shop_url(default_url)
+    if any(h in cleaned_default_url.lower() for h in community_hosts):
+        cleaned_default_url = body_shop_urls[0][1] if body_shop_urls else (default_url or "")
+
+    # 1단계: 제목 내 다중 괄호 가격 패턴 추출
+    title_no_mall = re.sub(r'^\s*\[[^\]]+\]\s*', '', raw_title or '').strip()
+    title_no_mall = re.sub(r'^\s*(?:\([^\)]+\)|[^\s\(\)]{1,6}\))\s*', '', title_no_mall).strip()
+
+    title_matches = list(re.finditer(
+        r'([^,\(\)/]+?)\s*\(\s*(\$?\s*(?:[\d,]+(?:\.\d+)?)\s*(?:만\s*원?|원|달러|유로|€|\$)?)\s*(?:외|부터|~)?\s*(?:/[^\)]*)?\)',
+        title_no_mall
+    ))
+    if len(title_matches) >= 2:
+        first_valid_prefix = ""
+        for idx_m, m in enumerate(title_matches):
+            opt_name = m.group(1).strip(' ,/·-~')
+            opt_name = re.sub(r'^\s*\[[^\]]+\]\s*', '', opt_name).strip()
+            if _PURE_QTY_OPTION_RE.match(opt_name) and (first_valid_prefix or base_title_prefix):
+                prefix_to_use = first_valid_prefix or base_title_prefix
+                opt_name = f"{prefix_to_use[:30]} ({opt_name})"
+            p_val, p_curr = parse_price_token(m.group(2), default_currency)
+            if _is_valid_option_name(opt_name) and p_val >= 100:
+                if not first_valid_prefix:
+                    first_valid_prefix = re.sub(r'\s*(?:1\+1|\d+\+\d+|\d+\s*(?:개|입|팩|세트)).*$', '', opt_name).strip()
+                key = (opt_name.lower(), p_val)
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    matched_url = ""
+                    opt_tokens = [t.lower() for t in re.findall(r'[가-힣a-zA-Z0-9.]{2,}', opt_name)]
+                    best_overlap = 0
+                    for blk_text, blk_u in body_shop_urls:
+                        bt_low = blk_text.lower()
+                        ov = sum(1 for tok in opt_tokens if tok in bt_low)
+                        if ov > best_overlap:
+                            best_overlap = ov
+                            matched_url = blk_u
+                    if not matched_url and idx_m < len(body_shop_urls):
+                        matched_url = body_shop_urls[idx_m][1]
+                    if not matched_url:
+                        matched_url = cleaned_default_url
+                    options.append({
+                        "name": opt_name[:60],
+                        "price": p_val,
+                        "currency": p_curr,
+                        "url": matched_url
+                    })
+        if len(options) >= 2:
+            return options
+
+    if not content_html:
+        return []
+
+    # 2단계: 본문 내 개별 쇼핑몰 링크(Multi-Link Block) 기반 다중 상품 추출
+    if len(blocks) >= 2:
+        block_options = []
+        for blk_lines, blk_url in blocks:
+            if not blk_lines:
+                continue
+            cand_name = ""
+            cand_prices = []
+            for bl in blk_lines:
+                bl_no_unit = re.sub(r'\([^\)]*(?:당|개당|병당|포당|통당|박스당|팩당|캔당|g당|ml당|알당|캡슐당)[^\)]*\)', '', bl)
+                bl_no_unit = re.sub(r'(?:개당|병당|포당|통당|박스당|팩당|캔당|100g당|10g당|미당)\s*약?\s*[\d,]+\s*원', '', bl_no_unit)
+                bl_no_cond = re.sub(r'[\d,]+\s*(?:만\s*원?|천\s*원?|원)\s*(?:이상|이하|할인|적립|쿠폰|캐시백|청구|증정|차이|혜택)', '', bl_no_unit)
+
+                has_exact_won_on_line = False
+                for pm in re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\s*원', bl_no_cond):
+                    pv = int(pm.replace(',', ''))
+                    if 500 <= pv <= 15000000:
+                        cand_prices.append((pv, "KRW", bl, True))
+                        has_exact_won_on_line = True
+
+                if not has_exact_won_on_line and not any(x[3] for x in cand_prices):
+                    for mm in re.findall(r'([0-9]+(?:\.[0-9]+)?)\s*만\s*원?(?:대|\s*중반|\s*초반|\s*후반)?', bl_no_cond):
+                        mv = int(float(mm) * 10000)
+                        if 5000 <= mv <= 15000000:
+                            cand_prices.append((mv, "KRW", bl, False))
+
+                for dm in re.findall(r'(?:\$\s*([0-9]+(?:\.[0-9]+)?)|([0-9]+(?:\.[0-9]+)?)\s*달러(?:대)?)', bl_no_cond):
+                    d_str = dm[0] or dm[1]
+                    dv = round(float(d_str) * 100)
+                    if 100 <= dv <= 1000000:
+                        cand_prices.append((dv, "USD", bl, True))
+
+                cleaned_candidate = re.sub(r'(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\s*원.*|(?:[0-9]+(?:\.[0-9]+)?)\s*만\s*원?(?:대|\s*중반|\s*초반|\s*후반)?.*|\$\s*[0-9]+(?:\.[0-9]+)?.*|[0-9]+(?:\.[0-9]+)?\s*달러(?:대)?.*', '', bl)
+                cleaned_candidate = re.sub(r'바로가기\s*>*\s*', '', cleaned_candidate)
+                cleaned_candidate = re.sub(r'^>+\s*', '', cleaned_candidate)
+                cleaned_candidate = re.sub(
+                    r'\s*(?:[\d,]+\s*(?:포인트|원|p|%|프로)\s*[\+\-/]?\s*)*(?:금액대별\s*쿠폰|중복\s*쿠폰|장바구니\s*쿠폰|쿠폰|할인|적립|토스|네이버|카카오|카드|페이|적용시|감안시|결제시|체감가?|최종가?|앱기본가?|기본가?).*$',
+                    '',
+                    cleaned_candidate,
+                    flags=re.IGNORECASE
+                ).strip(' -·:,/~+>')
+
+                if _PURE_QTY_OPTION_RE.match(cleaned_candidate) and base_title_prefix:
+                    cleaned_candidate = f"{base_title_prefix[:30]} ({cleaned_candidate})"
+
+                if _is_valid_option_name(cleaned_candidate):
+                    if not cand_name:
+                        cand_name = cleaned_candidate
+                    else:
+                        # 이미 첫 줄에서 상품명(cand_name)이 확정된 경우:
+                        # 후속 줄이 스펙/구성품 설명(예: Core i7-1185G7, 옵션: 실버 16GB/512GB, 자동 먼지비움 클린 스테이션 포함)이면 덮어쓰지 않고 괄호로 병기하거나 기존 상품명 사수!
+                        is_spec_or_subline = bool(
+                            re.search(r'(?:RAM|SSD|GB|TB|Core\s*i\d|Ryzen|라이젠|인텔|[0-9]{4}[A-Z]{1,2}|H255|옵션\s*:|스테이션\s*포함|포함|증정|구성)', cleaned_candidate, re.I)
+                            and not any(b in cleaned_candidate.lower() for b in ('레노버', '에디파이어', '드리미', 'firebat', 'gmktec', 'ninkear', 'jonr', 'uwant', 'alldocube', '삼성', 'lg', '알파스캔', '필립스'))
+                        )
+                        if is_spec_or_subline:
+                            spec_short = re.sub(r'^옵션\s*:\s*', '', cleaned_candidate).strip()
+                            if len(cand_name) + len(spec_short) <= 52 and spec_short.lower() not in cand_name.lower():
+                                cand_name = f"{cand_name} ({spec_short})"
+                        elif re.match(r'^\d+[\)\.]\s*', bl.strip()):
+                            cand_name = cleaned_candidate
+
+            if cand_name and cand_prices:
+                chosen_price, chosen_curr, _, _ = cand_prices[-1]
+                for pv, pcurr, line_ctx, is_exact in cand_prices:
+                    if any(k in line_ctx for k in ('감안', '체감', '최종', '적용', '실구매')) and not any(bad in line_ctx for bad in ('차이', '높습니다', '비쌉니다', '더 듭니다', '만원대여서')):
+                        if is_exact or not any(x[3] for x in cand_prices):
+                            chosen_price, chosen_curr = pv, pcurr
+                key = (cand_name[:30].lower(), chosen_price)
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    block_options.append({
+                        "name": cand_name[:60],
+                        "price": chosen_price,
+                        "currency": chosen_curr,
+                        "url": blk_url
+                    })
+        distinct_names = {o["name"].lower() for o in block_options}
+        if len(block_options) >= 2 and len(distinct_names) >= 2:
+            return block_options[:30]
+
+    # 3단계: 단일 링크 모음전/골라담기 게시글의 본문 라인별 '상품명 + 가격' 추출
+    is_collection_title = bool(re.search(r'(?:외\s*\d+|골라담기|모음|선택|다양|\d+\s*종|~)', raw_title or ''))
+    if not is_collection_title:
+        return []
+
+    line_options = []
+    for ln in raw_lines:
+        if len(ln) < 3 or len(ln) > 100 or ln.startswith('[첨부된 이미지'):
+            continue
+        ln_clean = url_pattern.sub('', ln).replace('()', '').strip()
+        if not ln_clean:
+            continue
+        ln_no_unit = re.sub(r'\([^\)]*(?:당|개당|병당|포당|통당|박스당|팩당|캔당|g당|ml당|미당)[^\)]*\)', '', ln_clean)
+        ln_no_cond = re.sub(r'[\d,]+\s*(?:만\s*원?|천\s*원?|원)\s*(?:이상|이하|할인|적립|쿠폰|캐시백|배송비|택배비)', '', ln_no_unit)
+
+        m_opt = re.search(r'^(.{2,45}?)\s*[:\-–~·/(\[]+\s*(\$?\s*(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7}|[0-9]+\.[0-9]+)\s*(?:원|달러|유로|€|\$))', ln_no_cond)
+        if m_opt:
+            opt_name = re.sub(r'^\s*\d+[\.\)]\s*', '', m_opt.group(1)).strip(' -·:()[]')
+            if not _is_valid_option_name(opt_name):
+                continue
+            p_val, p_curr = parse_price_token(m_opt.group(2), default_currency)
+            if p_val >= 500:
+                key = (opt_name[:30].lower(), p_val)
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    line_options.append({
+                        "name": opt_name[:60],
+                        "price": p_val,
+                        "currency": p_curr,
+                        "url": cleaned_default_url
+                    })
+
+    distinct_line_names = {o["name"].lower() for o in line_options}
+    if len(line_options) >= 2 and len(distinct_line_names) >= 2:
+        return line_options[:20]
+
+    return []
+
+
+def format_multi_options_summary(options: list[dict], prefix_hot: bool = False) -> str:
+    """추출된 다중 옵션 리스트를 앱/웹 카드에서 한눈에 볼 수 있는 요약 문자열로 포맷팅합니다."""
+    if not options or len(options) < 2:
+        return ""
+    lines = []
+    for opt in options[:6]:
+        name = opt.get("name", "옵션")
+        price = int(opt.get("price", 0) or 0)
+        curr = (opt.get("currency") or "KRW").upper()
+        if curr == "USD":
+            p_str = f"${price / 100:.2f}"
+        elif curr == "EUR":
+            p_str = f"€{price / 100:.2f}"
+        else:
+            p_str = f"{price:,}원"
+        lines.append(f"• {name}: {p_str}")
+    if len(options) > 6:
+        lines.append(f"• 외 {len(options) - 6}개 구성 상품")
+    header = f"[구성 상품 {len(options)}종 가격 안내]"
+    if prefix_hot:
+        header = "[커뮤니티 인증 핫딜] " + header
+    return header + "\n" + "\n".join(lines)
+
+
 class AggregatorService:
     """
     🔗 스크래핑 결과(Deal)를 정규화하여 DB의 Deal과 매칭 및 병합하는 연동 레이어
@@ -22,11 +476,19 @@ class AggregatorService:
 
 
     async def process_scraped_deal(self, community_id: int, scraped_data: dict) -> Deal:
-        raw_title = scraped_data.get("title", "")
+        from backend.core.url_utils import normalize_url
+        raw_title = (scraped_data.get("title", "") or "").replace("\xa0", " ").replace("릿模셈", "넾다세일").replace("\ufffd", "").strip()
         provided_price = scraped_data.get("price", 0)
-        url = scraped_data.get("url", "")
-        shop_name = scraped_data.get("shop_name", "")
-        image_url = scraped_data.get("image_url", "")
+        url = normalize_url(scraped_data.get("url", "") or "")
+        scraped_data["url"] = url
+        if scraped_data.get("ecommerce_link"):
+            scraped_data["ecommerce_link"] = normalize_url(_decode_and_clean_shop_url(scraped_data["ecommerce_link"]))
+        shop_name = infer_shop_name(raw_title, scraped_data.get("ecommerce_link", "") or url, scraped_data.get("shop_name", ""))
+        raw_img = (scraped_data.get("image_url", "") or "").strip()
+        if raw_img and any(b in raw_img.lower() for b in ("noimage", "no_image", "thumb_no_image", "dot03.gif", "logo_f.svg")):
+            raw_img = None
+        scraped_data["image_url"] = raw_img
+        image_url = raw_img
         
         community = self.db.query(Community).filter(Community.id == community_id).first()
         community_name = community.name if community else ""
@@ -44,127 +506,138 @@ class AggregatorService:
         
         title_price = 0
         title_currency = "KRW"
-        
-        # 1. 괄호 속 달러/유로/원 우선 파싱
-        match = re.search(r'\(\s*\$?\s*((?:[\d,]+|[\d,]*\.[\d]+)(?:원|달러|유로|€)?)(?:\s*/\s*([^\)]*))?\)', raw_title)
-        if match:
-            extracted_price = match.group(1).replace(',', '')
-            if '달러' in extracted_price or '.' in extracted_price or '$' in match.group(0):
-                title_currency = "USD"
-                extracted_price = extracted_price.replace('달러', '').replace('$', '').strip()
-                if extracted_price.replace('.', '', 1).isdigit():
-                    title_price = round(float(extracted_price) * 100)
-            elif '유로' in extracted_price or '€' in match.group(0):
-                title_currency = "EUR"
-                extracted_price = extracted_price.replace('유로', '').replace('€', '').strip()
-                if extracted_price.replace('.', '', 1).isdigit():
-                    title_price = round(float(extracted_price) * 100)
-            else:
-                extracted_price = extracted_price.replace('원', '')
-                if extracted_price.isdigit(): title_price = int(extracted_price)
-            if match.group(2):
-                shipping_raw = match.group(2).lower()
-                if '무료' in shipping_raw or '무배' in shipping_raw or 'fs' in shipping_raw or 'free' in shipping_raw:
-                    shipping_fee = "무료배송"
 
-        # 2. 괄호 외 만/원/달러/유로 파싱
-        if title_price == 0:
+        # 단위당 가격(예: 100g당 990원)의 단위 숫자가 대표 가격(100원)으로 오인되는 현상 차단
+        title_for_price = re.sub(r'\d+(?:\.\d+)?\s*(?:kg|g|ml|l|개|입|봉|팩|포|장|매|구|미|알|병|캔|통|박스)\s*당', ' ', raw_title, flags=re.IGNORECASE)
+        is_explicit_free_deal = bool(re.search(r'\(\s*(?:무료|0\s*원|free)\s*\)|무료\s*배포|한정\s*무료|무료\s*\(유료', raw_title, re.IGNORECASE))
+        
+        # 1. 괄호/대괄호 속 달러/유로/원 우선 파싱 (예: (53,475원 외/무료), (3,920원~ / 무배), (46638/무), [899,000], [롯데온 18000])
+        match = re.search(
+            r'[\(\[]\s*(?:최저가?\s*|체감가?\s*|쿠폰가?\s*|할인가?\s*|약\s*)*\$?\s*((?:[\d,]+|[\d,]*\.[\d]+)\s*(?:만\s*원?|원|달러|유로|€|\$)?)\s*(?:외|부터|~|각|이상|이하|전후)?\s*(?:[/,]\s*([^\)\]]*))?[\)\]]',
+            title_for_price
+        )
+        if match:
+            raw_token_p = match.group(1).replace(',', '').strip()
+            has_slash_or_unit = bool(match.group(2)) or any(u in match.group(0) for u in ('원', '만', '달러', '유로', '$', '€'))
+            # 단순 수량/용량 괄호 (예: (180일분), (2024)) 오인 방지를 위해 단위 또는 슬래시 배송비가 있거나 4자리 이상일 때만 인정
+            if has_slash_or_unit or (raw_token_p.isdigit() and len(raw_token_p) >= 4 and not re.match(r'^202\d$', raw_token_p)):
+                if '달러' in raw_token_p or '$' in match.group(0) or ('.' in raw_token_p and '만' not in raw_token_p and '유로' not in raw_token_p and '€' not in match.group(0)):
+                    title_currency = "USD"
+                    clean_p = re.sub(r'[^\d.]', '', raw_token_p)
+                    if clean_p.replace('.', '', 1).isdigit():
+                        title_price = round(float(clean_p) * 100)
+                elif '유로' in raw_token_p or '€' in match.group(0):
+                    title_currency = "EUR"
+                    clean_p = re.sub(r'[^\d.]', '', raw_token_p)
+                    if clean_p.replace('.', '', 1).isdigit():
+                        title_price = round(float(clean_p) * 100)
+                elif '만' in raw_token_p:
+                    clean_p = re.sub(r'[^\d.]', '', raw_token_p)
+                    if clean_p.replace('.', '', 1).isdigit():
+                        title_price = int(float(clean_p) * 10000)
+                else:
+                    clean_p = re.sub(r'[^\d]', '', raw_token_p)
+                    if clean_p.isdigit():
+                        title_price = int(clean_p)
+                if match.group(2):
+                    shipping_raw = match.group(2).lower()
+                    if any(k in shipping_raw for k in ('무료', '무배', 'fs', 'free')) or shipping_raw.strip() == '무':
+                        shipping_fee = "무료배송"
+
+        # 2. 괄호 외 만/원/달러/유로 및 슬래시(5980/무배), 대괄호([롯데온 18000]) 파싱
+        if title_price == 0 and not is_explicit_free_deal:
             title_currency = "KRW"
-            match_man = re.search(r'([\d,]*\.[\d]+|[\d,]+)만(?!\s*(원\s*)?(할인|적립|쿠폰|캐시백|이상|권))', raw_title)
+            match_man = re.search(r'([\d,]*\.[\d]+|[\d,]+)만(?!\s*(원\s*)?(할인|적립|쿠폰|캐시백|이상|권))', title_for_price)
             if match_man:
                 title_price = int(float(match_man.group(1).replace(',', '')) * 10000)
             else:
-                match_won = re.search(r'(?<![+\-])(?<!\d\s~\s)(?<!~\s)([0-9,]{3,})\s*원(?!\s*(할인|적립|쿠폰|캐시백|이상|권))', raw_title)
+                match_won = re.search(r'(?<![+\-])(?<!\d\s~\s)(?<!~\s)([0-9,]{3,})\s*원(?!\s*(할인|적립|쿠폰|캐시백|이상|권))', title_for_price)
                 if match_won:
                     title_price = int(match_won.group(1).replace(',', ''))
                 else:
-                    match_dollar = re.search(r'\$\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*달러', raw_title)
-                    if match_dollar: 
-                        title_currency = "USD"
-                        val = match_dollar.group(1) or match_dollar.group(2)
-                        title_price = round(float(val.replace(',', '')) * 100)
+                    match_slash = re.search(r'(?<!\d)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\s*원?\s*(?:외|부터|~)?\s*[/,]\s*(무배|무료|무료배송|무|유료|택배|와우|배송비|[0-9,]{3,5}\s*원?)', title_for_price)
+                    if match_slash:
+                        title_price = int(match_slash.group(1).replace(',', ''))
+                        if match_slash.group(2) in ('무배', '무료', '무료배송', '무', '와우'):
+                            shipping_fee = "무료배송"
                     else:
-                        match_euro = re.search(r'€\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*유로', raw_title)
-                        if match_euro:
-                            title_currency = "EUR"
-                            val = match_euro.group(1) or match_euro.group(2)
-                            title_price = round(float(val.replace(',', '')) * 100)
+                        match_bracket = re.search(r'\[\s*(?:[가-힣a-zA-Z]+\s+)?([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\s*원?\s*\]', title_for_price)
+                        if match_bracket:
+                            title_price = int(match_bracket.group(1).replace(',', ''))
+                        else:
+                            match_dollar = re.search(r'\$\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*달러', title_for_price)
+                            if match_dollar: 
+                                title_currency = "USD"
+                                val = match_dollar.group(1) or match_dollar.group(2)
+                                title_price = round(float(val.replace(',', '')) * 100)
+                            else:
+                                match_euro = re.search(r'€\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*유로', title_for_price)
+                                if match_euro:
+                                    title_currency = "EUR"
+                                    val = match_euro.group(1) or match_euro.group(2)
+                                    title_price = round(float(val.replace(',', '')) * 100)
         
         # 기본 정책: 타이틀 가격을 우선시
-        if title_price > 0:
+        if is_explicit_free_deal:
+            final_price = 0
+            currency = "KRW"
+        elif title_price > 0:
             final_price = title_price
             currency = title_currency
             
-        # 퀘이사존, 펨코는 핫딜 규정상 기재된 가격 태그가 가장 정확하므로 무조건 우선시함
-        if community_name in ["quasarzone", "퀘이사존", "fmkorea", "펨코"] and provided_price > 0:
+        # 퀘이사존, 펨코는 핫딜 규정상 기재된 가격 태그가 가장 정확하므로 우선시함 (단, 무료배포/무료게임 제외)
+        if not is_explicit_free_deal and community_name in ["quasarzone", "퀘이사존", "fmkorea", "펨코"] and provided_price > 0:
             final_price = provided_price
             currency = scraped_data.get("currency", "KRW")
-            # 타이틀에서 추출된 가격과 달라도 더미 옵션을 생성하지 않음 (대부분 개당 가격을 제목에 쓴 경우이므로)
-        elif provided_price > 0:
-            # 타이틀 가격과 스크래퍼가 제공한 가격(본문 등)에 큰 차이가 있으면 모음전(멀티 옵션)으로 간주
+        elif not is_explicit_free_deal and provided_price > 0:
             if title_price > 0 and abs(title_price - provided_price) / max(title_price, provided_price) > 0.1:
-                print(f"DEBUG [가격 불일치 감지] 타이틀: {title_price}, 본문: {provided_price}")
-                logger.info(f"[가격 불일치 감지] 타이틀: {title_price}, 본문: {provided_price}. 모음전으로 간주하여 대표 가격을 {title_price}로 고정합니다.")
+                logger.info(f"[가격 불일치 감지] 타이틀: {title_price}, 본문: {provided_price}. 대표 가격을 {title_price}로 고정합니다.")
                 final_price = title_price
                 currency = title_currency
-                
-                # [Auto-Skill Swarm Maximum Activated] - AI 할당량 소진 대비 Regex Fallback 추출 적용
-                extracted_options = []
-                content_html = scraped_data.get("content_html", "")
-                if content_html:
-                    try:
-                        from bs4 import BeautifulSoup
-                        soup = BeautifulSoup(content_html, 'html.parser')
-                        text_lines = soup.get_text(separator='\n').split('\n')
-                        seen_prices = set()
-                        for line in text_lines:
-                            line = line.strip()
-                            if '원' in line or '달러' in line or '$' in line or '유로' in line or '€' in line:
-                                nums = re.findall(r'\b\d{1,3}(?:,\d{3})+\b|\b\d{4,}\b', line)
-                                for num_str in nums:
-                                    val = int(num_str.replace(',', ''))
-                                    if val > 1000:
-                                        if val not in seen_prices:
-                                            seen_prices.add(val)
-                                            name = line[:40].strip()
-                                            extracted_options.append({"name": name, "price": val})
-                    except Exception as e:
-                        logger.error(f"Regex options extraction failed: {e}")
-                
-                # AI 분할을 대신하여 모음전이라는 것을 암시하는 더미 옵션을 생성
-                if "options_data" not in scraped_data or not scraped_data["options_data"]:
-                    if extracted_options and len(extracted_options) > 1:
-                        scraped_data["options_data"] = extracted_options
-                    else:
-                        scraped_data["options_data"] = [
-                            {"name": "옵션 1 (제목 기준 최저가)", "price": title_price},
-                            {"name": "옵션 2 (본문 기재 가격)", "price": provided_price}
-                        ]
-                print(f"DEBUG scraped_data['options_data']: {scraped_data.get('options_data')} ")
 
-
-        # 제목에서 추출 실패 시 본문에서 스크래퍼가 넘겨준 가격 사용
-        if final_price == 0 and provided_price > 0:
+        # 제목에서 추출 실패 시 본문에서 스크래퍼가 넘겨준 가격 사용 (단, 선착순 쿠폰/할인코드 안내글 및 무료배포 글은 제외)
+        is_coupon_guide_post = any(k in raw_title for k in ("선착순 쿠폰", "할인코드", "쿠폰 받기", "쿠폰 미리", "쿠폰 받아두세요")) and not re.search(r'[\d,]+\s*(?:원|만|\$|달러|유로|€)', raw_title)
+        if final_price == 0 and provided_price > 0 and not is_coupon_guide_post and not is_explicit_free_deal:
             final_price = provided_price
             if scraped_data.get("currency"):
                 currency = scraped_data.get("currency")
 
-        if "무배" in raw_title or "무료배송" in raw_title or "무료" in raw_title: 
+        # 다중 상품/옵션 규칙 기반 정밀 추출 (타이틀 다중 옵션 & 본문 멀티 링크/라인 옵션)
+        content_html_for_opts = scraped_data.get("content_html", scraped_data.get("content", "")) or ""
+        structured_opts = extract_structured_multi_options(
+            raw_title=raw_title,
+            content_html=content_html_for_opts,
+            default_currency=currency,
+            default_url=scraped_data.get("ecommerce_link") or url
+        )
+        if structured_opts and len(structured_opts) >= 2:
+            scraped_data["options_data"] = structured_opts
+            if final_price == 0 or title_price == 0:
+                valid_opts = [o for o in structured_opts if int(o.get("price", 0)) > 0]
+                if valid_opts:
+                    first_opt = valid_opts[0]
+                    final_price = int(first_opt["price"])
+                    currency = first_opt.get("currency", currency or "KRW")
+
+        if "무배" in raw_title or "무료배송" in raw_title or "무료" in raw_title or "/무)" in raw_title: 
             shipping_fee = "무료배송"
         
         if shipping_fee:
-            sf_str = str(shipping_fee).strip()
-            # 텍스트 내의 다중 공백, 탭, 줄바꿈 등을 하나의 공백으로 압축하여 프론트엔드 UI 깨짐 방지
-            sf_str = re.sub(r'\s+', ' ', sf_str)
-            if sf_str in ["0", "0원", "무료", "무배", "무료배송", "臾대즺", "臾대같"]:
-                shipping_fee = "무료배송"
+            sf_str = re.sub(r'\s+', ' ', str(shipping_fee)).strip()
+            if len(sf_str) > 25 or 'http://' in sf_str or 'https://' in sf_str or '게시물입니다' in sf_str:
+                shipping_fee = "무료배송" if any(k in sf_str for k in ("무료배송", "무배", "배송비 무료", "배송비포함", "배송비 포함", "Free shipping")) else "정보 없음"
+            elif sf_str in ["0", "0원", "무", "무료", "무배", "무료배송", "臾대즺", "臾대같", "-", "."]:
+                shipping_fee = "무료배송" if sf_str not in ("-", ".") else "정보 없음"
+            elif re.match(r'^[0-9,]+$', sf_str):
+                val_sf = int(sf_str.replace(',', ''))
+                shipping_fee = "무료배송" if val_sf == 0 else f"{val_sf:,}원"
             elif re.match(r'^(0원?|무료|무배|臾대즺|臾대같)\s*(/|\+)', sf_str):
                 shipping_fee = re.sub(r'^(0원?|무료|무배|臾대즺|臾대같)\s*', '무료배송 ', sf_str)
             else:
                 shipping_fee = sf_str
         
-        # [Phase 6] 하이브리드 파이프라인 Step 2: 쇼핑몰 메타태그 직공 (WAF 우회 및 정가 추출)
-        import urllib.request
+        # [Phase 6] 하이브리드 파이프라인 Step 2: 쇼핑몰 메타태그 직공 (비동기 httpx로 이벤트 루프 블로킹 원천 차단)
+        import httpx
         from bs4 import BeautifulSoup
         
         if final_price == 0 and scraped_data.get("ecommerce_link"):
@@ -172,14 +645,15 @@ class AggregatorService:
                 target_url = scraped_data.get("ecommerce_link")
                 if 'coupang' not in target_url: # 쿠팡은 WAF 방어가 100%이므로 제외
                     logger.info(f"[Spider] 정규식 실패. 쇼핑몰({target_url})에 직접 침투하여 메타태그 스나이핑 시도...")
-                    req = urllib.request.Request(target_url, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req, timeout=3) as res:
-                        soup = BeautifulSoup(res.read(), 'html.parser')
-                        # og:price:amount, itemprop=price 등 표준 마크업 탐색
-                        meta_price = soup.find('meta', property='product:price:amount') or soup.find('meta', property='og:price:amount')
-                        if meta_price and meta_price.get('content'):
-                            final_price = int(float(meta_price['content'].replace(',', '')))
-                            logger.info(f"[Hit] 쇼핑몰 메타태그에서 가격 적중! {final_price}원")
+                    async with httpx.AsyncClient(timeout=2.0, follow_redirects=True) as client:
+                        res = await client.get(target_url, headers={'User-Agent': 'Mozilla/5.0'})
+                        if res.status_code == 200:
+                            soup = BeautifulSoup(res.text, 'html.parser')
+                            # og:price:amount, itemprop=price 등 표준 마크업 탐색
+                            meta_price = soup.find('meta', property='product:price:amount') or soup.find('meta', property='og:price:amount')
+                            if meta_price and meta_price.get('content'):
+                                final_price = int(float(meta_price['content'].replace(',', '')))
+                                logger.info(f"[Hit] 쇼핑몰 메타태그에서 가격 적중! {final_price}원")
             except Exception as e:
                 logger.debug(f"쇼핑몰 메타 스나이핑 실패: {e}")
                 
@@ -187,16 +661,25 @@ class AggregatorService:
         if currency == "KRW" and final_price > 0 and final_price < 100:
             logger.info(f"[Warning] 가격 비정상 감지 ({final_price}원). 오류 또는 포인트성 숫자로 간주하여 0원으로 초기화.")
             final_price = 0
-        # 상한선 검증: 너무 터무니없이 높은 가격(예: 500만원 초과)은 상품 코드가 잘못 파싱된 경우일 확률이 높으므로 0으로 보정
-        elif currency == "KRW" and final_price > 5000000:
+        # 상한선 검증: 고사양 조립PC(RTX 5080/5090 등) 및 대형 가전을 수용하도록 1,500만 원까지 허용
+        elif currency == "KRW" and final_price > 15000000:
             logger.info(f"[Warning] 가격 비정상 감지 ({final_price}원). 오류 또는 상품코드로 간주하여 0원으로 초기화.")
             final_price = 0
 
         price = final_price
         
-        # 🚨 스팸 및 공지사항 / 게시판 뻘글 필터링
-        spam_keywords = ["공지", "질문", "투패", "몰테일", "폐업", "출고", "지연", "지쟈스", "배대지", "안내", "도와주세요", "어떤가요", "입고금지", "수익링크", "바이럴", "금지조치", "활동내역", "제재조치"]
-        if any(keyword in raw_title for keyword in spam_keywords) or (price == 0 and "?" in raw_title):
+        # 🚨 스팸 및 공지사항 / 게시판 잡담·질문글 / URL만 적힌 글 필터링
+        spam_keywords = [
+            "공지", "질문", "투패", "몰테일", "폐업", "출고", "지연", "지쟈스", "배대지", "안내",
+            "도와주세요", "어떤가요", "어디까지", "갈수있는데", "할수있는데", "가능할까요",
+            "입고금지", "수익링크", "바이럴", "금지조치", "활동내역", "제재조치"
+        ]
+        if (
+            raw_title.startswith("http://")
+            or raw_title.startswith("https://")
+            or any(keyword in raw_title for keyword in spam_keywords)
+            or (price == 0 and "?" in raw_title)
+        ):
             logger.info(f"[Spam Filtered] 핫딜이 아닌 게시판 정보 스킵: {raw_title}")
             return None
         
@@ -239,8 +722,10 @@ class AggregatorService:
             if price == 0:
                 is_event = True
             
-        # 루리웹(10), 퀘이사존(8) 등에서만 적립 또는 이벤트로 강제 보정 적용
-        if community_id in [8, 10]:
+        # 적립 또는 이벤트(특히 선착순 쿠폰/할인코드 안내글) 강제 보정 적용
+        if is_coupon_guide_post:
+            final_category = "이벤트"
+        elif community_id in [8, 10] or price == 0:
             if is_point:
                 final_category = "적립"
             elif is_event:
@@ -258,13 +743,15 @@ class AggregatorService:
             except Exception:
                 pass
 
-        # [Phase 6.5] 💡 글로벌 쇼핑몰 링크 캐싱 (CEO 피드백: 중복 핫딜 AI 호출 방지)
+        # [Phase 6.5] 💡 글로벌 쇼핑몰 링크 캐싱 (고유 상품 키가 확인되고 제목이 유사한 동일 상품일 때만 캐시 재사용)
         cached_ai_summary = None
         ecommerce_url = scraped_data.get("ecommerce_link")
-        if ecommerce_url and len(ecommerce_url) > 15:
+        from backend.core.url_utils import extract_canonical_product_key
+        if ecommerce_url and len(ecommerce_url) > 15 and extract_canonical_product_key(ecommerce_url):
             from datetime import timedelta
             recent_duplicate = self.db.query(Deal).filter(
                 Deal.ecommerce_link == ecommerce_url,
+                Deal.title == raw_title,
                 Deal.indexed_at >= datetime.utcnow() - timedelta(days=2)
             ).first()
             
@@ -283,73 +770,106 @@ class AggregatorService:
         # 2. 중복 및 롤링 윈도우 클러스터링 체크 (Upsert 로직의 핵심)
         existing_deals = self.db.query(Deal).filter(Deal.post_link == url).all()
         
-        # [이중 중복 방어 가드] 동일 커뮤니티 내 최근 24시간 이내 완전히 동일한 제목의 글이 있으면 중복으로 간주하여 Upsert 처리
+        # [이중 중복 방어 가드]
+        # 1) 일반 게시글: 최근 72시간 이내 동일 커뮤니티 또는 알리뽐뿌(4)/뽐뿌해외(11) 간 완전히 동일한 제목이면 중복으로 간주하여 Upsert 처리
+        # 2) 다중 옵션/모음전 게시글(예: [원두모음], [미니PC 8종]): 최근 14일 이내 동일 제목이면 재등록(끌올) 시 신규 행을 늘리지 않고 기존 행을 최신화
         if not existing_deals and raw_title:
             from datetime import timedelta
+            is_multi_or_promo = bool(scraped_data.get("options_data")) or bool(re.search(r'^\s*\[(?:원두모음|광군제|특가|미니PC|보배)[^\]]*\]|^특가\)', raw_title))
+            lookback_hours = 336 if is_multi_or_promo else 72
+            from sqlalchemy import or_
+            comm_candidates = [community_id, 4, 11] if community_id in (1, 4, 11) else [community_id]
             existing_deals = self.db.query(Deal).filter(
-                Deal.source_community_id == community_id,
+                Deal.source_community_id.in_(comm_candidates),
                 Deal.title == raw_title,
-                Deal.indexed_at >= datetime.utcnow() - timedelta(hours=24)
+                or_(
+                    Deal.is_closed == False,
+                    Deal.indexed_at >= datetime.utcnow() - timedelta(hours=lookback_hours)
+                )
             ).all()
             
-        print(f"DEBUG: existing_deals based on post_link or title: {existing_deals}")
         
         # [24시간 롤링 윈도우 클러스터링]: 동일 URL이 아니더라도 24시간 내 동일 상품이면 병합 시도
         if not existing_deals:
             from datetime import timedelta
-            query = self.db.query(Deal).filter(
-                Deal.indexed_at >= datetime.utcnow() - timedelta(hours=24)
+            from backend.core.url_utils import normalize_url, extract_canonical_product_key
+            from backend.routers.community import (
+                has_quantity_conflict,
+                has_model_conflict,
+                has_brand_or_keyword_conflict,
+                has_price_conflict,
             )
-            target_deals = []
-            
-            # 1. 쇼핑몰 링크(ecommerce_url) 기준 매칭 (확실한 고유 링크일 경우, 정규화 보증하여 도메인 차이 극복)
-            target_url = scraped_data.get("ecommerce_link")
-            if target_url and len(target_url) > 20 and 'coupang' not in target_url:
-                from backend.core.url_utils import normalize_url
-                normalized_target_url = normalize_url(target_url)
-                # 정규화된 URL 혹은 원본 URL 모두에 대해 폭넓은 매칭 시도
-                target_deals = query.filter(
-                    (Deal.ecommerce_link == normalized_target_url) | 
-                    (Deal.ecommerce_link == target_url)
-                ).all()
-            
-            # 2. 정규화된 상품명(base_product_name) 기준 매칭 (링크가 없거나 달라도 상품명이 같으면)
-            if not target_deals and normalized.name and len(normalized.name) > 4:
-                target_deals = query.filter(Deal.base_product_name == normalized.name).all()
-                
-            # 3. 🚨 [초지능형 토큰 교차 매칭 가드] (대표님 핫픽스: Toocki 100W C to C 3개 vs Toocki C to C 100W 3pcs 병합 성공!)
-            if not target_deals:
-                # 최근 24시간 이내의 모든 딜을 긁어서 제목 기반의 유사 토큰 오버랩 분석 실시
-                recent_deals = query.all()
-                
-                def get_clean_tokens(text: str) -> set:
-                    # 영어, 숫자, 한글, 주요 특수 단어 위주로 토큰화하여 한-영 교차 매칭 지원
-                    cleaned = re.sub(r'[^a-zA-Z0-9가-힣\s]', ' ', text.lower())
-                    return {token for token in cleaned.split() if len(token) >= 2 and token not in ["to", "and", "or", "for", "pcs"]}
 
-                input_tokens = get_clean_tokens(raw_title)
-                # 핵심 키워드(예: Toocki, 100W, ugreen, acer 등 브랜드/숫자스펙)를 반드시 담고 있어야 함
-                core_keywords = {tk for tk in input_tokens if re.search(r'[0-9]+[wWdD]?|[a-zA-Z]{4,}', tk)}
-                
+            recent_deals = self.db.query(Deal).filter(
+                Deal.indexed_at >= datetime.utcnow() - timedelta(hours=24)
+            ).all()
+            target_deals = []
+
+            def get_clean_tokens(text: str) -> set:
+                cleaned = re.sub(r'[^a-zA-Z0-9가-힣\s]', ' ', (text or "").lower())
+                return {
+                    token for token in cleaned.split()
+                    if len(token) >= 2 and token not in ["to", "and", "or", "for", "pcs", "무료", "무배", "무료배송", "특가", "할인"]
+                }
+
+            input_tokens = get_clean_tokens(raw_title)
+
+            def is_safe_to_merge(candidate: Deal) -> bool:
+                cand_tokens = get_clean_tokens(candidate.title)
+                cand_price = int(candidate.price) if str(candidate.price or "").isdigit() else 0
+                if has_quantity_conflict(input_tokens, cand_tokens):
+                    return False
+                if has_model_conflict(input_tokens, cand_tokens):
+                    return False
+                if has_brand_or_keyword_conflict(input_tokens, cand_tokens):
+                    return False
+                if has_price_conflict(price, cand_price):
+                    return False
+                return True
+
+            # 1. 쇼핑몰 고유 상품 키(Canonical Product Key) 및 정규화 링크 기준 매칭 (쿠팡, 네이버, 11번가, 지마켓 등 모두 지원)
+            target_url = scraped_data.get("ecommerce_link")
+            if target_url and len(target_url) > 12:
+                normalized_target_url = normalize_url(target_url)
+                target_canon_key = extract_canonical_product_key(target_url)
+                for d in recent_deals:
+                    if not d.ecommerce_link:
+                        continue
+                    d_canon = extract_canonical_product_key(d.ecommerce_link)
+                    if (target_canon_key and d_canon == target_canon_key) or (d.ecommerce_link in (target_url, normalized_target_url)):
+                        if is_safe_to_merge(d):
+                            target_deals.append(d)
+
+            # 2. 정규화된 상품명(base_product_name) 기준 매칭 (용량/모델/가격 충돌 방어 + 핵심 명사 최소 2개 일치 필수)
+            if not target_deals and normalized.name and len(normalized.name) >= 8:
+                non_num_input = {tk for tk in input_tokens if not tk.isdigit() and not _PURE_QTY_OPTION_RE.match(tk)}
+                for d in recent_deals:
+                    if d.base_product_name == normalized.name and is_safe_to_merge(d):
+                        d_non_num = {tk for tk in get_clean_tokens(d.title) if not tk.isdigit() and not _PURE_QTY_OPTION_RE.match(tk)}
+                        if len(non_num_input.intersection(d_non_num)) >= 2:
+                            target_deals.append(d)
+
+            # 3. 핵심 토큰 교차 매칭 (단순 숫자/수량 토큰이 아닌 진짜 영문+숫자 모델코드 또는 4글자 이상 영문 브랜드/모델명 일치 필수!)
+            if not target_deals:
+                unit_suffix_re = re.compile(r'^\d+(?:kg|g|mg|ml|l|gb|tb|mb|mah|w|v|hz|mm|cm|m|ea|p|pc|pcs|입|개|팩|봉|병|캔|미|구|포|장|매)$', re.IGNORECASE)
+                core_keywords = {
+                    tk for tk in input_tokens
+                    if not unit_suffix_re.match(tk)
+                    and (re.search(r'(?:[a-zA-Z]+[0-9]+|[0-9]+[a-zA-Z]+)[a-zA-Z0-9-]*', tk) or re.search(r'^[a-zA-Z]{4,}$', tk))
+                }
                 if len(core_keywords) >= 2:
                     for d in recent_deals:
                         d_tokens = get_clean_tokens(d.title)
-                        # 핵심 키워드가 최소 2개 이상 100% 동일하게 겹치는지 체크
                         overlap_core = core_keywords.intersection(d_tokens)
-                        if len(overlap_core) >= 2:
-                            # 겹치는 비율이 높은지 검사 (유사 상품군으로 100% 확증)
-                            all_overlap = input_tokens.intersection(d_tokens)
-                            if len(all_overlap) >= 3:
-                                logger.info(f"[Token Merge Hit] 유사도가 매우 높은 동일 핫딜 감지하여 병합! 원제: '{raw_title}' ➔ 기존딜: '{d.title}'")
+                        if len(overlap_core) >= 2 and len(input_tokens.intersection(d_tokens)) >= 3:
+                            if is_safe_to_merge(d):
+                                logger.info(f"[Token Merge Hit] 동일 핫딜 병합: '{raw_title}' ➔ '{d.title}'")
                                 target_deals = [d]
                                 break
 
-                
             if target_deals:
-                # 롤링 윈도우 병합 발생! 가장 최근(마지막) 딜을 대상으로 갱신을 수행하여 윈도우를 연장시킴
-                logger.info(f"[Rolling Window Clustering] 타 게시글({url})이지만 동일 상품으로 판단하여 병합 시도: {normalized.name}")
+                logger.info(f"[Rolling Window Clustering] 타 게시글({url})이지만 동일 상품으로 판단하여 병합: {normalized.name}")
                 existing_deals = [max(target_deals, key=lambda d: d.indexed_at if d.indexed_at else datetime.min)]
-        print(f"DEBUG: existing_deals after rolling window: {existing_deals}")
         if existing_deals:
              # 이미 수집했던 글이거나, 클러스터링으로 묶인 글이라면 가격 등 메타정보 갱신 (Upsert)
              # 만약 AI가 다중 분할한 상품들이라면, 모든 split deal에 대해 종료 상태 등을 일괄 갱신합니다.
@@ -361,6 +881,7 @@ class AggregatorService:
                          existing_deal.indexed_at = posted_dt
 
                  price_changed = False
+                 lowest_price_dropped = False
                  
                  # 제목 갱신: 단일 상품일 때
                  # 클러스터링(롤링 윈도우)된 경우, 새 핫딜 가격이 더 싸거나 동일 URL일 때만 원본 제목 갱신
@@ -368,10 +889,18 @@ class AggregatorService:
                  if len(existing_deals) == 1 and existing_deal.title != raw_title:
                      if existing_deal.post_link == url:
                          existing_deal.title = raw_title
+                         if normalized.name:
+                             existing_deal.base_product_name = normalized.name
                      elif price > 0 and price < old_price:
                          existing_deal.title = raw_title # 더 싼 새로운 게시글의 제목으로 교체
+                         if normalized.name:
+                             existing_deal.base_product_name = normalized.name
+                         if content_html:
+                             existing_deal.content_html = content_html
                          
-                 # 가격 갱신: 더 저렴한 가격이 등장했을 때 (최저가 갱신) 또는 동일 URL 게시글이 수정되었을 때
+                 # 가격 갱신 및 시세 이력 기록:
+                 # 1) 더 저렴한 가격이 등장했을 때 대표 최저가 갱신 + 푸시 트리거 예약
+                 # 2) 타 커뮤니티 병합 시 가격이 달라도(소폭 높더라도) 시세 등락 그래프를 위해 PriceHistory에는 기록
                  if len(existing_deals) == 1 and price > 0:
                      if price < old_price:
                          logger.info(f"[Lowest Price Updated!] 기존 {old_price}원 -> 새 핫딜 {price}원 (URL 교체: {url})")
@@ -387,8 +916,12 @@ class AggregatorService:
                          
                          existing_deal.post_link = url # 유저가 구매하러 갈 링크도 더 싼 곳으로 교체
                          price_changed = True
+                         lowest_price_dropped = True
                      elif existing_deal.post_link == url and str(existing_deal.price) != str(price):
                          existing_deal.price = str(price)
+                         price_changed = True
+                     elif price != old_price:
+                         # 대표 최저가는 유지하되, 시세 그래프의 등락 포인트 보존을 위해 PriceHistory 기록 활성화
                          price_changed = True
                      
                  # 📸 [고화질 이미지 덮어쓰기 가드]
@@ -412,6 +945,9 @@ class AggregatorService:
                  if scraped_data.get("ecommerce_link") and not existing_deal.ecommerce_link:
                      existing_deal.ecommerce_link = scraped_data.get("ecommerce_link")
                  
+                 if shop_name and not existing_deal.shop_name:
+                     existing_deal.shop_name = shop_name
+
                  if content_html and not existing_deal.content_html:
                      existing_deal.content_html = content_html
                   
@@ -455,6 +991,13 @@ class AggregatorService:
                  if scraped_data.get("options_data"):
                      existing_deal.options_data = json.dumps(scraped_data.get("options_data"), ensure_ascii=False)
                      existing_deal.has_options = True
+                     if len(scraped_data["options_data"]) >= 2:
+                         multi_summary = format_multi_options_summary(
+                             scraped_data["options_data"],
+                             prefix_hot=bool(scraped_data.get("is_super_hotdeal"))
+                         )
+                         if multi_summary and (not existing_deal.ai_summary or "여러 상품이 포함된 핫딜" in existing_deal.ai_summary or existing_deal.ai_summary.strip() in ("🔥 [커뮤니티 인기]", "🔥 [커뮤니티 인증 핫딜]")):
+                             existing_deal.ai_summary = multi_summary
                  
                  # 새로 수집된 날짜 정보가 존재하면 시간 정보가 더 구체적일 때만 업데이트
                  if posted_dt:
@@ -502,6 +1045,41 @@ class AggregatorService:
                  
                  if price_changed and price > 0:
                      self._insert_price_history(existing_deal.id, price)
+
+                 if lowest_price_dropped and price > 0:
+                     try:
+                         import asyncio
+                         from concurrent.futures import ThreadPoolExecutor
+                         from backend.services.notification_service import NotificationService
+                         if not hasattr(self.__class__, '_push_executor'):
+                             self.__class__._push_executor = ThreadPoolExecutor(max_workers=5)
+                         def _trigger_upsert_push(did, dtitle, dprice, dshop, dlink):
+                             from backend.database.session import SessionLocal
+                             s = SessionLocal()
+                             try:
+                                 NotificationService.process_new_deal(
+                                     deal_id=did,
+                                     title=dtitle,
+                                     price=int(dprice),
+                                     site_name=dshop or "HotDeal",
+                                     deal_url=dlink,
+                                     db=s
+                                 )
+                             except Exception as ex:
+                                 logger.error(f"Upsert push dispatch error: {ex}")
+                             finally:
+                                 s.close()
+                         asyncio.get_event_loop().run_in_executor(
+                             self.__class__._push_executor,
+                             _trigger_upsert_push,
+                             existing_deal.id,
+                             existing_deal.title,
+                             price,
+                             existing_deal.shop_name,
+                             existing_deal.post_link
+                         )
+                     except Exception as push_err:
+                         logger.warning(f"Upsert push schedule warning: {push_err}")
 
              logger.debug(f"🔄 기존 Deal 가격/상태 업데이트 (Upsert) - 총 {len(existing_deals)}개 항목: {url}")
              self.db.commit()
@@ -573,18 +1151,18 @@ class AggregatorService:
         
         # [핵심 로직] 가격이 아예 없거나(0원), 다중 상품일 가능성이 높으면 AI를 가동하여 분할(Split) 및 가격 추출을 시도합니다.
         # 글로벌 캐싱으로 이미 ai_summary를 가져왔다면 불필요한 AI 가동을 스킵합니다.
-        token_saving_trigger = (is_multi_item or is_missing_price) and not cached_ai_summary
+        token_saving_trigger = (is_multi_item or is_missing_price) and not cached_ai_summary and not scraped_data.get("options_data")
 
         
-        logger.info(f"DEBUG: price={price}, is_missing_price={is_missing_price}, token_saving_trigger={token_saving_trigger}")
+        
         
         split_items = []
-        if token_saving_trigger and (len(content_html) > 50 or raw_title):
+        from backend.core.ai_utils import get_random_gemini_key
+        if token_saving_trigger and (len(content_html) > 50 or raw_title) and get_random_gemini_key():
             from backend.core.ai_utils import get_random_gemini_key
             import asyncio
             import google.generativeai as genai
             
-            print(f"[AI] 가격 누락 또는 모음전 감지! Gemini 1.5/2.0(최신)으로 정밀 파싱 시작... (원제: {raw_title})")
             logger.info(f"[AI] 가격 누락 또는 모음전 감지! Gemini 1.5/2.0(최신)으로 정밀 파싱 시작... (원제: {raw_title})")
             
             prompt = f"""
@@ -617,7 +1195,7 @@ class AggregatorService:
             게시글 내용: {content_html[:2000]}
             """
             
-            max_retries = 3
+            max_retries = 2
             for attempt in range(max_retries):
                 try:
                     api_key = get_random_gemini_key()
@@ -628,33 +1206,29 @@ class AggregatorService:
                     genai.configure(api_key=api_key)
                     model = genai.GenerativeModel('gemini-flash-latest')
                     
-                    response = await model.generate_content_async(prompt)
+                    response = await asyncio.wait_for(model.generate_content_async(prompt), timeout=8.0)
                     import json
                     text_resp = response.text.replace("```json", "").replace("```", "").strip()
                     parsed = json.loads(text_resp)
                     if isinstance(parsed, list) and len(parsed) > 0:
                         split_items = parsed
-                        print(f"[AI Success] Gemini 자동 분할/단일화 성공! {len(split_items)}개 상품 추출됨")
                         logger.info(f"[AI Success] Gemini 자동 분할/단일화 성공! {len(split_items)}개 상품 추출됨")
                     break
                 except Exception as e:
                     error_msg = str(e).lower()
+                    if "403" in error_msg or "leaked" in error_msg or "api_key_invalid" in error_msg or "permission_denied" in error_msg:
+                        from backend.core.ai_utils import mark_key_dead
+                        mark_key_dead(api_key)
+                        continue
                     if "429" in error_msg:
                         if "spending cap" in error_msg or "quota" in error_msg or "exhausted" in error_msg:
                             from backend.core.ai_utils import mark_key_dead
                             mark_key_dead(api_key)
-                            # 할당량 초과 시 재시도하지 않고 다음 키를 사용하거나 루프 탈출
                             continue
                         if attempt < max_retries - 1:
-                            wait_time = 15
-                            match = re.search(r'retry in ([\d\.]+)s', error_msg)
-                            if match:
-                                wait_time = int(float(match.group(1))) + 2
-                            logger.warning(f"Gemini Rate Limit Hit (Split). Waiting {wait_time}s... (Attempt {attempt+1}/{max_retries})")
-                            await asyncio.sleep(wait_time)
+                            await asyncio.sleep(1.5)
                             continue
-                    print(f"Gemini 분할 실패: {e}")
-                    logger.error(f"Gemini 분할 실패: {e}")
+                    logger.warning(f"Gemini 분할 폴백 처리: {e}")
                     break
             else:
                 logger.info("[Warning] API 키 없음. 상품 자동 분리를 건너뜁니다.")
@@ -684,7 +1258,7 @@ class AggregatorService:
                 item_ecommerce_link = item.get("ecommerce_link") or scraped_data.get("ecommerce_link")
                 
                 # ai_summary가 있으면 사용, 없으면 디폴트 문자열
-                default_summary = f"✅ {item_price:,}원! AI가 자동 분리해낸 핫딜입니다.\n✅ 분할된 옵션 상품으로 정확한 내용은 본문을 참고하세요.\n✅ 세부 스펙은 상품 페이지를 확인해주세요."
+                default_summary = ""
                 final_ai_summary = item.get("ai_summary") or default_summary
                 if honey_score >= 100 and "🔥" not in final_ai_summary:
                     final_ai_summary = "🔥 [커뮤니티 인증 핫딜] " + final_ai_summary
@@ -746,16 +1320,13 @@ class AggregatorService:
                     logger.error(f"Error inserting split item '{derived_title}': {e}")
         else:
             # 단일 등록 (기존 로직)
-            print("DEBUG: Entered else block (단일 등록)")
             try:
                 import json
                 options_data_str = None
                 has_options = False
                 if scraped_data.get("options_data"):
-                    options_data_str = json.dumps(scraped_data.get("options_data"), ensure_ascii=False)
+                    options_data_str = json.dumps(scraped_data.get("options_data"), ensure_ascii=False).replace("\xa0", " ")
                     has_options = True
-                
-                print(f"DEBUG options_data_str: {options_data_str}")
 
                 # 브랜드 및 모델명 메타 정보 추출
                 brand_info = {"brand": "", "model_code": ""}
@@ -772,6 +1343,17 @@ class AggregatorService:
                     if not single_ecommerce_link or 'ppomppu.co.kr' in single_ecommerce_link:
                         single_ecommerce_link = url
 
+                single_ai_summary = ai_summary
+                if scraped_data.get("options_data") and len(scraped_data["options_data"]) >= 2:
+                    multi_summary = format_multi_options_summary(
+                        scraped_data["options_data"],
+                        prefix_hot=bool(scraped_data.get("is_super_hotdeal"))
+                    )
+                    if multi_summary and (not single_ai_summary or single_ai_summary.strip() in ("🔥 [커뮤니티 인기]", "🔥 [커뮤니티 인증 핫딜]")):
+                        single_ai_summary = multi_summary
+                if not single_ai_summary and is_multi_item:
+                    single_ai_summary = ""
+
                 new_deal = Deal(
                     source_community_id=community_id,
                     title=raw_title,
@@ -787,7 +1369,7 @@ class AggregatorService:
                     category=final_category,
                     base_product_name=normalized.name,
                     image_url=image_url,
-                    ai_summary=ai_summary or ("📦 [모음전] 여러 상품이 포함된 핫딜입니다. 상세페이지에서 확인하세요." if is_multi_item else None),
+                    ai_summary=single_ai_summary,
                     content_html=content_html,
                     honey_score=honey_score,
                     view_count=view_count,
@@ -804,7 +1386,6 @@ class AggregatorService:
                 self.db.refresh(new_deal)
                 if final_price > 0: self._insert_price_history(new_deal.id, final_price)
             except Exception as e:
-                print(f"DEBUG: Exception inside else block: {e}")
                 self.db.rollback()
                 logger.error(f"Error inserting deal '{raw_title}': {e}")
                 return None

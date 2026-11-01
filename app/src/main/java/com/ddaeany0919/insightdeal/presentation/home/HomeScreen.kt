@@ -31,7 +31,7 @@ import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import com.ddaeany0919.insightdeal.models.DealItem
- 
+
 import com.ddaeany0919.insightdeal.presentation.components.shimmerEffect
 import com.ddaeany0919.insightdeal.presentation.rememberRelativeTime
 import com.ddaeany0919.insightdeal.presentation.bounceClick
@@ -57,31 +57,45 @@ import androidx.compose.ui.composed
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 
+// [jetpack-compose-performance & anr-audit-and-fix] 정규식, 컬러필터, 포매터 등 고비용 객체 상단 호이스팅
+private val HOME_DIGITAL_CATEGORIES = setOf("적립", "이벤트", "모바일/기프티콘", "상품권", "패키지/이용권")
+private val FREE_KEYWORDS = listOf("무료", "공짜", "배포", "나눔", "0원", "일시무료", "쿠폰")
+private val SHIPPING_LEADING_ZERO_REGEX = Regex("^0(원)?\\s*")
+private val SHIPPING_FREE_COND_REGEX = Regex("(이상|미만|이하)(0원?)?\\s*무료")
+private val SHIPPING_AMOUNT_COND_REGEX = Regex("(\\d+[만천])(이상|미만|이하)")
+private val CLOSED_DEAL_COLOR_FILTER by lazy {
+    androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) }
+    )
+}
+private val ALERT_DATE_FORMATTER: java.time.format.DateTimeFormatter =
+    java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm")
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 @Suppress("DEPRECATION")
 fun HomeScreen(
-    navController: NavController, 
+    navController: NavController,
     viewModel: HomeViewModel = viewModel(),
     wishlistViewModel: WishlistViewModel? = null,
     keywordViewModel: KeywordManagerViewModel = viewModel()
 ) {
     val filterState by viewModel.filterState.collectAsState()
     val selectedCategory = filterState.category
-    
+
     val wishlistState by wishlistViewModel?.uiState?.collectAsState(initial = WishlistUiState.Loading) ?: remember { mutableStateOf(WishlistUiState.Loading) }
     val wishlistedUrls = remember(wishlistState) {
         if (wishlistState is WishlistUiState.Success) {
             (wishlistState as WishlistUiState.Success).items.map { it.productUrl }.toSet()
         } else emptySet()
     }
-    
+
     val context = LocalContext.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val networkMonitor = remember { NetworkMonitor(context) }
     val isOnline by networkMonitor.isOnline.collectAsState(initial = true)
-    val isDark = isSystemInDarkTheme()
-    
+    val isDark = MaterialTheme.colorScheme.background.red < 0.2f
+
     var isNotificationPermissionGranted by remember {
         mutableStateOf(androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled())
     }
@@ -102,7 +116,7 @@ fun HomeScreen(
             showPrePermissionDialog = true
         }
     }
-    
+
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
@@ -111,9 +125,13 @@ fun HomeScreen(
                 isNotificationPermissionGranted = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
                 val prefs = context.getSharedPreferences("app", android.content.Context.MODE_PRIVATE)
                 val disabledPlatforms = prefs.getStringSet("disabled_platforms", emptySet()) ?: emptySet()
-                val allPlatforms = listOf("뽐뿌", "퀘이사존", "펨코", "루리웹", "클리앙", "알리뽐뿌", "빠삭국내", "빠삭해외")
-                val activePlatforms = allPlatforms.filter { it !in disabledPlatforms }.joinToString(",")
-                viewModel.selectPlatform(activePlatforms)
+                if (disabledPlatforms.isEmpty()) {
+                    viewModel.selectPlatform("전체")
+                } else {
+                    val allPlatforms = listOf("뽐뿌", "퀘이사존", "펨코", "루리웹", "클리앙", "알리뽐뿌", "빠삭국내", "빠삭해외", "빠삭육아")
+                    val activePlatforms = allPlatforms.filter { it !in disabledPlatforms }.joinToString(",")
+                    viewModel.selectPlatform(activePlatforms)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -121,11 +139,11 @@ fun HomeScreen(
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
-    
+
     // ✨ Paging3 Lazy 아이템 콜렉팅 및 상태 구독
     val dealsPagingItems = viewModel.dealsPagingData.collectAsLazyPagingItems()
     val listState = rememberLazyListState()
-    
+
     // Toss 스타일 프리미엄 소프트 가이드 알림 권한 팝업 UI
     if (showPrePermissionDialog) {
         AlertDialog(
@@ -220,7 +238,7 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
-                    
+
                     val benefits = listOf(
                         "등록한 키워드의 초특가 딜 실시간 매칭 알림",
                         "야간 차단 및 방해금지 시간 설정으로 수면 방해 방지",
@@ -248,9 +266,9 @@ fun HomeScreen(
                             )
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    
+
                     Text(
                         text = "본 알림 서비스는 정보통신망법(제50조)을 준수하며, 야간 시간대(21:00 ~ 익일 08:00)의 광고성 푸시는 수신 동의 여부와 관계없이 설정된 방해금지 규칙에 따라 완전히 필터링됩니다.",
                         fontSize = 11.sp,
@@ -312,23 +330,28 @@ fun HomeScreen(
         CoupangSettingsDialog(onDismiss = { showCoupangDialog = false })
     }
 
-    // ✨ Pull-to-refresh 및 커스텀 새로고침 상태 통합 관리 (로고 터치 연동)
+    // ✨ Pull-to-refresh 및 커스텀 새로고침 상태 통합 관리 (무한 새로고침 원천 방어 가드)
     val pullRefreshState = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
     var isCustomRefreshing by remember { mutableStateOf(false) }
 
-    if (pullRefreshState.isRefreshing) {
-        LaunchedEffect(true) {
+    LaunchedEffect(pullRefreshState.isRefreshing) {
+        if (pullRefreshState.isRefreshing) {
             isCustomRefreshing = true
             dealsPagingItems.refresh()
             viewModel.fetchTopHotDeals()
+            // [무한 새로고침 방어]: 최대 2초 내 강제 종료 보장
+            kotlinx.coroutines.delay(2000)
+            pullRefreshState.endRefresh()
+            isCustomRefreshing = false
         }
     }
-    LaunchedEffect(dealsPagingItems.loadState.refresh) {
+    LaunchedEffect(dealsPagingItems.loadState.refresh, isCustomRefreshing) {
         if (dealsPagingItems.loadState.refresh !is LoadState.Loading) {
             pullRefreshState.endRefresh()
-            // 부드럽고 고급스러운 화면 트랜지션을 위해 350ms 극미세 지연 가미
-            kotlinx.coroutines.delay(350)
-            isCustomRefreshing = false
+            if (isCustomRefreshing) {
+                kotlinx.coroutines.delay(250)
+                isCustomRefreshing = false
+            }
         }
     }
 
@@ -356,9 +379,9 @@ fun HomeScreen(
                 pendingUrlToOpen = url
                 dontShowToday = false
                 commissionMessage = if (isCoupang) {
-                    "이 링크는 쿠팡 파트너스 활동의 일환으로, 구매 시 이에 따른 일정액의 수수료를 지급받아 InsightDeal 서비스를 지속적으로 운영하는 데 큰 도움이 됩니다.\n\n추가적인 구매 금액 부담은 전혀 없으니 안심하셔도 좋습니다! 🧡"
+                    "이 링크는 쿠팡 파트너스 활동의 일환으로, 구매 시 이에 따른 일정액의 수수료를 지급받아 InsightDeal 서비스를 지속적으로 운영하는 데 큰 도움이 됩니다.\n\n추가적인 구매 금액 부담은 전혀 없으니 안심하셔도 좋습니다."
                 } else {
-                    "이 링크는 알리익스프레스 어소시에이트 활동의 일환으로, 구매 시 이에 따른 일정액의 수수료를 지급받아 InsightDeal 서비스를 지속적으로 운영하는 데 큰 도움이 됩니다.\n\n추가적인 구매 금액 부담은 전혀 없으니 안심하셔도 좋습니다! 🧡"
+                    "이 링크는 알리익스프레스 어소시에이트 활동의 일환으로, 구매 시 이에 따른 일정액의 수수료를 지급받아 InsightDeal 서비스를 지속적으로 운영하는 데 큰 도움이 됩니다.\n\n추가적인 구매 금액 부담은 전혀 없으니 안심하셔도 좋습니다."
                 }
                 showCommissionSheet = true
             } else {
@@ -384,10 +407,9 @@ fun HomeScreen(
             TopAppBar(
                 title = {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically, 
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.bounceClick {
                             haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            // 🧡 대표님 피드백: 투박한 토스트 대신 귀여운 불꽃 로딩 시트 가동
                             isCustomRefreshing = true
                             scope.launch {
                                 try {
@@ -395,49 +417,43 @@ fun HomeScreen(
                                     try {
                                         listState.animateScrollToItem(0)
                                     } catch (_: Exception) {
-                                        // 안전성 확보
                                     }
                                     dealsPagingItems.refresh()
                                     viewModel.fetchTopHotDeals()
-                                    // ⏱️ [타임아웃 안전망]: 10초 내에 loadState가 완료되지 않으면 강제 해제
-                                    kotlinx.coroutines.delay(10_000)
-                                    if (isCustomRefreshing) {
-                                        isCustomRefreshing = false
-                                    }
+                                    kotlinx.coroutines.delay(1800)
+                                    isCustomRefreshing = false
                                 } catch (_: Exception) {
                                     isCustomRefreshing = false
                                 }
                             }
                         }
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    brush = Brush.linearGradient(
+                                        colors = listOf(Color(0xFFFF6B35), Color(0xFFFF3B30))
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.LocalOffer,
+                                contentDescription = "InsightDeal 로고",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "🔥 InsightDeal",
+                            text = "InsightDeal",
                             fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = (-0.5).sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            modifier = Modifier.size(34.dp, 18.dp),
-                            shape = RoundedCornerShape(4.dp),
-                            color = if (isDark) Color(0xFFE53935) else Color(0xFFFF3B30)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = "LIVE", 
-                                    fontSize = 10.sp, 
-                                    color = Color.White, 
-                                    fontWeight = FontWeight.Bold,
-                                    style = TextStyle(
-                                        platformStyle = PlatformTextStyle(includeFontPadding = false),
-                                        lineHeightStyle = LineHeightStyle(
-                                            alignment = LineHeightStyle.Alignment.Center,
-                                            trim = LineHeightStyle.Trim.Both
-                                        )
-                                    )
-                                )
-                            }
-                        }
                     }
                 },
                 actions = {
@@ -530,7 +546,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "⚠️ 현재 오프라인 상태입니다. 로컬 캐시된 핫딜을 표시하고 있습니다.",
+                            text = "현재 오프라인 상태예요. 저장된 핫딜 목록을 보여드릴게요.",
                             color = Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
@@ -591,7 +607,7 @@ fun HomeScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = "알림 권한이 꺼져 있어 특가를 놓치고 있어요 🔔",
+                                    text = "알림 권한을 켜면 원하는 특가를 바로 받아볼 수 있어요",
                                     color = if (isDark) Color.White else Color(0xFF1B5E20),
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
@@ -625,7 +641,7 @@ fun HomeScreen(
                     if (selectedCategory == "전체") {
                         item(key = "today_picks_section", contentType = "today_picks_section") {
                             val topHotDeals by viewModel.topHotDeals.collectAsState()
-                            
+
                             val topPicks = remember(topHotDeals) {
                                 topHotDeals
                                     .filter { deal ->
@@ -639,7 +655,7 @@ fun HomeScreen(
                                     .sortedByDescending { it.createdAt ?: "" }
                             }
 
-                            
+
                             LaunchedEffect(topHotDeals.size, topPicks.size) {
                                 android.util.Log.d("HomeScreen", "topHotDeals size: ${topHotDeals.size}, topPicks size: ${topPicks.size}")
                             }
@@ -647,9 +663,9 @@ fun HomeScreen(
                             if (topPicks.isNotEmpty()) {
                                 Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
                                     Text(
-                                        text = "오늘의 핫딜", 
-                                        fontWeight = FontWeight.ExtraBold, 
-                                        fontSize = 18.sp, 
+                                        text = "오늘의 핫딜",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 18.sp,
                                         modifier = Modifier.padding(bottom = 12.dp, start = 4.dp),
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -663,14 +679,14 @@ fun HomeScreen(
                                             contentType = { "today_pick_item" }
                                         ) { index ->
                                             val pick = topPicks[index]
-                                            
+
                                             // 스크롤 시 문자열 가공 오버헤드 방지를 위한 캐싱
                                             val proxiedPickUrl = remember(pick.id, pick.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
                                                 val fallbackPickImg = "https://placehold.co/400x300/E2E8F0/A0AEC0?text=Deal"
                                                 val rawPickUrl = pick.imageUrl.takeIf { !it.isNullOrBlank() } ?: fallbackPickImg
                                                 if (!rawPickUrl.isNullOrBlank() && rawPickUrl.startsWith("http")) {
                                                     val baseUrl = com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl().removeSuffix("/")
-                                                    "$baseUrl/api/proxy-image?url=${java.net.URLEncoder.encode(rawPickUrl, "UTF-8")}"
+                                                    "$baseUrl/api/proxy-image?url=${java.net.URLEncoder.encode(rawPickUrl, "UTF-8")}&v=5"
                                                 } else rawPickUrl
                                             }
 
@@ -689,12 +705,12 @@ fun HomeScreen(
                                                     when (pick.currency.uppercase(Locale.getDefault())) {
                                                         "USD" -> "$${String.format(Locale.US, "%.2f", pick.price.toDouble() / 100)}"
                                                         "EUR" -> "€${String.format(Locale.US, "%.2f", pick.price.toDouble() / 100)}"
-                                                        else -> formatPrice(pick.price, pick.currency)
+                                                        else -> formatPrice(pick.price, pick.currency, pick.title)
                                                     }
                                                 } else if (pick.category == "적립" || pick.title.contains("적립")) {
                                                     "포인트 적립"
                                                 } else if (pick.category == "이벤트" || pick.category == "SW/게임" || pick.category == "게임/SW" ||
-                                                    listOf("무료", "공짜", "배포", "나눔", "0원", "일시무료", "쿠폰").any { pick.title.contains(it) }) {
+                                                    FREE_KEYWORDS.any { pick.title.contains(it) }) {
                                                     "무료 (쿠폰/공짜)"
                                                 } else {
                                                     "금액 확인 필요"
@@ -702,22 +718,22 @@ fun HomeScreen(
                                             }
 
                                             val isBookmarked = wishlistedUrls.contains(pick.postUrl)
-                                            
+
                                             val displayShipping = remember(pick.id, pick.shippingFee, pick.category, pick.title) {
-                                                val digitalCategories = listOf("적립", "이벤트", "모바일/기프티콘", "상품권", "패키지/이용권")
+                                                val digitalCategories = HOME_DIGITAL_CATEGORIES
                                                 val isDigitalTitle = pick.title.contains("요금제") || pick.title.contains("데이터")
                                                 val hideShipping = pick.category in digitalCategories || isDigitalTitle
-                                                
+
                                                 if (hideShipping) null
                                                 else {
                                                     val trimmed = pick.shippingFee?.trim() ?: "정보 없음"
                                                     when {
-                                                        trimmed == "정보 없음" || trimmed.isEmpty() -> "배송비 확인 필요"
+                                                        trimmed == "정보 없음" || trimmed.isEmpty() || trimmed == "배송비 확인 필요" -> "확인 필요"
                                                         trimmed.contains("와우") -> "와우무료"
                                                         trimmed.contains("스마일") || trimmed.contains("스클") -> "스클무료"
                                                         trimmed.contains("우주패스") -> "우주패스"
                                                         trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
-                                                        trimmed.startsWith("0원/") || trimmed.startsWith("0원+") || trimmed.startsWith("0/") || trimmed.startsWith("0+") -> trimmed.replaceFirst(Regex("^0(원)?\\s*"), "무료 ")
+                                                        trimmed.startsWith("0원/") || trimmed.startsWith("0원+") || trimmed.startsWith("0/") || trimmed.startsWith("0+") -> trimmed.replaceFirst(SHIPPING_LEADING_ZERO_REGEX, "무료 ")
                                                         trimmed == "유료" || trimmed == "유료배송" -> "유료"
                                                         trimmed.all { it.isDigit() || it == ',' } -> "${trimmed}원"
                                                         else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료").replace(Regex("(이상|미만|이하)(0원?)?\\s*무료"), "$1 무료").replace(Regex("(\\d+[만천])(이상|미만|이하)"), "$1원$2").trim()
@@ -730,12 +746,7 @@ fun HomeScreen(
                                                     .width(180.dp)
                                                     .height(195.dp)
                                                     .bounceClick {
-                                                        val targetUrl = pick.ecommerceUrl?.takeIf { it.isNotBlank() } ?: pick.postUrl ?: "https://insightdeal.com"
-                                                        var finalUrl = if (targetUrl.startsWith("http")) targetUrl else "https://$targetUrl"
-                                                        if (finalUrl.contains("bbasak.com") && !finalUrl.contains("device=pc")) {
-                                                            finalUrl += if (finalUrl.contains("?")) "&device=pc" else "?device=pc"
-                                                        }
-                                                        onOpenUrlInWebView(finalUrl)
+                                                        onNavigateToDetail(pick.id)
                                                     },
                                                 shape = RoundedCornerShape(16.dp),
                                                 elevation = CardDefaults.cardElevation(if (isDark) 0.dp else 2.dp),
@@ -778,16 +789,16 @@ fun HomeScreen(
                                                              text = pick.title,
                                                              maxLines = 2,
                                                              overflow = TextOverflow.Ellipsis,
-                                                             fontSize = 13.sp, 
-                                                            fontWeight = FontWeight.Bold, 
+                                                             fontSize = 13.sp,
+                                                            fontWeight = FontWeight.Bold,
                                                             lineHeight = 18.sp,
                                                             color = MaterialTheme.colorScheme.onSurface,
                                                         )
                                                         Spacer(Modifier.weight(1f))
-                                                        
+
                                                         Row(
-                                                            verticalAlignment = Alignment.Bottom, 
-                                                            horizontalArrangement = Arrangement.SpaceBetween, 
+                                                            verticalAlignment = Alignment.Bottom,
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
                                                             modifier = Modifier.fillMaxWidth()
                                                         ) {
                                                             Row(
@@ -802,32 +813,32 @@ fun HomeScreen(
                                                                     else -> 15.sp
                                                                 }
                                                                 Text(
-                                                                    text = priceText, 
-                                                                    color = if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30), 
-                                                                    fontSize = priceFontSize, 
-                                                                    fontWeight = FontWeight.ExtraBold, 
-                                                                    maxLines = 1, 
+                                                                    text = priceText,
+                                                                    color = if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30),
+                                                                    fontSize = priceFontSize,
+                                                                    fontWeight = FontWeight.ExtraBold,
+                                                                    maxLines = 1,
                                                                     overflow = TextOverflow.Ellipsis
                                                                 )
                                                                 if (displayShipping != null) {
                                                                     Spacer(modifier = Modifier.width(4.dp))
                                                                     Surface(
-                                                                        shape = RoundedCornerShape(3.dp), 
+                                                                        shape = RoundedCornerShape(3.dp),
                                                                         color = if (isDark) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant
                                                                     ) {
                                                                         Text(
-                                                                            text = displayShipping, // 가로 공간 극대화를 위해 "배송비:"를 떼고 배송비 정보만 실속 칩셋으로 노출!
-                                                                            fontSize = 8.sp, 
-                                                                            color = if (isDark) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant, 
-                                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), 
-                                                                            maxLines = 1, 
+                                                                            text = "배송비: $displayShipping",
+                                                                            fontSize = 8.sp,
+                                                                            color = if (isDark) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                                                            maxLines = 1,
                                                                             overflow = TextOverflow.Ellipsis
                                                                         )
                                                                     }
                                                                 }
                                                             }
                                                             androidx.compose.material3.IconButton(
-                                                                onClick = { 
+                                                                onClick = {
                                                                     wishlistViewModel?.let { vm ->
                                                                         val targetUrl = pick.ecommerceUrl?.takeIf { it.isNotBlank() } ?: pick.postUrl ?: ""
                                                                         if (wishlistedUrls.contains(targetUrl)) {
@@ -837,8 +848,8 @@ fun HomeScreen(
                                                                             vm.addItem(pick.title, targetUrl, pick.price.toInt(), pick.price.toInt(), pick.siteName)
                                                                             scope.launch {
                                                                                 val result = snackbarHostState.showSnackbar(
-                                                                                    message = "관심 상품에 등록되었습니다 💖",
-                                                                                    actionLabel = "찜 목록 보기 🚀",
+                                                                                    message = "관심 상품에 담았어요",
+                                                                                    actionLabel = "관심 목록 보기",
                                                                                     duration = SnackbarDuration.Short
                                                                                 )
                                                                                 if (result == SnackbarResult.ActionPerformed) {
@@ -867,9 +878,9 @@ fun HomeScreen(
                             } else {
                                 Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp, top = 8.dp)) {
                                     Text(
-                                        text = "오늘의 핫딜", 
-                                        fontWeight = FontWeight.ExtraBold, 
-                                        fontSize = 18.sp, 
+                                        text = "오늘의 핫딜",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 18.sp,
                                         modifier = Modifier.padding(bottom = 12.dp, start = 4.dp),
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -881,7 +892,12 @@ fun HomeScreen(
                                     ) {
                                         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 36.dp), contentAlignment = Alignment.Center) {
                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text("😢", fontSize = 42.sp, modifier = Modifier.padding(bottom = 12.dp))
+                                                Icon(
+                                                    imageVector = Icons.Default.SearchOff,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                                                    modifier = Modifier.size(40.dp).padding(bottom = 10.dp)
+                                                )
                                                 Text("현재 진행 중인 핫딜이 없습니다.", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 Text("조금 뒤에 다시 확인해 보세요!", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp))
                                             }
@@ -889,71 +905,300 @@ fun HomeScreen(
                                     }
                                 }
                             }
-                            Spacer(Modifier.height(8.dp))
-                            androidx.compose.material3.HorizontalDivider(
-                                thickness = 1.dp, 
-                                color = if (isDark) MaterialTheme.colorScheme.outlineVariant else Color.LightGray, 
-                                modifier = Modifier.padding(horizontal = 4.dp)
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            
-                            // 🔔 실시간 키워드 알림 설정 유도 배너 (Toss 스타일)
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .bounceClick { navController.navigate("keyword_alarm") }
-                                    .padding(horizontal = 4.dp, vertical = 6.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f) else Color(0xFFF2F4F6)
+                            Spacer(Modifier.height(4.dp))
+
+                            // 🔔 실시간 키워드 알림 설정 유도 배너 (컴팩트 1줄 슬림 바 + 닫기 지원)
+                            var hideKeywordBanner by remember {
+                                mutableStateOf(
+                                    com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
+                                        .getEncryptedPrefs(context)
+                                        .getBoolean("hide_home_kw_banner", false)
                                 )
-                            ) {
-                                Row(
+                            }
+                            if (!hideKeywordBanner) {
+                                Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                        .bounceClick { navController.navigate("keyword_alarm") }
+                                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isDark) Color(0xFF2B333E) else Color(0xFFE5E8EB)
+                                    ),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isDark) Color(0xFF191F28) else Color.White
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(26.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (isDark) Color(0x33FF5A26) else Color(0xFFFFF1EC)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.NotificationsActive,
+                                                contentDescription = "알림",
+                                                tint = Color(0xFFFF5A26),
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(
+                                            text = "놓치기 아까운 특가, 키워드 알림 받기",
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = "설정",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFF5A26)
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Default.KeyboardArrowRight,
+                                            contentDescription = "이동",
+                                            tint = Color(0xFFFF5A26),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "배너 닫기",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .clickable {
+                                                    hideKeywordBanner = true
+                                                    com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
+                                                        .getEncryptedPrefs(context)
+                                                        .edit()
+                                                        .putBoolean("hide_home_kw_banner", true)
+                                                        .apply()
+                                                }
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(6.dp))
+
+                            // 📈 [Epic 3B] 실시간 급상승 검색어 랭킹 티커 바 (3초 자동 롤링 + 클릭 시 즉시 검색 이동)
+                            val popularRankings by viewModel.popularRankings.collectAsState()
+                            val popularKeywords by viewModel.popularKeywords.collectAsState()
+                            val tickerItems = remember(popularRankings, popularKeywords) {
+                                if (popularRankings.isNotEmpty()) {
+                                    popularRankings.take(10)
+                                } else {
+                                    popularKeywords.take(10).mapIndexed { idx, kw ->
+                                        com.ddaeany0919.insightdeal.network.PopularKeywordRankingItem(
+                                            rank = idx + 1,
+                                            keyword = kw,
+                                            dealCount = 0,
+                                            recentCount = 0,
+                                            status = if (idx == 0) "HOT" else if (idx < 3) "UP" else "SAME"
+                                        )
+                                    }
+                                }
+                            }
+                            if (tickerItems.isNotEmpty()) {
+                                var tickerIndex by remember { mutableIntStateOf(0) }
+                                LaunchedEffect(tickerItems.size) {
+                                    while (true) {
+                                        kotlinx.coroutines.delay(3200L)
+                                        if (tickerItems.isNotEmpty()) {
+                                            tickerIndex = (tickerIndex + 1) % tickerItems.size
+                                        }
+                                    }
+                                }
+                                val currentItem = tickerItems[tickerIndex.coerceIn(0, tickerItems.lastIndex)]
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                        .bounceClick {
+                                            val encodedKw = java.net.URLEncoder.encode(currentItem.keyword, "UTF-8")
+                                            navController.navigate("advanced_search?query=$encodedKw")
+                                        },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isDark) Color(0xFF191F28) else Color.White,
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isDark) Color(0xFF2B333E) else Color(0xFFE5E8EB)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.2f else 0.1f)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Outlined.TrendingUp,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                    Text(
+                                                        text = "급상승",
+                                                        fontSize = 10.5.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Text(
+                                                text = "${currentItem.rank}",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = if (currentItem.rank <= 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.width(18.dp)
+                                            )
+                                            Text(
+                                                text = currentItem.keyword,
+                                                fontSize = 13.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            if (currentItem.status == "HOT") {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = if (isDark) Color(0x33FF5A26) else Color(0xFFFFF1EC)
+                                                ) {
+                                                    Text(
+                                                        text = "HOT",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        color = Color(0xFFFF5A26),
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            } else if (currentItem.status == "UP") {
+                                                Spacer(modifier = Modifier.width(5.dp))
+                                                Text(
+                                                    text = "▲",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFFFF5A26)
+                                                )
+                                            }
+                                        }
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.clickable {
+                                                navController.navigate("advanced_search")
+                                            }
+                                        ) {
+                                            Text(
+                                                text = "전체 순위",
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowRight,
+                                                contentDescription = "전체 순위 보기",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(6.dp))
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "실시간 핫딜",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 18.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isDark) Color(0xFF2C2C2E) else Color.White),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.NotificationsActive,
-                                            contentDescription = "알림",
-                                            tint = if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30),
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "놓치기 아까운 특가, 알림으로 받으세요",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.5.sp,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = "실시간 키워드 알림 설정하기",
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = if (isDark) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f) else Color(0xFF4E5968)
-                                        )
-                                    }
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowRight,
-                                        contentDescription = "이동",
-                                        tint = if (isDark) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) else Color(0xFF8B95A1),
-                                        modifier = Modifier.size(16.dp)
+                                    FilterChip(
+                                        selected = filterState.hideClosed,
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            viewModel.toggleHideClosed()
+                                        },
+                                        label = {
+                                            Text(
+                                                "품절 숨기기",
+                                                fontSize = 11.5.sp,
+                                                fontWeight = if (filterState.hideClosed) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(999.dp)
+                                    )
+                                    FilterChip(
+                                        selected = filterState.popularOnly,
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            viewModel.togglePopularOnly()
+                                        },
+                                        label = {
+                                            Text(
+                                                "인기·역대가",
+                                                fontSize = 11.5.sp,
+                                                fontWeight = if (filterState.popularOnly) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(999.dp)
+                                    )
+                                    FilterChip(
+                                        selected = filterState.freeShippingOnly,
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            viewModel.toggleFreeShippingOnly()
+                                        },
+                                        label = {
+                                            Text(
+                                                "무료배송",
+                                                fontSize = 11.5.sp,
+                                                fontWeight = if (filterState.freeShippingOnly) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(999.dp)
                                     )
                                 }
                             }
-                            Spacer(Modifier.height(8.dp))
-                            Text("실시간 핫딜", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(start = 4.dp), color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
             // ✨ 상태 관리를 통한 스켈레톤 로딩 노출
@@ -1042,9 +1287,11 @@ fun HomeScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
-                                    Text(
-                                        text = "📦",
-                                        fontSize = 42.sp
+                                    Icon(
+                                        imageVector = Icons.Default.Inbox,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                                        modifier = Modifier.size(40.dp)
                                     )
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Text(
@@ -1071,12 +1318,6 @@ fun HomeScreen(
                         contentType = { "deal_item" }
                     ) { index ->
                         val deal = dealsPagingItems[index]
-                        
-                        // 🔍 유저 고속 스크롤 추적용 실시간 렌더링 로깅 가드
-                        android.util.Log.d(
-                            "InsightDealScroll", 
-                            "Index: $index | DealID: ${deal?.id ?: "NULL"} | Title: ${deal?.title?.take(15) ?: "PLACEHOLDER(Skeleton)"}"
-                        )
 
                         if (deal != null) {
                             val isHidden = remember(deal.id, hiddenDeals.size) {
@@ -1099,8 +1340,8 @@ fun HomeScreen(
                                                     vm.addItem(deal.title, targetUrl, deal.price.toInt(), deal.price.toInt(), deal.siteName)
                                                     scope.launch {
                                                         val result = snackbarHostState.showSnackbar(
-                                                            message = "관심 상품에 등록되었습니다 💖",
-                                                            actionLabel = "찜 목록 보기 🚀",
+                                                            message = "관심 상품에 담았어요",
+                                                            actionLabel = "관심 목록 보기",
                                                             duration = SnackbarDuration.Short
                                                         )
                                                         if (result == SnackbarResult.ActionPerformed) {
@@ -1122,11 +1363,11 @@ fun HomeScreen(
                             HomeDealCardSkeleton()
                         }
                     }
-                    
+
                     // 하단 추가 로딩 시의 스켈레톤 표시
                     if (dealsPagingItems.loadState.append is LoadState.Loading) {
-                        item(key = "append_skeleton", contentType = "skeleton_loader") { 
-                            HomeDealCardSkeleton() 
+                        item(key = "append_skeleton", contentType = "skeleton_loader") {
+                            HomeDealCardSkeleton()
                         }
                     }
                 }
@@ -1134,7 +1375,7 @@ fun HomeScreen(
         }
     }
 
-        // ✨ PullToRefresh Indicator - 기본 동그라미 스피너는 비주얼 노이즈이므로 제거하고, 
+        // ✨ PullToRefresh Indicator - 기본 동그라미 스피너는 비주얼 노이즈이므로 제거하고,
         // 🧡 대표님 피드백에 따라 오직 귀여운 불꽃 애니메이션 오버레이만 노출하도록 단일화합니다.
         /*
         androidx.compose.material3.pulltorefresh.PullToRefreshContainer(
@@ -1159,14 +1400,14 @@ fun HomeScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "구매 링크로 이동하기 전 안내해 드려요 💡",
+                        text = "구매처 이동 안내",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.onSurface,
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    
+
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -1180,9 +1421,9 @@ fun HomeScreen(
                             modifier = Modifier.padding(16.dp)
                         )
                     }
-                    
+
                     Spacer(modifier = Modifier.height(24.dp))
-                    
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1207,9 +1448,9 @@ fun HomeScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    
+
                     Spacer(modifier = Modifier.height(24.dp))
-                    
+
                     Button(
                         onClick = {
                             showCommissionSheet = false
@@ -1245,7 +1486,7 @@ fun HomeScreen(
         if (showDealOptionsBottomSheet && selectedDealForOptions != null) {
             val deal = selectedDealForOptions!!
             val isWishlisted = wishlistedUrls.contains(deal.ecommerceUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl ?: "")
-            
+
             ModalBottomSheet(
                 onDismissRequest = { showDealOptionsBottomSheet = false },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -1280,8 +1521,8 @@ fun HomeScreen(
                                             vm.addItem(deal.title, targetUrl, deal.price.toInt(), deal.price.toInt(), deal.siteName)
                                             scope.launch {
                                                 val result = snackbarHostState.showSnackbar(
-                                                    message = "관심 상품에 등록되었습니다 💖",
-                                                    actionLabel = "찜 목록 보기 🚀",
+                                                    message = "관심 상품에 담았어요",
+                                                    actionLabel = "관심 목록 보기",
                                                     duration = SnackbarDuration.Short
                                                 )
                                                 if (result == SnackbarResult.ActionPerformed) {
@@ -1310,7 +1551,7 @@ fun HomeScreen(
                             )
                         }
                     }
-                    
+
                     // 둥근 그레이 박스 2 (숨기기 / 왜 보이나요 / 신고하기 그룹)
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -1347,9 +1588,9 @@ fun HomeScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            
+
                             HorizontalDivider(color = if (isDark) MaterialTheme.colorScheme.outlineVariant else Color(0xFFE4E7EC), thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
-                            
+
                             // 2) 이 글이 왜 보이나요?
                             Row(
                                 modifier = Modifier
@@ -1375,9 +1616,9 @@ fun HomeScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            
+
                             HorizontalDivider(color = if (isDark) MaterialTheme.colorScheme.outlineVariant else Color(0xFFE4E7EC), thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
-                            
+
                             // 3) 신고하기 (빨간색 맑은 레드)
                             Row(
                                 modifier = Modifier
@@ -1405,7 +1646,7 @@ fun HomeScreen(
                             }
                         }
                     }
-                    
+
                     // 둥근 그레이 박스 3 (하단 독립 닫기 버튼)
                     Surface(
                         modifier = Modifier
@@ -1435,11 +1676,11 @@ fun HomeScreen(
             val deal = showWhyThisDealDialog!!
             AlertDialog(
                 onDismissRequest = { showWhyThisDealDialog = null },
-                title = { Text(text = "이 글이 왜 보이나요? 💡", fontWeight = FontWeight.Bold) },
+                title = { Text(text = "추천 기준 안내", fontWeight = FontWeight.Bold) },
                 text = {
                     Text(
                         text = "이 글은 [${deal.siteName}]에서 높은 인기를 얻고 있는 실시간 핫딜입니다.\n\n" +
-                                "InsightDeal의 1:1 지능형 AI 추천 엔진이 분석한 결과, 현재 할인율이 상위 ${deal.honeyScore}%에 달하며 48시간 이내에 생성된 초신선 꿀딜 상태이므로 유저님의 쇼핑 만족도를 극대화할 수 있는 타점으로 판단하여 노출되었습니다. 🔥",
+                                "최근 48시간 내 등록된 상품 중 할인율(상위 ${deal.honeyScore}%)과 커뮤니티 반응이 높아 추천된 핫딜이에요.",
                         fontSize = 14.sp,
                         lineHeight = 20.sp
                     )
@@ -1463,7 +1704,7 @@ fun HomeScreen(
             )
             AlertDialog(
                 onDismissRequest = { showReportDialog = null },
-                title = { Text(text = "🚨 이 글을 신고하시겠습니까?", fontWeight = FontWeight.Bold) },
+                title = { Text(text = "이 게시글을 신고할까요?", fontWeight = FontWeight.Bold) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(text = "이 글의 신고 사유를 정밀하게 선택해주세요. 24시간 내 모니터링 후 조치됩니다.", fontSize = 12.sp, color = Color.Gray)
@@ -1490,7 +1731,7 @@ fun HomeScreen(
                     TextButton(
                         onClick = {
                             showReportDialog = null
-                            android.widget.Toast.makeText(context, "신고가 정상적으로 접수되었습니다. 신속하게 정화 조치하겠습니다! 🚨", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "신고가 접수되었어요. 빠르게 확인 후 조치할게요.", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     ) {
                         Text("신고 제출", color = Color.Red, fontWeight = FontWeight.Bold)
@@ -1508,11 +1749,11 @@ fun HomeScreen(
         if (showAuthRequiredDialog) {
             AlertDialog(
                 onDismissRequest = { showAuthRequiredDialog = false },
-                title = { Text(text = "로그인이 필요합니다 🔒", fontWeight = FontWeight.Bold) },
+                title = { Text(text = "로그인이 필요해요", fontWeight = FontWeight.Bold) },
                 text = {
                     Text(
                         text = "관심 키워드 알림, 핫딜 숨기기 등 지능형 고관여 활동은 로그인한 회원만 이용할 수 있습니다.\n\n" +
-                                "1초 간편 소셜 로그인 화면으로 이동하시겠습니까? ⚡",
+                                "로그인 화면으로 이동할까요?",
                         fontSize = 14.sp,
                         lineHeight = 20.sp
                     )
@@ -1595,22 +1836,43 @@ fun HomeScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        // 펄싱 튀는 귀여운 불꽃
+                        // 세련된 벡터 스피너 및 브랜드 배지
                         Box(
-                            modifier = Modifier
-                                .size(72.dp)
-                                .graphicsLayer(
-                                    scaleX = scale,
-                                    scaleY = scale,
-                                    alpha = alpha
-                                ),
+                            modifier = Modifier.size(64.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(text = "🔥", fontSize = 48.sp)
+                            CircularProgressIndicator(
+                                modifier = Modifier.fillMaxSize(),
+                                color = Color(0xFFFF453A),
+                                strokeWidth = 3.5.dp
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        brush = Brush.linearGradient(
+                                            colors = listOf(Color(0xFFFF6B35), Color(0xFFFF3B30))
+                                        )
+                                    )
+                                    .graphicsLayer(
+                                        scaleX = scale * 0.9f,
+                                        scaleY = scale * 0.9f,
+                                        alpha = alpha
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.LocalOffer,
+                                    contentDescription = "새로고침 아이콘",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
-                        
+
                         Spacer(modifier = Modifier.height(20.dp))
-                        
+
                         Text(
                             text = "새로고침 중입니다...",
                             fontSize = 15.sp,
@@ -1618,9 +1880,9 @@ fun HomeScreen(
                             color = if (isDark) Color.White else Color(0xFF191F28),
                             textAlign = TextAlign.Center
                         )
-                        
+
                         Spacer(modifier = Modifier.height(6.dp))
-                        
+
                         Text(
                             text = "잠시만 기다려주세요",
                             fontSize = 12.sp,
@@ -1638,7 +1900,7 @@ fun HomeScreen(
 // ✨ 세로형 딜 카드를 위한 스켈레톤 (Recomposition 방지용, 다크모드 완벽 대응)
 @Composable
 fun HomeDealCardSkeleton() {
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.red < 0.2f
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -1669,17 +1931,17 @@ fun HomeDealCardSkeleton() {
 @Composable
 @Suppress("UNUSED_PARAMETER")
 fun DealCardComposable(
-    deal: DealItem, 
-    onDetailClick: () -> Unit = {}, 
+    deal: DealItem,
+    onDetailClick: () -> Unit = {},
     onOpenUrl: (String) -> Unit = {},
     isWishlisted: Boolean = false,
     onToggleWishlist: () -> Unit = {},
-    onMoreClick: () -> Unit = {}
+    onMoreClick: (() -> Unit)? = null
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.red < 0.2f
 
     // 1. 뱃지 판단 캐싱
     val isSuperHot = remember(deal.id, deal.aiSummary, deal.honeyScore) {
@@ -1695,7 +1957,7 @@ fun DealCardComposable(
         else if (rawUrl.startsWith("http")) {
             try {
                 val baseUrl = com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl().removeSuffix("/")
-                "$baseUrl/api/proxy-image?url=${java.net.URLEncoder.encode(rawUrl, "UTF-8")}"
+                "$baseUrl/api/proxy-image?url=${java.net.URLEncoder.encode(rawUrl, "UTF-8")}&v=5"
             } catch (e: Exception) {
                 rawUrl
             }
@@ -1730,7 +1992,7 @@ fun DealCardComposable(
 
     // 5. 배송비 연산 캐싱
     val displayShipping = remember(deal.id, deal.shippingFee, deal.category, deal.title) {
-        val digitalCategories = listOf("적립", "이벤트", "모바일/기프티콘", "상품권", "패키지/이용권")
+        val digitalCategories = HOME_DIGITAL_CATEGORIES
         val isDigitalTitle = deal.title.contains("요금제") || deal.title.contains("데이터")
         val hideShipping = deal.category in digitalCategories || isDigitalTitle
 
@@ -1738,12 +2000,12 @@ fun DealCardComposable(
         else {
             val trimmed = deal.shippingFee?.trim() ?: "정보 없음"
             when {
-                trimmed == "정보 없음" || trimmed.isEmpty() -> "배송비 확인 필요"
+                trimmed == "정보 없음" || trimmed.isEmpty() || trimmed == "배송비 확인 필요" -> "확인 필요"
                 trimmed.contains("와우") -> "와우무료"
                 trimmed.contains("스마일") || trimmed.contains("스클") -> "스클무료"
                 trimmed.contains("우주패스") -> "우주패스"
                 trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
-                trimmed.startsWith("0원/") || trimmed.startsWith("0원+") || trimmed.startsWith("0/") || trimmed.startsWith("0+") -> trimmed.replaceFirst(Regex("^0(원)?\\s*"), "무료 ")
+                trimmed.startsWith("0원/") || trimmed.startsWith("0원+") || trimmed.startsWith("0/") || trimmed.startsWith("0+") -> trimmed.replaceFirst(SHIPPING_LEADING_ZERO_REGEX, "무료 ")
                 trimmed == "유료" || trimmed == "유료배송" -> "유료"
                 trimmed.all { it.isDigit() || it == ',' } -> "${trimmed}원"
                 else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료").replace(Regex("(이상|미만|이하)(0원?)?\\s*무료"), "$1 무료").replace(Regex("(\\d+[만천])(이상|미만|이하)"), "$1원$2").trim()
@@ -1757,12 +2019,12 @@ fun DealCardComposable(
             when (deal.currency.uppercase(Locale.getDefault())) {
                 "USD" -> "$${String.format(Locale.US, "%.2f", deal.price.toDouble() / 100)}"
                 "EUR" -> "€${String.format(Locale.US, "%.2f", deal.price.toDouble() / 100)}"
-                else -> if (deal.category == "적립") "${formatPrice(deal.price, deal.currency)} 적립" else "${formatPrice(deal.price, deal.currency)}"
+                else -> if (deal.category == "적립") "${formatPrice(deal.price, deal.currency, deal.title)} 적립" else formatPrice(deal.price, deal.currency, deal.title)
             }
         } else if (deal.category == "적립" || deal.title.contains("적립")) {
             "포인트 적립"
         } else if (deal.category == "이벤트" || deal.category == "SW/게임" || deal.category == "게임/SW" ||
-            listOf("무료", "공짜", "배포", "나눔", "0원", "일시무료", "쿠폰").any { deal.title.contains(it) }) {
+            FREE_KEYWORDS.any { deal.title.contains(it) }) {
             "무료 (쿠폰/공짜)"
         } else {
             "가격 확인 필요"
@@ -1772,13 +2034,13 @@ fun DealCardComposable(
     // 7. 아코디언 관련 메리트 정보 캐시
     val AIPriceAdvantageText = remember(deal.id, deal.honeyScore) {
         val percentileText = when {
-            deal.honeyScore >= 95 -> "최상위 1% 급"
+            deal.honeyScore >= 95 -> "상위 1%"
             deal.honeyScore >= 90 -> "상위 5%"
             deal.honeyScore >= 80 -> "상위 10%"
             deal.honeyScore >= 70 -> "상위 20%"
-            else -> "평이"
+            else -> "일반"
         }
-        if (percentileText == "평이") "📊 AI 가격 메리트 (${deal.honeyScore}점)" else "💡 AI 가격 메리트: $percentileText 추천! (${deal.honeyScore}점)"
+        if (percentileText == "일반") "커뮤니티 추천도 ${deal.honeyScore}점" else "커뮤니티 인기 $percentileText · 추천도 ${deal.honeyScore}점"
     }
 
     val cardBgColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f) else Color.White
@@ -1787,8 +2049,8 @@ fun DealCardComposable(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .bounceClick(scaleDown = 0.98f) { isExpanded = !isExpanded }
-            .alpha(if (deal.isClosed) 0.65f else 1f),
+            .bounceClick(scaleDown = 0.98f) { onDetailClick() }
+            .graphicsLayer { alpha = if (deal.isClosed) 0.65f else 1f },
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(if (isDark) 0.dp else 2.dp),
         colors = CardDefaults.cardColors(
@@ -1809,23 +2071,7 @@ fun DealCardComposable(
                             textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         )
                     } else {
-                        Box(modifier = Modifier
-                            .size(80.dp)
-                            .clickable {
-                                try {
-                                    val targetUrl = deal.ecommerceUrl?.takeIf { it.isNotBlank() }?.replace(":443", "") ?: deal.postUrl
-                                    if (!targetUrl.isNullOrBlank()) {
-                                        var finalUrl = if (targetUrl.startsWith("http")) targetUrl else "https://$targetUrl"
-                                        if (finalUrl.contains("bbasak.com") && !finalUrl.contains("device=pc")) {
-                                            finalUrl += if (finalUrl.contains("?")) "&device=pc" else "?device=pc"
-                                        }
-                                        onOpenUrl(finalUrl)
-                                    }
-                                } catch (e: Exception) {
-                                    android.widget.Toast.makeText(context, "브라우저 앱을 열 수 없습니다.", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        ) {
+                        Box(modifier = Modifier.size(80.dp)) {
                             SubcomposeAsyncImage(
                                 model = imageRequest,
                                 contentDescription = deal.title,
@@ -1833,9 +2079,7 @@ fun DealCardComposable(
                                     .fillMaxSize()
                                     .background(if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White, RoundedCornerShape(8.dp))
                                     .clip(RoundedCornerShape(8.dp)),
-                                colorFilter = if (deal.isClosed) {
-                                    remember { androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) }) }
-                                } else null,
+                                colorFilter = if (deal.isClosed) CLOSED_DEAL_COLOR_FILTER else null,
                                 contentScale = ContentScale.Crop,
                                 error = {
                                     BrandPlaceholder(
@@ -1845,7 +2089,7 @@ fun DealCardComposable(
                                     )
                                 }
                             )
-                            
+
                             // 종료된 상품 오버레이
                             if (deal.isClosed) {
                                 Box(
@@ -1865,9 +2109,9 @@ fun DealCardComposable(
                             }
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.width(12.dp))
-                    
+
                     // 정보
                     Column(modifier = Modifier.weight(1f)) {
                         // 출처 뱃지 및 쿠팡 FOMO 뱃지
@@ -1935,7 +2179,13 @@ fun DealCardComposable(
                             }
 
                             IconButton(
-                                onClick = onMoreClick,
+                                onClick = {
+                                    if (onMoreClick != null) {
+                                        onMoreClick()
+                                    } else {
+                                        isExpanded = !isExpanded
+                                    }
+                                },
                                 modifier = Modifier.size(24.dp)
                             ) {
                                 Icon(
@@ -1945,9 +2195,9 @@ fun DealCardComposable(
                                 )
                             }
                         }
-                        
+
                         Spacer(modifier = Modifier.height(6.dp))
-                        
+
                         Text(
                             text = deal.title,
                             fontSize = 14.sp,
@@ -1958,9 +2208,9 @@ fun DealCardComposable(
                             textDecoration = if (deal.isClosed) TextDecoration.LineThrough else null,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        
+
                         Spacer(modifier = Modifier.height(6.dp))
-                        
+
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             @OptIn(ExperimentalLayoutApi::class)
                             FlowRow(
@@ -1980,33 +2230,33 @@ fun DealCardComposable(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                
+
                                 if (displayShipping != null) {
                                     Surface(
-                                        shape = RoundedCornerShape(4.dp), 
-                                        color = if (isDark) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant, 
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = if (isDark) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                                         modifier = Modifier.align(Alignment.CenterVertically)
                                     ) {
                                         Text(
-                                            text = " 배송비: $displayShipping ", 
-                                            fontSize = 9.sp, 
-                                            color = if (isDark) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant, 
+                                            text = " 배송비: $displayShipping ",
+                                            fontSize = 9.sp,
+                                            color = if (isDark) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(vertical = 2.dp)
                                         )
                                     }
                                 }
-                                
+
                                 if (deal.isClosed) {
                                     Surface(
-                                        shape = RoundedCornerShape(4.dp), 
-                                        color = MaterialTheme.colorScheme.errorContainer, 
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.errorContainer,
                                         modifier = Modifier.align(Alignment.CenterVertically)
                                     ) {
                                         Text(
-                                            text = "종료됨", 
-                                            fontSize = 10.sp, 
-                                            color = MaterialTheme.colorScheme.onErrorContainer, 
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), 
+                                            text = "종료됨",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -2015,78 +2265,13 @@ fun DealCardComposable(
                         }
                     }
                 }
-            
-            // ✨ 아코디언 토글 상세 영역 (다이렉트 구매처 아웃링크 및 큰 이미지)
+
+            // ✨ 아코디언 토글 상세 영역 (중복 큰 이미지 없이 핵심 요약 및 액션 버튼만 컴팩트하게 표시)
             androidx.compose.animation.AnimatedVisibility(visible = isExpanded) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    // ✨ 큰 사이즈 원본 이미지 뷰어 (OOM 방지 및 크로스페이드)
-                    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp, max = 220.dp), contentAlignment = Alignment.Center) {
-                        if (deal.imageUrl.isNullOrBlank()) {
-                            BrandPlaceholder(
-                                siteName = deal.siteName,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(200.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
-                                textStyle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
-                            )
-                        } else {
-                            val proxiedExpandedUrl = remember(deal.id, deal.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
-                                val rawImageUrl = deal.imageUrl
-                                if (rawImageUrl.isNullOrBlank()) ""
-                                else if (!rawImageUrl.isNullOrBlank() && rawImageUrl.startsWith("http")) {
-                                    val baseUrl = com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl().removeSuffix("/")
-                                    "$baseUrl/api/proxy-image?url=${java.net.URLEncoder.encode(rawImageUrl, "UTF-8")}"
-                                } else rawImageUrl
-                            }
-                            AsyncImage(
-                                model = coil.request.ImageRequest.Builder(context)
-                                    .data(proxiedExpandedUrl)
-                                    .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
-                                    .setHeader("Referer", deal.postUrl ?: "https://insightdeal.com/")
-                                    .crossfade(true)
-                                    .crossfade(400)
-                                    .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                                    .diskCachePolicy(coil.request.CachePolicy.ENABLED)
-                                    .precision(coil.size.Precision.EXACT)
-                                    .build(),
-                                contentDescription = "Full Product Image",
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .then(if (deal.isClosed) Modifier.blur(6.dp) else Modifier),
-                                colorFilter = if (deal.isClosed) androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) }) else null,
-                                contentScale = ContentScale.Inside,
-                                error = coil.compose.rememberAsyncImagePainter(android.R.drawable.ic_menu_report_image)
-                            )
-                        }
-                        
-                        if (deal.isClosed) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color.Black.copy(alpha = 0.5f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "판매가 종료된 핫딜입니다",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 16.sp,
-                                    modifier = Modifier
-                                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                                )
-                            }
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = if (isDark) Color(0xFF3E2723) else Color(0xFFFFF8E1),
@@ -2101,25 +2286,97 @@ fun DealCardComposable(
                             textAlign = TextAlign.Center
                         )
                     }
-                    
+
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    if (!deal.aiSummary.isNullOrBlank()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), 
-                            verticalAlignment = Alignment.CenterVertically
+                    val multiOptions = remember(deal.id, deal.sources) {
+                        deal.sources?.filter { it.siteName.contains(" - ") && (it.price ?: 0L) > 0L } ?: emptyList()
+                    }
+                    if (multiOptions.size > 1) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    color = if (isDark) MaterialTheme.colorScheme.surface.copy(alpha = 0.6f) else Color(0xFFF8FAFC),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(Icons.Default.Star, contentDescription = "AI", tint = if (isDark) Color(0xFF81C784) else Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
                             Text(
-                                text = deal.aiSummary, 
-                                fontSize = 13.sp, 
-                                color = if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32), 
-                                fontWeight = FontWeight.Medium, 
-                                lineHeight = 18.sp
+                                text = "옵션별 가격 및 바로가기",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary
                             )
+                            multiOptions.forEach { opt ->
+                                val optName = opt.siteName.substringAfter(" - ").trim()
+                                val optPriceText = formatPrice(opt.price ?: deal.price, opt.currency ?: deal.currency, optName)
+                                val optTargetUrl = opt.ecommerceUrl?.takeIf { it.isNotBlank() } ?: opt.postUrl
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            if (optTargetUrl.isNotBlank()) {
+                                                val finalOptUrl = if (optTargetUrl.startsWith("http")) optTargetUrl else "https://$optTargetUrl"
+                                                onOpenUrl(finalOptUrl)
+                                            }
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "• $optName",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                        )
+                                        Text(
+                                            text = "$optPriceText ➔",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30)
+                                        )
+                                    }
+                                }
+                            }
                         }
                         Spacer(modifier = Modifier.height(12.dp))
+                    } else if (!deal.aiSummary.isNullOrBlank()) {
+                        val cleanedSummary = remember(deal.aiSummary) {
+                            deal.aiSummary
+                                .replace(Regex("^[🔥✨🤖💡⚡🎉📦✅⚠️\\s]+"), "")
+                                .replace("[커뮤니티 인증 핫딜]", "")
+                                .trim()
+                        }
+                        if (cleanedSummary.isNotBlank() &&
+                            !cleanedSummary.contains("AI가 자동 분리") &&
+                            !cleanedSummary.contains("모음전] 여러 상품이 포함된")) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Star, contentDescription = null, tint = if (isDark) Color(0xFF81C784) else Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = cleanedSummary,
+                                    fontSize = 13.sp,
+                                    color = if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32),
+                                    fontWeight = FontWeight.Medium,
+                                    lineHeight = 18.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
                     }
                     // 📈 가격 상세 분석 버튼 추가
                     Button(
@@ -2131,10 +2388,10 @@ fun DealCardComposable(
                         ),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("🔥 AI 가격 분석 & 상세정보 보기", fontWeight = FontWeight.ExtraBold)
+                        Text("가격 추이 및 상세보기", fontWeight = FontWeight.ExtraBold)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     Button(
                         onClick = {
                             try {
@@ -2147,7 +2404,7 @@ fun DealCardComposable(
                                 if (!targetUrl.isNullOrBlank()) {
                                     val prefs = context.getSharedPreferences("insightdeal_prefs", android.content.Context.MODE_PRIVATE)
                                     val afCode = prefs.getString("coupang_af_code", "") ?: ""
-                                    
+
                                     if (afCode.isNotBlank() && (targetUrl.contains("coupang.com") || targetUrl.contains("coupa.ng"))) {
                                         android.util.Log.d("Hijack", "💰 Coupang Hijacked! 100% 수익화 모드: $afCode")
                                         targetUrl = if (targetUrl.contains("?")) "$targetUrl&subId=$afCode" else "$targetUrl?subId=$afCode"
@@ -2173,12 +2430,12 @@ fun DealCardComposable(
                         ),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("구매하기 🚀", fontWeight = FontWeight.ExtraBold)
+                        Text("구매하러 가기", fontWeight = FontWeight.ExtraBold)
                     }
                 }
             }
         }
-        
+
         // 핫딜 뱃지를 우측 최상단에 고정 (Box로 감싸서 BoxScope 2D 정렬 완벽 보장!)
         if (isSuperHot) {
             Box(modifier = Modifier.fillMaxWidth()) {
@@ -2191,12 +2448,10 @@ fun DealCardComposable(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
-                        Text("🔥", fontSize = 12.sp)
-                        Spacer(modifier = Modifier.width(2.dp))
                         Text(
-                            text = "핫딜", 
-                            fontSize = 11.sp, 
-                            color = if (isDark) Color(0xFFCF6679) else Color(0xFFD32F2F), 
+                            text = "인기",
+                            fontSize = 11.sp,
+                            color = if (isDark) Color(0xFFCF6679) else Color(0xFFD32F2F),
                             fontWeight = FontWeight.ExtraBold
                         )
                     }
@@ -2215,12 +2470,12 @@ fun KeywordSettingsBottomSheet(
     keywordViewModel: KeywordManagerViewModel
 ) {
     var keywordText by remember { mutableStateOf("") }
-    
+
     val keywordsState by keywordViewModel.keywords.collectAsState()
     val dndEnabled by keywordViewModel.dndEnabled.collectAsState()
     val dndStartTime by keywordViewModel.dndStartTime.collectAsState()
     val dndEndTime by keywordViewModel.dndEndTime.collectAsState()
-    
+
     // 💡 바텀시트가 실행되는 0.00ms 시점에 즉각 백엔드로부터 최신 맞춤 키워드 정보를 강제 동기화합니다.
     androidx.compose.runtime.LaunchedEffect(Unit) {
         keywordViewModel.fetchKeywords()
@@ -2237,20 +2492,20 @@ fun KeywordSettingsBottomSheet(
     ) {
         Column(modifier = Modifier.padding(24.dp).padding(bottom = 32.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text("🔔 맞춤 키워드 알림", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurface)
+                Text("맞춤 키워드 알림", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurface)
                 Switch(
-                    checked = !dndEnabled, 
+                    checked = !dndEnabled,
                     onCheckedChange = { isEnabled ->
                         keywordViewModel.updateDndSettings(
-                            enabled = !isEnabled, 
-                            startTime = dndStartTime, 
+                            enabled = !isEnabled,
+                            startTime = dndStartTime,
                             endTime = dndEndTime
                         )
                     }
                 )
             }
             Text("원하는 키워드를 등록하면 특가가 떴을 때 즉시 푸시 알림을 쏴드립니다!", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top=8.dp, bottom=16.dp))
-            
+
             val context = LocalContext.current
             val formattedStartTime = dndStartTime.split(":").firstOrNull()?.let { "${it}시" } ?: dndStartTime
             val formattedEndTime = dndEndTime.split(":").firstOrNull()?.let { "${it}시" } ?: dndEndTime
@@ -2262,7 +2517,7 @@ fun KeywordSettingsBottomSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 16.dp)
-                    .clickable { 
+                    .clickable {
                         val startParts = dndStartTime.split(":")
                         val startHour = startParts.firstOrNull()?.toIntOrNull() ?: 22
                         val startMinute = startParts.getOrNull(1)?.toIntOrNull() ?: 0
@@ -2275,7 +2530,7 @@ fun KeywordSettingsBottomSheet(
                             context,
                             { _, pickedStartHour, pickedStartMinute ->
                                 val formattedStart = String.format("%02d:%02d", pickedStartHour, pickedStartMinute)
-                                
+
                                 android.app.TimePickerDialog(
                                     context,
                                     { _, pickedEndHour, pickedEndMinute ->
@@ -2304,15 +2559,15 @@ fun KeywordSettingsBottomSheet(
                     }
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically, 
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)
                 ) {
                     Checkbox(
                         checked = dndEnabled,
                         onCheckedChange = { isChecked ->
                             keywordViewModel.updateDndSettings(
-                                enabled = isChecked, 
-                                startTime = dndStartTime, 
+                                enabled = isChecked,
+                                startTime = dndStartTime,
                                 endTime = dndEndTime
                             )
                         },
@@ -2324,15 +2579,15 @@ fun KeywordSettingsBottomSheet(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "야간(${formattedStartTime}~${formattedEndTime}) 알림 차단", 
-                            fontWeight = FontWeight.Bold, 
-                            fontSize = 15.sp, 
+                            text = "야간(${formattedStartTime}~${formattedEndTime}) 알림 차단",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "해당 시간대에 수신을 제한합니다. (탭하여 시간 변경)", 
-                            fontSize = 12.sp, 
+                            text = "해당 시간대에 수신을 제한합니다. (탭하여 시간 변경)",
+                            fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.error
                         )
                     }
@@ -2368,9 +2623,9 @@ fun KeywordSettingsBottomSheet(
                 },
                 singleLine = true
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // 💡 등록된 맞춤 키워드가 없는 경우, 사용자 편의를 위한 프리미엄 아크릴 플레이스홀더를 노출합니다.
             if (keywordsState.isEmpty()) {
                 Surface(
@@ -2383,7 +2638,7 @@ fun KeywordSettingsBottomSheet(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            "🏷️ 아직 등록된 키워드가 없어요.",
+                            "아직 등록된 키워드가 없어요.",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2397,7 +2652,7 @@ fun KeywordSettingsBottomSheet(
                     }
                 }
             }
-            
+
             if (keywordsState.isNotEmpty()) {
                 FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
@@ -2433,12 +2688,12 @@ fun KeywordSettingsBottomSheet(
 
             Spacer(modifier = Modifier.height(8.dp))
             Button(
-                onClick = { 
+                onClick = {
                     coroutineScope.launch {
                         sheetState.hide()
                         onDismiss()
                     }
-                }, 
+                },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 shape = RoundedCornerShape(16.dp)
             ) {
@@ -2452,7 +2707,7 @@ fun KeywordSettingsBottomSheet(
 fun CoupangSettingsDialog(onDismiss: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { context.getSharedPreferences("insightdeal_prefs", android.content.Context.MODE_PRIVATE) }
-    
+
     var coupangAccessKey by remember { mutableStateOf(prefs.getString("coupang_access_key", "") ?: "") }
     var coupangSecretKey by remember { mutableStateOf(prefs.getString("coupang_secret_key", "") ?: "") }
     var coupangAfCode by remember { mutableStateOf(prefs.getString("coupang_af_code", "") ?: "") }
@@ -2465,10 +2720,10 @@ fun CoupangSettingsDialog(onDismiss: () -> Unit) {
         ) {
             Column(modifier = Modifier.padding(24.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("🛒 쿠팡 파트너스 연동", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Text("쿠팡 파트너스 연동 안내", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurface)
                 }
                 Text("API Key를 입력하시면 앱 내 핫딜 터치 시 대표님의 AF코드를 타도록 자동 변환됩니다.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top=8.dp, bottom=16.dp))
-                
+
                 OutlinedTextField(
                     value = coupangAccessKey,
                     onValueChange = { coupangAccessKey = it },
@@ -2477,9 +2732,9 @@ fun CoupangSettingsDialog(onDismiss: () -> Unit) {
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true
                 )
-                
+
                 Spacer(modifier = Modifier.height(12.dp))
-                
+
                 OutlinedTextField(
                     value = coupangSecretKey,
                     onValueChange = { coupangSecretKey = it },
@@ -2491,7 +2746,7 @@ fun CoupangSettingsDialog(onDismiss: () -> Unit) {
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
-                
+
                 OutlinedTextField(
                     value = coupangAfCode,
                     onValueChange = { coupangAfCode = it },
@@ -2502,9 +2757,9 @@ fun CoupangSettingsDialog(onDismiss: () -> Unit) {
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
-                
+
                 Text(
-                    text = "🚨 주의: 공정위 지침에 따라 상세 페이지 내 [쿠팡 파트너스 활동] 문구가 자동 노출됩니다.",
+                    text = "공정위 지침에 따라 상세 페이지에 파트너스 안내 문구가 함께 표시됩니다.",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(bottom = 16.dp)
@@ -2512,7 +2767,7 @@ fun CoupangSettingsDialog(onDismiss: () -> Unit) {
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(
-                        onClick = onDismiss, 
+                        onClick = onDismiss,
                         modifier = Modifier.weight(1f).height(50.dp),
                         shape = RoundedCornerShape(16.dp)
                     ) {
@@ -2527,7 +2782,7 @@ fun CoupangSettingsDialog(onDismiss: () -> Unit) {
                                 .apply()
                             android.widget.Toast.makeText(context, "API Key 및 AF코드가 저장되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
                             onDismiss()
-                        }, 
+                        },
                         modifier = Modifier.weight(1f).height(50.dp),
                         shape = RoundedCornerShape(16.dp)
                     ) {
@@ -2541,8 +2796,8 @@ fun CoupangSettingsDialog(onDismiss: () -> Unit) {
 
 @Composable
 fun BrandPlaceholder(
-    siteName: String, 
-    modifier: Modifier = Modifier, 
+    siteName: String,
+    modifier: Modifier = Modifier,
     textStyle: TextStyle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
 ) {
     val siteLower = siteName.lowercase(Locale.getDefault())
@@ -2574,108 +2829,15 @@ fun BrandPlaceholder(
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.padding(4.dp)
         ) {
-            // 🔥 초귀여운 2D 슬픈 핫딜 불꽃(🔥) Canvas 일러스트
-            androidx.compose.foundation.Canvas(
-                modifier = Modifier
-                    .size(26.dp)
-                    .padding(bottom = 1.dp)
-            ) {
-                // 1. 외곽 큰 불꽃 몸체 (빨강 -> 오렌지 그라데이션)
-                val firePath = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(size.width * 0.5f, size.height * 0.05f)
-                    // 우측 뾰족한 곡선
-                    quadraticBezierTo(size.width * 0.85f, size.height * 0.35f, size.width * 0.85f, size.height * 0.65f)
-                    quadraticBezierTo(size.width * 0.85f, size.height * 0.95f, size.width * 0.5f, size.height * 0.95f)
-                    // 좌측 뾰족한 곡선
-                    quadraticBezierTo(size.width * 0.15f, size.height * 0.95f, size.width * 0.15f, size.height * 0.65f)
-                    quadraticBezierTo(size.width * 0.15f, size.height * 0.35f, size.width * 0.5f, size.height * 0.05f)
-                    close()
-                }
-                
-                // 불꽃 그라데이션
-                val fireBrush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFFFF3D00), Color(0xFFFF9100)),
-                    startY = 0f,
-                    endY = size.height
-                )
-                drawPath(path = firePath, brush = fireBrush)
-
-                // 2. 내부 노란 불꽃 핵 (노란색)
-                val innerFirePath = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(size.width * 0.5f, size.height * 0.35f)
-                    quadraticBezierTo(size.width * 0.72f, size.height * 0.55f, size.width * 0.72f, size.height * 0.75f)
-                    quadraticBezierTo(size.width * 0.72f, size.height * 0.9f, size.width * 0.5f, size.height * 0.9f)
-                    quadraticBezierTo(size.width * 0.28f, size.height * 0.9f, size.width * 0.28f, size.height * 0.75f)
-                    quadraticBezierTo(size.width * 0.28f, size.height * 0.55f, size.width * 0.5f, size.height * 0.35f)
-                    close()
-                }
-                drawPath(path = innerFirePath, color = Color(0xFFFFEA3B))
-
-                // 3. 슬픈 눈 (동그란 눈에 맺힌 눈물)
-                drawCircle(
-                    color = Color(0xFF212121),
-                    radius = 1.8f,
-                    center = androidx.compose.ui.geometry.Offset(size.width * 0.4f, size.height * 0.65f)
-                )
-                drawCircle(
-                    color = Color(0xFF212121),
-                    radius = 1.8f,
-                    center = androidx.compose.ui.geometry.Offset(size.width * 0.6f, size.height * 0.65f)
-                )
-
-                // 4. 슬픈 입 모양 (우는 아치형)
-                val mouthPath = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(size.width * 0.46f, size.height * 0.78f)
-                    quadraticBezierTo(
-                        size.width * 0.5f, size.height * 0.73f,
-                        size.width * 0.54f, size.height * 0.78f
-                    )
-                }
-                drawPath(
-                    path = mouthPath,
-                    color = Color(0xFF212121),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f)
-                )
-
-                // 5. 수줍고 귀여운 뺨 볼터치
-                drawCircle(
-                    color = Color(0xFFFF8A80).copy(alpha = 0.8f),
-                    radius = 1.8f,
-                    center = androidx.compose.ui.geometry.Offset(size.width * 0.32f, size.height * 0.72f)
-                )
-                drawCircle(
-                    color = Color(0xFFFF8A80).copy(alpha = 0.8f),
-                    radius = 1.8f,
-                    center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.72f)
-                )
-
-                // 6. 💧 주룩주룩 흐르는 귀여운 ㅠㅠ 눈물방울!
-                // 왼쪽 눈물방울
-                val tearPathLeft = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(size.width * 0.38f, size.height * 0.68f)
-                    quadraticBezierTo(size.width * 0.33f, size.height * 0.73f, size.width * 0.33f, size.height * 0.78f)
-                    quadraticBezierTo(size.width * 0.33f, size.height * 0.83f, size.width * 0.38f, size.height * 0.83f)
-                    quadraticBezierTo(size.width * 0.43f, size.height * 0.83f, size.width * 0.43f, size.height * 0.78f)
-                    close()
-                }
-                drawPath(path = tearPathLeft, color = Color(0xFF29B6F6))
-
-                // 오른쪽 눈물방울
-                val tearPathRight = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(size.width * 0.58f, size.height * 0.68f)
-                    quadraticBezierTo(size.width * 0.53f, size.height * 0.73f, size.width * 0.53f, size.height * 0.78f)
-                    quadraticBezierTo(size.width * 0.53f, size.height * 0.83f, size.width * 0.58f, size.height * 0.83f)
-                    quadraticBezierTo(size.width * 0.63f, size.height * 0.83f, size.width * 0.63f, size.height * 0.78f)
-                    close()
-                }
-                drawPath(path = tearPathRight, color = Color(0xFF29B6F6))
-            }
-
-            Spacer(modifier = Modifier.height(2.dp))
-            
-            // 📝 직관적이고 세련된 이미지 없음 문구 (잘림 없이 다 노출되도록 처리)
+            Icon(
+                imageVector = Icons.Default.LocalOffer,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "이미지 없음",
+                text = "이미지 준비중",
                 style = textStyle.copy(
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
@@ -2724,7 +2886,7 @@ fun NotificationHistoryBottomSheet(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🔔 알림 내역", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Text("알림 내역", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(modifier = Modifier.width(8.dp))
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -2740,7 +2902,7 @@ fun NotificationHistoryBottomSheet(
                         )
                     }
                 }
-                
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (alertsState.isNotEmpty()) {
                         TextButton(
@@ -2751,11 +2913,11 @@ fun NotificationHistoryBottomSheet(
                             Text("전체 삭제", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                     }
-                    
+
                     IconButton(onClick = onNavigateToKeywordSettings) {
                         Icon(Icons.Default.Add, contentDescription = "키워드 등록", tint = MaterialTheme.colorScheme.primary)
                     }
-                    
+
                     IconButton(
                         onClick = {
                             coroutineScope.launch {
@@ -2779,7 +2941,12 @@ fun NotificationHistoryBottomSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("📭", fontSize = 48.sp)
+                        Icon(
+                            imageVector = Icons.Default.NotificationsNone,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                            modifier = Modifier.size(44.dp)
+                        )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             "새로운 알림 내역이 없습니다.",
@@ -2803,12 +2970,15 @@ fun NotificationHistoryBottomSheet(
                         .weight(1f, fill = false),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(alertsState) { alert ->
+                    items(
+                        items = alertsState,
+                        key = { it.id },
+                        contentType = { "notification_alert_item" }
+                    ) { alert ->
                         val dateText = remember(alert.receivedAt) {
                             val instant = java.time.Instant.ofEpochMilli(alert.receivedAt)
                             val localDateTime = java.time.LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault())
-                            val formatter = java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm")
-                            localDateTime.format(formatter)
+                            localDateTime.format(ALERT_DATE_FORMATTER)
                         }
 
                         Card(
@@ -2850,7 +3020,7 @@ fun NotificationHistoryBottomSheet(
                                         )
                                     }
                                 }
-                                
+
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = alert.title,

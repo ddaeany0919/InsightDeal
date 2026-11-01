@@ -22,7 +22,9 @@ export interface Deal {
   originalDate?: string;
   honeyScore?: number;
   aiSummary?: string;
+  contentHtml?: string;
   sources?: DealSource[];
+  tags?: string[];
 }
 
 export interface AIDemoResult {
@@ -40,4 +42,12 @@ export interface PriceHistoryItem {
   discountRate: number | null;
   recordedAt: string;
   source: string;
+}
+
+export interface PopularKeywordRanking {
+  rank: number;
+  keyword: string;
+  deal_count: number;
+  recent_count: number;
+  status: "HOT" | "UP" | "NEW" | "SAME" | string;
 }

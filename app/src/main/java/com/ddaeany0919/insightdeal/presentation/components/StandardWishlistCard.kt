@@ -32,6 +32,8 @@ enum class WishlistCardStyle {
     SIMPLE, DETAILED
 }
 
+private val WISHLIST_TIME_FORMATTER = DateTimeFormatter.ofPattern("MM/dd HH:mm")
+
 @Composable
 fun StandardWishlistCard(
     item: WishlistItem,
@@ -46,7 +48,6 @@ fun StandardWishlistCard(
 ) {
     val context = LocalContext.current
     val isDark = isSystemInDarkTheme()
-    val timeFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm")
 
     Card(
         modifier = Modifier
@@ -117,14 +118,14 @@ fun StandardWishlistCard(
                 val displayPrice = checkResult?.currentPrice ?: item.currentLowestPrice ?: item.targetPrice
                 if (displayPrice > 0) {
                     Text(
-                        text = "${displayPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원",
+                        text = com.ddaeany0919.insightdeal.presentation.formatPrice(displayPrice.toLong(), null, item.keyword),
                         fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = Color(0xFF3182F6)
                     )
                 } else {
                     Text(
-                        text = "실시간 추적 중 🔍",
+                        text = "가격 추적 중",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -140,8 +141,17 @@ fun StandardWishlistCard(
             if (style == WishlistCardStyle.SIMPLE && !checkResult?.productUrl.isNullOrBlank()) {
                 Button(
                     onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(checkResult!!.productUrl))
-                        ContextCompat.startActivity(context, intent, null)
+                        try {
+                            val url = checkResult?.productUrl ?: ""
+                            if (url.startsWith("http://") || url.startsWith("https://")) {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                    addCategory(Intent.CATEGORY_BROWSABLE)
+                                    component = null
+                                    selector = null
+                                }
+                                ContextCompat.startActivity(context, intent, null)
+                            }
+                        } catch (_: Exception) {}
                     },
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(12.dp),
@@ -159,7 +169,7 @@ fun StandardWishlistCard(
             ) {
                 if (item.lastChecked != null) {
                     Text(
-                        text = "${item.lastChecked.format(timeFormatter)} 업데이트",
+                        text = "${item.lastChecked.format(WISHLIST_TIME_FORMATTER)} 업데이트",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )

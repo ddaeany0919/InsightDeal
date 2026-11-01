@@ -54,8 +54,15 @@ class ClienScraper(AsyncBaseScraper):
             hit_el = item.select_one('.list_hit')
             symph = int(symph_el.get_text(strip=True)) if symph_el and symph_el.get_text(strip=True).isdigit() else 0
             hit_txt = hit_el.get_text(strip=True).replace(',', '') if hit_el else '0'
-            hit = int(hit_txt) if hit_txt.isdigit() else 0
-            if symph >= 10:
+            hit = 0
+            try:
+                if 'k' in hit_txt.lower():
+                    hit = int(float(re.sub(r'[^0-9.]', '', hit_txt)) * 1000)
+                elif hit_txt.isdigit():
+                    hit = int(hit_txt)
+            except Exception:
+                hit = 0
+            if symph >= 5 or (hit >= 10000 and symph >= 3):
                 is_super_hotdeal = True
 
             image_url = ""

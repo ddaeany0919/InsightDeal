@@ -25,35 +25,6 @@ class FmkoreaScraper(AsyncBaseScraper):
     async def parse_list(self, html: str) -> list[dict]:
         """펨코리아 게시판 리스트에서 타겟 데이터 추출 (비동기 처리)"""
         soup = BeautifulSoup(html, 'html.parser')
-        
-        # 포텐 핫딜 마크를 달기 위해 백그라운드에서 인기글(pop) 목록 조회하여 URL 수집
-        if getattr(self, "hot_urls", None) is None:
-            self.hot_urls = set()
-            try:
-                hot_html = await self.fetch_html("https://www.fmkorea.com/index.php?mid=hotdeal&sort_index=pop&order_type=desc&listStyle=webzine")
-                if hot_html:
-                    hot_soup = BeautifulSoup(hot_html, 'html.parser')
-                    for r in hot_soup.select('li.li, div.list_item'):
-                        # 인기글 중에서도 '포텐' 뱃지가 달린 것만 진짜 포텐 핫딜로 간주
-                        is_poten = False
-                        poten_span = r.select_one('span.STAR-BEST')
-                        if poten_span and '포텐' in poten_span.get_text(strip=True):
-                            is_poten = True
-                            
-                        if is_poten:
-                            a = r.select_one('a.hotdeal_var8, a.hotdeal_var8Y, a.title, h3.title a')
-                            if a and a.get('href'):
-                                doc_match = re.search(r'document_srl=([0-9]+)', a.get('href'))
-                                if doc_match:
-                                    self.hot_urls.add(f"https://www.fmkorea.com/{doc_match.group(1)}")
-                                else:
-                                    clean_href = a.get('href').split('?')[0]
-                                    self.hot_urls.add(urljoin("https://www.fmkorea.com/", clean_href))
-                            else:
-                                clean_href = a.get('href').split('?')[0]
-                                self.hot_urls.add(urljoin("https://www.fmkorea.com/", clean_href))
-            except Exception as e:
-                logger.warning(f"[{self.platform_name}] 인기 핫딜 목록 조회 실패: {e}")
 
         post_rows = soup.select('li.li:not(.notice), div.list_item:not(.notice)')
         if not post_rows:
@@ -133,12 +104,13 @@ class FmkoreaScraper(AsyncBaseScraper):
                         strong = span.select_one('.strong')
                         if strong: 
                             price_text = strong.get_text(strip=True)
-                            if '$' in price_text or '달러' in price_text or 'USD' in price_text.upper():
+                            price_text_clean = re.sub(r'\d+(?:\.\d+)?\s*(?:kg|g|ml|l|개|입|봉|팩|포|장|매|구|미|알|병|캔|통|박스)\s*당', ' ', price_text, flags=re.IGNORECASE)
+                            if '$' in price_text_clean or '달러' in price_text_clean or 'USD' in price_text_clean.upper():
                                 extracted_currency = "USD"
-                            elif '€' in price_text or '유로' in price_text or 'EUR' in price_text.upper():
+                            elif '€' in price_text_clean or '유로' in price_text_clean or 'EUR' in price_text_clean.upper():
                                 extracted_currency = "EUR"
                                 
-                            p_match = re.search(r'([0-9,]+(?:\.[0-9]+)?)', price_text)
+                            p_match = re.search(r'([0-9,]+(?:\.[0-9]+)?)', price_text_clean)
                             if p_match:
                                 try:
                                     raw_val = float(p_match.group(1).replace(',', ''))
@@ -266,11 +238,14 @@ class FmkoreaScraper(AsyncBaseScraper):
             return {"is_closed": True}
             
         soup = BeautifulSoup(html, 'html.parser')
+        # 댓글 영역(.fdb_lst_ul, #cmtPosition 등)을 사전 제거하여 유저 댓글이나 댓글 내 링크가 본문/옵션으로 혼입되는 현상 원천 차단
+        for cmt_node in soup.select('.fdb_lst_ul, #cmtPosition, .comment_list, .fdb_v2, .rd_ft, .rd_tl'):
+            cmt_node.decompose()
         
         is_closed = False
         ecommerce_link = ""
         # 1. 펨코 리디렉터 링크 또는 hotdeal_info 내의 구매 링크를 최우선 수색!
-        for a in soup.select('.hotdeal_info a, a'):
+        for a in soup.select('.hotdeal_info a, article a, .rd_body a, a'):
             href = a.get('href', '')
             if not href:
                 continue
@@ -292,7 +267,7 @@ class FmkoreaScraper(AsyncBaseScraper):
         
         # 2. a 태그로 못 찾았을 경우, 텍스트(본문)에 포함된 URL 정규식 탐색
         if not ecommerce_link:
-            content_area = soup.select_one('.xe_content') or soup.select_one('.rd_body')
+            content_area = soup.select_one('article .xe_content') or soup.select_one('.rd_body .xe_content') or soup.select_one('.xe_content') or soup.select_one('.rd_body')
             if content_area:
                 text_content = content_area.get_text(separator=' ')
                 # http(s) 링크 찾기
@@ -309,7 +284,7 @@ class FmkoreaScraper(AsyncBaseScraper):
                 
         image_url = ""
         # 펨코 본문 영역 (.xe_content or .rd_body)에서 고해상도 실제 이미지를 정밀 추출
-        content_area = soup.select_one('.xe_content') or soup.select_one('.rd_body')
+        content_area = soup.select_one('article .xe_content') or soup.select_one('.rd_body .xe_content') or soup.select_one('.xe_content') or soup.select_one('.rd_body')
         if content_area:
             for img in content_area.select('img'):
                 src = img.get('data-original') or img.get('data-src') or img.get('src', '')
@@ -365,12 +340,13 @@ class FmkoreaScraper(AsyncBaseScraper):
                                 price_fallback = 0
                                 is_price_resolved = True
                             else:
-                                if '$' in td_text or '달러' in td_text or 'USD' in td_text.upper():
+                                td_text_clean = re.sub(r'\d+(?:\.\d+)?\s*(?:kg|g|ml|l|개|입|봉|팩|포|장|매|구|미|알|병|캔|통|박스)\s*당', ' ', td_text, flags=re.IGNORECASE)
+                                if '$' in td_text_clean or '달러' in td_text_clean or 'USD' in td_text_clean.upper():
                                     currency_fallback = "USD"
-                                elif '€' in td_text or '유로' in td_text or 'EUR' in td_text.upper():
+                                elif '€' in td_text_clean or '유로' in td_text_clean or 'EUR' in td_text_clean.upper():
                                     currency_fallback = "EUR"
                                 
-                                price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', td_text)
+                                price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', td_text_clean)
                                 if price_matches:
                                     try:
                                         raw_val = float(price_matches[0].replace(',', ''))
@@ -398,12 +374,13 @@ class FmkoreaScraper(AsyncBaseScraper):
                             price_fallback = 0
                             is_price_resolved = True
                         else:
-                            if '$' in span_text or '달러' in span_text or 'USD' in span_text.upper():
+                            span_text_clean = re.sub(r'\d+(?:\.\d+)?\s*(?:kg|g|ml|l|개|입|봉|팩|포|장|매|구|미|알|병|캔|통|박스)\s*당', ' ', span_text, flags=re.IGNORECASE)
+                            if '$' in span_text_clean or '달러' in span_text_clean or 'USD' in span_text_clean.upper():
                                 currency_fallback = "USD"
-                            elif '€' in span_text or '유로' in span_text or 'EUR' in span_text.upper():
+                            elif '€' in span_text_clean or '유로' in span_text_clean or 'EUR' in span_text_clean.upper():
                                 currency_fallback = "EUR"
                                 
-                            price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', span_text)
+                            price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', span_text_clean)
                             if price_matches:
                                 try:
                                     raw_val = float(price_matches[0].replace(',', ''))
@@ -419,7 +396,9 @@ class FmkoreaScraper(AsyncBaseScraper):
                         shop_name = span_text.replace('쇼핑몰:', '').replace('쇼핑몰 :', '').strip()
         
         body_text = ""
-        content_areas = soup.select('.xe_content')
+        content_areas = soup.select('article .xe_content, .rd_body .xe_content')
+        if not content_areas:
+            content_areas = soup.select('.xe_content')
         if not content_areas:
             content_areas = soup.select('.rd_body')
             
@@ -431,7 +410,7 @@ class FmkoreaScraper(AsyncBaseScraper):
                 if href and not href.startswith('javascript'):
                     new_text = f"{a.get_text(strip=True)} (링크: {href})"
                     a.string = new_text
-            body_parts.append(area.get_text(separator=' ', strip=True))
+            body_parts.append(area.get_text(separator='\n', strip=True))
             
         if body_parts:
             body_text = " \n ".join(body_parts)

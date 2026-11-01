@@ -13,19 +13,22 @@ class QuasarzoneScraper(AsyncBaseScraper):
         self.list_url = "https://quasarzone.com/bbs/qb_saleinfo"
 
     async def parse_list(self, html: str) -> list[dict]:
-        """퀘이사존 게시판 리스트에서 타겟 데이터 추출"""
+        """퀘이사존 게시판 리스트에서 타겟 데이터 추출 (v2-list-row 신형 레이아웃 및 구형 테이블 완벽 호환)"""
         soup = BeautifulSoup(html, 'html.parser')
         
-        post_rows = soup.select('div.market-info-type-list table tbody tr')
+        post_rows = soup.select('div.v2-list-row, div.market-info-type-list table tbody tr')
         import asyncio
         async def process_row(row):
-            is_closed = False
-            label_tag = row.select_one('span.label')
-            if label_tag:
-                label_text = label_tag.get_text()
-                if '공지' in label_text:
+            row_classes = " ".join(row.get('class', [])) if row.get('class') else ""
+            if 'notice' in row_classes.lower():
+                return None
+
+            is_closed = any(x in row_classes.lower() for x in ['end', 'closed', 'blind'])
+            for badge_el in row.select('span.label, span.v2-badge'):
+                badge_text = badge_el.get_text(strip=True)
+                if '공지' in badge_text:
                     return None
-                if '종료' in label_text or '마감' in label_text:
+                if '종료' in badge_text or '마감' in badge_text or '품절' in badge_text:
                     is_closed = True
 
             title_element = row.select_one('a.subject-link')
@@ -39,12 +42,12 @@ class QuasarzoneScraper(AsyncBaseScraper):
             title_span = title_element.select_one('span.ellipsis-with-reply-cnt')
             full_title = title_span.get_text(strip=True) if title_span else title_element.get_text(strip=True)
 
-            if "게시판 규정" in full_title or "이용안내" in full_title or "블라인드" in full_title:
+            if not full_title or "게시판 규정" in full_title or "이용안내" in full_title or "블라인드" in full_title:
                 return None
 
             price = 0
             currency = "KRW"
-            price_tag = row.select_one('span.text-orange')
+            price_tag = row.select_one('span.text-orange, span.v2-list-row__price')
             if price_tag:
                 price_str = price_tag.get_text(strip=True)
                 import re
@@ -62,16 +65,36 @@ class QuasarzoneScraper(AsyncBaseScraper):
                         if digits:
                             price = int(digits)
 
-            image_url = ""
-            span_img = row.select_one('span.img-background-wrap')
-            if span_img and span_img.has_attr('style'):
-                import re
-                match = re.search(r'url\((.*?)\)', span_img['style'])
-                if match:
-                    image_url = match.group(1).strip()
+            shop_name = ""
+            shop_logo = row.select_one('img.v2-shop-logo')
+            if shop_logo and shop_logo.get('alt'):
+                shop_name = shop_logo.get('alt').strip()
+
+            shipping_fee = ""
+            for ship_el in row.select('span.v2-list-row__ship'):
+                ship_txt = ship_el.get_text(strip=True)
+                if not ship_txt:
+                    continue
+                if '배송' in ship_txt or '무료' in ship_txt or '무배' in ship_txt:
+                    raw_ship = ship_txt.replace('배송비', '').strip()
+                    if raw_ship in ['0', '0원', '무료', '무배']:
+                        shipping_fee = "무료배송"
+                    else:
+                        shipping_fee = raw_ship
+                elif not shop_name:
+                    shop_name = ship_txt
+
+            image_url = (row.get('data-preview') or "").strip()
+            if not image_url:
+                span_img = row.select_one('span.img-background-wrap, a.img-background-wrap')
+                if span_img and span_img.has_attr('style'):
+                    import re
+                    match = re.search(r"url\(['\"]?(.*?)['\"]?\)", span_img['style'])
+                    if match:
+                        image_url = match.group(1).strip()
             
             if not image_url:
-                img_tag = row.select_one('img')
+                img_tag = row.select_one('img:not(.v2-shop-logo):not(.qz-planet-ic)')
                 if img_tag and img_tag.has_attr('src'):
                     image_url = img_tag['src']
 
@@ -85,55 +108,86 @@ class QuasarzoneScraper(AsyncBaseScraper):
                 image_url = image_url.replace("thumb_", "")
                 
             category = None
-            category_span = row.select_one('span.category')
+            category_span = row.select_one('span.category, span.v2-badge')
             if category_span:
-                category = category_span.get_text(strip=True)
+                cat_raw = category_span.get_text(strip=True)
+                if cat_raw not in ['인기', '종료', '마감', '공지']:
+                    category = cat_raw
 
             if any(k in full_title for k in ['적립', '출석', '출첵', '포인트']):
                 category = "적립"
 
+            row_classes = row.get('class') or []
+            if 'is-done' in row_classes or row.select_one('.v2-thumb-done'):
+                is_closed = True
             if '종료' in full_title or '마감' in full_title or '품절' in full_title or '삭제' in full_title:
                 is_closed = True
 
-
-
             # 실제 게시글 작성 시간 추출
             posted_at_iso = None
-            time_span = row.select_one('span.date')
+            time_span = row.select_one('span.date, span.v2-list-row__time')
             if time_span:
                 posted_at_iso = self.parse_time_str(time_span.get_text(strip=True))
                 
-            # 지표 추출
+            # 지표 추출 (v2-list-row 및 구형 호환)
             view_count = 0
             like_count = 0
             comment_count = 0
             
-            # 퀘이사존 UI 귤(추천) 아이콘 파싱
-            tangerine_img = row.select_one('img.tangerine_icon')
-            if tangerine_img:
-                next_num = tangerine_img.find_next_sibling('span', class_='num')
-                if next_num:
-                    try:
-                        like_count = int(next_num.get_text(strip=True))
-                    except:
-                        pass
-                        
+            good_el = row.select_one('span.qc-count-good')
+            if good_el:
+                g_txt = re.sub(r'[^0-9]', '', good_el.get_text(strip=True))
+                if g_txt.isdigit():
+                    like_count = int(g_txt)
+
+            hit_el = row.select_one('span.qc-count-hit')
+            if hit_el:
+                raw_hit = hit_el.get_text(strip=True).replace(',', '')
+                try:
+                    if '만' in raw_hit:
+                        view_count = int(float(re.sub(r'[^0-9.]', '', raw_hit)) * 10000)
+                    elif '천' in raw_hit or 'k' in raw_hit.lower():
+                        view_count = int(float(re.sub(r'[^0-9.]', '', raw_hit)) * 1000)
+                    else:
+                        h_digits = re.sub(r'[^0-9]', '', raw_hit)
+                        if h_digits.isdigit():
+                            view_count = int(h_digits)
+                except Exception:
+                    pass
+
+            cmt_el = row.select_one('span.qc-count-comment')
+            if cmt_el:
+                c_txt = re.sub(r'[^0-9]', '', cmt_el.get_text(strip=True))
+                if c_txt.isdigit():
+                    comment_count = int(c_txt)
+
+            # 구형 퀘이사존 UI 귤(추천) 아이콘 파싱 폴백
+            if like_count == 0:
+                tangerine_img = row.select_one('img.tangerine_icon')
+                if tangerine_img:
+                    next_num = tangerine_img.find_next_sibling('span', class_='num')
+                    if next_num:
+                        try:
+                            like_count = int(next_num.get_text(strip=True))
+                        except:
+                            pass
+                            
             for count_span in row.select('span.count'):
                 try:
                     icon = count_span.select_one('i')
                     if icon:
                         cls = icon.get('class', [])
                         txt = count_span.get_text(strip=True).replace(',', '')
-                        if 'fa-eye' in cls: view_count = int(txt)
+                        if 'fa-eye' in cls and view_count == 0: view_count = int(txt)
                         elif 'fa-thumbs-up' in cls and like_count == 0: like_count = int(txt)
-                        elif 'fa-comment' in cls or 'fa-comment-dots' in cls: comment_count = int(txt)
+                        elif ('fa-comment' in cls or 'fa-comment-dots' in cls) and comment_count == 0: comment_count = int(txt)
                 except: pass
 
             is_super_hotdeal = False
-            label_el = row.select_one('.label')
-            if label_el and '인기' in label_el.get_text(strip=True):
-                is_super_hotdeal = True
-            if like_count >= 20:
+            for b_el in row.select('.label, .v2-badge, .v2-badge--hot'):
+                if '인기' in b_el.get_text(strip=True):
+                    is_super_hotdeal = True
+            if like_count >= 10:
                 is_super_hotdeal = True
 
             return {
@@ -142,11 +196,11 @@ class QuasarzoneScraper(AsyncBaseScraper):
                 "url": url,
                 "price": price,
                 "currency": currency,
-                "shop_name": "",
+                "shop_name": shop_name,
                 "image_url": image_url,
                 "ecommerce_link": "",
                 "is_closed": is_closed,
-                "shipping_fee": "",
+                "shipping_fee": shipping_fee,
                 "is_super_hotdeal": is_super_hotdeal,
                 "posted_at": posted_at_iso,
                 "view_count": view_count,
@@ -200,16 +254,31 @@ class QuasarzoneScraper(AsyncBaseScraper):
                     ecommerce_link = href
                     break
         
-        # 3. 배송비 파싱
+        # 3. 가격 및 배송비 파싱
         shipping_fee = ""
+        price = 0
+        currency = "KRW"
         for tr in soup.select('table.market-info-view-table tr'):
             th = tr.select_one('th')
-            if th and '배송비' in th.get_text():
-                td = tr.select_one('td')
-                if td:
-                    fee_text = td.get_text(strip=True)
-                    shipping_fee = fee_text
-                    break
+            td = tr.select_one('td')
+            if not th or not td:
+                continue
+            th_text = th.get_text(strip=True)
+            if '배송비' in th_text:
+                shipping_fee = td.get_text(strip=True)
+            elif '가격' in th_text:
+                price_str = td.get_text(strip=True)
+                if '$' in price_str or 'USD' in price_str.upper() or '달러' in price_str:
+                    m_p = re.search(r'([0-9,]+(?:\.[0-9]+)?)', price_str)
+                    if m_p:
+                        price = int(float(m_p.group(1).replace(',', '')) * 100)
+                        currency = "USD"
+                else:
+                    m_p = re.search(r'([0-9,]+)', price_str)
+                    if m_p:
+                        digits = re.sub(r'[^0-9]', '', m_p.group(1))
+                        if digits:
+                            price = int(digits)
         
         if not shipping_fee:
             body_text = soup.get_text(separator=' ')
@@ -224,7 +293,7 @@ class QuasarzoneScraper(AsyncBaseScraper):
             from bs4 import BeautifulSoup as BS
             # org_contents는 보통 textarea 등이며 텍스트로 HTML을 담고 있음
             inner_soup = BS(org_content.get_text(), 'html.parser')
-            content_html = inner_soup.get_text(separator=' ', strip=True)
+            content_html = inner_soup.get_text(separator='\n', strip=True)
             img_tag = inner_soup.select_one('img')
             if img_tag and img_tag.get('src'):
                 image_url = img_tag['src']
@@ -232,7 +301,7 @@ class QuasarzoneScraper(AsyncBaseScraper):
         if not content_html:
             content_area = soup.select_one('.view-content')
             if content_area:
-                content_html = content_area.get_text(separator=' ', strip=True)
+                content_html = content_area.get_text(separator='\n', strip=True)
                 if not image_url:
                     img_tag = content_area.select_one('img')
                     if img_tag and img_tag.get('src'):
@@ -247,6 +316,8 @@ class QuasarzoneScraper(AsyncBaseScraper):
                 image_url = image_url.replace("thumb_", "")
 
         return {
+            "price": price,
+            "currency": currency,
             "ecommerce_link": ecommerce_link, 
             "shipping_fee": shipping_fee, 
             "content_html": content_html,

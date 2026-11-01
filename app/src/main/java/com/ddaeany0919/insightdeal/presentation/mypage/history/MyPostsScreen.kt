@@ -34,9 +34,11 @@ fun MyPostsScreen(
         viewModel.loadPosts()
     }
 
-    val myPosts = if (uiState is CommunityBoardUiState.Success) {
-        (uiState as CommunityBoardUiState.Success).posts.filter { it.userId == currentUserId }
-    } else emptyList()
+    val myPosts = remember(uiState, currentUserId) {
+        if (uiState is CommunityBoardUiState.Success) {
+            (uiState as CommunityBoardUiState.Success).posts.filter { it.userId == currentUserId }
+        } else emptyList()
+    }
 
     Scaffold(
         topBar = {
@@ -76,11 +78,16 @@ fun MyPostsScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(myPosts, key = { it.id }) { post ->
+                items(
+                    items = myPosts,
+                    key = { it.id },
+                    contentType = { "my_post_item" }
+                ) { post ->
                     ShouldIBuyVoteCard(
                         post = post,
                         currentUserId = currentUserId ?: "admin",
-                        onEditClick = { navController?.navigate("community_write?postId=${post.id}") },
+                        // [Bug Fix] MainActivity의 정의된 라우트("community_edit/{postId}")와 일치하도록 수정
+                        onEditClick = { navController?.navigate("community_edit/${post.id}") },
                         onVoteSubmit = { viewModel.loadPosts(showLoading = false) },
                         navController = navController,
                         onClick = { navController?.navigate("community_detail/${post.id}") },

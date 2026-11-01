@@ -246,19 +246,6 @@ interface ApiService {
         @Query("category") category: String? = null
     ): com.ddaeany0919.insightdeal.data.HotDealResponse
 
-    // ==========================================
-    // 🛍️ Naver Shopping API
-    // ==========================================
-    @GET("v1/search/shop.json")
-    suspend fun searchNaverProducts(
-        @Header("X-Naver-Client-Id") clientId: String,
-        @Header("X-Naver-Client-Secret") clientSecret: String,
-        @Query("query") query: String,
-        @Query("display") display: Int = 20,
-        @Query("start") start: Int = 1,
-        @Query("sort") sort: String = "sim"
-    ): Response<NaverShoppingResponse>
-
     @GET("api/community/posts")
     suspend fun getCommunityPosts(
         @Query("post_type") postType: String? = null
@@ -301,25 +288,25 @@ interface ApiService {
     ): Response<Unit>
 
     // Deal Detail enhancements
-    @GET("api/product/deals/{id}/comments")
+    @GET("api/community/deals/{id}/comments")
     suspend fun getDealComments(@Path("id") dealId: Int): Response<List<ApiDealComment>>
 
     @GET("api/community/users/{user_id}/comments")
     suspend fun getUserComments(@Path("user_id") userId: String): Response<List<UserCommentDto>>
 
-    @GET("api/product/deals/{id}/votes")
+    @GET("api/community/deals/{id}/votes")
     suspend fun getDealVotes(
         @Path("id") dealId: Int,
         @Query("user_id") userId: String
     ): Response<ApiDealVotes>
 
-    @POST("api/product/deals/{id}/comments")
+    @POST("api/community/deals/{id}/comments")
     suspend fun addDealComment(
         @Path("id") dealId: Int,
         @Body req: ApiCommentCreate
     ): Response<ApiDealComment>
 
-    @POST("api/product/deals/{id}/votes")
+    @POST("api/community/deals/{id}/votes")
     suspend fun addDealVote(
         @Path("id") dealId: Int,
         @Body req: ApiVoteCreate
@@ -364,7 +351,9 @@ interface ApiService {
 
     @HTTP(method = "DELETE", path = "api/users/keywords", hasBody = true)
     suspend fun deleteUserKeyword(
-        @Body request: AddKeywordRequest
+        @Body request: AddKeywordRequest,
+        @Query("user_id") userId: String? = request.device_uuid,
+        @Query("keyword") keyword: String? = request.keyword
     ): Response<ApiResponse>
 
     // 👤 회원 탈퇴 API (DB 완전 연동)

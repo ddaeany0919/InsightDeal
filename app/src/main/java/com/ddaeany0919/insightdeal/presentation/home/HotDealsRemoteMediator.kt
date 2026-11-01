@@ -64,13 +64,8 @@ class HotDealsRemoteMediator(
                 val deals = responseBody?.deals ?: emptyList()
                 val endOfPaginationReached = deals.isEmpty() || deals.size < limit
 
-                // 3. 로컬 DB 트랜잭션 수행 (캐싱)
+                // 3. 로컬 DB 트랜잭션 수행 (clearAllDeals 없이 Upsert로 플리커링 원천 차단)
                 database.withTransaction {
-                    if (loadType == LoadType.REFRESH) {
-                        database.dealRemoteKeysDao().clearRemoteKeys()
-                        database.dealDao().clearAllDeals()
-                    }
-
                     val prevKey = if (offset == 0) null else offset - limit
                     val nextKey = if (endOfPaginationReached) null else offset + deals.size
 

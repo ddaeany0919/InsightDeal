@@ -66,11 +66,11 @@ class WishlistRepository(
         }
     }
 
-    // [Epic 4] Room DB와 Paging 3를 결합한 초고성능 페이징 조회 스트림
+    // Room DB와 Paging 3를 결합한 페이징 조회 스트림
     fun getWishlistPagedFlow(): Flow<PagingData<WishlistItem>> {
         return Pager(
             config = PagingConfig(
-                pageSize = 20, // 20개 단위로 최적의 메모리 관리 로드
+                pageSize = 20,
                 enablePlaceholders = false,
                 prefetchDistance = 5
             ),
@@ -85,7 +85,8 @@ class WishlistRepository(
         productUrl: String, 
         targetPrice: Int,
         currentLowestPrice: Int? = null,
-        currentLowestPlatform: String? = null
+        currentLowestPlatform: String? = null,
+        userId: String = "default"
     ) = withContext(Dispatchers.IO) {
         Log.d(TAG, "createWishlist: Local db insert -> keyword=$keyword url=$productUrl target=$targetPrice lowest=$currentLowestPrice")
         val entity = WishlistEntity(
@@ -96,6 +97,19 @@ class WishlistRepository(
             currentLowestPlatform = currentLowestPlatform
         )
         dao.insertWishlist(entity)
+
+        // 백엔드 목표가 알림 테이블(wishlist)과 1-RTT 비동기 동기화 (오프라인 시 로컬 Room 유지)
+        runCatching {
+            service().createWishlistFromKeyword(
+                WishlistCreateFromKeywordRequest(
+                    keyword = keyword,
+                    targetPrice = targetPrice,
+                    userId = userId
+                )
+            )
+        }.onFailure { e ->
+            Log.w(TAG, "서버 목표가 알림 동기화 생략 (로컬 Room 저장 완료): ${e.message}")
+        }
     }
 
     suspend fun updateWishlist(item: WishlistItem) = withContext(Dispatchers.IO) {
@@ -124,7 +138,6 @@ class WishlistRepository(
         true
     }
 
-    // 서버 API 호출 로직은 그대로 유지 (특정 가격 갱신 등에 활용)
     suspend fun checkPrice(wishlistId: Int, userId: String): PriceCheckResponse = withContext(Dispatchers.IO) {
         Log.d(TAG, "checkPrice: start id=$wishlistId userId=$userId")
         executeWithRetry("checkPrice") {

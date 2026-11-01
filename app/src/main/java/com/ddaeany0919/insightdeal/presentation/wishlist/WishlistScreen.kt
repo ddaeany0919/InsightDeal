@@ -1,6 +1,5 @@
 package com.ddaeany0919.insightdeal.presentation.wishlist
 
-import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -10,16 +9,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -212,7 +205,7 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
                 contentPadding = PaddingValues(bottom = 80.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                item {
+                item(key = "wishlist_header", contentType = "header") {
                     Text(
                         text = "찜한 상품 (총 ${currentState.items.size}개)",
                         fontSize = 18.sp,
@@ -223,7 +216,8 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
                 }
                 items(
                     count = lazyPagingItems.itemCount,
-                    key = { index -> lazyPagingItems[index]?.id ?: index }
+                    key = { index -> lazyPagingItems[index]?.id ?: index },
+                    contentType = { "wishlist_item" }
                 ) { index ->
                     val item = lazyPagingItems[index] ?: return@items
                     val dismissState = rememberSwipeToDismissBoxState(
@@ -248,7 +242,8 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
                                 targetValue = when (dismissState.targetValue) {
                                     SwipeToDismissBoxValue.Settled -> androidx.compose.ui.graphics.Color.Transparent
                                     else -> MaterialTheme.colorScheme.errorContainer
-                                }
+                                },
+                                label = "wishlistSwipeColor"
                             )
                             Box(
                                 modifier = Modifier
@@ -279,7 +274,6 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
                                 onCheckPrice = { viewModel.checkPrice(item) },
                                 isExpanded = expandedItemId == item.id,
                                 onExpand = {
-                                    Log.d("WishlistScreen", "onExpand called for ${item.keyword}, current expanded: $expandedItemId")
                                     if (expandedItemId == item.id) {
                                         expandedItemId = null
                                     } else {

@@ -28,7 +28,7 @@ class InsightDealApplication : Application(), ImageLoaderFactory {
             .crossfade(true)
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.25) // 앱 가용 메모리의 25%를 메모리 캐시로 할당
+                    .maxSizePercent(0.20) // 앱 가용 메모리의 20%로 최적화하여 OOM 원천 방어
                     .build()
             }
             .diskCache {
@@ -37,7 +37,11 @@ class InsightDealApplication : Application(), ImageLoaderFactory {
                     .maxSizeBytes(100L * 1024L * 1024L) // 100MB 크기 제한으로 VRAM/디스크 가드
                     .build()
             }
-            .logger(DebugLogger())
+            .apply {
+                if (BuildConfig.DEBUG) {
+                    logger(DebugLogger())
+                }
+            }
             .okHttpClient { NetworkModule.okHttpClient }
             .build()
     }

@@ -69,6 +69,47 @@ def refresh_keyword_cache(db: Session):
 
 class NotificationService:
     @staticmethod
+    def _matches_keyword_rule(rule_str: str, title_lower: str, price: int) -> bool:
+        """
+        고급 키워드 문법 지원:
+        - 기본 포함 단어: 공백 구분 AND 매칭 (예: '갤럭시 버즈')
+        - 제외 단어: '-단어' 또는 '!단어' (예: '갤럭시 -케이스 -필름', '에어팟 !케이스')
+        - 목표가 상한 조건: ':가격' 또는 '<=가격' (예: '제로콜라 :15000' -> 15,000원 이하일 때만 매칭)
+        """
+        tokens = [t.strip() for t in rule_str.split() if t.strip()]
+        if not tokens:
+            return False
+
+        include_words = []
+        exclude_words = []
+        max_price = None
+
+        for tok in tokens:
+            if (tok.startswith("-") or tok.startswith("!")) and len(tok) > 1:
+                exclude_words.append(tok[1:].lower())
+            elif tok.startswith(":") and tok[1:].replace(",", "").isdigit():
+                max_price = int(tok[1:].replace(",", ""))
+            elif tok.startswith("<=") and tok[2:].replace(",", "").isdigit():
+                max_price = int(tok[2:].replace(",", ""))
+            else:
+                include_words.append(tok.lower())
+
+        if not include_words:
+            return False
+
+        if not all(inc in title_lower for inc in include_words):
+            return False
+
+        if any(exc in title_lower for exc in exclude_words):
+            return False
+
+        if max_price is not None and max_price > 0:
+            if price <= 0 or price > max_price:
+                return False
+
+        return True
+
+    @staticmethod
     def process_new_deal(deal_id: int, title: str, price: int, site_name: str, deal_url: str, db: Session):
         """새로운 핫딜 수집 완료 시점 고속 매칭 및 발송 트리거"""
         # 1. 고속 인메모리 키워드 캐시 갱신
@@ -77,9 +118,9 @@ class NotificationService:
         title_lower = title.lower()
         matched_targets = []
         
-        # 2. 0.001초 인메모리 고속 텍스트 매칭
+        # 2. 0.001초 인메모리 고속 텍스트 & 조건(제외어/목표가) 매칭
         for kw_str, devices in _keyword_cache.items():
-            if kw_str in title_lower:
+            if NotificationService._matches_keyword_rule(kw_str, title_lower, price):
                 for dev in devices:
                     matched_targets.append((kw_str, dev))
                     
@@ -88,8 +129,21 @@ class NotificationService:
             
         logger.info(f"Deal {deal_id} matched {len(matched_targets)} push notification targets")
         
-        # 3. 매칭 대상에 대해 알림 발송 릴레이
+        # 3. 매칭 대상에 대해 알림 내역 DB 적재 및 발송 릴레이
         for keyword, dev in matched_targets:
+            try:
+                alert_record = models.NotificationAlert(
+                    user_id=dev.get("device_uuid") or dev.get("fcm_token") or "default",
+                    title=f"[{site_name}] {title} ({price:,}원)" if price > 0 else f"[{site_name}] {title}",
+                    keyword=keyword,
+                    deal_url=deal_url
+                )
+                db.add(alert_record)
+                db.commit()
+            except Exception as db_err:
+                db.rollback()
+                logger.warning(f"Failed to save NotificationAlert history: {db_err}")
+
             NotificationService.dispatch_alert(
                 deal_id=deal_id,
                 keyword=keyword,

@@ -1,6 +1,5 @@
 package com.ddaeany0919.insightdeal.presentation
 
-import android.os.Build
 import java.util.*
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -12,14 +11,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * 💰 가격 포매터
+ * 💰 가격 포매터 (통화 코드 및 제목 내 $/€ 힌트 자동 감지 지원)
  */
-fun formatPrice(price: Long?, currency: String? = "KRW"): String {
+fun formatPrice(price: Long?, currency: String? = "KRW", titleHint: String? = null): String {
     return if (price != null && price > 0) {
-        val safeCurrency = currency ?: "KRW"
-        when (safeCurrency.uppercase()) {
-            "USD" -> String.format(Locale.getDefault(), "$%.2f", price / 100.0)
-            "EUR" -> String.format(Locale.getDefault(), "€%.2f", price / 100.0)
+        val rawCurr = (currency ?: "").trim().uppercase(Locale.US)
+        val effectiveCurrency = when {
+            rawCurr == "USD" || rawCurr == "EUR" -> rawCurr
+            titleHint != null && (titleHint.contains("$") || titleHint.contains("달러")) && !titleHint.contains("원") -> "USD"
+            titleHint != null && (titleHint.contains("€") || titleHint.contains("유로")) && !titleHint.contains("원") -> "EUR"
+            titleHint != null && price < 100000L && Regex("\\(\\s*\\$\\s*\\d").containsMatchIn(titleHint) -> "USD"
+            else -> if (rawCurr.isNotEmpty()) rawCurr else "KRW"
+        }
+        when (effectiveCurrency) {
+            "USD" -> String.format(Locale.US, "$%.2f", price / 100.0)
+            "EUR" -> String.format(Locale.US, "€%.2f", price / 100.0)
             else -> String.format(Locale.getDefault(), "%,d원", price)
         }
     } else {
@@ -32,14 +38,20 @@ fun formatPrice(price: Long?, currency: String? = "KRW"): String {
  * 백엔드 ISO 8601 타임존 오프셋(+09:00, Z 등) 및 소수점 초를 완벽하게 정합적으로 파싱하여 시간 왜곡 문제를 원천 차단합니다.
  */
 fun formatRelativeTime(updatedAt: String): String {
+    val trimmed = updatedAt.trim()
+    if (trimmed.isEmpty()) return ""
+    // 이미 한국어 상대시간 문자열("15분 전", "방금", "어제" 등)로 전달된 경우 그대로 반환
+    if (!trimmed.contains("T") && (trimmed.endsWith("전") || trimmed.contains("방금") || trimmed.contains("어제"))) {
+        return trimmed
+    }
     return try {
         // 백엔드 날짜 형식(예: 2026-05-27T23:45:00Z 또는 +09:00)을 타임존 오프셋 보존하며 파싱합니다.
         val parsedTime = try {
-            java.time.OffsetDateTime.parse(updatedAt)
+            java.time.OffsetDateTime.parse(trimmed)
         } catch (e: Exception) {
             // 오프셋이 없는 naive datetime(예: 2026-05-27T15:10:00) 형식에 대응하는 2단계 예외 안전망
             // [정밀 보정]: 백엔드 DB의 naive datetime은 100% UTC 시각이므로 KST로 오역되지 않도록 UTC로 강제 인지합니다!
-            val local = java.time.LocalDateTime.parse(updatedAt)
+            val local = java.time.LocalDateTime.parse(trimmed.replace(" ", "T"))
             local.atZone(java.time.ZoneOffset.UTC).toOffsetDateTime()
         }
         
@@ -60,7 +72,7 @@ fun formatRelativeTime(updatedAt: String): String {
             else -> "${diffInDays / 365}년 전"
         }
     } catch (e: Exception) {
-        "알 수 없음"
+        if (!trimmed.contains("T")) trimmed else trimmed.substringBefore("T")
     }
 }
 
@@ -103,16 +115,21 @@ object GlobalTimeTicker {
 }
 
 /**
- * ⌚ 상태 기반 상대시간 포매터 (메모리 최적화 버전)
+ * ⌚ 상태 기반 상대시간 포매터 (메모리 및 리컴포지션 최적화 버전)
+ * [jetpack-compose-performance] 이미 포맷된 문자열이거나 일(day) 단위 이상 지난 게시글은
+ * 매 분마다 불필요한 리컴포지션을 유발하지 않도록 분기합니다.
  */
 @androidx.compose.runtime.Composable
 fun rememberRelativeTime(updatedAt: String?): String {
     if (updatedAt.isNullOrEmpty()) return ""
+    val initialFormatted = androidx.compose.runtime.remember(updatedAt) { formatRelativeTime(updatedAt) }
+    // "일 전", "달 전", "년 전" 또는 이미 포맷된 문자열은 1분 단위 틱 구독이 불필요하므로 즉시 반환
+    if (!updatedAt.contains("T") || initialFormatted.endsWith("일 전") || initialFormatted.endsWith("달 전") || initialFormatted.endsWith("년 전")) {
+        return initialFormatted
+    }
     
-    // 전역 타이머(tick)를 구독하여 1분이 지날 때마다 리컴포지션 발생
+    // 전역 타이머(tick)를 구독하여 1분이 지날 때마다 최신 상대시간 갱신
     val tick by GlobalTimeTicker.tick.collectAsState()
-    
-    // tick 값이 바뀔 때마다 formatRelativeTime 재호출
     return androidx.compose.runtime.remember(updatedAt, tick) { 
         formatRelativeTime(updatedAt) 
     }

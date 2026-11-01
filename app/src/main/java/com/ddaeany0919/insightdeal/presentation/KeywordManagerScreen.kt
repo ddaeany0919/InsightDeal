@@ -72,7 +72,7 @@ fun KeywordManagerScreen(
     val coroutineScope = rememberCoroutineScope()
     val username by AuthManager.getUsername(context).collectAsState(initial = "admin")
     val isLoggedIn = username != "guest" && !username.isNullOrEmpty()
-    
+
     // ViewModel StateFlow 구독
     val keywords by viewModel.keywords.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -87,7 +87,7 @@ fun KeywordManagerScreen(
     var selectedDayKey by remember { mutableStateOf("mon") }
 
     var keywordInput by remember { mutableStateOf("") }
-    
+
     // 시간 피커 다이얼로그용 상태
     var showTimePickerDialog by remember { mutableStateOf(false) }
     // timePickerTarget: "global_start", "global_end", "day_start_[dayKey]", "day_end_[dayKey]"
@@ -101,9 +101,9 @@ fun KeywordManagerScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            Toast.makeText(context, "🔔 알림 수신 권한이 허용되었습니다.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "알림 권한이 허용되었어요.", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(context, "⚠️ 알림 권한이 거부되었습니다. 설정에서 직접 허용할 수 있습니다.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "알림 권한이 꺼져 있어요. 기기 설정에서 허용할 수 있어요.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -222,12 +222,12 @@ fun KeywordManagerScreen(
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
-                    
+
                     // 혜택 리스트
                     val benefits = listOf(
-                        "📌 등록한 키워드의 초특가 딜 실시간 매칭 알림",
-                        "🌙 야간 차단 및 방해금지 시간 설정으로 수면 방해 완전히 방지",
-                        "🔥 품절 대란 핫딜 정보 선착순 1초 컷 진입 보장"
+                        "• 등록한 키워드가 포함된 특가가 올라오면 바로 알려드려요",
+                        "• 방해금지 시간을 설정해 밤에는 알림을 받지 않을 수 있어요",
+                        "• 인기 상품이 품절되기 전에 빠르게 확인할 수 있어요"
                     )
                     benefits.forEach { benefit ->
                         Row(
@@ -251,9 +251,9 @@ fun KeywordManagerScreen(
                             )
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    
+
                     // 법적 고지 문구
                     Text(
                         text = "본 알림 서비스는 정보통신망법(제50조)을 준수하며, 야간 시간대(21:00 ~ 익일 08:00)의 광고성 푸시는 수신 동의 여부와 관계없이 설정된 방해금지 규칙에 따라 완전히 필터링됩니다.",
@@ -368,6 +368,7 @@ fun KeywordManagerScreen(
     }
 
     Scaffold(
+        modifier = Modifier.imePadding(),
         topBar = {
             TopAppBar(
                 title = { Text("키워드 및 알림 설정", fontWeight = FontWeight.Bold, fontSize = 20.sp) },
@@ -423,7 +424,7 @@ fun KeywordManagerScreen(
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
-                                            text = "야간 알림 차단 (방해금지 시간)", 
+                                            text = "야간 알림 차단 (방해금지 시간)",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 16.sp,
                                             color = MaterialTheme.colorScheme.onSurface,
@@ -490,7 +491,7 @@ fun KeywordManagerScreen(
                                         modifier = Modifier.padding(vertical = 16.dp),
                                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
                                     )
-                                    
+
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -576,10 +577,10 @@ fun KeywordManagerScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     val templates = listOf(
-                                        "weekdays" to "평일만 💤",
-                                        "weekends" to "주말만 ☕",
-                                        "everyday" to "매일 ⏰",
-                                        "clear" to "해제 🔓"
+                                        "weekdays" to "평일만",
+                                        "weekends" to "주말만",
+                                        "everyday" to "매일",
+                                        "clear" to "해제"
                                     )
                                     templates.forEach { (type, label) ->
                                         Box(
@@ -608,9 +609,9 @@ fun KeywordManagerScreen(
                                         }
                                     }
                                 }
-                                
+
                                 Spacer(modifier = Modifier.height(16.dp))
-                                
+
                                 val days = listOf(
                                     "mon" to "월",
                                     "tue" to "화",
@@ -620,7 +621,7 @@ fun KeywordManagerScreen(
                                     "sat" to "토",
                                     "sun" to "일"
                                 )
-                                
+
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -630,7 +631,7 @@ fun KeywordManagerScreen(
                                         val isSelected = selectedDayKey == dayKey
                                         val daySetting = getDaySetting(weekDndSettings, dayKey)
                                         val isDayEnabled = daySetting.enabled
-                                        
+
                                         // 프리미엄 룩앤필의 둥근 모서리 요일 칩셋
                                         Box(
                                             modifier = Modifier
@@ -685,15 +686,15 @@ fun KeywordManagerScreen(
                                         }
                                     }
                                 }
-                                
+
                                 HorizontalDivider(
                                     modifier = Modifier.padding(vertical = 16.dp),
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
                                 )
-                                
+
                                 val selectedDaySetting = getDaySetting(weekDndSettings, selectedDayKey)
                                 val selectedDayName = getDayNameKor(selectedDayKey)
-                                
+
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -705,7 +706,7 @@ fun KeywordManagerScreen(
                                         fontSize = 14.sp,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
-                                    
+
                                     Switch(
                                         checked = selectedDaySetting.enabled,
                                         onCheckedChange = { isChecked ->
@@ -720,7 +721,7 @@ fun KeywordManagerScreen(
                                         )
                                     )
                                 }
-                                
+
                                 AnimatedVisibility(
                                     visible = selectedDaySetting.enabled,
                                     enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
@@ -741,14 +742,14 @@ fun KeywordManagerScreen(
                                                     showTimePickerDialog = true
                                                 }
                                             )
-                                            
+
                                             Text(
                                                 text = "부터",
                                                 fontWeight = FontWeight.Medium,
                                                 fontSize = 14.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
-                                            
+
                                             TimeCapsule(
                                                 label = "종료 시간",
                                                 time = selectedDaySetting.end,
@@ -757,7 +758,7 @@ fun KeywordManagerScreen(
                                                     showTimePickerDialog = true
                                                 }
                                             )
-                                            
+
                                             Text(
                                                 text = "까지",
                                                 fontWeight = FontWeight.Medium,
@@ -789,7 +790,7 @@ fun KeywordManagerScreen(
                                 value = keywordInput,
                                 onValueChange = { keywordInput = it },
                                 modifier = Modifier.weight(1f),
-                                placeholder = { Text("키워드를 입력해주세요 (예: 에어팟)") },
+                                placeholder = { Text("예: 아이폰 -케이스 / 제로콜라 :15000", fontSize = 13.sp) },
                                 singleLine = true,
                                 shape = RoundedCornerShape(14.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -805,7 +806,7 @@ fun KeywordManagerScreen(
                                         if (!isLoggedIn && keywords.size >= 3) {
                                             Toast.makeText(
                                                 context,
-                                                "⚠️ 비로그인 상태에서는 최대 3개까지만 등록할 수 있습니다. 1초 간편 로그인하고 무제한으로 등록해 보세요! ⚡",
+                                                "비로그인 상태에서는 최대 3개까지 등록할 수 있어요. 로그인하면 개수 제한 없이 등록할 수 있어요.",
                                                 Toast.LENGTH_LONG
                                             ).show()
                                         } else {
@@ -825,18 +826,66 @@ fun KeywordManagerScreen(
                                 }
                             }
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                    .clickable {
+                                        val base = keywordInput.trimEnd()
+                                        keywordInput = if (base.isEmpty()) "-" else "$base -"
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = "+ 제외단어 (-단어)",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                    .clickable {
+                                        val base = keywordInput.trimEnd()
+                                        keywordInput = if (base.isEmpty()) ":" else "$base :"
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = "+ 상한금액 (:가격)",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "제외할 단어 앞에 -를 붙이거나(예: 아이폰 -케이스), 상한 금액 앞에 :를 붙이면(예: 삼다수 :12000) 원하는 조건의 핫딜만 알림을 받을 수 있어요.",
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
                     }
                 }
 
                 // 🌟 추천 키워드 가로 스크롤 칩 (LazyRow) 배치 및 마이크로 인터랙션
                 item {
-                    val recommendedKeywords = listOf("아이폰", "갤럭시", "PS5", "닌텐도", "그래픽카드", "모니터", "닭가슴살", "캠핑")
+                    val recommendedKeywords = remember { listOf("아이폰", "갤럭시", "PS5", "닌텐도", "그래픽카드", "모니터", "닭가슴살", "캠핑") }
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         contentPadding = PaddingValues(horizontal = 2.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(recommendedKeywords) { keyword ->
+                        items(items = recommendedKeywords, key = { it }, contentType = { "recommended_keyword_chip" }) { keyword ->
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(30.dp))
@@ -864,11 +913,22 @@ fun KeywordManagerScreen(
 
                 // 등록된 키워드 제목
                 item {
-                    Text(
-                        text = "등록된 알림 키워드 (${keywords.size}개)",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "등록된 알림 키워드 (${keywords.size}개)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        Text(
+                            text = "칩을 누르면 알림 ON/OFF 전환",
+                            fontSize = 11.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                        )
+                    }
                 }
 
                 // 키워드 리스트 (LazyColumn 중첩 스크롤 방지를 위해 단일 item 내 FlowRow 칩셋 배치로 리팩토링)
@@ -899,20 +959,21 @@ fun KeywordManagerScreen(
                         ) {
                             keywords.forEach { keyword ->
                                 var isVisible by remember(keyword.id) { mutableStateOf(true) }
-                                
+
                                 AnimatedVisibility(
                                     visible = isVisible,
                                     enter = fadeIn() + expandHorizontally(expandFrom = Alignment.CenterHorizontally),
                                     exit = fadeOut() + shrinkHorizontally(animationSpec = tween(300))
                                 ) {
                                     InputChip(
-                                        selected = true,
+                                        selected = keyword.isActive,
                                         onClick = {
-                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                            viewModel.toggleKeyword(keyword)
                                         },
                                         label = {
                                             Text(
-                                                text = keyword.keyword,
+                                                text = if (keyword.isActive) keyword.keyword else "${keyword.keyword} (일시정지)",
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 13.sp
                                             )
@@ -1014,7 +1075,7 @@ fun KeywordItem(keyword: String, onDelete: () -> Unit, isEnabled: Boolean) {
                 color = MaterialTheme.colorScheme.onSurface
             )
         }
-        
+
         IconButton(
             onClick = onDelete,
             enabled = isEnabled,

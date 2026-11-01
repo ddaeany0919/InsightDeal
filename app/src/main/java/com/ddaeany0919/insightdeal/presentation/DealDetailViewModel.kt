@@ -1,9 +1,12 @@
 package com.ddaeany0919.insightdeal.presentation
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.models.PriceHistoryPoint
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,9 +17,8 @@ import com.ddaeany0919.insightdeal.network.ApiDealVotes
 import com.ddaeany0919.insightdeal.network.ApiCommentCreate
 import com.ddaeany0919.insightdeal.network.ApiVoteCreate
 import java.util.UUID
-import android.content.Context
-import android.content.SharedPreferences
 
+@Immutable
 data class DealDetailUiState(
     val isLoading: Boolean = true,
     val deal: DealItem? = null,
@@ -78,43 +80,64 @@ class DealDetailViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                // 병렬로 두 API 호출 (단순성을 위해 순차적으로 처리하지만 coroutine async를 사용해도 무방)
-                val dealResponse = apiService.getEnhancedDealInfo(dealId)
-                val historyResponse = apiService.getDealPriceHistory(dealId, _selectedPeriod.value)
-                
-                // --- 소비 참견 거지방 API 병렬 호출 ---
-                val commentsResponse = try { apiService.getDealComments(dealId) } catch (e: Exception) { null }
-                val votesResponse = try { apiService.getDealVotes(dealId, getDeviceId()) } catch (e: Exception) { null }
-
-                if (dealResponse.isSuccessful) {
-                    val deal = dealResponse.body()
-                    val history = if (historyResponse.isSuccessful) historyResponse.body() ?: emptyList() else emptyList()
-                    val comments = if (commentsResponse?.isSuccessful == true) commentsResponse.body() ?: emptyList() else emptyList()
-                    val votes = if (votesResponse?.isSuccessful == true) votesResponse.body() else null
-                    
-                    var isLow = false
-                    if (history.isNotEmpty() && deal != null) {
-                        val currentPrice = deal.price
-                        val minPrice = history.minOfOrNull { it.price } ?: Int.MAX_VALUE
-                        if (currentPrice > 0 && currentPrice <= minPrice) {
-                            isLow = true
-                        }
+                coroutineScope {
+                    val requestedPeriod = if (_selectedPeriod.value == "7d") "7d_auto" else _selectedPeriod.value
+                    val dealDeferred = async { apiService.getEnhancedDealInfo(dealId) }
+                    val historyDeferred = async { apiService.getDealPriceHistory(dealId, requestedPeriod) }
+                    val commentsDeferred = async {
+                        try { apiService.getDealComments(dealId) } catch (e: Exception) { null }
+                    }
+                    val votesDeferred = async {
+                        try { apiService.getDealVotes(dealId, getDeviceId()) } catch (e: Exception) { null }
                     }
 
-                    _uiState.value = DealDetailUiState(
-                        isLoading = false,
-                        deal = deal,
-                        priceHistory = history,
-                        error = null,
-                        isRecordLow = isLow,
-                        comments = comments,
-                        votes = votes
-                    )
-                } else {
-                    _uiState.value = DealDetailUiState(
-                        isLoading = false,
-                        error = "상세 정보를 불러오는 데 실패했습니다. (코드: ${dealResponse.code()})"
-                    )
+                    val dealResponse = dealDeferred.await()
+                    val historyResponse = historyDeferred.await()
+                    val commentsResponse = commentsDeferred.await()
+                    val votesResponse = votesDeferred.await()
+
+                    if (dealResponse.isSuccessful) {
+                        val deal = dealResponse.body()
+                        var history = if (historyResponse.isSuccessful) historyResponse.body() ?: emptyList() else emptyList()
+                        val comments = if (commentsResponse?.isSuccessful == true) commentsResponse.body() ?: emptyList() else emptyList()
+                        val votes = if (votesResponse?.isSuccessful == true) votesResponse.body() else null
+
+                        // 백엔드 1-RTT 7d_auto 폴백으로 3개월(YY.MM.DD 포맷) 데이터가 반환된 경우 탭 상태도 즉시 3m로 동기화
+                        if (_selectedPeriod.value == "7d" && history.size >= 2 && history.any { it.date.matches(Regex("^\\d{2}\\.\\d{2}\\.\\d{2}$")) }) {
+                            _selectedPeriod.value = "3m"
+                        } else if (history.size <= 1 && _selectedPeriod.value == "7d") {
+                            val fallbackResponse = try { apiService.getDealPriceHistory(dealId, "3m") } catch (e: Exception) { null }
+                            val fallbackHistory = if (fallbackResponse?.isSuccessful == true) fallbackResponse.body() ?: emptyList() else emptyList()
+                            if (fallbackHistory.size >= 2) {
+                                history = fallbackHistory
+                                _selectedPeriod.value = "3m"
+                            }
+                        }
+
+                        var isLow = false
+                        if (history.isNotEmpty() && deal != null) {
+                            val currentPrice = deal.price
+                            val minPrice = history.minOfOrNull { it.price } ?: Int.MAX_VALUE
+                            if (currentPrice > 0 && currentPrice <= minPrice) {
+                                isLow = true
+                            }
+                        }
+
+                        _uiState.value = DealDetailUiState(
+                            isLoading = false,
+                            deal = deal,
+                            priceHistory = history,
+                            error = null,
+                            isRecordLow = isLow,
+                            comments = comments,
+                            votes = votes
+                        )
+                    } else {
+                        _uiState.value = DealDetailUiState(
+                            isLoading = false,
+                            error = "상세 정보를 불러오는 데 실패했습니다. (코드: ${dealResponse.code()})"
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.value = DealDetailUiState(
@@ -130,8 +153,6 @@ class DealDetailViewModel : ViewModel() {
     
     private fun getDeviceId(): String {
         return cachedDeviceId ?: run {
-            // 실제 구현에서는 Context/SharedPreferences 등을 통해 고유 ID 가져오거나 생성
-            // 여기서는 임시로 랜덤 생성 (앱 재시작시 초기화됨)
             val newId = "anon_${UUID.randomUUID().toString().take(8)}"
             cachedDeviceId = newId
             newId

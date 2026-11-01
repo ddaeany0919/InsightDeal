@@ -52,9 +52,9 @@ fun WishlistDetailScreen(
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Text(it.keyword, style = MaterialTheme.typography.headlineSmall)
-                        Text("목표가: ${it.targetPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원")
+                        Text("목표가: ${com.ddaeany0919.insightdeal.presentation.formatPrice(it.targetPrice.toLong(), null, it.keyword)}")
                         if (it.currentLowestPrice != null) {
-                            Text("최저가: ${it.currentLowestPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원 (${it.currentLowestPlatform})")
+                            Text("최저가: ${com.ddaeany0919.insightdeal.presentation.formatPrice(it.currentLowestPrice.toLong(), null, it.keyword)} (${it.currentLowestPlatform})")
                         }
                         it.lastChecked?.let { lastChecked ->
                             Text("마지막 체크: ${lastChecked.format(timeFormatter)}",
@@ -163,7 +163,7 @@ fun PriceChart(priceHistory: List<PriceHistoryItem>) {
                     ) {
                         Text(item.recordedAt.format(DateTimeFormatter.ofPattern("MM/dd HH:mm")), style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "${item.lowestPrice.toString().reversed().chunked(3).joinToString(",").reversed()}원",
+                            com.ddaeany0919.insightdeal.presentation.formatPrice(item.lowestPrice.toLong()),
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
                         )
                     }

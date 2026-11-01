@@ -27,7 +27,7 @@ import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
 import com.ddaeany0919.insightdeal.presentation.theme.AppColorScheme
 
 /**
- * 🎨 테마 설정 화면 (AMOLED 및 컴러 테마 지원)
+ * 테마 설정 화면 (AMOLED 및 컴러 테마 지원)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,7 +51,7 @@ fun ThemeSettingsScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "🎨 테마 설정",
+                        text = "테마 설정",
                         fontWeight = FontWeight.Bold
                     )
                 },
@@ -97,7 +97,7 @@ fun ThemeSettingsScreen(
                 )
             }
 
-            // 🎨 컬러 테마 선택
+            // 포인트 컬러 선택
             item {
                 ColorThemeSection(
                     currentColorScheme = currentColorScheme,
@@ -107,7 +107,7 @@ fun ThemeSettingsScreen(
                 )
             }
 
-            // 🔍 테마 미리보기 (토글시 표시)
+            // 미리보기 (토글시 표시)
             if (showThemePreview) {
                 item {
                     ThemePreviewSection(currentTheme = currentTheme)
@@ -139,7 +139,7 @@ private fun ThemeModeSection(
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "🌙 다크모드 설정",
+                text = "화면 모드",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -147,7 +147,7 @@ private fun ThemeModeSection(
 
             // LIGHT 모드
             ThemeOptionItem(
-                title = "☀️ 라이트 모드",
+                title = "라이트 모드",
                 subtitle = "밝은 화면 고정 (낮에 최적)",
                 icon = Icons.Default.LightMode,
                 isSelected = currentTheme == ThemeMode.LIGHT,
@@ -158,7 +158,7 @@ private fun ThemeModeSection(
 
             // DARK 모드
             ThemeOptionItem(
-                title = "🌙 다크 모드",
+                title = "다크 모드",
                 subtitle = "어두운 화면 고정 (눈의 피로 감소)",
                 icon = Icons.Default.DarkMode,
                 isSelected = currentTheme == ThemeMode.DARK,
@@ -169,7 +169,7 @@ private fun ThemeModeSection(
 
             // AMOLED 모드
             ThemeOptionItem(
-                title = "🖤 AMOLED 블랙",
+                title = "AMOLED 블랙",
                 subtitle = "완전한 검은색 배경 (배터리 절약)",
                 icon = Icons.Default.Brightness2,
                 isSelected = currentTheme == ThemeMode.AMOLED,
@@ -180,7 +180,7 @@ private fun ThemeModeSection(
 
             // SYSTEM 모드
             ThemeOptionItem(
-                title = "📱 시스템 따라가기",
+                title = "시스템 설정과 동일",
                 subtitle = "기기 다크모드 설정에 따라 자동 변경",
                 icon = Icons.Default.PhoneAndroid,
                 isSelected = currentTheme == ThemeMode.SYSTEM,
@@ -221,7 +221,7 @@ private fun ThemeModeSection(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "🖤 AMOLED 강화",
+                            text = "AMOLED 순수 블랙",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Medium,
                             color = if (amoledMode) MaterialTheme.colorScheme.primary
@@ -261,7 +261,7 @@ private fun ColorThemeSection(
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "🎨 컬러 테마",
+                text = "포인트 컬러",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -397,10 +397,11 @@ private fun ThemeOptionItem(
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 private fun ColorThemeButton(
     color: Color,
     name: String,
-    emoji: String,
+    emoji: String = "",
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
@@ -412,17 +413,9 @@ private fun ColorThemeButton(
         ) {
         Box(
             modifier = Modifier
-                .size(56.dp)
+                .size(52.dp)
                 .clip(CircleShape)
-                .background(color)
-                .then(
-                    if (isSelected) {
-                        Modifier.background(
-                            MaterialTheme.colorScheme.outline,
-                            CircleShape
-                        )
-                    } else Modifier
-                ),
+                .background(color),
             contentAlignment = Alignment.Center
         ) {
             if (isSelected) {
@@ -430,12 +423,7 @@ private fun ColorThemeButton(
                     Icons.Default.Check,
                     contentDescription = "선택됨",
                     tint = Color.White,
-                    modifier = Modifier.size(28.dp)
-                )
-            } else {
-                Text(
-                    text = emoji,
-                    fontSize = 24.sp
+                    modifier = Modifier.size(26.dp)
                 )
             }
         }
@@ -465,7 +453,7 @@ private fun ThemePreviewSection(
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "🔍 테마 미리보기",
+                text = "미리보기",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -488,7 +476,7 @@ private fun ThemePreviewSection(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "🔥 갤럭시 S24 Ultra",
+                            text = "갤럭시 S24 Ultra 자급제",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -567,7 +555,7 @@ private fun ThemeInfoSection(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 Text(
-                    text = "💡 테마 정보",
+                    text = "테마 안내",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )

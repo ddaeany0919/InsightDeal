@@ -2,6 +2,7 @@ package com.ddaeany0919.insightdeal.presentation.bookmark
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 
@@ -14,7 +15,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.presentation.A11yIconButton
-import com.ddaeany0919.insightdeal.presentation.rememberSavedLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -23,12 +23,12 @@ fun BookmarkScreen(
     onDealClick: (DealItem) -> Unit,
     onBackClick: () -> Unit
 ) {
-    val listState = rememberSavedLazyListState(key = "bookmark_list")
+    val listState = rememberLazyListState()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(text = "🔖 즐겨찾기", fontWeight = FontWeight.Bold) },
+                title = { Text(text = "북마크", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     A11yIconButton(onClick = onBackClick, contentDescription = "뒤로가기") {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
@@ -54,7 +54,7 @@ fun BookmarkScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "📌 북마크 기능 준비 중",
+                            text = "북마크한 핫딜이 여기에 표시됩니다",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )

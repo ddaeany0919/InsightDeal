@@ -38,65 +38,59 @@ class AsyncBaseScraper(ABC):
             "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
         }
 
-    from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
-    @retry(
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(Exception),
-        reraise=True
-    )
     async def fetch_html(self, url: str, headers: Optional[dict] = None) -> Optional[str]:
         """비동기 네트워크 페칭 (동적 브라우저 지문 로테이션 및 재시도 적용)"""
         if not self.client:
             raise RuntimeError("Scraper must be used within 'async with' context")
 
-        impersonates = ['chrome120', 'chrome116', 'chrome110', 'edge101']
+        impersonates = ['chrome124', 'safari17_0', 'edge101', 'chrome120']
         req_headers = headers if headers is not None else self._get_headers()
         
         async with self.semaphore:
             for attempt, imp in enumerate(impersonates):
                 try:
-                    await asyncio.sleep(random.uniform(0.8, 2.0))
+                    if "fmkorea" in url:
+                        await asyncio.sleep(random.uniform(1.0, 1.8))
+                    elif "quasarzone" in url:
+                        await asyncio.sleep(random.uniform(0.35, 0.7))
+                    else:
+                        await asyncio.sleep(random.uniform(0.12, 0.3))
                     
-                    # 430/403 재시도 시 세션 재빌드
                     if attempt > 0:
                         logger.info(f"🔄 [{self.platform_name}] 지문 로테이션 재시도 ({imp}) - {url}")
                         await self.client.close()
-                        self.client = AsyncSession(impersonate=imp, timeout=20.0)
+                        self.client = AsyncSession(impersonate=imp, timeout=15.0)
                         
-                        # 지문이 Chrome이 아닐 경우 Chrome 특화 Client Hints 헤더 제거하여 지문 불일치(Mismatch) 방지
                         if 'chrome' not in imp:
                             req_headers = req_headers.copy()
                             req_headers.pop("Sec-Ch-Ua", None)
                             req_headers.pop("Sec-Ch-Ua-Mobile", None)
                             req_headers.pop("Sec-Ch-Ua-Platform", None)
-                        
-                        # 펨코의 경우 쿠키 웜업 다시 진행
-                        if "fmkorea.com" in url or "fmkorea.org" in url:
-                            try:
-                                await self.client.get("https://www.fmkorea.com/", headers=req_headers, timeout=5.0)
-                            except: pass
                             
                     response = await self.client.get(url, headers=req_headers)
                     
-                    if response.status_code in [403, 430]:
-                        logger.warning(f"[{self.platform_name}] 안티봇 차단 감지 (HTTP {response.status_code}) [시도 {attempt+1}/{len(impersonates)}] - {url}")
+                    if response.status_code == 430:
+                        logger.warning(f"[{self.platform_name}] 쿨다운 감지 (HTTP 430) - 과도한 재시도 중단: {url}")
+                        raise Exception("Anti-bot block detected: 430")
+
+                    if response.status_code == 403:
+                        logger.warning(f"[{self.platform_name}] 안티봇 차단 감지 (HTTP 403) [시도 {attempt+1}/{len(impersonates)}] - {url}")
                         if attempt == len(impersonates) - 1:
                             raise Exception(f"Anti-bot block detected after all retries: {response.status_code}")
+                        await asyncio.sleep(1.5 * (attempt + 1))
                         continue
                         
                     response.raise_for_status()
                     return response.text
                 except Exception as e:
-                    if attempt == len(impersonates) - 1:
+                    if "430" in str(e) or attempt == len(impersonates) - 1:
                         raise e
                     logger.warning(f"⚠️ [{self.platform_name}] 요청 오류 (시도 {attempt+1}): {e}. 다음 지문으로 재시도합니다.")
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(1.5 * (attempt + 1))
             return None
 
     async def fetch_og_image(self, url: str) -> Optional[str]:
-        """외부 쇼핑몰 URL의 og:image 메타 태그를 파싱하여 고화질 대표 이미지 획득"""
+        """외부 쇼핑몰 URL의 og:image 메타 태그를 파싱하여 고화질 대표 이미지 획득 (SVG/로고 배제 및 본문 상품 이미지 폴백)"""
         if not url or not url.startswith('http'):
             return None
 
@@ -111,26 +105,62 @@ class AsyncBaseScraper(ABC):
         # 뽐뿌/펨코 내부용 도메인은 외부 쇼핑몰이 아니므로 배제
         if any(x in url for x in ['ppomppu.co.kr', 'fmkorea.com', 'fmkorea.org', 'quasarzone.com', 'clien.net', 'ruliweb.com', 'bbasak.com']):
             return None
-            
+
+        def _is_valid_product_img(candidate_url: str) -> bool:
+            if not candidate_url or not candidate_url.startswith('http'):
+                return False
+            low = candidate_url.lower().split('?')[0]
+            if low.endswith('.svg') or low.endswith('.ico'):
+                return False
+            bad_tokens = [
+                'logo', 'icon', 'noimage', 'no_image', 'blank', 'transparent',
+                'common/', 'btn_', 'button', 'share_', 'footer', 'header', 'avatar', 'lazyload'
+            ]
+            return not any(tok in low for tok in bad_tokens)
+
         try:
             if not self.client:
                 return None
-            
+
             logger.info(f"🔍 [og:image] 외부 쇼핑몰 og:image 탐색 시도: {url}")
-            # 외부 링크이므로 딜레이 최소화 및 빠른 타임아웃(3초) 설정
-            response = await self.client.get(url, timeout=3.0, headers={
+            from urllib.parse import urljoin
+            response = await self.client.get(url, timeout=3.5, allow_redirects=True, headers={
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             })
             if response.status_code == 200:
                 from bs4 import BeautifulSoup
+                final_base_url = str(getattr(response, 'url', url) or url)
                 soup = BeautifulSoup(response.text, 'html.parser')
-                meta_img = soup.find('meta', property='og:image') or soup.find('meta', attrs={'name': 'twitter:image'}) or soup.find('meta', itemprop='image')
+                meta_img = (
+                    soup.find('meta', property='og:image')
+                    or soup.find('meta', attrs={'name': 'twitter:image'})
+                    or soup.find('meta', itemprop='image')
+                )
                 if meta_img and meta_img.get('content'):
                     img_url = meta_img['content'].strip()
                     if img_url.startswith('//'):
                         img_url = 'https:' + img_url
-                    return img_url
+                    elif not img_url.startswith('http'):
+                        img_url = urljoin(final_base_url, img_url)
+                    if _is_valid_product_img(img_url):
+                        return img_url
+
+                # 폴백: og:image가 로고(.svg 등)이거나 없는 쇼핑몰(종근당건강몰 등)은 본문 내 실제 상품 이미지 탐색
+                for img in soup.select('img'):
+                    raw_src = (img.get('data-original') or img.get('data-src') or img.get('src') or '').strip()
+                    if not raw_src or raw_src.startswith('data:'):
+                        continue
+                    if raw_src.startswith('//'):
+                        full_src = 'https:' + raw_src
+                    elif not raw_src.startswith('http'):
+                        full_src = urljoin(final_base_url, raw_src)
+                    else:
+                        full_src = raw_src
+                    if _is_valid_product_img(full_src) and any(
+                        k in full_src.lower() for k in ['product', 'goods', 'item', 'prd', 'upload', 'shop', 'image', 'img']
+                    ):
+                        return full_src
         except Exception as e:
             logger.warning(f"⚠️ [og:image] 외부 쇼핑몰 이미지 파싱 실패 ({url}): {e}")
         return None

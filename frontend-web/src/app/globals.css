@@ -1,36 +1,47 @@
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard-dynamic-subset.css');
 
 :root {
-  --bg-color: #f3f4f6;
-  --text-main: #1f2937;
-  --text-sub: #4b5563;
-  --card-bg: rgba(255, 255, 255, 0.75);
-  --card-border: rgba(255, 255, 255, 0.5);
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --accent-rgb: 37, 99, 235;
-  --badge-bg: #e5e7eb;
-  --badge-text: #374151;
-  --glass-shadow: 0 8px 32px rgba(31, 41, 55, 0.05);
-  --primary-gradient: linear-gradient(135deg, #2563eb, #7c3aed);
-  --accent-gradient: linear-gradient(135deg, #38bdf8, #818cf8);
+  /* 🅰️ Toss + Karrot SEED Design Hybrid Tokens (Light Default) */
+  --bg-color: #f2f4f6;
+  --text-main: #191f28;
+  --text-sub: #4e5968;
+  --text-muted: #8b95a1;
+  --card-bg: #ffffff;
+  --surface-subtle: #f9fafb;
+  --card-border: #e5e8eb;
+  --accent: #3182f6;
+  --accent-hover: #1b64da;
+  --accent-rgb: 49, 130, 246;
+  --deal-orange: #ff6f0f;
+  --deal-orange-bg: #fff3e8;
+  --badge-bg: #f2f4f6;
+  --badge-text: #4e5968;
+  --glass-shadow: 0 4px 20px rgba(25, 31, 40, 0.05);
+  --primary-gradient: linear-gradient(135deg, #3182f6, #1b64da);
+  --accent-gradient: linear-gradient(135deg, #ff6f0f, #ff8a3d);
   --glass-blur: blur(16px);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg-color: #020617;
+    /* 🌙 Toss Dark Slate + Karrot Warm Orange Tokens */
+    --bg-color: #101318;
     --text-main: #f9fafb;
-    --text-sub: #9ca3af;
-    --card-bg: rgba(17, 24, 39, 0.75);
-    --card-border: rgba(255, 255, 255, 0.06);
-    --accent: #3b82f6;
-    --accent-hover: #60a5fa;
-    --accent-rgb: 59, 130, 246;
-    --badge-bg: #1f2937;
-    --badge-text: #cbd5e1;
-    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
-    --primary-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    --text-sub: #b0b8c1;
+    --text-muted: #6b7684;
+    --card-bg: #191f28;
+    --surface-subtle: #222934;
+    --card-border: #2b333e;
+    --accent: #4593fc;
+    --accent-hover: #3182f6;
+    --accent-rgb: 69, 147, 252;
+    --deal-orange: #ff8433;
+    --deal-orange-bg: rgba(255, 111, 15, 0.14);
+    --badge-bg: #222934;
+    --badge-text: #b0b8c1;
+    --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+    --primary-gradient: linear-gradient(135deg, #3182f6, #4593fc);
+    --accent-gradient: linear-gradient(135deg, #ff6f0f, #ff9b57);
     --glass-blur: blur(20px);
   }
 }
@@ -109,7 +120,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 28px;
+  padding: 14px 24px;
   border-radius: 20px;
   z-index: 1000 !important;
   position: absolute !important;
@@ -119,17 +130,20 @@ body {
   width: calc(100% - 32px);
   max-width: 1152px; /* 1200px padding 양측 제외 크기 */
   margin: 0 auto;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--glass-shadow);
+  border: 1px solid var(--card-border);
 }
 
 .nav-logo {
   font-weight: 900;
-  font-size: 1.6rem;
+  font-size: 1.5rem;
+  letter-spacing: -0.8px;
+}
+
+.nav-logo > span:first-of-type {
   background: var(--primary-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  letter-spacing: -1px;
 }
 
 .nav-actions {
@@ -399,7 +413,7 @@ body {
 .live-card-price {
   font-size: 1.4rem;
   font-weight: 900;
-  color: #f87171;
+  color: var(--deal-orange);
 }
 
 /* 🌟 AI 핫딜 판독기 데모 체험존 */
@@ -436,12 +450,12 @@ body {
   display: flex;
   max-width: 600px;
   margin: 0 auto;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 20px;
   padding: 6px;
   gap: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--glass-shadow);
   align-items: center;
   transition: border-color 0.3s ease;
 }
@@ -467,7 +481,7 @@ body {
 
 /* 🌀 로딩 스피너 */
 .ai-loader {
-  border: 4px solid rgba(255,255,255,0.05);
+  border: 4px solid var(--card-border);
   border-left-color: var(--accent);
   border-radius: 50%;
   width: 48px;
@@ -529,7 +543,7 @@ body {
 }
 
 .ai-metric-item {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-subtle);
   padding: 16px;
   border-radius: 16px;
   border: 1px solid var(--card-border);
@@ -554,7 +568,7 @@ body {
   overflow-x: auto;
   white-space: nowrap;
   padding: 8px 0 16px 0;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -565,38 +579,37 @@ body {
 
 .tabs {
   display: inline-flex;
-  gap: 10px;
-  padding: 6px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  gap: 6px;
+  padding: 5px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
   border-radius: 9999px;
-  backdrop-filter: blur(8px);
+  box-shadow: var(--glass-shadow);
 }
 
 .tab {
   background: transparent;
   border: none;
   color: var(--text-sub) !important;
-  padding: 10px 22px;
+  padding: 8px 18px;
   border-radius: 9999px;
-  font-size: 0.92rem;
+  font-size: 0.88rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   letter-spacing: -0.3px;
 }
 
 .tab:hover {
   color: var(--text-main) !important;
-  background: rgba(255, 255, 255, 0.05);
-  transform: translateY(-1px);
+  background: var(--surface-subtle);
 }
 
 .tab.active {
   background: var(--primary-gradient);
   color: white !important;
   border-color: transparent;
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 3px 12px rgba(var(--accent-rgb), 0.25);
 }
 
 /* 핫딜 목록 보드 - 프리미엄 그리드로 재구축 */
@@ -614,56 +627,55 @@ body {
   }
 }
 
-/* 핫딜 카드 프리미엄 명세 - 세로형 그리드 카드로 대혁신 */
+/* 핫딜 카드 프리미엄 명세 - Toss 보더리스 클린 서피스 + SEED Design 카드 */
 .deal-card {
   display: flex;
   flex-direction: column;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 24px;
-  padding: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 20px;
+  padding: 18px;
   text-decoration: none;
   color: inherit !important;
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition: transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1), box-shadow 0.22s ease, border-color 0.22s ease;
   position: relative;
   overflow: hidden;
-  gap: 18px;
-  backdrop-filter: blur(12px);
+  gap: 14px;
+  box-shadow: var(--glass-shadow);
 }
 
 .deal-card:hover {
-  border-color: rgba(59, 130, 246, 0.3);
-  transform: translateY(-6px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 15px rgba(59, 130, 246, 0.1);
-  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(var(--accent-rgb), 0.35);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px rgba(25, 31, 40, 0.1);
 }
 
 .deal-image-wrapper {
   width: 100%;
   height: 180px;
-  border-radius: 18px;
+  border-radius: 14px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-subtle);
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--card-border);
 }
 
 .deal-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.5s ease;
+  transition: transform 0.4s ease;
 }
 
 .deal-card:hover .deal-image {
-  transform: scale(1.06);
+  transform: scale(1.04);
 }
 
 .deal-info {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
 }
 
@@ -671,13 +683,13 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--text-sub);
   font-weight: 600;
 }
 
 .deal-source {
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
   color: var(--accent) !important;
   padding: 3px 8px;
   border-radius: 6px;
@@ -687,9 +699,10 @@ body {
 }
 
 .deal-title {
-  font-size: 1.08rem;
+  font-size: 1.02rem;
   font-weight: 700;
-  line-height: 1.45;
+  line-height: 1.42;
+  letter-spacing: -0.02em;
   color: var(--text-main) !important;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -697,7 +710,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   margin-top: 2px;
-  height: 3.1rem; /* 카드 높이 균일 정렬 보존 */
+  height: 2.9rem;
 }
 
 .price-section {
@@ -706,23 +719,24 @@ body {
   justify-content: space-between;
   width: 100%;
   margin-top: auto;
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  padding-top: 12px;
+  border-top: 1px solid var(--card-border);
 }
 
 .deal-price {
-  font-weight: 900;
-  font-size: 1.3rem;
-  color: #f87171 !important;
-  letter-spacing: -0.3px;
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: var(--deal-orange) !important;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 
 .deal-tag {
-  background: rgba(248, 113, 113, 0.1);
-  color: #f87171;
-  padding: 3px 7px;
+  background: var(--deal-orange-bg);
+  color: var(--deal-orange);
+  padding: 3px 8px;
   border-radius: 6px;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 800;
 }
 
@@ -738,9 +752,9 @@ body {
 /* ⚡ 실시간 글로벌 찜 & 알림 카운터 뱃지 스타일 */
 .global-counters {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  margin-right: 12px;
+  margin-right: 8px;
 }
 
 @media (max-width: 768px) {
@@ -753,33 +767,32 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  padding: 8px 16px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--card-border);
+  padding: 7px 14px;
   border-radius: 9999px;
-  backdrop-filter: blur(8px);
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .counter-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.08);
-  transform: translateY(-2px);
+  background: var(--badge-bg);
+  border-color: rgba(var(--accent-rgb), 0.35);
+  transform: translateY(-1px);
 }
 
 .counter-label {
   font-size: 0.82rem;
   font-weight: 700;
-  color: var(--text-sub);
+  color: var(--text-main);
 }
 
 .counter-badge {
-  font-size: 0.78rem;
-  font-weight: 900;
+  font-size: 0.75rem;
+  font-weight: 800;
   color: var(--text-sub);
-  background: rgba(255, 255, 255, 0.08);
-  padding: 2px 8px;
+  background: var(--card-border);
+  padding: 2px 7px;
   border-radius: 99px;
   min-width: 22px;
   text-align: center;
@@ -789,7 +802,7 @@ body {
 .badge-active {
   background: var(--primary-gradient);
   color: white !important;
-  box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.35);
 }
 
 /* ⚡ 실시간 추천 매직 칩 스케일러 */
@@ -817,22 +830,21 @@ body {
 }
 
 .magic-chip {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
   color: var(--text-sub) !important;
   padding: 8px 16px;
   border-radius: 9999px;
   font-size: 0.88rem;
   font-weight: 700;
   cursor: pointer;
-  backdrop-filter: blur(8px);
   transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .magic-chip:hover:not(:disabled) {
   color: var(--text-main) !important;
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--surface-subtle);
+  border-color: rgba(var(--accent-rgb), 0.35);
   transform: translateY(-2px);
 }
 
@@ -861,7 +873,7 @@ body {
   to { transform: translateX(0); }
 }
 
-/* 🔍 Toss 스타일 글래스모피즘 실시간 검색창 */
+/* 🔍 Toss 스타일 클린 실시간 검색창 */
 .search-container {
   width: 100%;
   max-width: 720px;
@@ -871,21 +883,18 @@ body {
 .search-bar-wrapper {
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 20px;
-  padding: 6px 12px 6px 18px;
+  border-radius: 16px;
+  padding: 5px 10px 5px 16px;
   gap: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(12px);
+  box-shadow: var(--glass-shadow);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .search-bar-wrapper:focus-within {
   border-color: var(--accent);
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: 0 8px 30px rgba(var(--accent-rgb), 0.15);
-  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(var(--accent-rgb), 0.14);
 }
 
 .search-icon {
@@ -904,13 +913,13 @@ body {
   border: none;
   padding: 10px 0;
   color: var(--text-main);
-  font-size: 1rem;
+  font-size: 0.96rem;
   font-weight: 600;
   outline: none;
 }
 
 .search-input::placeholder {
-  color: var(--text-sub);
+  color: var(--text-muted);
   font-weight: 500;
 }
 
@@ -928,7 +937,7 @@ body {
 }
 
 .search-clear-btn:hover {
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: var(--badge-bg);
   color: var(--text-main);
 }
 
@@ -936,19 +945,196 @@ body {
   background: var(--primary-gradient);
   color: white;
   font-weight: 700;
-  padding: 8px 20px;
-  border-radius: 14px;
+  padding: 8px 18px;
+  border-radius: 12px;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.15);
+  box-shadow: 0 3px 10px rgba(var(--accent-rgb), 0.18);
 }
 
 .search-submit-btn:hover {
   transform: scale(1.03);
-  box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.25);
+  box-shadow: 0 6px 16px rgba(var(--accent-rgb), 0.28);
 }
 
 .search-submit-btn:active {
   transform: scale(0.97);
+}
+
+
+/* 📈 실시간 급상승 검색어 티커 & Top 10 랭킹 보드 */
+.trending-ticker-wrapper {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.trending-ticker-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 9px 14px;
+  box-shadow: var(--glass-shadow);
+  gap: 10px;
+}
+
+.trending-ticker-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  cursor: pointer;
+}
+
+.trending-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.trending-rank-num {
+  font-size: 0.88rem;
+  font-weight: 800;
+  min-width: 18px;
+  color: var(--text-sub);
+}
+
+.trending-rank-num.top-rank {
+  color: var(--accent);
+}
+
+.trending-keyword-text {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trending-status-tag {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 5px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.trending-status-tag.hot {
+  background: var(--deal-orange-bg);
+  color: var(--deal-orange);
+}
+
+.trending-status-tag.up {
+  color: var(--deal-orange);
+}
+
+.trending-status-tag.new {
+  color: var(--accent);
+}
+
+.trending-status-tag.same {
+  color: var(--text-muted);
+}
+
+.trending-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-sub);
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.trending-expand-btn:hover {
+  background: var(--surface-subtle);
+  color: var(--text-main);
+}
+
+.trending-board-card {
+  margin-top: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: var(--glass-shadow);
+  animation: fadeIn 0.2s ease;
+}
+
+.trending-board-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.trending-board-title {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--text-main);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trending-board-time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.trending-board-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: repeat(5, auto);
+  grid-auto-flow: column;
+  gap: 4px 20px;
+}
+
+@media (max-width: 640px) {
+  .trending-board-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    grid-auto-flow: row;
+  }
+}
+
+.trending-board-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.trending-board-row:hover {
+  background: var(--surface-subtle);
+}
+
+.trending-board-row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }

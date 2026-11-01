@@ -2,10 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 
 interface Keyword {
   id: string;
   keyword: string;
+  is_active?: boolean;
 }
 
 export default function NotificationSettingsPage() {
@@ -40,25 +42,40 @@ export default function NotificationSettingsPage() {
     }
   };
 
+  const getBrowserDeviceUuid = (): string => {
+    if (typeof window === 'undefined') return 'web_guest';
+    let token = localStorage.getItem('insightdeal_token');
+    if (!token) {
+      const randomPart = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+      token = `web_${randomPart}`;
+      localStorage.setItem('insightdeal_token', token);
+    }
+    return token;
+  };
+
   const fetchSettings = async () => {
     setIsLoading(true);
     try {
-      // 로컬 mock 또는 백엔드 API 연동
-      // 실제 API 엔드포인트 `/api/notifications/settings` 호출
-      const response = await fetch('/api/notifications/settings').catch(() => null);
+      const deviceUuid = getBrowserDeviceUuid();
+      const response = await fetch(`/api/push/keywords?device_uuid=${encodeURIComponent(deviceUuid)}`).catch(() => null);
       if (response && response.ok) {
         const data = await response.json();
-        setKeywords(data.keywords || []);
-        setIsDndEnabled(data.dnd_enabled || false);
-        setDndStart(data.dnd_start || '21:00');
-        setDndEnd(data.dnd_end || '08:00');
+        const detailed = Array.isArray(data.detailed_keywords)
+          ? data.detailed_keywords.map((k: any) => ({ id: String(k.id), keyword: k.keyword, is_active: k.is_active !== false }))
+          : (data.keywords || []).map((kw: string, idx: number) => ({ id: String(idx + 1), keyword: kw, is_active: true }));
+        setKeywords(detailed);
+        setIsDndEnabled(Boolean(data.dnd_enabled));
+        setDndStart(data.dnd_start_time || '21:00');
+        setDndEnd(data.dnd_end_time || '08:00');
       } else {
-        // Fallback Mock data
-        setKeywords([
-          { id: '1', keyword: '아이폰' },
-          { id: '2', keyword: '갤럭시' },
-          { id: '3', keyword: '모니터' }
-        ]);
+        const localSaved = typeof window !== 'undefined' ? localStorage.getItem('insightdeal_web_keywords') : null;
+        if (localSaved) {
+          setKeywords(JSON.parse(localSaved));
+        } else {
+          setKeywords([]);
+        }
       }
     } catch (e) {
       console.error(e);
@@ -99,11 +116,17 @@ export default function NotificationSettingsPage() {
         applicationServerKey: urlBase64ToUint8Array(vapidKey)
       });
 
-      // 토큰 동기화 API Routes 호출
+      // 토큰 동기화 API Routes 호출 (브라우저 고유 device_uuid와 함께 전달하여 관심 키워드와 1:1 매핑)
+      const subJson = subscription.toJSON();
+      const deviceUuid = getBrowserDeviceUuid();
       await fetch('/api/push-register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(subscription)
+        body: JSON.stringify({
+          endpoint: subJson.endpoint || subscription.endpoint,
+          keys: subJson.keys || {},
+          device_uuid: deviceUuid
+        })
       });
 
       setIsPushEnabled(true);
@@ -119,12 +142,13 @@ export default function NotificationSettingsPage() {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
+        const deviceUuid = getBrowserDeviceUuid();
         await subscription.unsubscribe();
         // 백엔드 등록 토큰 해제 요청
         await fetch('/api/push-register', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ endpoint: subscription.endpoint })
+          body: JSON.stringify({ endpoint: subscription.endpoint, device_uuid: deviceUuid })
         }).catch(() => null);
         setIsPushEnabled(false);
       }
@@ -140,16 +164,26 @@ export default function NotificationSettingsPage() {
     if (!keywordInput.trim()) return;
 
     const newKeywordStr = keywordInput.trim();
+    if (keywords.some(k => k.keyword === newKeywordStr)) {
+      setKeywordInput('');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const response = await fetch('/api/notifications/keywords', {
+      const deviceUuid = getBrowserDeviceUuid();
+      await fetch('/api/push/keywords', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword: newKeywordStr })
+        body: JSON.stringify({ device_uuid: deviceUuid, keyword: newKeywordStr })
       }).catch(() => null);
 
       const newId = Date.now().toString();
-      setKeywords(prev => [...prev, { id: newId, keyword: newKeywordStr }]);
+      const updated = [...keywords, { id: newId, keyword: newKeywordStr, is_active: true }];
+      setKeywords(updated);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('insightdeal_web_keywords', JSON.stringify(updated));
+      }
       setKeywordInput('');
     } catch (e) {
       console.error(e);
@@ -158,14 +192,48 @@ export default function NotificationSettingsPage() {
     }
   };
 
+  const handleToggleKeyword = async (keywordStr: string) => {
+    try {
+      const deviceUuid = getBrowserDeviceUuid();
+      const res = await fetch('/api/push/keywords/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_uuid: deviceUuid, keyword: keywordStr })
+      }).catch(() => null);
+      let nextActive: boolean | undefined;
+      if (res && res.ok) {
+        const data = await res.json();
+        nextActive = Boolean(data.is_active);
+      }
+      const updated = keywords.map(k =>
+        k.keyword === keywordStr
+          ? { ...k, is_active: nextActive !== undefined ? nextActive : k.is_active === false }
+          : k
+      );
+      setKeywords(updated);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('insightdeal_web_keywords', JSON.stringify(updated));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleDeleteKeyword = async (keywordStr: string) => {
     setIsLoading(true);
     try {
-      await fetch(`/api/notifications/keywords?keyword=${encodeURIComponent(keywordStr)}`, {
-        method: 'DELETE'
+      const deviceUuid = getBrowserDeviceUuid();
+      await fetch('/api/push/keywords', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_uuid: deviceUuid, keyword: keywordStr })
       }).catch(() => null);
 
-      setKeywords(prev => prev.filter(k => k.keyword !== keywordStr));
+      const updated = keywords.filter(k => k.keyword !== keywordStr);
+      setKeywords(updated);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('insightdeal_web_keywords', JSON.stringify(updated));
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -173,22 +241,28 @@ export default function NotificationSettingsPage() {
     }
   };
 
-  const handleToggleDnd = async () => {
-    const nextVal = !isDndEnabled;
-    setIsDndEnabled(nextVal);
+  const syncDndToBackend = async (nextEnabled: boolean, startStr: string, endStr: string) => {
     try {
-      await fetch('/api/notifications/settings', {
-        method: 'PUT',
+      const deviceUuid = getBrowserDeviceUuid();
+      await fetch('/api/push/device', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          dnd_enabled: nextVal,
-          dnd_start: dndStart,
-          dnd_end: dndEnd
+          device_uuid: deviceUuid,
+          dnd_enabled: nextEnabled,
+          dnd_start_time: startStr,
+          dnd_end_time: endStr
         })
       }).catch(() => null);
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const handleToggleDnd = async () => {
+    const nextVal = !isDndEnabled;
+    setIsDndEnabled(nextVal);
+    await syncDndToBackend(nextVal, dndStart, dndEnd);
   };
 
   const urlBase64ToUint8Array = (base64String: string) => {
@@ -216,52 +290,82 @@ export default function NotificationSettingsPage() {
 
       <div className="web-container" style={{ paddingBottom: '100px' }}>
         <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-          <header style={{ marginBottom: '40px', textAlign: 'center' }}>
-            <h1 style={{ fontSize: '2.5rem', fontWeight: 900, letterSpacing: '-1.5px', marginBottom: '12px' }}>
+          <header style={{ marginBottom: '36px', textAlign: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '16px' }}>
+              <Link
+                href="/"
+                className="bounce-click"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 14px',
+                  borderRadius: '10px',
+                  background: 'var(--card-bg)',
+                  border: '1px solid var(--card-border)',
+                  color: 'var(--text-main)',
+                  fontSize: '0.88rem',
+                  fontWeight: 700,
+                  textDecoration: 'none'
+                }}
+              >
+                ← 홈으로 돌아가기
+              </Link>
+            </div>
+            <h1 style={{ fontSize: '2.2rem', fontWeight: 900, letterSpacing: '-1.2px', marginBottom: '10px', color: 'var(--text-main)' }}>
               알림 및 키워드 설정
             </h1>
-            <p style={{ color: 'var(--text-sub)', fontSize: '1.1rem' }}>
-              관심 핫딜의 타이밍을 실시간으로 캐치하고, 야간 방해금지 시간대를 조율해보세요.
+            <p style={{ color: 'var(--text-sub)', fontSize: '1rem' }}>
+              관심 있는 상품 키워드를 등록하고 방해금지 시간대를 설정할 수 있습니다.
             </p>
           </header>
 
-          <main style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+          {errorMsg && (
+            <div style={{ marginBottom: '20px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '14px 18px', borderRadius: '14px', color: '#ef4444', fontSize: '0.9rem', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{errorMsg}</span>
+              <button onClick={() => setErrorMsg(null)} style={{ background: 'transparent', border: 'none', color: '#ef4444', fontWeight: 800, cursor: 'pointer' }}>✕</button>
+            </div>
+          )}
+
+          <main style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {/* 1. 웹 푸시 알림 허용 여부 카드 */}
-            <section className="glass-panel" style={{ borderRadius: '24px', padding: '32px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <section className="glass-panel" style={{ borderRadius: '20px', padding: '28px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                 <div>
-                  <h2 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '6px' }}>실시간 웹 푸시 알림</h2>
-                  <p style={{ color: 'var(--text-sub)', fontSize: '0.95rem' }}>브라우저 알림을 켜두시면 탭을 닫아도 실시간 핫딜이 떴을 때 즉각 안내해 드립니다.</p>
+                  <h2 style={{ fontSize: '1.3rem', fontWeight: 800, marginBottom: '6px', color: 'var(--text-main)' }}>웹 푸시 알림</h2>
+                  <p style={{ color: 'var(--text-sub)', fontSize: '0.92rem' }}>브라우저 알림을 켜두면 화면을 닫아도 새 핫딜 등록 시 바로 알림을 받을 수 있습니다.</p>
                 </div>
                 {isPushEnabled ? (
                   <button 
                     onClick={unsubscribePush}
+                    disabled={isLoading}
                     className="bounce-click" 
-                    style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '12px 24px', borderRadius: '16px', fontWeight: 700 }}
+                    style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '11px 22px', borderRadius: '12px', fontWeight: 700, border: '1px solid rgba(239, 68, 68, 0.25)', cursor: 'pointer' }}
                   >
                     알림 끄기
                   </button>
                 ) : (
                   <button 
                     onClick={requestPermission}
+                    disabled={isLoading}
                     className="btn-primary"
                   >
-                    알림 활성화
+                    알림 켜기
                   </button>
                 )}
               </div>
               {permission === 'denied' && (
-                <div style={{ background: 'rgba(239, 68, 68, 0.05)', border: '1px dashed rgba(239, 68, 68, 0.2)', padding: '16px', borderRadius: '16px', fontSize: '0.88rem', color: '#f87171' }}>
-                  현재 브라우저 알림 권한이 차단되어 있습니다. 브라우저 주소창 왼쪽의 설정 아이콘을 눌러 알림 권한을 직접 허용해 주세요.
+                <div style={{ background: 'rgba(239, 68, 68, 0.06)', border: '1px dashed rgba(239, 68, 68, 0.25)', padding: '14px 16px', borderRadius: '14px', fontSize: '0.88rem', color: '#dc2626', fontWeight: 600 }}>
+                  현재 브라우저 알림 권한이 차단되어 있습니다. 주소창 왼쪽의 설정 아이콘을 눌러 알림 권한을 허용해 주세요.
                 </div>
               )}
             </section>
 
             {/* 2. 관심 키워드 알림 관리 카드 */}
-            <section className="glass-panel" style={{ borderRadius: '24px', padding: '32px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <section className="glass-panel" style={{ borderRadius: '20px', padding: '28px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
-                <h2 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '6px' }}>알림 키워드 등록</h2>
-                <p style={{ color: 'var(--text-sub)', fontSize: '0.95rem' }}>설정한 단어가 포함된 특가가 수집되면 가장 빠르고 영롱하게 알림을 쏩니다.</p>
+                <h2 style={{ fontSize: '1.3rem', fontWeight: 800, marginBottom: '6px', color: 'var(--text-main)' }}>알림 키워드 등록</h2>
+                <p style={{ color: 'var(--text-sub)', fontSize: '0.92rem' }}>등록한 키워드가 포함된 핫딜이 올라오면 즉시 알려드립니다.</p>
               </div>
 
               <form onSubmit={handleAddKeyword} style={{ display: 'flex', gap: '12px' }}>
@@ -269,39 +373,46 @@ export default function NotificationSettingsPage() {
                   type="text" 
                   value={keywordInput}
                   onChange={(e) => setKeywordInput(e.target.value)}
-                  placeholder="예: 아이패드, 에어팟, 피존"
+                  placeholder="예: 제로콜라 :15000 / 아이폰 -케이스 -필름"
+                  aria-label="알림 키워드 입력"
                   style={{
                     flex: 1,
-                    background: 'rgba(255, 255, 255, 0.04)',
+                    background: 'var(--surface-subtle)',
                     border: '1px solid var(--card-border)',
-                    borderRadius: '16px',
-                    padding: '14px 20px',
+                    borderRadius: '12px',
+                    padding: '13px 18px',
                     color: 'var(--text-main)',
-                    fontSize: '1rem',
+                    fontSize: '0.96rem',
                     fontWeight: 600,
                     outline: 'none',
-                    transition: 'border-color 0.3s ease'
+                    transition: 'border-color 0.2s ease'
                   }}
                 />
-                <button type="submit" className="btn-primary" style={{ padding: '0 28px' }}>추가</button>
+                <button type="submit" disabled={isLoading} className="btn-primary" style={{ padding: '0 26px' }}>추가</button>
               </form>
+
+              <div style={{ fontSize: '0.84rem', color: 'var(--text-sub)', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '12px', padding: '10px 14px', lineHeight: 1.5 }}>
+                <strong style={{ color: 'var(--text-main)' }}>조건 필터 팁:</strong> 제외할 단어 앞에 <code>-</code>를 붙이거나(예: <code>아이폰 -케이스 -필름</code>), 상한 금액 앞에 <code>:</code>를 붙이면(예: <code>삼다수 :12000</code>) 원하는 조건의 핫딜만 골라서 알림을 받을 수 있어요.
+              </div>
 
               {/* 추천 태그 리스트 */}
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-sub)', fontWeight: 700, marginRight: '4px' }}>추천 태그:</span>
-                {['아이폰', '그래픽카드', '닭가슴살', '캠핑', 'PS5'].map(tag => (
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-sub)', fontWeight: 700, marginRight: '4px' }}>추천 예시:</span>
+                {['아이폰 -케이스', '제로콜라 :15000', '그래픽카드', '닭가슴살', 'PS5 -커버'].map(tag => (
                   <button 
                     key={tag}
+                    type="button"
                     onClick={() => setKeywordInput(tag)}
                     className="bounce-click"
                     style={{
-                      background: 'rgba(255,255,255,0.03)',
+                      background: 'var(--surface-subtle)',
                       border: '1px solid var(--card-border)',
                       borderRadius: '99px',
                       padding: '6px 14px',
                       fontSize: '0.8rem',
                       fontWeight: 700,
-                      color: 'var(--text-sub)'
+                      color: 'var(--text-sub)',
+                      cursor: 'pointer'
                     }}
                   >
                     #{tag}
@@ -309,36 +420,47 @@ export default function NotificationSettingsPage() {
                 ))}
               </div>
 
-              <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: '24px' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '16px' }}>등록된 알림 키워드 ({keywords.length}개)</h3>
+              <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>등록된 알림 키워드 ({keywords.length}개)</h3>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: 600 }}>키워드를 클릭하면 삭제하지 않고 알림을 일시정지할 수 있어요</span>
+                </div>
                 
                 {keywords.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-sub)', fontSize: '0.95rem' }}>
-                    등록된 키워드가 없습니다. 관심 있는 키워드를 위에 등록해 특가 기회를 사수해 보세요!
+                  <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-sub)', fontSize: '0.92rem' }}>
+                    등록된 키워드가 없습니다. 위 입력창에서 자주 찾는 상품을 등록해 보세요.
                   </div>
                 ) : (
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                    {keywords.map(kw => (
+                    {keywords.map(kw => {
+                      const isActive = kw.is_active !== false;
+                      return (
                       <div 
                         key={kw.id} 
                         className="glass-panel"
+                        onClick={() => handleToggleKeyword(kw.keyword)}
+                        title={isActive ? '클릭하여 알림 일시정지' : '클릭하여 알림 다시 켜기'}
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '10px',
-                          padding: '8px 18px',
+                          padding: '8px 16px',
                           borderRadius: '99px',
-                          fontSize: '0.9rem',
+                          fontSize: '0.88rem',
                           fontWeight: 700,
-                          border: '1px solid rgba(var(--accent-rgb), 0.25)',
-                          background: 'rgba(var(--accent-rgb), 0.05)',
-                          color: 'var(--accent)',
-                          animation: 'popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'
+                          cursor: 'pointer',
+                          border: isActive ? '1px solid rgba(var(--accent-rgb), 0.3)' : '1px solid var(--card-border)',
+                          background: isActive ? 'rgba(var(--accent-rgb), 0.08)' : 'var(--surface-subtle)',
+                          color: isActive ? 'var(--accent)' : 'var(--text-sub)',
+                          opacity: isActive ? 1 : 0.7,
+                          animation: 'popIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'
                         }}
                       >
-                        <span>{kw.keyword}</span>
+                        <span>{kw.keyword}{!isActive ? ' (일시정지)' : ''}</span>
                         <button 
-                          onClick={() => handleDeleteKeyword(kw.keyword)}
+                          type="button"
+                          aria-label={`${kw.keyword} 키워드 삭제`}
+                          onClick={(e) => { e.stopPropagation(); handleDeleteKeyword(kw.keyword); }}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -346,46 +468,54 @@ export default function NotificationSettingsPage() {
                             width: '18px',
                             height: '18px',
                             borderRadius: '50%',
-                            background: 'rgba(239, 68, 68, 0.1)',
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            border: 'none',
                             color: '#ef4444',
                             fontSize: '11px',
                             fontWeight: 900,
                             lineHeight: 1,
+                            cursor: 'pointer',
                             transition: 'background-color 0.2s'
                           }}
-                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.2)'}
-                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.22)'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)'}
                         >
                           ✕
                         </button>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
             </section>
 
             {/* 3. 야간 알림 차단 DND 스케줄러 카드 */}
-            <section className="glass-panel" style={{ borderRadius: '24px', padding: '32px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <section className="glass-panel" style={{ borderRadius: '20px', padding: '28px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                 <div>
-                  <h2 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '6px' }}>야간 알림 차단 (방해금지 설정)</h2>
-                  <p style={{ color: 'var(--text-sub)', fontSize: '0.95rem' }}>설정한 시간대 동안에는 수신되는 알림이 일시적으로 큐에 보관된 뒤 아침에 전송됩니다.</p>
+                  <h2 style={{ fontSize: '1.3rem', fontWeight: 800, marginBottom: '6px', color: 'var(--text-main)' }}>야간 알림 차단 (방해금지 설정)</h2>
+                  <p style={{ color: 'var(--text-sub)', fontSize: '0.92rem' }}>설정한 시간대 동안에는 수신되는 알림이 일시적으로 큐에 보관된 뒤 아침에 전송됩니다.</p>
                 </div>
                 
                 {/* 프리미엄 그라데이션 토글 스위치 */}
-                <div 
+                <button 
+                  type="button"
+                  role="switch"
+                  aria-checked={isDndEnabled}
+                  aria-label="야간 알림 차단 방해금지 설정"
                   onClick={handleToggleDnd}
                   className="bounce-click"
                   style={{
                     width: '60px',
                     height: '32px',
                     borderRadius: '99px',
-                    background: isDndEnabled ? 'var(--primary-gradient)' : 'rgba(255, 255, 255, 0.1)',
+                    background: isDndEnabled ? 'var(--primary-gradient)' : 'rgba(148, 163, 184, 0.35)',
                     border: '1px solid var(--card-border)',
                     position: 'relative',
                     cursor: 'pointer',
-                    transition: 'background 0.3s ease'
+                    transition: 'background 0.3s ease',
+                    padding: 0
                   }}
                 >
                   <div 
@@ -394,14 +524,14 @@ export default function NotificationSettingsPage() {
                       height: '24px',
                       borderRadius: '50%',
                       background: 'white',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                      boxShadow: '0 2px 6px rgba(15, 23, 42, 0.2)',
                       position: 'absolute',
                       top: '3px',
                       left: isDndEnabled ? '31px' : '4px',
                       transition: 'left 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)'
                     }}
                   />
-                </div>
+                </button>
               </div>
 
               {isDndEnabled && (
@@ -411,9 +541,9 @@ export default function NotificationSettingsPage() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '12px',
-                    padding: '20px',
-                    borderRadius: '16px',
-                    background: 'rgba(255,255,255,0.02)',
+                    padding: '18px',
+                    borderRadius: '14px',
+                    background: 'var(--surface-subtle)',
                     border: '1px solid var(--card-border)',
                     animation: 'slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards'
                   }}
@@ -421,10 +551,15 @@ export default function NotificationSettingsPage() {
                   <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-sub)' }}>매일</span>
                   <input 
                     type="time" 
+                    aria-label="방해금지 시작 시간"
                     value={dndStart}
-                    onChange={(e) => setDndStart(e.target.value)}
+                    onChange={(e) => {
+                      const nextStart = e.target.value;
+                      setDndStart(nextStart);
+                      syncDndToBackend(isDndEnabled, nextStart, dndEnd);
+                    }}
                     style={{
-                      background: 'rgba(255,255,255,0.04)',
+                      background: 'var(--card-bg)',
                       border: '1px solid var(--card-border)',
                       borderRadius: '10px',
                       padding: '8px 12px',
@@ -436,10 +571,15 @@ export default function NotificationSettingsPage() {
                   <span style={{ fontSize: '0.9rem', color: 'var(--text-sub)', fontWeight: 700 }}>부터</span>
                   <input 
                     type="time" 
+                    aria-label="방해금지 종료 시간"
                     value={dndEnd}
-                    onChange={(e) => setDndEnd(e.target.value)}
+                    onChange={(e) => {
+                      const nextEnd = e.target.value;
+                      setDndEnd(nextEnd);
+                      syncDndToBackend(isDndEnabled, dndStart, nextEnd);
+                    }}
                     style={{
-                      background: 'rgba(255,255,255,0.04)',
+                      background: 'var(--card-bg)',
                       border: '1px solid var(--card-border)',
                       borderRadius: '10px',
                       padding: '8px 12px',

@@ -1,4 +1,13 @@
-
 image_cache/
 logs/
 __pycache__/
+*.pyc
+scratch/
+tests/
+*.log
+*.html
+out*.json
+groups.txt
+insight_deal_corrupted.db
+hotdeal.db
+insightdeal.db

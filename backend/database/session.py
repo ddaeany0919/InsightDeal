@@ -1,6 +1,8 @@
 import os
+import sqlite3
 import logging
-from sqlalchemy import create_engine, event
+from datetime import datetime, timedelta
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 from typing import Generator
@@ -8,37 +10,39 @@ from typing import Generator
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
-    """데이터베이스 연결 및 세션 관리 클래스"""
+    """데이터베이스 연결, 인덱스 최적화 및 안전 백업 관리 클래스"""
     
     def __init__(self):
         self.engine = None
         self.SessionLocal = None
+        self.db_file_path = None
         self._create_engine()
     
     def _create_engine(self):
         """엔진 생성 (앱/웹 공용)"""
-        import os
         from dotenv import load_dotenv
         
-        # 최상위 .env 로드
-        # session.py의 경로는 backend/database/session.py 이므로 두 번 올라가면 backend/ 폴더입니다.
         backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         base_dir = os.path.dirname(backend_dir)
         load_dotenv(os.path.join(base_dir, '.env'))
         
-        # 환경변수에서 DATABASE_URL을 가져오고, 없으면 SQLite 기본 경로 사용
         database_url = os.getenv("DATABASE_URL")
         if not database_url:
             default_db_path = os.path.join(backend_dir, "insight_deal.db")
+            self.db_file_path = default_db_path
             database_url = f"sqlite:///{default_db_path}"
+        elif database_url.startswith("sqlite:///"):
+            self.db_file_path = database_url.replace("sqlite:///", "", 1)
             
-        logger.info(f"📊 데이터베이스 연결 시도: {database_url}")
+        logger.info(f"데이터베이스 연결 시도: {database_url}")
         
-        # SQLite 특화 설정 적용 (병렬 쓰기 시 DB Corruption 방지를 위해 timeout 증가)
         connect_args = {"check_same_thread": False, "timeout": 30} if database_url.startswith("sqlite") else {"options": "-c timezone=Asia/Seoul"}
         
         self.engine = create_engine(
             database_url,
+            poolclass=QueuePool,
+            pool_size=10,
+            max_overflow=20,
             pool_pre_ping=True,
             echo=False,
             connect_args=connect_args
@@ -48,24 +52,28 @@ class DatabaseManager:
             @event.listens_for(self.engine, "connect")
             def set_sqlite_pragma(dbapi_connection, connection_record):
                 cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")
                 cursor.execute("PRAGMA busy_timeout=60000")
+                cursor.execute("PRAGMA cache_size=-32000")  # 32MB in-memory page cache
+                cursor.execute("PRAGMA temp_store=MEMORY")
                 cursor.close()
-
         
         self.SessionLocal = sessionmaker(
             autocommit=False, 
             autoflush=False, 
+            expire_on_commit=False,
             bind=self.engine
         )
         
-        # 연결 이벤트 리스너
-        @event.listens_for(self.engine, "connect")
-        def set_postgres_settings(dbapi_connection, connection_record):
-            logger.info("✅ PostgreSQL 데이터베이스 연결 성공")
+        if not database_url.startswith("sqlite"):
+            @event.listens_for(self.engine, "connect")
+            def set_postgres_settings(dbapi_connection, connection_record):
+                logger.info("PostgreSQL 데이터베이스 연결 성공")
         
         @event.listens_for(self.engine, "close")
         def on_disconnect(dbapi_connection, connection_record):
-            logger.debug("🔌 데이터베이스 연결 종료")
+            logger.debug("데이터베이스 연결 종료")
     
     def get_session(self) -> Session:
         """단일 DB 세션 반환"""
@@ -77,7 +85,7 @@ class DatabaseManager:
         try:
             yield session
         except Exception as e:
-            logger.error(f"❌ 데이터베이스 세션 오류: {e}")
+            logger.error(f"데이터베이스 세션 오류: {e}")
             session.rollback()
             raise
         finally:
@@ -87,37 +95,117 @@ class DatabaseManager:
         """모든 연결 종료"""
         if self.engine:
             self.engine.dispose()
-            logger.info("🔌 모든 데이터베이스 연결 종료")
+            logger.info("모든 데이터베이스 연결 종료")
+
+    def ensure_performance_indexes(self):
+        """6개월 시세 차트, DSU 클러스터링, 피드 필터링 고속화를 위한 복합 인덱스 자동 보장"""
+        index_statements = [
+            "CREATE INDEX IF NOT EXISTS idx_deals_closed_indexed ON deals (is_closed, indexed_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_deals_community_closed_indexed ON deals (source_community_id, is_closed, indexed_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_deals_base_product_indexed ON deals (base_product_name, indexed_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_deals_category_closed ON deals (category, is_closed, indexed_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_price_history_deal_checked ON price_history (deal_id, checked_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_wishlist_user_active ON wishlist (user_id, is_active, alert_enabled)"
+        ]
+        created_count = 0
+        for stmt in index_statements:
+            try:
+                with self.engine.begin() as conn:
+                    conn.execute(text(stmt))
+                created_count += 1
+            except Exception as e:
+                logger.warning(f"복합 인덱스 생성 스킵 ({stmt}): {e}")
+        logger.info(f"고속 조회용 복합 인덱스({created_count}/{len(index_statements)}종) 점검 및 적용 완료")
+
+    def perform_maintenance_and_backup(self, max_backups: int = 3, slim_days: int = 180) -> dict:
+        """
+        1) 180일(6개월) 경과 딜의 무거운 HTML 본문(content_html) 슬림화 (가격/시세/제목은 영구 보존)
+        2) SQLite WAL 체크포인트 병합
+        3) 온라인 무중단 백업 (backend/backups/ 폴더에 최근 3일치 유지)
+        """
+        summary = {"slimmed_deals": 0, "backup_path": None}
+        session = self.get_session()
+        try:
+            cutoff_date = datetime.utcnow() - timedelta(days=slim_days)
+            res = session.execute(
+                text("UPDATE deals SET content_html = NULL WHERE indexed_at < :cutoff AND content_html IS NOT NULL"),
+                {"cutoff": cutoff_date}
+            )
+            summary["slimmed_deals"] = res.rowcount or 0
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.warning(f"노후 본문 슬림화 중 경고: {e}")
+        finally:
+            session.close()
+
+        if self.db_file_path and os.path.exists(self.db_file_path):
+            try:
+                backend_dir = os.path.dirname(self.db_file_path)
+                backup_dir = os.path.join(backend_dir, "backups")
+                os.makedirs(backup_dir, exist_ok=True)
+                today_str = datetime.now().strftime("%Y%m%d")
+                backup_file = os.path.join(backup_dir, f"insight_deal_{today_str}.db")
+
+                src_conn = sqlite3.connect(self.db_file_path, timeout=30)
+                try:
+                    src_conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+                    dst_conn = sqlite3.connect(backup_file)
+                    try:
+                        src_conn.backup(dst_conn, pages=200, sleep=0.05)
+                    finally:
+                        dst_conn.close()
+                finally:
+                    src_conn.close()
+
+                summary["backup_path"] = backup_file
+
+                # 오래된 백업 정리 (최근 max_backups개만 유지)
+                backups = sorted(
+                    [
+                        os.path.join(backup_dir, f)
+                        for f in os.listdir(backup_dir)
+                        if f.startswith("insight_deal_") and f.endswith(".db")
+                    ]
+                )
+                while len(backups) > max_backups:
+                    old_file = backups.pop(0)
+                    try:
+                        os.remove(old_file)
+                    except OSError:
+                        pass
+
+                logger.info(f"DB 안전 백업 및 최적화 완료: {backup_file} (슬림화: {summary['slimmed_deals']}건)")
+            except Exception as e:
+                logger.warning(f"SQLite 온라인 백업 중 경고: {e}")
+
+        return summary
     
     def init_database(self):
-        """데이터베이스 초기화 (테이블 생성)"""
+        """데이터베이스 초기화 (테이블 및 복합 인덱스 생성)"""
         try:
-            logger.info("🗄️ 데이터베이스 테이블 생성 시작...")
+            logger.info("데이터베이스 테이블 생성 시작...")
             
-            # 모델 import
             from backend.database.models import Base as CommunityBase, Community
             from backend.models.wishlist_models import Base as WishlistBase
             
-            # 1. 커뮤니티/딩/상품 테이블 생성
-            logger.info("📄 커뮤니티 관련 테이블 생성 중...")
             CommunityBase.metadata.create_all(self.engine)
-            
-            # 2. 위시리스트 테이블 생성
-            logger.info("💚 위시리스트 테이블 생성 중...")
             WishlistBase.metadata.create_all(self.engine)
+            self.ensure_performance_indexes()
             
-            # 기본 커뮤니티 데이터 삽입
-            session = self.get_session()  # 컨텍스트 매니저 대신 직접 생성/닫기
+            session = self.get_session()
             try:
                 communities = [
                     Community(name="ppomppu", display_name="뽐뿌", base_url="https://www.ppomppu.co.kr"),
+                    Community(name="ppomppu_overseas", display_name="뽐뿌해외", base_url="https://www.ppomppu.co.kr"),
                     Community(name="ruliweb", display_name="루리웹", base_url="https://bbs.ruliweb.com"),
                     Community(name="clien", display_name="클리앙", base_url="https://www.clien.net"),
                     Community(name="ali_ppomppu", display_name="알리뽐뿌", base_url="https://www.ppomppu.co.kr"),
                     Community(name="quasarzone", display_name="퀘이사존", base_url="https://quasarzone.com"),
                     Community(name="fmkorea", display_name="펨코", base_url="https://www.fmkorea.com"),
                     Community(name="bbasak_domestic", display_name="빠삭국내", base_url="https://bbasak.com"),
-                    Community(name="bbasak_overseas", display_name="빠삭해외", base_url="https://bbasak.com")
+                    Community(name="bbasak_overseas", display_name="빠삭해외", base_url="https://bbasak.com"),
+                    Community(name="bbasak_parenting", display_name="빠삭육아", base_url="https://bbasak.com")
                 ]
                 for community in communities:
                     existing = session.query(Community).filter(
@@ -125,90 +213,50 @@ class DatabaseManager:
                     ).first()
                     if not existing:
                         session.add(community)
-                        logger.info(f"✅ 커뮤니티 '{community.name}' 추가")
                 session.commit()
             except Exception as e:
-                logger.warning(f"⚠️ 커뮤니티 데이터 초기화 경고: {e}")
+                logger.warning(f"커뮤니티 데이터 초기화 경고: {e}")
                 session.rollback()
             finally:
                 session.close()
             
-            logger.info("✅ 데이터베이스 초기화 완료")
+            logger.info("데이터베이스 초기화 완료")
             return True
         except Exception as e:
-            logger.error(f"❌ 데이터베이스 초기화 실패: {e}", exc_info=True)
+            logger.error(f"데이터베이스 초기화 실패: {e}", exc_info=True)
             return False
     
     def test_connection(self) -> bool:
         """데이터베이스 연결 테스트"""
         try:
             with self.engine.connect() as conn:
-                conn.execute("SELECT 1")
-            logger.info("✅ 데이터베이스 연결 테스트 성공")
+                conn.execute(text("SELECT 1"))
             return True
         except Exception as e:
-            logger.error(f"❌ 데이터베이스 연결 테스트 실패: {e}")
+            logger.error(f"데이터베이스 연결 테스트 실패: {e}")
             return False
 
 # 싱글턴 인스턴스
 db_manager = DatabaseManager()
 
-# FastAPI 의존성 주입을 위한 함수
 def get_db_session() -> Generator[Session, None, None]:
-    """
-    FastAPI Depends에서 사용할 데이터베이스 세션 제네레이터
-    
-    Usage:
-        from fastapi import Depends
-        from backend.database.session import get_db_session
-        
-        @app.get("/deals")
-        def get_deals(db: Session = Depends(get_db_session)):
-            return db.query(Deal).all()
-    """
     session = db_manager.get_session()
     try:
         yield session
     except Exception as e:
-        logger.error(f"❌ API 세션 오류: {e}")
+        logger.error(f"API 세션 오류: {e}")
         session.rollback()
         raise
     finally:
         session.close()
 
-# 스케줄러/스크래퍼를 위한 직접 세션 생성
 def create_db_session() -> Session:
-    """
-    스케줄러나 백그라운드 작업에서 사용할 단일 DB 세션
-    
-    Usage:
-        from backend.database.session import create_db_session
-        
-        def run_scraper():
-            with create_db_session() as session:
-                # DB 작업
-                pass
-    """
     return db_manager.get_session()
 
-# 하위 호환성을 위한 alias
 SessionLocal = db_manager.SessionLocal
 engine = db_manager.engine
-get_db = get_db_session  # wishlist.py 등에서 사용하는 get_db import 오류 해결
+get_db = get_db_session
 
-# 데이터베이스 사전 초기화 (import 시) - 동시성 락 및 무한 핫리로드 방지를 위해 임포트 타임 자동 초기화는 폐기합니다.
-# 초기화는 FastAPI startup 라이프사이클에서 안전하게 딱 1회만 격행하도록 main.py에 이송 완료했습니다.
-
-# CLI 실행용
 if __name__ == "__main__":
-    print("🗄️ 데이터베이스 초기화 시작...")
-    
     if db_manager.test_connection():
-        print("✅ 데이터베이스 연결 성공")
-        
-        if db_manager.init_database():
-            print("✅ 데이터베이스 초기화 완료")
-        else:
-            print("❌ 데이터베이스 초기화 실패")
-    else:
-        print("❌ 데이터베이스 연결 실패")
+        db_manager.init_database()

@@ -39,8 +39,14 @@ class RuliwebScraper(AsyncBaseScraper):
             title_element = row.select_one('a.subject_link, span.subject')
             if not title_element: return None
 
-            reply_count_tag = title_element.find("strong", class_="reply_count")
-            if reply_count_tag: reply_count_tag.decompose()
+            comment_count = 0
+            reply_count_tag = title_element.find("strong", class_="reply_count") or row.select_one('.num_reply, .reply_count')
+            if reply_count_tag:
+                rc_txt = re.sub(r'[^\d]', '', reply_count_tag.get_text(strip=True))
+                if rc_txt.isdigit():
+                    comment_count = int(rc_txt)
+                if reply_count_tag in title_element.descendants:
+                    reply_count_tag.decompose()
 
             full_title_raw = title_element.get_text(strip=True)
             full_title = re.sub(r'\s*\(\d+\)$', '', full_title_raw).strip()
@@ -68,8 +74,22 @@ class RuliwebScraper(AsyncBaseScraper):
             if '종료' in full_title or '마감' in full_title or '품절' in full_title:
                 is_closed = True
 
+            like_count = 0
+            recomd_td = row.select_one('td.recomd, span.recomd')
+            if recomd_td:
+                r_txt = re.sub(r'[^\d]', '', recomd_td.get_text(strip=True))
+                if r_txt.isdigit():
+                    like_count = int(r_txt)
+
+            view_count = 0
+            hit_td = row.select_one('td.hit, span.hit')
+            if hit_td:
+                h_txt = re.sub(r'[^\d]', '', hit_td.get_text(strip=True))
+                if h_txt.isdigit():
+                    view_count = int(h_txt)
+
             is_super_hotdeal = False
-            if 'best' in row.get('class', []):
+            if 'best' in row.get('class', []) or like_count >= 10:
                 is_super_hotdeal = True
 
             # 실제 게시글 작성 시간 추출
@@ -125,6 +145,9 @@ class RuliwebScraper(AsyncBaseScraper):
                 "shipping_fee": "",
                 "is_super_hotdeal": is_super_hotdeal,
                 "posted_at": posted_at_iso,
+                "view_count": view_count,
+                "like_count": like_count,
+                "comment_count": comment_count,
                 "content_html": ""
             }
             
@@ -137,59 +160,111 @@ class RuliwebScraper(AsyncBaseScraper):
         html = await self.fetch_html(url)
         if not html: return {}
         soup = BeautifulSoup(html, 'html.parser')
-        
+
+        from urllib.parse import urlparse, parse_qs, unquote
+
+        def unwrap_ruliweb_link(raw_href: str) -> str:
+            if not raw_href:
+                return ""
+            raw_href = raw_href.strip()
+            if 'link.php' in raw_href and 'ol=' in raw_href:
+                try:
+                    qs = parse_qs(urlparse(raw_href).query)
+                    if 'ol' in qs and qs['ol']:
+                        return unquote(qs['ol'][0]).strip()
+                except Exception:
+                    pass
+            return raw_href
+
+        # 목록에서 긴 제목이 '...'으로 잘리는 경우 상세 페이지에서 원본 전체 제목 복원
+        detail_title = ""
+        subj_el = soup.select_one('span.subject_inner_text') or soup.select_one('.subject_text')
+        if subj_el:
+            detail_title = re.sub(r'\s*\(\d+\)\s*$', '', subj_el.get_text(strip=True)).strip()
+        if detail_title:
+            full_title = detail_title
+
         ecommerce_link = ""
         link_tag = soup.select_one('div.source_url a')
         if link_tag and link_tag.get('href'):
-            ecommerce_link = link_tag['href']
-            
+            ecommerce_link = unwrap_ruliweb_link(link_tag['href'])
+
+        if not ecommerce_link:
+            for a_tag in soup.select('.view_content a[href], .board_main_view a[href]'):
+                cand_href = unwrap_ruliweb_link(a_tag.get('href', ''))
+                if cand_href.startswith('http') and 'ruliweb.com' not in cand_href and 'daumcdn.net' not in cand_href:
+                    ecommerce_link = cand_href
+                    break
+
         image_url = ""
-        img_tag = soup.select_one('.board_main_view img') or soup.select_one('.view_content img')
-        if img_tag and img_tag.get('src'):
-            image_url = img_tag['src']
-            if image_url.startswith('//'): image_url = "https:" + image_url
-            
+        for img_tag in soup.select('.view_content img, .board_main_view img'):
+            src = img_tag.get('src') or img_tag.get('data-src') or ''
+            if not src:
+                continue
+            if src.startswith('//'):
+                src = "https:" + src
+            elif not src.startswith('http'):
+                src = urljoin("https://bbs.ruliweb.com", src)
+            if any(bad in src.lower() for bad in ('icon', 'emoticon', 'btn_', 'logo', '.gif')):
+                continue
+            image_url = src
+            break
+
         price_fallback = 0
         shipping_fee = ""
-        
-        # 본문 영역 파싱
+
+        # 본문 영역 파싱 (줄바꿈 및 링크 보존)
         content_html = ""
-        content_area = soup.select_one('.board_main_view') or soup.select_one('.view_content')
+        content_area = soup.select_one('.view_content') or soup.select_one('.board_main_view')
         if content_area:
-            content_html = content_area.get_text(separator=' ', strip=True)
+            for tag in content_area.select('script, style'):
+                tag.decompose()
+            for a_tag in content_area.find_all('a', href=True):
+                real_href = unwrap_ruliweb_link(a_tag['href'])
+                if real_href.startswith('http') and 'ruliweb.com' not in real_href:
+                    txt = a_tag.get_text(strip=True)
+                    if real_href not in txt:
+                        a_tag.string = f"{txt} ({real_href})" if txt else real_href
+            lines = [line.strip() for line in content_area.get_text(separator='\n').splitlines() if line.strip()]
+            content_html = '\n'.join(lines)
             body_text = content_html
         else:
             body_text = soup.get_text(separator=' ')
-        
-        # 가격 휴리스틱 추출 (본문에서 추출 시 오류가 잦아 0으로 넘기고 Aggregator에서 제목 기반 추출)
+
         # 배송비 휴리스틱 추출
-        search_text = full_title + " " + body_text
+        search_text = (full_title or "") + " " + body_text
         if re.search(r'(무료배송|무배|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', search_text):
             shipping_fee = "무료배송"
         extracted_currency = "KRW"
-        
-        # [방어막 추가]: 본문 파싱 전 URL 소거 처리! (링크 내의 숫자 오인 차단)
-        cleaned_body_text = re.sub(r'https?://[^\s]+', '', body_text)
-        
+
+        # [방어막 추가]: 제목 우선 가격 추출 + 본문 파싱 전 URL 소거 처리
+        cleaned_body_text = re.sub(r'https?://[^\s\)]+', '', search_text)
+
         usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', cleaned_body_text, re.IGNORECASE)
         if not usd_match:
             usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', cleaned_body_text, re.IGNORECASE)
-        
+
         price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', cleaned_body_text)
-        
+
         if usd_match:
             try:
                 val = float(usd_match.group(1).replace(',', ''))
                 price_fallback = int(val * 100)
-                if '유로' in body_text or '€' in body_text:
+                if '유로' in search_text or '€' in search_text:
                     extracted_currency = "EUR"
                 else:
                     extracted_currency = "USD"
-            except: pass
+            except Exception:
+                pass
         elif price_matches:
-            try:
-                price_fallback = int(price_matches[0].replace(',', '').replace('.', ''))
-            except: pass
+            for pm in price_matches:
+                try:
+                    cand = int(pm.replace(',', '').replace('.', ''))
+                    if cand >= 100:
+                        price_fallback = cand
+                        break
+                except Exception:
+                    pass
 
         # 📸 [고화질 썸네일 복구 가드]: 본문에 이미지가 없거나 cache 관련 썸네일인 경우, 아웃링크 og:image 추출
         if (not image_url or "cache" in image_url) and ecommerce_link:
@@ -198,4 +273,14 @@ class RuliwebScraper(AsyncBaseScraper):
                 logger.info(f"✨ [루리웹 og:image] 외부 아웃링크에서 고화질 썸네일 확보: {og_img}")
                 image_url = og_img
 
-        return {"ecommerce_link": ecommerce_link, "image_url": image_url, "price": price_fallback, "currency": extracted_currency, "shipping_fee": shipping_fee, "content_html": content_html}
+        result = {
+            "ecommerce_link": ecommerce_link,
+            "image_url": image_url,
+            "price": price_fallback,
+            "currency": extracted_currency,
+            "shipping_fee": shipping_fee,
+            "content_html": content_html,
+        }
+        if detail_title:
+            result["title"] = detail_title
+        return result

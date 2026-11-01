@@ -63,14 +63,15 @@ fun AuthScreen(
     var selectedTab by remember { mutableStateOf(AuthTab.LOGIN) }
 
     Scaffold(
+        modifier = Modifier.imePadding(),
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Text(
-                        text = if (isUserGuest) "회원가입 / 로그인" else "회원 정보 수정", 
-                        fontWeight = FontWeight.ExtraBold, 
+                        text = if (isUserGuest) "회원가입 / 로그인" else "회원 정보 수정",
+                        fontWeight = FontWeight.ExtraBold,
                         fontSize = 20.sp
-                    ) 
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
@@ -104,8 +105,8 @@ fun AuthScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
             ) {
                 Column(modifier = Modifier.padding(24.dp)) {
-                    var currentUserId by remember(savedUsername, savedId) { 
-                        mutableStateOf(if (savedUsername == "guest" || savedUsername.isNullOrEmpty()) (savedId ?: "admin") else savedUsername!!) 
+                    var currentUserId by remember(savedUsername, savedId) {
+                        mutableStateOf(if (savedUsername == "guest" || savedUsername.isNullOrEmpty()) (savedId ?: "admin") else savedUsername!!)
                     }
                     var currentNickname by remember(savedNickname) {
                         mutableStateOf(if (savedNickname == "guest" || savedNickname.isNullOrEmpty()) "합리적쇼핑꾼" else savedNickname!!)
@@ -170,7 +171,7 @@ fun AuthScreen(
                     }
 
                     Text(
-                        text = if (!isUserGuest) "👤 회원 정보 수정" else if (selectedTab == AuthTab.LOGIN) "🔑 계정 로그인" else "✨ 신규 회원가입",
+                        text = if (!isUserGuest) "회원 정보 수정" else if (selectedTab == AuthTab.LOGIN) "로그인" else "회원가입",
                         style = MaterialTheme.typography.titleMedium,
                         color = brandAccent,
                         fontWeight = FontWeight.Black
@@ -328,7 +329,7 @@ fun AuthScreen(
                                         if (currentPassword == confirmPassword) {
                                             Text("비밀번호가 일치합니다. ✓", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                                         } else {
-                                            Text("비밀번호가 일치하지 않습니다. ⚠️", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                                            Text("비밀번호가 일치하지 않아요.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                                         }
                                     }
                                 }
@@ -366,12 +367,12 @@ fun AuthScreen(
                         Spacer(modifier = Modifier.height(14.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
                         Spacer(modifier = Modifier.height(14.dp))
-                        
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { 
-                                    showPasswordFields = !showPasswordFields 
+                                .clickable {
+                                    showPasswordFields = !showPasswordFields
                                     if (!showPasswordFields) {
                                         // 접힐 때 모든 입력 필드 및 검증 상태 안전하게 초기화
                                         oldPassword = ""
@@ -389,7 +390,7 @@ fun AuthScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text("🔒", fontSize = 14.sp)
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = brandAccent, modifier = Modifier.size(16.dp))
                                 Text(
                                     text = "비밀번호 변경",
                                     fontSize = 13.sp,
@@ -404,7 +405,7 @@ fun AuthScreen(
                                 fontWeight = FontWeight.Bold
                             )
                         }
-                        
+
                         if (showPasswordFields) {
                             Spacer(modifier = Modifier.height(12.dp))
                             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -419,8 +420,8 @@ fun AuthScreen(
                                     ) {
                                         OutlinedTextField(
                                             value = oldPassword,
-                                            onValueChange = { 
-                                                oldPassword = it 
+                                            onValueChange = {
+                                                oldPassword = it
                                                 currentPasswordErrorText = ""
                                             },
                                             modifier = Modifier.weight(1f),
@@ -449,11 +450,11 @@ fun AuthScreen(
                                                 focusedContainerColor = MaterialTheme.colorScheme.background
                                             )
                                         )
-                                        
+
                                         Button(
                                             onClick = {
                                                 if (oldPassword.isBlank()) {
-                                                    currentPasswordErrorText = "비밀번호를 입력해 주세요. ⚠️"
+                                                    currentPasswordErrorText = "비밀번호를 입력해 주세요."
                                                     return@Button
                                                 }
                                                 scope.launch {
@@ -463,7 +464,7 @@ fun AuthScreen(
                                                         currentPasswordErrorText = ""
                                                     } else {
                                                         isCurrentPasswordVerified = false
-                                                        currentPasswordErrorText = "비밀번호가 일치하지 않습니다. 다시 입력해 주세요. ⚠️"
+                                                        currentPasswordErrorText = "비밀번호가 일치하지 않아요. 다시 확인해 주세요."
                                                     }
                                                 }
                                             },
@@ -482,7 +483,7 @@ fun AuthScreen(
                                             )
                                         }
                                     }
-                                    
+
                                     if (currentPasswordErrorText.isNotEmpty()) {
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(currentPasswordErrorText, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
@@ -566,7 +567,7 @@ fun AuthScreen(
                                                 if (currentPassword == confirmPassword) {
                                                     Text("비밀번호가 일치합니다. ✓", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                                                 } else {
-                                                    Text("비밀번호가 일치하지 않습니다. ⚠️", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                                                    Text("비밀번호가 일치하지 않아요.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                                                 }
                                             }
                                         }
@@ -581,7 +582,7 @@ fun AuthScreen(
                     Button(
                         onClick = {
                             if (currentUserId.isBlank()) {
-                                android.widget.Toast.makeText(ctx, "아이디를 입력해 주세요. ⚠️", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(ctx, "아이디를 입력해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
 
@@ -589,38 +590,38 @@ fun AuthScreen(
                                 if (!isUserGuest) {
                                     // ⚡ 정보 수정 시나리오
                                     if (currentNickname.isBlank()) {
-                                        android.widget.Toast.makeText(ctx, "닉네임을 입력해 주세요. ⚠️", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(ctx, "닉네임을 입력해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
                                         return@launch
                                     }
-                                    
+
                                     val isModifyingPassword = oldPassword.isNotEmpty() || currentPassword.isNotEmpty() || confirmPassword.isNotEmpty()
-                                    
+
                                     if (isModifyingPassword) {
                                         if (!isCurrentPasswordVerified) {
-                                            android.widget.Toast.makeText(ctx, "현재 비밀번호 확인을 완료해 주세요. ⚠️", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(ctx, "현재 비밀번호 확인을 먼저 완료해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
                                             return@launch
                                         }
-                                        
+
                                         if (currentPassword.isBlank()) {
-                                            android.widget.Toast.makeText(ctx, "새 비밀번호를 입력해 주세요. ⚠️", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(ctx, "새 비밀번호를 입력해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
                                             return@launch
                                         }
-                                        
+
                                         if (currentPassword != confirmPassword) {
-                                            android.widget.Toast.makeText(ctx, "새 비밀번호가 서로 일치하지 않습니다. ⚠️", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(ctx, "새 비밀번호가 서로 일치하지 않아요.", android.widget.Toast.LENGTH_SHORT).show()
                                             return@launch
                                         }
                                         AuthManager.saveUserWithPassword(ctx, currentUserId, currentNickname, currentPassword)
-                                        android.widget.Toast.makeText(ctx, "회원 정보 및 비밀번호가 안전하게 변경되었습니다. 🔐", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(ctx, "회원 정보와 비밀번호가 변경되었어요.", android.widget.Toast.LENGTH_SHORT).show()
                                     } else {
                                         AuthManager.saveUser(ctx, currentUserId, currentNickname)
-                                        android.widget.Toast.makeText(ctx, "회원 정보가 성공적으로 저장되었습니다. 💾", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(ctx, "회원 정보가 저장되었어요.", android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                     onBackClick()
                                 } else if (selectedTab == AuthTab.LOGIN) {
                                     // ⚡ 로그인 시나리오
                                     if (currentPassword.isBlank()) {
-                                        android.widget.Toast.makeText(ctx, "비밀번호를 입력해 주세요. ⚠️", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(ctx, "비밀번호를 입력해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
                                         return@launch
                                     }
                                     val isMatch = AuthManager.checkUserCredentials(ctx, currentUserId, currentPassword)
@@ -628,32 +629,32 @@ fun AuthScreen(
                                         // 로그인 성공 시 세션 복구 및 마이페이지 워프
                                         val nicknameKey = if (currentUserId == "admin") "최고운영자" else "합리적쇼핑꾼"
                                         AuthManager.saveUser(ctx, currentUserId, nicknameKey)
-                                        android.widget.Toast.makeText(ctx, "로그인에 성공했습니다! 🎉", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(ctx, "로그인되었어요.", android.widget.Toast.LENGTH_SHORT).show()
                                         onBackClick()
                                     } else {
-                                        android.widget.Toast.makeText(ctx, "아이디 또는 비밀번호가 일치하지 않습니다. ⚠️", android.widget.Toast.LENGTH_LONG).show()
+                                        android.widget.Toast.makeText(ctx, "아이디 또는 비밀번호가 일치하지 않아요.", android.widget.Toast.LENGTH_LONG).show()
                                     }
                                 } else {
                                     // ⚡ 회원가입 시나리오
                                     if (currentPassword.isBlank() || currentNickname.isBlank()) {
-                                        android.widget.Toast.makeText(ctx, "비밀번호와 닉네임을 모두 입력해 주세요. ⚠️", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(ctx, "비밀번호와 닉네임을 모두 입력해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
                                         return@launch
                                     }
                                     if (currentPassword != confirmPassword) {
-                                        android.widget.Toast.makeText(ctx, "비밀번호가 서로 일치하지 않습니다. 확인해 주세요. ⚠️", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(ctx, "비밀번호가 서로 일치하지 않습니다.", android.widget.Toast.LENGTH_SHORT).show()
                                         return@launch
                                     }
-                                    
+
                                     // ID 중복 가입 체크
                                     val isRegistered = AuthManager.isUserRegistered(ctx, currentUserId)
                                     if (isRegistered) {
-                                        android.widget.Toast.makeText(ctx, "이미 가입된 사용자 ID입니다. 다른 ID를 사용해 주세요. ⚠️", android.widget.Toast.LENGTH_LONG).show()
+                                        android.widget.Toast.makeText(ctx, "이미 가입된 아이디입니다. 다른 아이디를 사용해 주세요.", android.widget.Toast.LENGTH_LONG).show()
                                         return@launch
                                     }
 
                                     // 신규 가입 처리 및 자동 로그인 세션 연동
                                     AuthManager.saveUserWithPassword(ctx, currentUserId, currentNickname, currentPassword)
-                                    android.widget.Toast.makeText(ctx, "회원가입 및 로그인이 완료되었습니다! 🎉", android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(ctx, "회원가입 및 로그인이 완료되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
                                     onBackClick()
                                 }
                             }
@@ -703,12 +704,12 @@ fun AuthScreen(
                             Button(
                                 onClick = {
                                     if (!socialAgreed) {
-                                        android.widget.Toast.makeText(ctx, "필수 약관에 동의하셔야 소셜 로그인이 가능합니다. ⚠️", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(ctx, "필수 약관에 동의해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
                                         return@Button
                                     }
                                     scope.launch {
                                         AuthManager.saveUser(ctx, "kakao_94821", "카카오쇼핑꾼")
-                                        android.widget.Toast.makeText(ctx, "카카오 간편 로그인 성공! 🎉", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(ctx, "카카오 로그인 완료", android.widget.Toast.LENGTH_SHORT).show()
                                         onBackClick()
                                     }
                                 },
@@ -719,19 +720,19 @@ fun AuthScreen(
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f).height(50.dp)
                             ) {
-                                Text("💬 카카오 로그인", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("카카오 로그인", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
 
                             // 네이버 로그인
                             Button(
                                 onClick = {
                                     if (!socialAgreed) {
-                                        android.widget.Toast.makeText(ctx, "필수 약관에 동의하셔야 소셜 로그인이 가능합니다. ⚠️", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(ctx, "필수 약관에 동의해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
                                         return@Button
                                     }
                                     scope.launch {
                                         AuthManager.saveUser(ctx, "naver_38291", "네이버쇼핑꾼")
-                                        android.widget.Toast.makeText(ctx, "네이버 간편 로그인 성공! 🎉", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(ctx, "네이버 로그인 완료", android.widget.Toast.LENGTH_SHORT).show()
                                         onBackClick()
                                     }
                                 },
@@ -742,7 +743,7 @@ fun AuthScreen(
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f).height(50.dp)
                             ) {
-                                Text("💚 네이버 로그인", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("네이버 로그인", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                         }
                     }
@@ -752,7 +753,7 @@ fun AuthScreen(
                         Spacer(modifier = Modifier.height(20.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
                         Spacer(modifier = Modifier.height(16.dp))
-                        
+
                         Text(
                             text = "로그인 정책 설정",
                             fontSize = 14.sp,
@@ -813,7 +814,7 @@ fun AuthScreen(
                             }
                         }
                     }
-                    
+
                     // 🔒 [Wow-Factor] 회원 정보 수정 모드일 때 하단 은밀한 회원탈퇴 트리거 배치
                     if (!isUserGuest) {
                         Spacer(modifier = Modifier.height(24.dp))
@@ -909,13 +910,13 @@ fun AuthScreen(
         AlertDialog(
             onDismissRequest = { showWithdrawConfirmDialog = false },
             title = { Text("회원 탈퇴 최종 확인", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error) },
-            text = { 
+            text = {
                 Text(
                     "정말 탈퇴하시겠습니까?\n\n" +
                     "탈퇴 즉시 백엔드 데이터베이스의 회원 정보가 완전히 삭제(DB 반영)되며, " +
                     "기기에 저장된 위시리스트, 최근 본 내역 및 모든 설정 데이터가 영구적으로 파기되어 다시는 복구할 수 없습니다.",
                     style = MaterialTheme.typography.bodyMedium
-                ) 
+                )
             },
             confirmButton = {
                 TextButton(
@@ -930,7 +931,7 @@ fun AuthScreen(
                                         password = withdrawPasswordInput
                                     )
                                 )
-                                
+
                                 if (response.isSuccessful && response.body()?.success == true) {
                                     // 백엔드 영구 DB 삭제 대성공 시 로컬 자격증명 및 데이터 클리어
                                     AuthManager.logout(ctx)
@@ -938,14 +939,14 @@ fun AuthScreen(
                                         com.ddaeany0919.insightdeal.local.db.AppDatabase.getDatabase(ctx).clearAllTables()
                                     }
                                     com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager.clearRecentDeals(ctx)
-                                    
+
                                     val appPrefs = ctx.getSharedPreferences("app", android.content.Context.MODE_PRIVATE)
                                     val dealPrefs = ctx.getSharedPreferences("deals", android.content.Context.MODE_PRIVATE)
                                     appPrefs.edit().clear().apply()
                                     dealPrefs.edit().clear().apply()
-                                    
+
                                     android.widget.Toast.makeText(ctx, "회원 탈퇴가 완료되어 DB에 실시간 반영되었습니다. 앱을 안전하게 종료합니다.", android.widget.Toast.LENGTH_LONG).show()
-                                    
+
                                     (ctx as? android.app.Activity)?.finishAffinity()
                                     android.os.Process.killProcess(android.os.Process.myPid())
                                 } else {

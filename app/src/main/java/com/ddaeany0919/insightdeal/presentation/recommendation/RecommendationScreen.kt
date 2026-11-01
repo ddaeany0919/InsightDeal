@@ -3,6 +3,7 @@ package com.ddaeany0919.insightdeal.presentation.recommendation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
@@ -16,7 +17,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.presentation.A11yIconButton
-import com.ddaeany0919.insightdeal.presentation.rememberSavedLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,7 +25,7 @@ fun RecommendationScreen(
     onDealClick: (DealItem) -> Unit,
     viewModel: RecommendationViewModel = viewModel()
 ) {
-    val listState = rememberSavedLazyListState(key = "recommend_list")
+    val listState = rememberLazyListState()
 
     Scaffold(
         topBar = {
@@ -62,7 +62,7 @@ fun RecommendationScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "🤖 AI 추천 기능 준비 중",
+                            text = "맞춤 추천 목록을 불러오고 있어요",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )

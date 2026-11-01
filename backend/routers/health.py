@@ -2,9 +2,9 @@ from fastapi import APIRouter
 from datetime import datetime
 
 # 스케줄러 전역 상태 및 DB 세션을 로드
-# 추후 파일 구조가 커지면 의존성 주입(DI)으로 빼는 것이 좋습니다.
-from backend.scheduler.main import SCHEDULER_STATE, SessionLocal
-from backend.models.models_v2 import Deal, Product
+from backend.scheduler.main import SCHEDULER_STATE
+from backend.database.session import SessionLocal
+from backend.database.models import Deal, Product
 
 router = APIRouter()
 

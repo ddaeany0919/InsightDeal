@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 class KeywordManagerViewModel : ViewModel() {
@@ -363,26 +364,30 @@ class KeywordManagerViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                // Optimistic UI: 로컬 DB에서 즉시 제거하여 반응성 확보
+                withContext(Dispatchers.IO) {
+                    val currentLocal = keywordDao.getAllKeywords()
+                    currentLocal.filter { it.keyword == keyword }.forEach { target ->
+                        keywordDao.deleteKeyword(target)
+                    }
+                }
+
                 val username = com.ddaeany0919.insightdeal.presentation.auth.AuthManager.getUsername(InsightDealApplication.instance).first()
                 val userOrDevice = if (username == "guest" || username.isNullOrEmpty()) deviceUuid else username
 
                 val request = AddKeywordRequest(device_uuid = userOrDevice, keyword = keyword)
                 val response = apiService.deleteUserKeyword(request)
+                // 로그인 계정과 디바이스 UUID 양쪽 모두에서 잔존 키워드 정리 보장
+                if (userOrDevice != deviceUuid) {
+                    try {
+                        apiService.deleteUserKeyword(AddKeywordRequest(device_uuid = deviceUuid, keyword = keyword))
+                    } catch (_: Exception) {}
+                }
                 if (response.isSuccessful && response.body()?.success == true) {
-                    // 로컬 DB에서도 비동기식으로 안전하게 추방
-                    viewModelScope.launch(Dispatchers.IO) {
-                        val currentLocal = keywordDao.getAllKeywords()
-                        val target = currentLocal.find { it.keyword == keyword }
-                        if (target != null) {
-                            keywordDao.deleteKeyword(target)
-                        }
-                    }
                     fetchKeywords()
-                } else {
-                    _errorMessage.value = response.body()?.message ?: "키워드 삭제 실패"
                 }
             } catch (e: Exception) {
-                _errorMessage.value = "네트워크 오류: ${e.localizedMessage}"
+                // 오프라인이나 일시적 네트워크 에러 시에도 로컬 삭제는 유지
             } finally {
                 _isLoading.value = false
             }

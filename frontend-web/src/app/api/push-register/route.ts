@@ -31,9 +31,13 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const body = await request.json();
-    const { endpoint } = body;
+    const { endpoint = '', device_uuid = '' } = body;
 
-    const response = await fetch(`${BACKEND_API_URL}/api/push/register-web?endpoint=${encodeURIComponent(endpoint)}`, {
+    const params = new URLSearchParams();
+    if (endpoint) params.set('endpoint', endpoint);
+    if (device_uuid) params.set('device_uuid', device_uuid);
+
+    const response = await fetch(`${BACKEND_API_URL}/api/push/register-web?${params.toString()}`, {
       method: 'DELETE'
     });
 

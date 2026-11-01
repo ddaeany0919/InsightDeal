@@ -49,7 +49,6 @@ class WishlistViewModel(
         .cachedIn(viewModelScope)
 
     init {
-        // ✨ Room Flow 구독하여 변경 사항 실시간 옵저빙 (Recomposition)
         viewModelScope.launch {
             wishlistRepository.getWishlistFlow().collect { items ->
                 if (items.isEmpty()) {
@@ -82,7 +81,7 @@ class WishlistViewModel(
     }
 
     fun loadWishlist() {
-        // 이미 init { }에서 Flow를 collect 중이므로, 별도의 action 불필요
+        // init 블록에서 Flow를 collect 중
     }
 
     fun checkPrice(item: WishlistItem) {
@@ -100,7 +99,6 @@ class WishlistViewModel(
                     lastChecked = LocalDateTime.now()
                 )
                 
-                // Room DB 업데이트 (Flow를 통해 UI 반영)
                 wishlistRepository.updateWishlist(updatedItem)
                 
             } catch (e: Exception) {
@@ -112,7 +110,8 @@ class WishlistViewModel(
     fun addItem(keyword: String, productUrl: String, targetPrice: Int, currentLowestPrice: Int? = null, currentLowestPlatform: String? = null) {
         viewModelScope.launch {
             try {
-                wishlistRepository.createWishlist(keyword, productUrl, targetPrice, currentLowestPrice, currentLowestPlatform)
+                val userId = runCatching { userIdProvider() }.getOrDefault("default")
+                wishlistRepository.createWishlist(keyword, productUrl, targetPrice, currentLowestPrice, currentLowestPlatform, userId)
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "아이템 추가 실패", e)
             }
@@ -134,7 +133,6 @@ class WishlistViewModel(
     }
 
     fun retry() {
-        // Retry logic for empty/error cases if needed
     }
 
     private fun loadPriceHistory() {

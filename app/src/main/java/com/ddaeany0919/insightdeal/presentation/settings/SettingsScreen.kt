@@ -1,7 +1,6 @@
 package com.ddaeany0919.insightdeal.presentation.settings
 
 import android.content.Context
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -10,23 +9,28 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -39,15 +43,9 @@ import coil.imageLoader
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
 import com.ddaeany0919.insightdeal.presentation.components.PinLockDialog
-import com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager
 import com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import com.ddaeany0919.insightdeal.network.UserWithdrawRequest
-import com.ddaeany0919.insightdeal.network.ApiService
 
 @OptIn(ExperimentalMaterial3Api::class, coil.annotation.ExperimentalCoilApi::class)
 @Composable
@@ -65,33 +63,28 @@ fun SettingsScreen(
     val savedUsername by AuthManager.getUsername(ctx).collectAsState(initial = "guest")
     val savedNickname by AuthManager.getNickname(ctx).collectAsState(initial = "guest")
 
-    // 앱 테마 본연의 Primary 브랜드 컬러 연동 (하드코딩 컬러 100% 척결)
     val brandAccent = MaterialTheme.colorScheme.primary
 
-    // SharedPreferences 연동
     val dealPrefs = remember { EncryptedPrefsManager.getEncryptedPrefs(ctx) }
     val appPrefs = remember { ctx.getSharedPreferences("app", Context.MODE_PRIVATE) }
 
-    // PIN 다이얼로그 제어 상태들
     var showPinDialog by remember { mutableStateOf(false) }
     var pinDialogSetupMode by remember { mutableStateOf(true) }
     var pinCorrectPin by remember { mutableStateOf("") }
     var pinSuccessCallback by remember { mutableStateOf<((String) -> Unit)?>(null) }
 
-    var isPinLockedEnabled by remember { 
-        mutableStateOf(dealPrefs.getBoolean("app_lock_enabled", false)) 
+    var isPinLockedEnabled by remember {
+        mutableStateOf(dealPrefs.getBoolean("app_lock_enabled", false))
     }
     var isBiometricEnabled by remember {
         mutableStateOf(dealPrefs.getBoolean("biometric_lock_enabled", false))
     }
     var isSecurityAccordionExpanded by remember { mutableStateOf(false) }
 
-
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("설정", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp) },
+                title = { Text("설정", fontWeight = FontWeight.Bold, fontSize = 19.sp, letterSpacing = (-0.4).sp) },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(
@@ -114,12 +107,10 @@ fun SettingsScreen(
                 .background(MaterialTheme.colorScheme.background)
                 .padding(paddingValues)
                 .verticalScroll(scrollState)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp) // 카드 간의 시원한 20.dp 여백 보장
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            // ==========================================
-            // 1. 사용자 계정 섹션 - 아크릴릭 18.dp 둥글기 프로필 링크 카드로 대전환 (설정과 가입 완벽 분리!)
-            // ==========================================
+            // 1. 사용자 계정 섹션
             val isUserGuest = savedUsername == "guest" || savedUsername.isNullOrEmpty()
             if (!isUserGuest) {
                 Column {
@@ -128,210 +119,15 @@ fun SettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onNavigateToAuth() },
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
-                        Column(modifier = Modifier.padding(20.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "👤 내 계정 정보",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = brandAccent,
-                                        fontWeight = FontWeight.Black
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = "현재 로그인 상태: $savedNickname ($savedUsername 님)",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                    contentDescription = "이동",
-                                    tint = brandAccent,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = "👉 터치하여 회원 정보 수정 및 정책 설정 화면으로 가기",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = brandAccent.copy(alpha = 0.8f),
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            }
-            
-            // ==========================================
-            // 2. 앱 설정 섹션 - 20.dp 넓은 간격의 설정 아이템
-            // ==========================================
-            Column {
-                SettingsSectionTitle("앱 설정")
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
-                ) {
-                    Column {
-                        // 테마 설정
-                        ExpandableThemeSetting(currentMode = mode) { newMode ->
-                            tm.setThemeMode(newMode)
-                        }
-                        
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
-                        
-                        // 알림 설정
-                        var notificationsEnabled by remember { 
-                            mutableStateOf(appPrefs.getBoolean("push_enabled", true)) 
-                        }
-                        SettingsSwitchRow(
-                            icon = Icons.Default.Notifications,
-                            title = "관심 키워드 실시간 알림",
-                            checked = notificationsEnabled,
-                            onCheckedChange = { 
-                                notificationsEnabled = it 
-                                appPrefs.edit().putBoolean("push_enabled", it).apply()
-                            }
-                        )
-                        
-                        // 🔔 알림 키워드 관리
-                        SettingsNavigationRow(
-                            icon = Icons.Default.NotificationsActive,
-                            title = "알림 키워드 관리",
-                            onClick = onNavigateToKeywordManager
-                        )
-                        
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
-                        
-                        // 데이터 절약 모드 
-                        var dataSaverEnabled by remember { mutableStateOf(appPrefs.getBoolean("data_saver", false)) }
-                        SettingsSwitchRow(
-                            icon = Icons.Default.DataUsage,
-                            title = "데이터 절약 모드 (저화질 이미지)",
-                            checked = dataSaverEnabled,
-                            onCheckedChange = { 
-                                dataSaverEnabled = it 
-                                appPrefs.edit().putBoolean("data_saver", it).apply()
-                            }
-                        )
-                        
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
-                        
-                        // 캐시 비우기
-                        var cacheSize by remember { mutableStateOf("계산 중...") }
-                        val maxRecommendedSize = 50f // 50MB 기준
-                        
-                        LaunchedEffect(Unit) {
-                            try {
-                                val size = ctx.cacheDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
-                                cacheSize = if (size > 1024 * 1024) "${size / (1024 * 1024)}MB" else "${size / 1024}KB"
-                            } catch (e: Exception) {
-                                cacheSize = "0MB"
-                            }
-                        }
-
-                        val cacheMegabytes = remember(cacheSize) {
-                            try {
-                                if (cacheSize.endsWith("MB")) {
-                                    cacheSize.removeSuffix("MB").toFloatOrNull() ?: 0f
-                                } else if (cacheSize.endsWith("KB")) {
-                                    (cacheSize.removeSuffix("KB").toFloatOrNull() ?: 0f) / 1024f
-                                } else 0f
-                            } catch (e: Exception) {
-                                0f
-                            }
-                        }
-
-                        val cacheProgress = (cacheMegabytes / maxRecommendedSize).coerceIn(0f, 1f)
-
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            SettingsNavigationRow(
-                                icon = Icons.Default.CleaningServices, 
-                                title = "캐시 데이터 비우기", 
-                                value = cacheSize,
-                                onClick = {
-                                    val imageLoader = ctx.imageLoader
-                                    imageLoader.diskCache?.clear()
-                                    imageLoader.memoryCache?.clear()
-                                    try {
-                                        ctx.cacheDir.deleteRecursively()
-                                    } catch (e: Exception) {}
-                                    cacheSize = "0MB"
-                                    android.widget.Toast.makeText(ctx, "임시 캐시 및 이미지 캐시가 깔끔하게 비워졌습니다. ✨", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            )
-
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp)
-                                    .padding(bottom = 18.dp)
-                            ) {
-                                LinearProgressIndicator(
-                                    progress = { cacheProgress },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(6.dp)
-                                        .background(
-                                            MaterialTheme.colorScheme.surfaceVariant,
-                                            shape = RoundedCornerShape(3.dp)
-                                        ),
-                                    color = brandAccent,
-                                    trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "원활한 앱 이용을 위해 50MB 이내 유지를 권장합니다.",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                                    )
-                                    Text(
-                                        text = "${String.format("%.1f", cacheProgress * 100)}%",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = brandAccent,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            Column {
-                SettingsSectionTitle("보안 설정")
-                
-                val arrowRotation by animateFloatAsState(
-                    targetValue = if (isSecurityAccordionExpanded) 180f else 0f,
-                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                    label = "ArrowRotation"
-                )
-                
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { isSecurityAccordionExpanded = !isSecurityAccordionExpanded }
-                                .padding(20.dp),
+                                .padding(horizontal = 16.dp, vertical = 16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -339,23 +135,191 @@ fun SettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = null,
-                                    tint = brandAccent,
-                                    modifier = Modifier.size(22.dp)
+                                SettingsIconBadge(
+                                    icon = Icons.Outlined.Person,
+                                    tint = brandAccent
                                 )
-                                Spacer(modifier = Modifier.width(16.dp))
+                                Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = "앱 잠금 및 생체 인증 설정 🔒", 
-                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        text = "내 계정 정보",
+                                        fontSize = 15.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "$savedNickname ($savedUsername)",
+                                        fontSize = 12.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = "이동",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2. 앱 설정 섹션
+            Column {
+                SettingsSectionTitle("앱 설정")
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                ) {
+                    Column {
+                        // 테마 설정
+                        ExpandableThemeSetting(currentMode = mode) { newMode ->
+                            tm.setThemeMode(newMode)
+                        }
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        // 알림 설정
+                        var notificationsEnabled by remember {
+                            mutableStateOf(appPrefs.getBoolean("push_enabled", true))
+                        }
+                        SettingsSwitchRow(
+                            icon = Icons.Outlined.Notifications,
+                            iconTint = Color(0xFFFF5A26),
+                            title = "관심 키워드 실시간 알림",
+                            checked = notificationsEnabled,
+                            onCheckedChange = {
+                                notificationsEnabled = it
+                                appPrefs.edit().putBoolean("push_enabled", it).apply()
+                            }
+                        )
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        // 알림 키워드 관리
+                        SettingsNavigationRow(
+                            icon = Icons.Outlined.NotificationsActive,
+                            iconTint = Color(0xFFFF5A26),
+                            title = "알림 키워드 관리",
+                            onClick = onNavigateToKeywordManager
+                        )
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        // 데이터 절약 모드
+                        var dataSaverEnabled by remember { mutableStateOf(appPrefs.getBoolean("data_saver", false)) }
+                        SettingsSwitchRow(
+                            icon = Icons.Outlined.DataUsage,
+                            iconTint = Color(0xFF0D9488),
+                            title = "데이터 절약 모드 (저화질 이미지)",
+                            checked = dataSaverEnabled,
+                            onCheckedChange = {
+                                dataSaverEnabled = it
+                                appPrefs.edit().putBoolean("data_saver", it).apply()
+                            }
+                        )
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        // 캐시 비우기
+                        var cacheSize by remember { mutableStateOf("계산 중...") }
+
+                        LaunchedEffect(Unit) {
+                            cacheSize = withContext(Dispatchers.IO) {
+                                try {
+                                    val size = ctx.cacheDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+                                    if (size > 1024 * 1024) "${size / (1024 * 1024)}MB" else "${size / 1024}KB"
+                                } catch (e: Exception) {
+                                    "0MB"
+                                }
+                            }
+                        }
+
+                        SettingsNavigationRow(
+                            icon = Icons.Outlined.CleaningServices,
+                            iconTint = Color(0xFF4E5968),
+                            title = "캐시 데이터 비우기",
+                            value = cacheSize,
+                            onClick = {
+                                val imageLoader = ctx.imageLoader
+                                imageLoader.memoryCache?.clear()
+                                cacheSize = "0MB"
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        imageLoader.diskCache?.clear()
+                                        ctx.cacheDir.deleteRecursively()
+                                    } catch (e: Exception) {}
+                                }
+                                android.widget.Toast.makeText(ctx, "임시 캐시와 이미지 캐시를 비웠습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+            }
+
+            // 3. 보안 설정 섹션
+            Column {
+                SettingsSectionTitle("보안 설정")
+
+                val arrowRotation by animateFloatAsState(
+                    targetValue = if (isSecurityAccordionExpanded) 180f else 0f,
+                    animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+                    label = "ArrowRotation"
+                )
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { isSecurityAccordionExpanded = !isSecurityAccordionExpanded }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                SettingsIconBadge(
+                                    icon = Icons.Outlined.Lock,
+                                    tint = brandAccent
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "앱 잠금 및 생체 인증",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = if (isPinLockedEnabled || isBiometricEnabled) "보안 잠금이 작동 중입니다." else "비활성화됨 (보안 강화를 위해 탭하세요)",
+                                        text = if (isPinLockedEnabled || isBiometricEnabled) "사용 중" else "사용 안 함",
                                         fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -363,34 +327,33 @@ fun SettingsScreen(
                                 imageVector = Icons.Default.KeyboardArrowDown,
                                 contentDescription = "펼치기",
                                 modifier = Modifier
-                                    .size(24.dp)
+                                    .size(20.dp)
                                     .graphicsLayer { rotationZ = arrowRotation },
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        
+
                         AnimatedVisibility(
                             visible = isSecurityAccordionExpanded,
-                            enter = expandVertically(animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)),
-                            exit = shrinkVertically(animationSpec = tween(300)) + fadeOut(animationSpec = tween(300))
+                            enter = expandVertically(animationSpec = tween(250)) + fadeIn(animationSpec = tween(250)),
+                            exit = shrinkVertically(animationSpec = tween(250)) + fadeOut(animationSpec = tween(250))
                         ) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f))
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                             ) {
                                 HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f),
-                                    thickness = 1.dp,
-                                    modifier = Modifier.padding(bottom = 8.dp)
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                                    thickness = 1.dp
                                 )
-                                
+
                                 // 1) PIN 비밀번호 앱 잠금
                                 SettingsSwitchRow(
-                                    icon = Icons.Default.Lock,
+                                    icon = Icons.Outlined.Password,
+                                    iconTint = brandAccent,
                                     title = "PIN 비밀번호 앱 잠금",
-                                    subtitle = "앱 시작 시 4자리 PIN 입력을 강제하여 소중한 개인정보를 안전하게 보호합니다.",
+                                    subtitle = "앱 시작 시 4자리 PIN 입력으로 개인정보를 보호합니다.",
                                     checked = isPinLockedEnabled,
                                     onCheckedChange = { isChecked ->
                                         if (isChecked) {
@@ -404,7 +367,7 @@ fun SettingsScreen(
                                                     .apply()
                                                 isPinLockedEnabled = true
                                                 isBiometricEnabled = false
-                                                android.widget.Toast.makeText(ctx, "PIN 잠금이 활성화되었습니다. 🔒", android.widget.Toast.LENGTH_SHORT).show()
+                                                android.widget.Toast.makeText(ctx, "PIN 잠금이 설정되었어요.", android.widget.Toast.LENGTH_SHORT).show()
                                             }
                                             showPinDialog = true
                                         } else {
@@ -427,9 +390,13 @@ fun SettingsScreen(
                                 )
 
                                 if (isPinLockedEnabled) {
-                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                                        modifier = Modifier.padding(horizontal = 16.dp)
+                                    )
                                     SettingsNavigationRow(
-                                        icon = Icons.Default.LockReset,
+                                        icon = Icons.Outlined.LockReset,
+                                        iconTint = brandAccent,
                                         title = "PIN 비밀번호 변경",
                                         onClick = {
                                             val currentPin = dealPrefs.getString("app_lock_pin", "") ?: ""
@@ -444,18 +411,16 @@ fun SettingsScreen(
                                                 }
                                                 showPinDialog = true
                                             } else {
-                                                // 1단계: 기존 PIN 비밀번호 대조
                                                 pinDialogSetupMode = false
                                                 pinCorrectPin = currentPin
                                                 pinSuccessCallback = {
-                                                    // 1단계 검증 성공 시 즉시 2단계 신규 PIN 설정 모드로 전환 기동
                                                     pinDialogSetupMode = true
                                                     pinCorrectPin = ""
                                                     pinSuccessCallback = { newPin ->
                                                         dealPrefs.edit()
                                                             .putString("app_lock_pin", newPin)
                                                             .apply()
-                                                        android.widget.Toast.makeText(ctx, "PIN 비밀번호가 성공적으로 변경되었습니다. ✨", android.widget.Toast.LENGTH_SHORT).show()
+                                                        android.widget.Toast.makeText(ctx, "PIN 번호가 변경되었어요.", android.widget.Toast.LENGTH_SHORT).show()
                                                     }
                                                     showPinDialog = true
                                                 }
@@ -464,26 +429,29 @@ fun SettingsScreen(
                                         }
                                     )
                                 }
-                                
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
-                                
+
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+
                                 // 2) 지문 인식 간편 앱 잠금
                                 SettingsSwitchRow(
-                                    icon = Icons.Default.Fingerprint,
+                                    icon = Icons.Outlined.Fingerprint,
+                                    iconTint = brandAccent,
                                     title = "지문 인식 간편 앱 잠금",
-                                    subtitle = "비밀번호 대신 지문/생체 인증으로 앱 잠금을 빠르고 안전하게 해제합니다.",
+                                    subtitle = "생체 인증으로 앱 잠금을 빠르게 해제합니다.",
                                     checked = isBiometricEnabled,
                                     onCheckedChange = { isChecked ->
                                         if (isChecked) {
-                                            // 하드웨어 및 지문 등록 여부 선행 검사 가드레일 작동
                                             val biometricManager = androidx.biometric.BiometricManager.from(ctx)
-                                            val authenticators = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or 
+                                            val authenticators = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
                                                                  androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
-                                            
+
                                             if (biometricManager.canAuthenticate(authenticators) != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
                                                 isBiometricEnabled = false
                                                 dealPrefs.edit().putBoolean("biometric_lock_enabled", false).apply()
-                                                android.widget.Toast.makeText(ctx, "기기에서 생체 인식 센서를 지원하지 않거나 등록된 지문이 없습니다. 🔒", android.widget.Toast.LENGTH_LONG).show()
+                                                android.widget.Toast.makeText(ctx, "기기에 등록된 생체 인증 정보가 없어요.", android.widget.Toast.LENGTH_LONG).show()
                                             } else {
                                                 val activity = ctx as? androidx.fragment.app.FragmentActivity
                                                 if (activity != null) {
@@ -502,7 +470,7 @@ fun SettingsScreen(
                                                                     .apply()
                                                                 isBiometricEnabled = true
                                                                 isPinLockedEnabled = false
-                                                                android.widget.Toast.makeText(ctx, "지문 인식 간편 잠금이 활성화되었습니다. 🔒", android.widget.Toast.LENGTH_SHORT).show()
+                                                                android.widget.Toast.makeText(ctx, "생체 인증 잠금이 설정되었어요.", android.widget.Toast.LENGTH_SHORT).show()
                                                             }
                                                             override fun onAuthenticationFailed() {
                                                                 super.onAuthenticationFailed()
@@ -523,7 +491,7 @@ fun SettingsScreen(
                                                         .apply()
                                                     isBiometricEnabled = true
                                                     isPinLockedEnabled = false
-                                                    android.widget.Toast.makeText(ctx, "생체 지문 잠금이 활성화되었습니다. (폴백 활성)", android.widget.Toast.LENGTH_SHORT).show()
+                                                    android.widget.Toast.makeText(ctx, "생체 지문 잠금이 활성화되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
                                                 }
                                             }
                                         } else {
@@ -538,42 +506,44 @@ fun SettingsScreen(
                     }
                 }
             }
-            
-            // ==========================================
+
             // 4. 플랫폼(출처) 필터링 섹션
-            // ==========================================
             Column {
                 SettingsSectionTitle("플랫폼(출처) 필터링")
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     var expanded by remember { mutableStateOf(false) }
-                    
+
                     Column {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { expanded = !expanded }
-                                .padding(20.dp),
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.FilterList, 
-                                contentDescription = null, 
-                                tint = brandAccent
+                            SettingsIconBadge(
+                                icon = Icons.Outlined.Tune,
+                                tint = Color(0xFF4F46E5)
                             )
-                            Spacer(modifier = Modifier.width(16.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = "표시할 플랫폼 선택", 
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), 
+                                text = "표시할 커뮤니티 출처 선택",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f)
                             )
                             Icon(
                                 imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
 
@@ -582,30 +552,73 @@ fun SettingsScreen(
                             enter = expandVertically(),
                             exit = shrinkVertically()
                         ) {
-                            val allPlatforms = listOf("뽐뿌", "퀘이사존", "펨코", "루리웹", "클리앙", "알리뽐뿌", "빠삭국내", "빠삭해외")
-                            var disabledPlatforms by remember { 
-                                mutableStateOf(appPrefs.getStringSet("disabled_platforms", emptySet()) ?: emptySet()) 
+                            val allPlatforms = listOf(
+                                "뽐뿌" to Color(0xFF1565C0),
+                                "퀘이사존" to Color(0xFFE65100),
+                                "펨코" to Color(0xFF0288D1),
+                                "루리웹" to Color(0xFF0D47A1),
+                                "클리앙" to Color(0xFF37474F),
+                                "알리뽐뿌" to Color(0xFFD84315),
+                                "빠삭국내" to Color(0xFFC2185B),
+                                "빠삭해외" to Color(0xFF880E4F)
+                            )
+                            var disabledPlatforms by remember {
+                                mutableStateOf(appPrefs.getStringSet("disabled_platforms", emptySet()) ?: emptySet())
                             }
-                            
-                            Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 20.dp)) {
-                                allPlatforms.forEachIndexed { index, platform ->
-                                    SettingsSwitchRow(
-                                        icon = Icons.Default.CheckCircle,
-                                        title = "$platform",
-                                        checked = !disabledPlatforms.contains(platform),
-                                        onCheckedChange = { isEnabled ->
-                                            val newSet = disabledPlatforms.toMutableSet()
-                                            if (isEnabled) {
-                                                newSet.remove(platform)
-                                            } else {
-                                                newSet.add(platform)
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                            ) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                                allPlatforms.forEachIndexed { index, (platform, dotColor) ->
+                                    val isEnabled = !disabledPlatforms.contains(platform)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                val newSet = disabledPlatforms.toMutableSet()
+                                                if (!isEnabled) newSet.remove(platform) else newSet.add(platform)
+                                                disabledPlatforms = newSet
+                                                appPrefs.edit().putStringSet("disabled_platforms", newSet).apply()
                                             }
-                                            disabledPlatforms = newSet
-                                            appPrefs.edit().putStringSet("disabled_platforms", newSet).apply()
-                                        }
-                                    )
+                                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(dotColor)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            text = platform,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Switch(
+                                            checked = isEnabled,
+                                            onCheckedChange = { nextEnabled ->
+                                                val newSet = disabledPlatforms.toMutableSet()
+                                                if (nextEnabled) newSet.remove(platform) else newSet.add(platform)
+                                                disabledPlatforms = newSet
+                                                appPrefs.edit().putStringSet("disabled_platforms", newSet).apply()
+                                            },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = Color.White,
+                                                checkedTrackColor = MaterialTheme.colorScheme.primary
+                                            )
+                                        )
+                                    }
                                     if (index < allPlatforms.size - 1) {
-                                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.08f))
+                                        HorizontalDivider(
+                                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                                            modifier = Modifier.padding(horizontal = 16.dp)
+                                        )
                                     }
                                 }
                             }
@@ -613,71 +626,37 @@ fun SettingsScreen(
                     }
                 }
             }
-            
-            // ==========================================
-            // 5. 정보 및 지원 섹션 (버전 정보, 의견 남기기, 약관 및 정책 통합)
-            // ==========================================
+
+            // 5. 정보 및 지원 섹션
             Column {
                 SettingsSectionTitle("정보 및 지원")
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column {
-                        // 1) 버전 정보 및 업데이트 유도 배너
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            SettingsNavigationRow(
-                                icon = Icons.Default.Info, 
-                                title = "버전 정보", 
-                                value = "1.0.0 (최신: 1.0.2)"
-                            )
-                            
-                            // 🚀 [Wow-Factor] 버전이 낮을 시 최신 버전 업데이트 가이드 배너
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 20.dp)
-                                    .padding(bottom = 16.dp)
-                                    .background(Color(0xFFFFECE6), RoundedCornerShape(12.dp))
-                                    .clickable {
-                                        val playStoreIntent = android.content.Intent(
-                                            android.content.Intent.ACTION_VIEW, 
-                                            android.net.Uri.parse("market://details?id=" + ctx.packageName)
-                                        )
-                                        try {
-                                            ctx.startActivity(playStoreIntent)
-                                        } catch (e: Exception) {
-                                            val webIntent = android.content.Intent(
-                                                android.content.Intent.ACTION_VIEW, 
-                                                android.net.Uri.parse("https://play.google.com/store/apps/details?id=" + ctx.packageName)
-                                            )
-                                            ctx.startActivity(webIntent)
-                                        }
-                                    }
-                                    .padding(horizontal = 14.dp, vertical = 10.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Text("🚀", fontSize = 14.sp)
-                                    Text(
-                                        text = "최신 버전으로 업데이트할 수 있어요.",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFFFF9800) // 은은한 브랜드 오렌지
-                                    )
-                                }
-                            }
-                        }
-                        
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
-                        
-                        // 2) 의견 남기기 (기존 문의하기 개편)
+                        // 1) 버전 정보
                         SettingsNavigationRow(
-                            icon = Icons.Default.Feedback, 
-                            title = "의견 남기기", 
+                            icon = Icons.Outlined.Info,
+                            iconTint = Color(0xFF4E5968),
+                            title = "버전 정보",
+                            value = "1.0.0",
+                            showChevron = false
+                        )
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        // 2) 의견 남기기
+                        SettingsNavigationRow(
+                            icon = Icons.Outlined.ChatBubbleOutline,
+                            iconTint = brandAccent,
+                            title = "의견 남기기",
                             onClick = {
                                 val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:support@insightdeal.com"))
                                 intent.putExtra(android.content.Intent.EXTRA_SUBJECT, "[InsightDeal] 소중한 의견 남기기")
@@ -689,35 +668,38 @@ fun SettingsScreen(
                                 }
                             }
                         )
-                        
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
-                        
-                        // 3) 약관 및 정책 3대 공식 약관 탑재
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        // 3) 약관 및 정책
                         var showPolicyDialog by remember { mutableStateOf(false) }
-                        var selectedPolicyTab by remember { mutableStateOf(0) } // 0: 서비스 약관, 1: 운영 정책, 2: 개인정보 처리방침
-                        
+                        var selectedPolicyTab by remember { mutableStateOf(0) }
+
                         SettingsNavigationRow(
-                            icon = Icons.Default.Assignment, 
-                            title = "약관 및 정책", 
+                            icon = Icons.Outlined.Description,
+                            iconTint = Color(0xFF4E5968),
+                            title = "약관 및 정책",
                             onClick = {
                                 selectedPolicyTab = 0
                                 showPolicyDialog = true
                             }
                         )
-                        
+
                         if (showPolicyDialog) {
                             AlertDialog(
                                 onDismissRequest = { showPolicyDialog = false },
-                                title = { 
+                                title = {
                                     Column(modifier = Modifier.fillMaxWidth()) {
-                                        Text("약관 및 정책", fontWeight = FontWeight.Black, fontSize = 18.sp, color = brandAccent)
+                                        Text("약관 및 정책", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
                                         Spacer(modifier = Modifier.height(14.dp))
-                                        
-                                        // 탭 셀렉터 비주얼
+
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
                                                 .padding(2.dp),
                                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                                         ) {
@@ -757,51 +739,49 @@ fun SettingsScreen(
                                             text = when(selectedPolicyTab) {
                                                 0 -> """
                                                     제 1 조 (목적)
-                                                    본 약관은 InsightDeal(이하 "회사")이 기기 내 로컬 핫딜 수집 및 공유 서비스(이하 "서비스")를 제공함에 있어 회사와 이용자 간의 권리, 의무 및 책임 사항을 규정함을 목적으로 합니다.
-                                                    
+                                                    본 약관은 인사이트딜(이하 "서비스")의 이용과 관련하여 서비스와 이용자 간의 권리, 의무 및 책임 사항을 규정함을 목적으로 합니다.
+
                                                     제 2 조 (용어의 정의)
-                                                    1. "서비스"라 함은 뽐뿌, 펨코, 클리앙 등 국내 주요 오픈 핫딜 채널의 할인율 및 추천 가격 지표를 AI로 분석하여 기기 내부의 로컬 랭킹 엔진으로 제공하는 어플리케이션을 의미합니다.
-                                                    2. "이용자"라 함은 본 약관에 동의하고 서비스를 이용하는 회원 및 비회원을 말합니다.
-                                                    
+                                                    1. "서비스"란 국내 주요 커뮤니티의 할인 정보 및 시세 추이를 모아 제공하는 모바일 애플리케이션 및 관련 서비스를 의미합니다.
+                                                    2. "이용자"란 본 약관에 따라 서비스를 이용하는 회원 및 비회원을 말합니다.
+
                                                     제 3 조 (약관의 효력 및 변경)
-                                                    1. 본 약관은 이용자가 동의함으로써 효력이 발생하며, 회사는 관련 법령을 위배하지 않는 범위 내에서 본 약관을 개정할 수 있습니다.
-                                                    2. 약관 개정 시 회사는 최소 7일 전에 앱 내 공지사항을 통해 고지합니다.
-                                                    
+                                                    1. 본 약관은 서비스 화면에 게시하거나 기타의 방법으로 공지함으로써 효력이 발생합니다.
+                                                    2. 관련 법령을 위배하지 않는 범위 내에서 약관을 개정할 수 있으며, 변경 시 사전에 공지합니다.
+
                                                     제 4 조 (이용자의 의무)
-                                                    1. 이용자는 타인의 명의를 도용하여 회원가입을 하거나 부정 정보를 등록하여서는 안 됩니다.
-                                                    2. 기기 내 로컬 DB를 인위적으로 무단 덤프하거나 상업적 목적으로 활용하는 것을 금지합니다.
+                                                    1. 타인의 정보를 도용하거나 허위 사실을 등록해서는 안 됩니다.
+                                                    2. 서비스의 데이터를 무단으로 수집·복제하거나 상업적 목적으로 활용하는 행위를 금지합니다.
                                                 """.trimIndent()
-                                                
+
                                                 1 -> """
-                                                    [InsightDeal 커뮤니티 운영 정책]
-                                                    
-                                                    1. 핫딜 게시물 및 댓글 작성 규칙
-                                                    - 특정 판매업자와의 금전적 제휴 및 백링크 어뷰징 목적의 리베이트 링크 업로드는 강력히 제한됩니다. 발견 시 경고 없이 영구 이용 제재 처리됩니다.
-                                                    - 타인에 대한 인신공격, 욕설, 허위 사실 유포 및 합리적이지 않은 비방 댓글은 필터링 엔진에 의해 자동 마스킹 및 노출 제재를 받습니다.
-                                                    
-                                                    2. AI 점수(꿀딜 투표) 남용 금지
-                                                    - 특정 판매처의 어뷰징 목적 투표 선점 행위(동일 IP/동일 계정의 비정상 반복 클릭)는 로컬 방어 블로킹 필터에 의해 점수 환산에서 제외됩니다.
-                                                    
-                                                    3. 이용 제재 기준
-                                                    - 1회 적발: 경고 및 해당 게시글 블라인드
-                                                    - 2회 적발: 작성 제한 7일
-                                                    - 3회 적발: 영구 계정 제재 및 회원탈퇴 조치
+                                                    [커뮤니티 운영 정책]
+
+                                                    1. 게시물 및 댓글 작성 기준
+                                                    - 홍보·제휴 링크 무단 게시, 도배, 사기성 게시물은 사전 통보 없이 삭제 및 이용 제한될 수 있습니다.
+                                                    - 타인에 대한 비방, 욕설, 허위 사실 유포 게시물은 신고 및 모니터링을 통해 제한됩니다.
+
+                                                    2. 투표 및 참여 제한
+                                                    - 비정상적인 반복 참여나 여론 조작 목적의 행위는 집계에서 제외될 수 있습니다.
+
+                                                    3. 이용 제한 기준
+                                                    - 운영 정책 위반 시 게시물 숨김 처리 및 계정 이용이 제한될 수 있습니다.
                                                 """.trimIndent()
-                                                
+
                                                 else -> """
-                                                    [개인정보 처리방침 (로컬 안심 보호)]
-                                                    
-                                                    InsightDeal은 이용자의 개인정보 보호를 최우선 가치로 수호하며, 현행 개인정보보호법 및 관계 법령을 철저히 준수합니다.
-                                                    
-                                                    1. 개인정보의 수집 항목 및 목적
-                                                    - 회사는 회원가입 및 본인 인증 시점에 고유 ID, 비밀번호, 닉네임을 수집합니다.
-                                                    - 수집 목적: 계정 세션 동기화, 마이페이지 꿀 내공 서비스 관리 및 1:1 로컬 AI 브리핑 분석.
-                                                    
-                                                    2. 개인정보의 기기 내 로컬 수호 원칙
-                                                    - 본 앱은 이용자가 조회한 최근 본 핫딜 내역 및 선호 키워드를 외부 서버로 일절 전송하지 않고 기기 내부의 보안 저장소(EncryptedSharedPreferences)에만 100% 암호화 보존합니다.
-                                                    
-                                                    3. 파기 절차 및 영구 삭제
-                                                    - 이용자가 회원탈퇴를 단행할 시, 백엔드 데이터베이스의 세션 레코드(DB)가 즉각 파기되며 기기에 축적된 모든 암호화 캐시가 E2E로 영구 포맷되어 재생이 불가능하도록 완전 소멸됩니다.
+                                                    [개인정보 처리방침]
+
+                                                    인사이트딜은 개인정보보호법 등 관련 법령을 준수하며 이용자의 개인정보를 안전하게 관리합니다.
+
+                                                    1. 수집하는 개인정보 항목 및 목적
+                                                    - 수집 항목: 아이디, 비밀번호, 닉네임, 기기 알림 토큰(선택)
+                                                    - 이용 목적: 회원 식별, 키워드 알림 발송, 찜 목록 및 커뮤니티 활동 관리
+
+                                                    2. 보관 및 보호
+                                                    - 비밀번호는 암호화되어 저장되며, 최근 본 상품 등 기기 설정 정보는 기기 내 저장소에 안전하게 보관됩니다.
+
+                                                    3. 보유 기간 및 파기
+                                                    - 회원 탈퇴 시 수집된 개인정보 및 활동 내역은 지체 없이 파기됩니다.
                                                 """.trimIndent()
                                             },
                                             style = MaterialTheme.typography.bodyMedium,
@@ -809,10 +789,10 @@ fun SettingsScreen(
                                         )
                                     }
                                 },
-                                confirmButton = { 
-                                    TextButton(onClick = { showPolicyDialog = false }) { 
-                                        Text("동의 및 확인", color = brandAccent, fontWeight = FontWeight.Bold) 
-                                    } 
+                                confirmButton = {
+                                    TextButton(onClick = { showPolicyDialog = false }) {
+                                        Text("동의 및 확인", color = brandAccent, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             )
                         }
@@ -820,20 +800,18 @@ fun SettingsScreen(
                 }
             }
 
-
-            
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
-                "Insight Deal © 2026",
+                "InsightDeal © 2026",
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 
-    // PIN 잠금 다이얼로그 노출
     if (showPinDialog) {
         PinLockDialog(
             title = if (pinDialogSetupMode) "보안 PIN 번호 등록" else "PIN 비밀번호 입력",
@@ -850,18 +828,41 @@ fun SettingsScreen(
 }
 
 @Composable
+private fun SettingsIconBadge(
+    icon: ImageVector,
+    tint: Color
+) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(tint.copy(alpha = 0.10f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(19.dp)
+        )
+    }
+}
+
+@Composable
 fun SettingsSectionTitle(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(bottom = 12.dp, start = 4.dp, top = 8.dp)
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(bottom = 8.dp, start = 4.dp, top = 4.dp)
     )
 }
 
 @Composable
 fun SettingsSwitchRow(
     icon: ImageVector,
+    iconTint: Color = MaterialTheme.colorScheme.primary,
     title: String,
     subtitle: String? = null,
     checked: Boolean,
@@ -871,33 +872,31 @@ fun SettingsSwitchRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 20.dp, vertical = 20.dp),
+            .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = icon, 
-            contentDescription = null, 
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(24.dp)
-        )
-        Spacer(modifier = Modifier.width(16.dp))
+        SettingsIconBadge(icon = icon, tint = iconTint)
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = title, 
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
             )
             if (subtitle != null) {
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
-                    text = subtitle, 
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 16.sp
                 )
             }
         }
         Spacer(modifier = Modifier.width(12.dp))
         Switch(
-            checked = checked, 
+            checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
@@ -910,39 +909,47 @@ fun SettingsSwitchRow(
 @Composable
 fun SettingsNavigationRow(
     icon: ImageVector,
+    iconTint: Color = MaterialTheme.colorScheme.primary,
     title: String,
     value: String? = null,
+    showChevron: Boolean = true,
     onClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .bounceClick(scaleDown = 0.96f) { onClick() }
-            .padding(20.dp),
+            .bounceClick(scaleDown = 0.98f) { onClick() }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = icon, 
-            contentDescription = null, 
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(24.dp)
-        )
-        Spacer(modifier = Modifier.width(16.dp))
+        SettingsIconBadge(icon = icon, tint = iconTint)
+        Spacer(modifier = Modifier.width(12.dp))
         Text(
-            text = title, 
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold), 
+            text = title,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
         )
         if (value != null) {
-            Text(text = value, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = value,
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (showChevron) {
+                Spacer(modifier = Modifier.width(6.dp))
+            }
         }
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-            contentDescription = null,
-            modifier = Modifier.size(14.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-        )
+        if (showChevron) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            )
+        }
     }
 }
 
@@ -952,25 +959,25 @@ fun ExpandableThemeSetting(
     onModeSelected: (ThemeMode) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    
+
     Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { expanded = !expanded }
-                .padding(20.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.Palette, 
-                contentDescription = null, 
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
+            SettingsIconBadge(
+                icon = Icons.Outlined.Palette,
+                tint = MaterialTheme.colorScheme.primary
             )
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "테마 설정", 
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold), 
+                text = "테마 설정",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
             )
             Text(
@@ -980,23 +987,30 @@ fun ExpandableThemeSetting(
                     ThemeMode.DARK -> "다크 모드"
                     ThemeMode.AMOLED -> "블랙(AMOLED)"
                 },
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
             Icon(
                 imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
             )
         }
-        
+
         AnimatedVisibility(
             visible = expanded,
             enter = expandVertically(),
             exit = shrinkVertically()
         ) {
-            Column(modifier = Modifier.padding(start = 56.dp, end = 20.dp, bottom = 20.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                    .padding(start = 52.dp, end = 16.dp, bottom = 12.dp, top = 4.dp)
+            ) {
                 ThemeOptionRow("시스템 기본", ThemeMode.SYSTEM, currentMode, onModeSelected)
                 ThemeOptionRow("라이트 모드", ThemeMode.LIGHT, currentMode, onModeSelected)
                 ThemeOptionRow("다크 모드", ThemeMode.DARK, currentMode, onModeSelected)
@@ -1017,7 +1031,7 @@ private fun ThemeOptionRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onSelect(value) }
-            .padding(vertical = 12.dp),
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         RadioButton(
@@ -1025,10 +1039,11 @@ private fun ThemeOptionRow(
             onClick = { onSelect(value) },
             colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
         )
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            fontSize = 14.sp,
+            fontWeight = if (current == value) FontWeight.Bold else FontWeight.Medium,
             color = if (current == value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
         )
     }

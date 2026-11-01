@@ -1,6 +1,7 @@
 package com.ddaeany0919.insightdeal.network
 
 import android.util.Log
+import com.ddaeany0919.insightdeal.BuildConfig
 import com.google.gson.GsonBuilder
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -9,79 +10,86 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
 /**
- * 🌐 통합 네트워크 모듈
- * 
+ * 통합 네트워크 모듈
+ *
  * 모든 Repository가 공유하는 단일 Retrofit 인스턴스
  */
 object NetworkModule {
     
     internal const val TAG = "NetworkModule"
     
-    // AWS Lightsail 상용 API 서버 IP 주소로 지정
-    private const val BASE_URL = "http://3.35.205.24:8080/"
+    // BuildConfig.BASE_URL 연동 (Debug: 10.0.2.2:8080, Release: 운영 서버 URL)
+    val BASE_URL: String = BuildConfig.BASE_URL
     
-    // 타임아웃 설정 (AI 파서 사용 시 긴 응답 시간 고려)
-    private const val CONNECT_TIMEOUT = 120L
-    private const val READ_TIMEOUT = 120L
-    private const val WRITE_TIMEOUT = 120L
+    // 빠른 실패 및 무한 로딩 방지를 위한 타임아웃 설정
+    private const val CONNECT_TIMEOUT = 8L
+    private const val READ_TIMEOUT = 15L
+    private const val WRITE_TIMEOUT = 15L
     
     /**
-     * 🔧 OkHttp 클라이언트 (싱글톤)
+     * OkHttp 클라이언트 (싱글톤)
      */
     val okHttpClient: OkHttpClient by lazy {
-        Log.d(TAG, "🔧 OkHttpClient 초기화 중...")
-        Log.d(TAG, "  ⏱️ Timeouts: connect=${CONNECT_TIMEOUT}s, read=${READ_TIMEOUT}s, write=${WRITE_TIMEOUT}s")
+        if (BuildConfig.DEBUG_MODE) {
+            Log.d(TAG, "OkHttpClient 초기화 중 (BASE_URL=$BASE_URL)")
+        }
         OkHttpClient.Builder()
             .connectTimeout(CONNECT_TIMEOUT, TimeUnit.SECONDS)
             .readTimeout(READ_TIMEOUT, TimeUnit.SECONDS)
             .writeTimeout(WRITE_TIMEOUT, TimeUnit.SECONDS)
             .addInterceptor(createLoggingInterceptor())
             .addInterceptor(createHeaderInterceptor())
-            .build().also {
-                Log.d(TAG, "✅ OkHttpClient 생성 완료")
-            }
+            .build()
     }
     
     /**
-     * 📝 로깅 인터셉터
+     * 로깅 인터셉터 (출시 빌드에서는 본문 노출 및 성능 저하 방지를 위해 비활성화)
      */
     private fun createLoggingInterceptor(): HttpLoggingInterceptor {
         return HttpLoggingInterceptor { message ->
-            Log.d(TAG, "🌐 HTTP: $message")
+            if (BuildConfig.DEBUG_MODE) {
+                Log.d(TAG, "HTTP: $message")
+            }
         }.apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG_MODE) {
+                HttpLoggingInterceptor.Level.BODY
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
         }
     }
     
     /**
-     * 📋 공통 헤더 인터셉터
+     * 공통 헤더 인터셉터
      */
     private fun createHeaderInterceptor() = okhttp3.Interceptor { chain ->
         val original = chain.request()
-        Log.d(TAG, "📤 Request: ${original.method} ${original.url}")
-        
         val requestBuilder = original.newBuilder()
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
-            .header("User-Agent", "InsightDeal-Android/1.0")
+            .header("User-Agent", "InsightDeal-Android/${BuildConfig.VERSION_NAME}")
         
         val request = requestBuilder.build()
         val startTime = System.currentTimeMillis()
         
         try {
             val response = chain.proceed(request)
-            val duration = System.currentTimeMillis() - startTime
-            Log.d(TAG, "📥 Response: ${response.code} in ${duration}ms")
+            if (BuildConfig.DEBUG_MODE) {
+                val duration = System.currentTimeMillis() - startTime
+                Log.d(TAG, "Response: ${response.code} in ${duration}ms")
+            }
             response
         } catch (e: Exception) {
-            val duration = System.currentTimeMillis() - startTime
-            Log.e(TAG, "❌ Request failed after ${duration}ms: ${e.message}", e)
+            if (BuildConfig.DEBUG_MODE) {
+                val duration = System.currentTimeMillis() - startTime
+                Log.e(TAG, "Request failed after ${duration}ms: ${e.message}", e)
+            }
             throw e
         }
     }
     
     /**
-     * 🔧 Gson 설정
+     * Gson 설정
      */
     private val gson = GsonBuilder()
         .setLenient()
@@ -89,29 +97,20 @@ object NetworkModule {
         .create()
     
     /**
-     * 🌐 Retrofit 인스턴스 (싱글톤)
+     * Retrofit 인스턴스 (싱글톤)
      */
     val retrofit: Retrofit by lazy {
-        Log.d(TAG, "🌐 Retrofit 초기화 중...")
-        Log.d(TAG, "  🔗 BASE_URL: $BASE_URL")
         Retrofit.Builder()
             .baseUrl(BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create(gson))
-            .build().also {
-                Log.d(TAG, "✅ Retrofit 생성 완료")
-            }
+            .build()
     }
     
     /**
-     * 📡 API 서비스 생성 헬퍼
+     * API 서비스 생성 헬퍼
      */
     inline fun <reified T> createService(): T {
-        val tag = "NetworkModule" // inline 함수는 클래스 멤버에 접근 불가
-        val serviceName = T::class.java.simpleName
-        Log.d(tag, "📡 Creating service: $serviceName")
-        return retrofit.create(T::class.java).also {
-            Log.d(tag, "✅ Service created: $serviceName")
-        }
+        return retrofit.create(T::class.java)
     }
 }

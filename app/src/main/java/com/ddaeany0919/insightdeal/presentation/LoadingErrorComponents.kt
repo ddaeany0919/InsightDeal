@@ -21,7 +21,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 
 /**
@@ -40,18 +42,22 @@ fun LoadingFeed() {
         ), label = "alphaAnim"
     )
 
-    val shimmerBrush = Brush.linearGradient(
-        colors = listOf(
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
-            MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+    val baseColor = MaterialTheme.colorScheme.onSurface
+    val shimmerBrush = remember(baseColor) {
+        Brush.linearGradient(
+            colors = listOf(
+                baseColor.copy(alpha = 0.06f),
+                baseColor.copy(alpha = 0.16f),
+                baseColor.copy(alpha = 0.06f)
+            )
         )
-    )
+    }
 
     LazyColumn(
-        contentPadding = PaddingValues(vertical = 8.dp)
+        contentPadding = PaddingValues(vertical = 8.dp),
+        modifier = Modifier.graphicsLayer { this.alpha = alpha }
     ) {
-        items(5) {
+        items(count = 5, key = { it }, contentType = { "loading_skeleton" }) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -246,7 +252,7 @@ fun OfflineErrorState(
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Text(
-                    text = "🔌 오프라인 보기",
+                    text = "저장된 목록 보기",
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)

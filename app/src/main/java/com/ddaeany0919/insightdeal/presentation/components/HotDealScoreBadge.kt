@@ -161,13 +161,13 @@ private fun ScoreBreakdownChart(breakdown: ScoreBreakdown) {
             modifier = Modifier.padding(bottom = 12.dp)
         )
         
-        ScoreBarItem("💬 댓글 감정", breakdown.sentiment, Color(0xFF4CAF50))
+        ScoreBarItem("댓글 반응", breakdown.sentiment, Color(0xFF4CAF50))
         Spacer(modifier = Modifier.height(8.dp))
         
-        ScoreBarItem("👥 커뮤니티 반응", breakdown.community, Color(0xFF2196F3))
+        ScoreBarItem("커뮤니티 추천", breakdown.community, Color(0xFF2196F3))
         Spacer(modifier = Modifier.height(8.dp))
         
-        ScoreBarItem("🏆 사이트 신뢰도", breakdown.site, Color(0xFFFF9800))
+        ScoreBarItem("출처 신뢰도", breakdown.site, Color(0xFFFF9800))
         Spacer(modifier = Modifier.height(8.dp))
         
         ScoreBarItem("⏰ 정보 신선도", breakdown.freshness, Color(0xFF9C27B0))

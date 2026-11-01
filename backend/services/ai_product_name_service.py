@@ -3,7 +3,7 @@ import requests
 import json
 import logging
 
-GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1/models/gemini-flash-latest:generateContent'
+GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
 
 class AIProductNameService:
     @staticmethod
@@ -21,8 +21,16 @@ class AIProductNameService:
         from backend.core.ai_utils import get_random_gemini_key
         api_key = get_random_gemini_key()
         if not api_key:
-            logging.error("[AI] API Key가 설정되지 않았습니다. 모든 상품을 정상으로 처리합니다.")
-            return {str(item['index']): "정상" for item in items}
+            bad_tokens = ("낱개", "부품", "케이스만", "필름만", "보호필름", "강화유리", "스트랩", "번호이동", "약정", "렌탈", "인쇄", "복사", "대여", "중고", "리퍼", "빈박스")
+            kw_low = (keyword or "").lower()
+            result = {}
+            for item in items:
+                t_low = (item.get("title") or "").lower()
+                if any(bt in t_low for bt in bad_tokens if bt not in kw_low):
+                    result[str(item["index"])] = "비정상(부품/약정)"
+                else:
+                    result[str(item["index"])] = "정상"
+            return result
         
         prompt = f"""
 사용자가 검색한 키워드: '{keyword}'
@@ -198,7 +206,7 @@ key는 상품 번호(문자열), value는 '정상' 또는 '비정상(사유)'로
             "delonghi": "드롱기", "tefal": "테팔", "anker": "앤커", "belkin": "belkin",
             "iptime": "아이피타임", "corsair": "커세어", "razer": "레이저", "msi": "MSI",
             "gigabyte": "기가바이트", "acer": "에이서", "crucial": "크루셜", "sandisk": "샌디스크",
-            "seagate": "시게이트", "wd": "웨스턴디지털"
+            "seagate": "시게이트", "wd": "웨스턴디지털", "baseus": "베이스어스", "베이스어스": "베이스어스", "qcy": "QCY", "vention": "벤션", "벤션": "벤션", "ugreen": "유그린", "유그린": "유그린", "toocki": "투키", "투키": "투키", "edifier": "에디파이어", "에디파이어": "에디파이어"
         }
         
         found_brand = None
@@ -232,17 +240,25 @@ key는 상품 번호(문자열), value는 '정상' 또는 '비정상(사유)'로
         if found_brand and found_model:
             logging.info(f"[하이브리드 파서] 로컬 파싱 적중! '{product_title}' -> brand: {found_brand}, model: {found_model}")
             return {"brand": found_brand, "model_code": found_model}
+
+        # 적립/이벤트/식품/생필품 등 고유 하드웨어 모델코드가 없는 게시글은 외부 LLM 호출 없이 즉시 반환 (속도 및 쿼터 방어)
+        non_hardware_keywords = ("적립", "이벤트", "출석", "라방", "기프티콘", "상품권", "무료배포", "나눔", "만보", "포인트")
+        if any(nhk in cleaned_title for nhk in non_hardware_keywords):
+            return {"brand": found_brand or "", "model_code": found_model or ""}
+        if not re.search(r'[A-Za-z]{2,}', cleaned_title):
+            return {"brand": found_brand or "", "model_code": found_model or ""}
             
         # 4. 로컬 파싱 실패 또는 미진한 부분이 있을 경우에만 Gemini Flash Fallback 호출
+        from backend.core.ai_utils import get_random_gemini_key, mark_key_dead
+        if not get_random_gemini_key():
+            return {"brand": found_brand or "", "model_code": found_model or ""}
         logging.info(f"[하이브리드 파서] 로컬 파싱 미적중. Gemini Fallback 가동... (원제: {product_title})")
         
-        max_retries = 3
+        max_retries = 2
         for attempt in range(max_retries):
-            from backend.core.ai_utils import get_random_gemini_key
             import time
             api_key = get_random_gemini_key()
             if not api_key:
-                logging.error("[AI] Gemini API Key가 없어 Fallback 처리를 스킵합니다.")
                 break
                 
             prompt = f"""
@@ -271,10 +287,13 @@ key는 상품 번호(문자열), value는 '정상' 또는 '비정상(사유)'로
                 response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
                 
                 if response.status_code != 200:
+                    if response.status_code in (400, 403):
+                        mark_key_dead(api_key)
+                        continue
                     if response.status_code == 429 and attempt < max_retries - 1:
                         time.sleep(1)
                         continue
-                    logging.error(f"[AI_METAPARSER] Gemini API 오류: {response.status_code}")
+                    logging.warning(f"[AI_METAPARSER] Gemini API 폴백 처리 (HTTP {response.status_code})")
                     break
                     
                 content = response.json()

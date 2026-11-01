@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from backend.database.session import get_db_session
 from backend.database import models
 from pydantic import BaseModel
+from typing import Optional
 import logging
 
 router = APIRouter()
@@ -106,11 +107,15 @@ def add_keyword(req: KeywordReq, db: Session = Depends(get_db_session)):
         if not existing.is_active:
             existing.is_active = True
             db.commit()
+        from backend.services.push_worker import match_existing_deals_for_keyword
+        match_existing_deals_for_keyword(db, req.device_uuid, req.keyword)
         return {"success": True, "message": "Keyword active"}
         
     kw = models.PushKeyword(device_token_id=device.id, keyword=req.keyword)
     db.add(kw)
     db.commit()
+    from backend.services.push_worker import match_existing_deals_for_keyword
+    match_existing_deals_for_keyword(db, req.device_uuid, req.keyword)
     return {"success": True, "message": "Keyword added"}
 
 @router.delete("/keywords")
@@ -132,18 +137,20 @@ def delete_keyword(req: KeywordReq, db: Session = Depends(get_db_session)):
 class RegisterWebPushReq(BaseModel):
     endpoint: str
     keys: dict
+    device_uuid: Optional[str] = None
 
 @router.post("/register-web")
 def register_web_push(req: RegisterWebPushReq, db: Session = Depends(get_db_session)):
     import json
-    sub_str = json.dumps(req.dict())
+    sub_str = json.dumps({"endpoint": req.endpoint, "keys": req.keys})
     
-    # endpoint 주소를 고유식별 해시로 변환하여 매핑/생성
+    # 브라우저의 고유 device_uuid가 전달되면 해당 기기(키워드 보유 행)에 직접 바인딩, 없으면 endpoint 해시 폴백
     endpoint_hash = req.endpoint.split("/")[-1][:100]
-    device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == f"web_{endpoint_hash}").first()
+    target_uuid = (req.device_uuid or "").strip() or f"web_{endpoint_hash}"
+    device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == target_uuid).first()
     if not device:
         device = models.DeviceToken(
-            device_uuid=f"web_{endpoint_hash}",
+            device_uuid=target_uuid,
             web_push_subscription=sub_str,
             is_active=True
         )
@@ -152,12 +159,17 @@ def register_web_push(req: RegisterWebPushReq, db: Session = Depends(get_db_sess
         device.web_push_subscription = sub_str
         device.is_active = True
     db.commit()
-    return {"success": True, "message": "Web Push subscription registered"}
+    return {"success": True, "message": "Web Push subscription registered", "device_uuid": target_uuid}
 
 @router.delete("/register-web")
-def delete_web_push(endpoint: str, db: Session = Depends(get_db_session)):
-    endpoint_hash = endpoint.split("/")[-1][:100]
-    device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == f"web_{endpoint_hash}").first()
+def delete_web_push(endpoint: str = "", device_uuid: Optional[str] = None, db: Session = Depends(get_db_session)):
+    target_uuid = (device_uuid or "").strip()
+    device = None
+    if target_uuid:
+        device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == target_uuid).first()
+    if not device and endpoint:
+        endpoint_hash = endpoint.split("/")[-1][:100]
+        device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == f"web_{endpoint_hash}").first()
     if device:
         device.web_push_subscription = None
         db.commit()

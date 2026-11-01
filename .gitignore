@@ -68,3 +68,25 @@ scratch/
 .pytest_cache/
 .vscode/
 .antigravitycli/
+
+# Agent temporary run logs & scratch directories
+scratch/
+backend/scratch/
+backend/venv/
+backend/.venv/
+.bkit/
+.antigravitycli/
+.agents/explorer_*/
+.agents/worker_*/
+.agents/reviewer_*/
+.agents/orchestrator/
+.agents/sentinel/
+.agents/victory_auditor/
+.agents/ORIGINAL_REQUEST.md
+ORIGINAL_REQUEST.md
+
+# Backups & Keystore
+backend/backups/
+keystore.properties
+*.jks
+*.keystore

@@ -7,6 +7,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -17,6 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 
+// [jetpack-compose-performance] UA 상수 호이스팅
+private const val CLEAN_MOBILE_UA = "Mozilla/5.0 (Linux; Android 14; SM-S928N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+private const val DESKTOP_CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,8 +31,19 @@ fun DealWebViewScreen(
 ) {
     val context = LocalContext.current
     var webView: WebView? by remember { mutableStateOf(null) }
+    var canGoBack by remember { mutableStateOf(false) }
     var pendingIntent: Intent? by remember { mutableStateOf(null) }
     var pendingFallbackUrl: String? by remember { mutableStateOf(null) }
+
+    // [navigation-event] 시스템 뒤로가기 제스처 시 웹뷰 내부 히스토리가 있으면 우선 뒤로 이동
+    BackHandler(enabled = canGoBack) {
+        if (webView?.canGoBack() == true) {
+            webView?.goBack()
+        } else {
+            canGoBack = false
+            onBack()
+        }
+    }
 
     if (pendingIntent != null) {
         AlertDialog(
@@ -46,7 +62,11 @@ fun DealWebViewScreen(
                             val packageName = pendingIntent!!.`package`
                             if (packageName != null) {
                                 try {
-                                    val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName"))
+                                    val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
+                                        addCategory(Intent.CATEGORY_BROWSABLE)
+                                        component = null
+                                        selector = null
+                                    }
                                     context.startActivity(playStoreIntent)
                                 } catch (e2: Exception) {
                                     e2.printStackTrace()
@@ -64,7 +84,10 @@ fun DealWebViewScreen(
             dismissButton = {
                 if (pendingFallbackUrl != null) {
                     OutlinedButton(onClick = {
-                        webView?.loadUrl(pendingFallbackUrl!!)
+                        val safeFallback = pendingFallbackUrl!!
+                        if (safeFallback.startsWith("http://") || safeFallback.startsWith("https://")) {
+                            webView?.loadUrl(safeFallback)
+                        }
                         pendingIntent = null
                         pendingFallbackUrl = null
                     }) {
@@ -100,8 +123,15 @@ fun DealWebViewScreen(
                 actions = {
                     IconButton(onClick = {
                         try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(webView?.url ?: url))
-                            context.startActivity(intent)
+                            val targetUrl = webView?.url ?: url
+                            if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)).apply {
+                                    addCategory(Intent.CATEGORY_BROWSABLE)
+                                    component = null
+                                    selector = null
+                                }
+                                context.startActivity(intent)
+                            }
                         } catch (e: Exception) {
                             // Ignore
                         }
@@ -119,16 +149,35 @@ fun DealWebViewScreen(
             factory = { ctx ->
                 WebView(ctx).apply {
                     webViewClient = object : WebViewClient() {
+                        override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                            super.doUpdateVisitedHistory(view, url, isReload)
+                            canGoBack = view?.canGoBack() == true
+                        }
+
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            canGoBack = view?.canGoBack() == true
+                        }
+
                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                             val requestUrl = request?.url?.toString() ?: ""
                             
                             if (requestUrl.startsWith("intent://")) {
                                 try {
-                                    val intent = Intent.parseUri(requestUrl, Intent.URI_INTENT_SCHEME)
-                                    val fallbackUrl = intent.getStringExtra("browser_fallback_url")
+                                    // [android-intent-security] Intent Scheme Hijacking 방어:
+                                    // CATEGORY_BROWSABLE 강제 및 명시적 component/selector 초기화로 내부 비공개 컴포넌트 호출 차단
+                                    val intent = Intent.parseUri(requestUrl, Intent.URI_INTENT_SCHEME).apply {
+                                        addCategory(Intent.CATEGORY_BROWSABLE)
+                                        component = null
+                                        selector = null
+                                    }
+                                    val rawFallbackUrl = intent.getStringExtra("browser_fallback_url")
+                                    val fallbackUrl = rawFallbackUrl?.takeIf {
+                                        it.startsWith("http://") || it.startsWith("https://")
+                                    }
                                     
                                     if (fallbackUrl != null) {
-                                        // 1. fallback URL(웹)이 있다면 다이얼로그를 띄워 물어본다
+                                        // 1. 안전한 http/https fallback URL(웹)이 있다면 다이얼로그를 띄워 물어본다
                                         pendingIntent = intent
                                         pendingFallbackUrl = fallbackUrl
                                         return true
@@ -141,7 +190,11 @@ fun DealWebViewScreen(
                                             val packageName = intent.`package`
                                             if (packageName != null) {
                                                 try {
-                                                    val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName"))
+                                                    val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
+                                                        addCategory(Intent.CATEGORY_BROWSABLE)
+                                                        component = null
+                                                        selector = null
+                                                    }
                                                     context.startActivity(playStoreIntent)
                                                 } catch (e2: Exception) {
                                                     e2.printStackTrace()
@@ -157,7 +210,11 @@ fun DealWebViewScreen(
                             } else if (!requestUrl.startsWith("http://") && !requestUrl.startsWith("https://")) {
                                 // 일반적인 외부 앱 스키마 (market://, kakaotalk://, toss:// 등)
                                 try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(requestUrl))
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(requestUrl)).apply {
+                                        addCategory(Intent.CATEGORY_BROWSABLE)
+                                        component = null
+                                        selector = null
+                                    }
                                     context.startActivity(intent)
                                 } catch (e: Exception) {
                                     e.printStackTrace()
@@ -177,19 +234,18 @@ fun DealWebViewScreen(
                         setSupportZoom(true)
                         builtInZoomControls = true
                         displayZoomControls = false
-                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        // [android-intent-security] 로컬 파일/컨텐츠 임의 접근 차단 및 혼합 컨텐츠 호환 모드 설정
+                        allowFileAccess = false
+                        allowContentAccess = false
+                        mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                     }
 
                     // 봇 차단(네이버 스마트스토어, 클라우드플레어 등)을 완벽히 우회하기 위해 
                     // 일반 모바일 크롬 브라우저와 완전히 동일한 User-Agent 사용
-                    val cleanMobileUA = "Mozilla/5.0 (Linux; Android 14; SM-S928N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
-                    
-                    if (url.contains("bbasak.com")) {
-                        // 빠삭은 PC 버전 필수
-                        settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                    settings.userAgentString = if (url.contains("bbasak.com")) {
+                        DESKTOP_CHROME_UA
                     } else {
-                        // 스마트스토어 등 나머지 모든 사이트는 순수 모바일 크롬 UA 사용
-                        settings.userAgentString = cleanMobileUA
+                        CLEAN_MOBILE_UA
                     }
 
                     webView = this
@@ -207,5 +263,18 @@ fun DealWebViewScreen(
                 // Ignore
             }
         )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            webView?.apply {
+                stopLoading()
+                loadUrl("about:blank")
+                clearHistory()
+                removeAllViews()
+                destroy()
+            }
+            webView = null
+        }
     }
 }

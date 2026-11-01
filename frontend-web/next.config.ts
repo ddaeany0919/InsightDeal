@@ -1,3 +1,4 @@
+import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
 
 const withPWA = withPWAInit({
@@ -16,11 +17,7 @@ const isVercel = process.env.VERCEL === "1";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  ...(isVercel ? {} : { output: "standalone" }),
-  eslint: {
-    // 빌드 시 ESLint 통과를 보장하여 불필요한 이스케이프 참사 방어
-    ignoreDuringBuilds: true,
-  },
+  ...(isVercel ? {} : { output: "standalone" as const }),
   typescript: {
     // 빌드 시 TypeScript 정적 검사 통과 보장 가드
     ignoreBuildErrors: true,

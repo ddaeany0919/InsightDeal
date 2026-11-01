@@ -1,7 +1,12 @@
 from sqlalchemy.orm import Session
-from models.wishlist_models import Wishlist, WishlistCreate, WishlistUpdate, WishlistResponse
-from services.price_comparison_service import PriceComparisonService
-from services.url_product_extractor import URLProductExtractor
+try:
+    from backend.models.wishlist_models import Wishlist, WishlistCreate, WishlistUpdate, WishlistResponse
+    from backend.services.price_comparison_service import PriceComparisonService
+    from backend.services.url_product_extractor import URLProductExtractor
+except ImportError:
+    from models.wishlist_models import Wishlist, WishlistCreate, WishlistUpdate, WishlistResponse
+    from services.price_comparison_service import PriceComparisonService
+    from services.url_product_extractor import URLProductExtractor
 from datetime import datetime
 import logging
 

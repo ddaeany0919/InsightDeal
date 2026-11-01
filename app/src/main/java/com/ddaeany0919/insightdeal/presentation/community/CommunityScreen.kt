@@ -44,7 +44,7 @@ fun CommunityScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTabIndex by remember { mutableIntStateOf(0) }
-    val tabs = listOf("전체보기", "🔥 핫딜만", "💰 앱테크만")
+    val tabs = listOf("전체보기", "핫딜만", "앱테크만")
 
     Scaffold(
         topBar = {
@@ -308,19 +308,19 @@ fun HotDealCard(deal: HotDealDto, onClick: () -> Unit = {}) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             if (deal.likeCount > 0) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("🔥 질러 ", style = MaterialTheme.typography.labelSmall, color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                                    Text("추천 ", style = MaterialTheme.typography.labelSmall, color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
                                     Text("${deal.likeCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B))
                                 }
                             }
                             if (deal.dislikeCount > 0) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("💸 지갑 지켜 ", style = MaterialTheme.typography.labelSmall, color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold)
+                                    Text("비추천 ", style = MaterialTheme.typography.labelSmall, color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold)
                                     Text("${deal.dislikeCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B))
                                 }
                             }
                             if (deal.commentCount > 0) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("💬 참견 ", style = MaterialTheme.typography.labelSmall, color = Color.DarkGray, fontWeight = FontWeight.Bold)
+                                    Text("댓글 ", style = MaterialTheme.typography.labelSmall, color = Color.DarkGray, fontWeight = FontWeight.Bold)
                                     Text("${deal.commentCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B))
                                 }
                             }

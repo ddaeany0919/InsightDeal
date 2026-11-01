@@ -31,7 +31,7 @@ data class TrackingResult(
  * 🔔 추적 등록 즉시 피드백 - 사용자 불안 제거
  * 
  * 개선점:
- * - "✅ 추적 시작! 5분마다 확인, 목표가 도달 시 즐시 알림"
+ * - "가격 추적을 시작했어요 5분마다 확인, 목표가 도달 시 즐시 알림"
  * - "첫 확인 예정: 13:45 (약 4분 후)"
  * - 사용자가 다음에 뭐를 해야 할지 명확히 안내
  * - 기다리는 동안 불안감 없이 자연스럽게 처리
@@ -77,7 +77,7 @@ fun TrackingRegistrationFeedback(
                     
                     // 메인 메시지
                     Text(
-                        text = "✅ 추적 시작!",
+                        text = "가격 추적을 시작했어요",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -182,7 +182,7 @@ fun TrackingRegistrationFeedback(
                     
                     // 추가 안내
                     Text(
-                        text = "📧 알림은 앱 알림으로 발송됩니다",
+                        text = "목표가에 도달하면 푸시 알림으로 알려드려요",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.7f)
                     )

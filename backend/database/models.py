@@ -22,19 +22,19 @@ class Deal(Base):
     __tablename__ = "deals"
 
     id = Column(Integer, primary_key=True, index=True)
-    source_community_id = Column(Integer, ForeignKey("communities.id"), nullable=False)
+    source_community_id = Column(Integer, ForeignKey("communities.id"), nullable=False, index=True)
     title = Column(TEXT, nullable=False)
-    post_link = Column(String(2048), nullable=False)
-    ecommerce_link = Column(String(2048), nullable=True)
+    post_link = Column(String(2048), nullable=False, index=True)
+    ecommerce_link = Column(String(2048), nullable=True, index=True)
     shop_name = Column(String(100))
     price = Column(String(100))
     shipping_fee = Column(String(100))
     currency = Column(String(10), default="KRW")
     image_url = Column(String(2048))
-    category = Column(String(100), default="기타")
+    category = Column(String(100), default="기타", index=True)
     search_keywords = Column(TEXT, nullable=True) # Contains Chosung and Eng typo for search
-    indexed_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
-    is_closed = Column(Boolean, default=False, nullable=False)
+    indexed_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
+    is_closed = Column(Boolean, default=False, nullable=False, index=True)
     deal_type = Column(String(50), default='일반', nullable=False)
     content_html = Column(TEXT, nullable=True)
     group_id = Column(String(32), index=True, nullable=True)
@@ -43,7 +43,7 @@ class Deal(Base):
     base_product_name = Column(String(500), nullable=True)
     brand = Column(String(100), index=True, nullable=True) # [가격분석] 브랜드명
     model_code = Column(String(100), index=True, nullable=True) # [가격분석] 규격/고유모델번호
-    honey_score = Column(Integer, default=0) # [Phase 11] 추천도 점수
+    honey_score = Column(Integer, default=0, index=True) # [Phase 11] 추천도 점수
     ai_summary = Column(String(500), nullable=True) # [Phase 11 Epic 1] AI 핵심 1줄 요약
     view_count = Column(Integer, default=0)
     like_count = Column(Integer, default=0)
@@ -61,7 +61,7 @@ class PriceHistory(Base):
     __tablename__ = "price_history"
 
     id = Column(Integer, primary_key=True, index=True)
-    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False, index=True)
     price = Column(String(100), nullable=False)
     checked_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
@@ -90,7 +90,7 @@ class PushKeyword(Base):
     __tablename__ = "push_keywords"
 
     id = Column(Integer, primary_key=True, index=True)
-    device_token_id = Column(Integer, ForeignKey("device_tokens.id"), nullable=False)
+    device_token_id = Column(Integer, ForeignKey("device_tokens.id"), nullable=False, index=True)
     keyword = Column(String(100), nullable=False, index=True) # ex: '아이패드', '에어팟'
     is_active = Column(Boolean, default=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
@@ -337,7 +337,7 @@ class DealReaction(Base):
     __tablename__ = "deal_reactions"
     
     id = Column(Integer, primary_key=True, index=True)
-    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False, index=True)
     
     # 반응 데이터
     view_count = Column(Integer, default=0)
@@ -478,4 +478,31 @@ class NotificationAlert(Base):
     keyword = Column(String(100), nullable=False)
     received_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     deal_url = Column(String(2048), nullable=True)
+
+
+class DealComment(Base):
+    """핫딜 개별 게시글 한줄평/댓글 테이블"""
+    __tablename__ = "deal_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False, index=True)
+    user_id = Column(String(100), nullable=False, index=True)
+    nickname = Column(String(50), nullable=False, default="익명의찰떡이")
+    content = Column(TEXT, nullable=False)
+    is_deleted = Column(Boolean, default=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+
+class DealVote(Base):
+    """핫딜 개별 게시글 살까/말까(buy/save) 투표 테이블"""
+    __tablename__ = "deal_votes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False, index=True)
+    user_id = Column(String(100), nullable=False, index=True)
+    vote_type = Column(String(20), nullable=False)  # "buy" or "save"
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint('deal_id', 'user_id', name='unique_deal_user_vote'),)
+
 

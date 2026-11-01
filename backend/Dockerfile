@@ -32,7 +32,7 @@ ENV LANG=ko_KR.UTF-8 \
 
 # Python dependencies
 COPY requirements.txt ./
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir torch torchvision --extra-index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app
@@ -41,7 +41,7 @@ COPY . .
 # Environment
 ENV PYTHONUNBUFFERED=1 \
     OMP_THREAD_LIMIT=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app:/app/backend:.
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

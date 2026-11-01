@@ -16,7 +16,12 @@ import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlatformScreen(viewModel: HomeViewModel = viewModel()) {
+fun PlatformScreen(
+    viewModel: HomeViewModel = viewModel(),
+    onNavigateToDetail: (Int) -> Unit = {}
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val filterState by viewModel.filterState.collectAsState()
     val currentPlatform = filterState.platform ?: "전체"
     val dealsPagingItems = viewModel.dealsPagingData.collectAsLazyPagingItems()
@@ -78,7 +83,17 @@ fun PlatformScreen(viewModel: HomeViewModel = viewModel()) {
                     items(dealsPagingItems.itemCount) { index ->
                         val deal = dealsPagingItems[index]
                         if (deal != null) {
-                            DealCardComposable(deal = deal)
+                            DealCardComposable(
+                                deal = deal,
+                                onDetailClick = { onNavigateToDetail(deal.id) },
+                                onOpenUrl = { url ->
+                                    try {
+                                        if (url.isNotBlank()) uriHandler.openUri(url)
+                                    } catch (_: Exception) {
+                                        android.widget.Toast.makeText(context, "브라우저를 열 수 없습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            )
                         }
                     }
                 }

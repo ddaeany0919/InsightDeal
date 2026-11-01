@@ -2,42 +2,95 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-from database.session import get_db
-from models.wishlist_models import WishlistCreate, WishlistUpdate, WishlistResponse, Wishlist
-from services.wishlist_service import WishlistService
+try:
+    from backend.database.session import get_db
+    from backend.models.wishlist_models import WishlistCreate, WishlistUpdate, WishlistResponse, Wishlist
+    from backend.services.wishlist_service import WishlistService
+except ImportError:
+    from database.session import get_db
+    from models.wishlist_models import WishlistCreate, WishlistUpdate, WishlistResponse, Wishlist
+    from services.wishlist_service import WishlistService
 import logging
 
-router = APIRouter(tags=["wishlist"])  # prefix 제거
+router = APIRouter(tags=["wishlist"])
 
 logger = logging.getLogger(__name__)
 
 class WishlistCreateFromURL(BaseModel):
     product_url: str
     target_price: int
-    user_id: str
+    user_id: str = "default"
 
 class WishlistCreateFromKeyword(BaseModel):
     keyword: str
     target_price: int
-    user_id: str
+    user_id: str = "default"
+
+class WishlistItemAlertRequest(BaseModel):
+    keyword: Optional[str] = None
+    title: Optional[str] = None
+    product_url: Optional[str] = None
+    target_price: int
+    current_price: Optional[int] = None
+    platform: Optional[str] = None
+    user_id: str = "default"
 
 class WishlistUpdateRequest(BaseModel):
     target_price: Optional[int] = None
     alert_enabled: Optional[bool] = None
 
+@router.post("/item-alert")
+async def create_or_update_item_alert(data: WishlistItemAlertRequest, db: Session = Depends(get_db)):
+    """1-RTT 원스톱 목표가 알림 등록 및 갱신 (Upsert)"""
+    key_str = (data.keyword or data.title or data.product_url or "").strip()
+    if not key_str:
+        raise HTTPException(status_code=400, detail="상품명(keyword/title) 또는 product_url이 필요합니다.")
+    try:
+        existing = db.query(Wishlist).filter(
+            Wishlist.user_id == data.user_id,
+            Wishlist.keyword == key_str
+        ).first()
+        if existing:
+            existing.target_price = data.target_price
+            existing.is_active = True
+            existing.alert_enabled = True
+            db.commit()
+            db.refresh(existing)
+            return existing
+
+        wishlist = Wishlist(
+            keyword=key_str,
+            target_price=data.target_price,
+            user_id=data.user_id,
+            is_active=True,
+            alert_enabled=True
+        )
+        db.add(wishlist)
+        db.commit()
+        db.refresh(wishlist)
+        return wishlist
+    except Exception as e:
+        logger.error(f"[WISHLIST_ITEM_ALERT] 오류: {str(e)}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/from-url")
 async def create_wishlist_from_url(data: WishlistCreateFromURL, db: Session = Depends(get_db)):
-    """URL 기반 위시리스트 추가"""
+    """URL 기반 위시리스트 추가 (이미 존재 시 목표가 갱신)"""
     logger.info(f"[WISHLIST_URL] URL 등록: {data.product_url}")
     try:
-        # ORM 모델 사용으로 서비스 호출 변경
         existing = db.query(Wishlist).filter(
             Wishlist.user_id == data.user_id, 
             Wishlist.keyword == data.product_url
         ).first()
         
         if existing:
-            raise HTTPException(status_code=400, detail="이미 등록된 위시리스트입니다.")
+            existing.target_price = data.target_price
+            existing.is_active = True
+            existing.alert_enabled = True
+            db.commit()
+            db.refresh(existing)
+            return existing
         
         wishlist = Wishlist(
             keyword=data.product_url,
@@ -58,7 +111,7 @@ async def create_wishlist_from_url(data: WishlistCreateFromURL, db: Session = De
 
 @router.post("/from-keyword")
 async def create_wishlist_from_keyword(data: WishlistCreateFromKeyword, db: Session = Depends(get_db)):
-    """키워드 기반 위시리스트 추가"""
+    """키워드 기반 위시리스트 추가 (이미 존재 시 목표가 갱신)"""
     logger.info(f"[WISHLIST_KEYWORD] 키워드 등록: {data.keyword}")
     try:
         existing = db.query(Wishlist).filter(
@@ -67,7 +120,12 @@ async def create_wishlist_from_keyword(data: WishlistCreateFromKeyword, db: Sess
         ).first()
         
         if existing:
-            raise HTTPException(status_code=400, detail="이미 등록된 위시리스트입니다.")
+            existing.target_price = data.target_price
+            existing.is_active = True
+            existing.alert_enabled = True
+            db.commit()
+            db.refresh(existing)
+            return existing
         
         wishlist = Wishlist(
             keyword=data.keyword,

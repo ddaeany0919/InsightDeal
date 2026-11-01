@@ -14,6 +14,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,7 +33,6 @@ import androidx.navigation.compose.rememberNavController
 import com.ddaeany0919.insightdeal.presentation.theme.ThemeManager
 import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
 import com.ddaeany0919.insightdeal.presentation.wishlist.*
-import com.ddaeany0919.insightdeal.presentation.settings.ThemeSettingsScreenCollapsible
 import com.ddaeany0919.insightdeal.presentation.home.HomeScreen
 import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
 import com.ddaeany0919.insightdeal.presentation.theme.InsightDealTheme
@@ -60,6 +60,20 @@ import kotlinx.coroutines.flow.firstOrNull
 
 private const val TAG_UI = "MainActivity"
 
+// [jetpack-compose-performance] 리컴포지션 시 불필요한 컬렉션 할당 방지를 위한 파일 레벨 상수 호이스팅
+private val BOTTOM_NAV_ROUTES = setOf(
+    "home", "advanced_search", "category", "category_detail", "community",
+    "mypage", "watchlist", "my_posts", "my_comments", "recent_deals", "settings", "theme_settings"
+)
+
+private val NAVIGATION_ITEMS = listOf(
+    BottomNavItem("home", "홈", Icons.Outlined.Home, Icons.Filled.Home, "홈"),
+    BottomNavItem("advanced_search", "검색", Icons.Outlined.Search, Icons.Filled.Search, "검색"),
+    BottomNavItem("category", "카테고리", Icons.Outlined.GridView, Icons.Filled.GridView, "카테고리"),
+    BottomNavItem("community", "커뮤니티", Icons.Outlined.Forum, Icons.Filled.Forum, "커뮤니티"),
+    BottomNavItem("mypage", "내정보", Icons.Outlined.Person, Icons.Filled.Person, "내정보 (마이페이지)")
+)
+
 fun generateDeviceUserId(context: Context): String {
     return try {
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
@@ -84,6 +98,10 @@ class MainActivity : FragmentActivity() {
 
     override fun onNewIntent(intent: android.content.Intent?) {
         super.onNewIntent(intent)
+        // [android-intent-security] singleTop 액티비티 재진입 시 Activity.getIntent() 동기화 강제
+        if (intent != null) {
+            setIntent(intent)
+        }
         currentIntent = intent
     }
 
@@ -92,6 +110,10 @@ class MainActivity : FragmentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // [edge-to-edge] 하단 NavigationBar 사용 시 시스템 강제 반투명 스크림(Scrim) 비활성화
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         val deviceUserId = generateDeviceUserId(this)
         currentIntent = intent
         
@@ -110,11 +132,6 @@ class MainActivity : FragmentActivity() {
             }
         }
         
-        // Android 13 이상에서 알림 권한 요청 (소프트 가이드 Pre-Permission Dialog 가드 처리를 위해 최초 쌩 권한 요청은 제거)
-        // if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        //     requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        // }
-
         // Initialize Recent Deals & Notification History
         com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager.init(this)
         com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager.init(this)
@@ -188,7 +205,7 @@ class MainActivity : FragmentActivity() {
                                         override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                                             super.onAuthenticationError(errorCode, errString)
                                             // 지문 인증 실패/취소 시 PIN 다이얼로그로 수동 폴백
-                                            android.widget.Toast.makeText(this@MainActivity, "생체 인증 실패: PIN으로 잠금을 해제해 주세요. 🔒", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(this@MainActivity, "생체 인증에 실패했어요. PIN 번호를 입력해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
                                         }
                                         override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
                                             super.onAuthenticationSucceeded(result)
@@ -254,20 +271,35 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
     val navController = rememberNavController()
     val homeViewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     
+    // [android-intent-security] 딥링크 및 알림 인텐트 파라미터 검증 및 일회성 소비 처리
     LaunchedEffect(currentIntent) {
         currentIntent?.let { intent ->
-            val navigateTo = intent.getStringExtra("navigate_to")
-            val dealId = intent.getStringExtra("deal_id")
-            if (navigateTo == "hotdeal" && dealId != null) {
-                Log.d(TAG_UI, "🚀 Deep Linking to deal_detail/$dealId")
-                navController.navigate("deal_detail/$dealId")
+            val navigateTo = intent.getStringExtra("navigate_to")?.trim()
+            val rawDealId = intent.getStringExtra("deal_id")?.trim()
+            val validDealId = rawDealId?.toIntOrNull()?.takeIf { it > 0 }
+            when {
+                navigateTo == "hotdeal" && validDealId != null -> {
+                    Log.d(TAG_UI, "🚀 Deep Linking to deal_detail/$validDealId")
+                    intent.removeExtra("navigate_to")
+                    intent.removeExtra("deal_id")
+                    navController.navigate("deal_detail/$validDealId") {
+                        launchSingleTop = true
+                    }
+                }
+                navigateTo == "watchlist" -> {
+                    Log.d(TAG_UI, "🚀 Deep Linking to watchlist")
+                    intent.removeExtra("navigate_to")
+                    navController.navigate("watchlist") {
+                        launchSingleTop = true
+                    }
+                }
             }
         }
     }
     
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route?.substringBefore("/")
-    val showBottomNav = currentRoute in listOf("home", "advanced_search", "category", "category_detail", "community", "mypage", "watchlist", "my_posts", "my_comments", "recent_deals", "settings", "theme_settings")
+    val currentRoute = navBackStackEntry?.destination?.route?.substringBefore("/")?.substringBefore("?")
+    val showBottomNav = currentRoute in BOTTOM_NAV_ROUTES
 
     Scaffold(
         bottomBar = { 
@@ -302,7 +334,21 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                 val itemId = backStackEntry.arguments?.getString("itemId")?.toIntOrNull() ?: -1
                 WishlistDetailScreen(itemId = itemId, onBack = { navController.popBackStack() }, viewModel = wishlistViewModel)
             }
-            composable("advanced_search") { com.ddaeany0919.insightdeal.presentation.search.AdvancedSearchScreen(navController) }
+            composable(
+                route = "advanced_search?query={query}",
+                arguments = listOf(
+                    androidx.navigation.navArgument("query") {
+                        type = androidx.navigation.NavType.StringType
+                        defaultValue = ""
+                    }
+                )
+            ) { backStackEntry ->
+                val initialQuery = backStackEntry.arguments?.getString("query") ?: ""
+                com.ddaeany0919.insightdeal.presentation.search.AdvancedSearchScreen(
+                    navController = navController,
+                    initialQuery = initialQuery
+                )
+            }
             composable("category") { com.ddaeany0919.insightdeal.presentation.category.CategoryScreen(navController = navController) }
             composable("category_detail/{categoryName}") { backStackEntry ->
                 val encodedCategoryName = backStackEntry.arguments?.getString("categoryName") ?: "기타"
@@ -348,7 +394,12 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
             composable("recent_deals") {
                 com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealsScreen(
                     onBack = { navController.popBackStack() },
-                    onDealClick = { dealId -> navController.navigate("deal_detail/$dealId") }
+                    onDealClick = { dealId -> navController.navigate("deal_detail/$dealId") },
+                    onOpenUrl = { url ->
+                        val finalUrl = if (url.startsWith("http")) url else "https://$url"
+                        val encodedUrl = java.net.URLEncoder.encode(finalUrl, "UTF-8")
+                        navController.navigate("webview/$encodedUrl")
+                    }
                 )
             }
             composable("settings") {
@@ -389,8 +440,6 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                     }
                 )
             }
-            // product_detail - 향후 확장 예정 (현재 미사용)
-            // composable("product_detail/{productId}") { ... }
             composable("theme_settings") { com.ddaeany0919.insightdeal.presentation.settings.ThemeSettingsScreen(onBackClick = { navController.popBackStack() }) }
             composable(
                 route = "webview/{url}",
@@ -410,57 +459,80 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
 @Composable
 fun BottomNavigationBar(navController: androidx.navigation.NavController, homeViewModel: HomeViewModel? = null) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route?.substringBefore("/")
-    
-    val navigationItems = listOf(
-        BottomNavItem("home", "홈", Icons.Default.Home, "홈"),
-        BottomNavItem("advanced_search", "검색", Icons.Default.Search, "검색"),
-        BottomNavItem("category", "카테고리", Icons.Default.Dashboard, "카테고리"),
-        BottomNavItem("community", "커뮤니티", Icons.Default.Forum, "커뮤니티"),
-        BottomNavItem("mypage", "내정보", Icons.Default.Person, "내정보 (마이페이지)")
-    )
-    NavigationBar {
-        navigationItems.forEach { item ->
-            val selected = when (item.route) {
-                "category" -> currentRoute == "category" || currentRoute == "category_detail"
-                "community" -> currentRoute == "community" || currentRoute == "community_write" || currentRoute == "community_edit" || currentRoute == "community_detail"
-                "mypage" -> currentRoute == "mypage" || currentRoute == "watchlist" || currentRoute == "my_posts" || currentRoute == "my_comments" || currentRoute == "recent_deals" || currentRoute == "settings" || currentRoute == "theme_settings"
-                else -> currentRoute == item.route
-            }
-            
-            NavigationBarItem(
-                icon = { 
-                    Icon(
-                        item.icon, 
-                        contentDescription = item.description
-                    ) 
-                },
-                label = { Text(item.title) },
-                selected = selected,
-                onClick = {
-                    if (item.route == "home") {
-                        homeViewModel?.selectCategory("전체")
-                        navController.navigate("home") {
-                            popUpTo(navController.graph.id) {
-                                inclusive = true
-                            }
-                            launchSingleTop = true
-                        }
-                    } else {
-                        if (selected) {
-                            navController.popBackStack(item.route, inclusive = false)
-                        } else {
-                            navController.navigate(item.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+    val currentRoute = navBackStackEntry?.destination?.route?.substringBefore("/")?.substringBefore("?")
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        HorizontalDivider(
+            thickness = 0.8.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)
+        )
+        NavigationBar(
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp
+        ) {
+            NAVIGATION_ITEMS.forEach { item ->
+                val selected = when (item.route) {
+                    "category" -> currentRoute == "category" || currentRoute == "category_detail"
+                    "community" -> currentRoute == "community" || currentRoute == "community_write" || currentRoute == "community_edit" || currentRoute == "community_detail"
+                    "mypage" -> currentRoute == "mypage" || currentRoute == "watchlist" || currentRoute == "my_posts" || currentRoute == "my_comments" || currentRoute == "recent_deals" || currentRoute == "settings" || currentRoute == "theme_settings"
+                    else -> currentRoute == item.route
+                }
+
+                NavigationBarItem(
+                    icon = {
+                        Icon(
+                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                            contentDescription = item.description,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = item.title,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    },
+                    selected = selected,
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                    ),
+                    onClick = {
+                        if (item.route == "home") {
+                            homeViewModel?.selectCategory("전체")
+                            navController.navigate("home") {
+                                popUpTo(navController.graph.id) {
+                                    inclusive = true
+                                }
                                 launchSingleTop = true
-                                restoreState = true
+                            }
+                        } else {
+                            if (selected) {
+                                navController.popBackStack(item.route, inclusive = false)
+                            } else {
+                                navController.navigate(item.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             }
                         }
                     }
-                }
-            )
+                )
+            }
         }
     }
 }
 
-data class BottomNavItem(val route: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val description: String)
+@androidx.compose.runtime.Immutable
+data class BottomNavItem(
+    val route: String,
+    val title: String,
+    val unselectedIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    val selectedIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    val description: String
+)

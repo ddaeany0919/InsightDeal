@@ -6,14 +6,20 @@ plugins {
     id 'com.google.gms.google-services'
 }
 
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace 'com.ddaeany0919.insightdeal'
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
         applicationId "com.ddaeany0919.insightdeal"
         minSdk 24
-        targetSdk 34
+        targetSdk 35
         versionCode 1
         versionName "1.0.0"
 
@@ -21,19 +27,35 @@ android {
         vectorDrawables { useSupportLibrary true }
     }
 
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             buildConfigField "String", "BASE_URL", '"http://3.35.205.24:8080/"'
+            buildConfigField "String", "DEV_SERVER_IP", '"3.35.205.24"'
+            buildConfigField "String", "EMULATOR_BASE_URL", '"http://3.35.205.24:8080/"'
             buildConfigField "String", "VERSION_NAME", '"1.0.0"'
             buildConfigField "boolean", "DEBUG_MODE", "false"
         }
         debug {
-            buildConfigField "String", "BASE_URL", '"http://3.35.205.24:8080/"'
-            buildConfigField "String", "DEV_SERVER_IP", '"3.35.205.24"'
-            buildConfigField "String", "EMULATOR_BASE_URL", '"http://3.35.205.24:8080/"'
+            buildConfigField "String", "BASE_URL", '"http://10.0.2.2:8080/"'
+            buildConfigField "String", "DEV_SERVER_IP", '"10.0.2.2"'
+            buildConfigField "String", "EMULATOR_BASE_URL", '"http://10.0.2.2:8080/"'
             buildConfigField "String", "VERSION_NAME", '"1.0.0-debug"'
             buildConfigField "boolean", "DEBUG_MODE", "true"
         }

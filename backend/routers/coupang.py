@@ -13,7 +13,6 @@ logger = logging.getLogger("coupang_partners")
 logger.setLevel(logging.INFO)
 
 router = APIRouter(
-    prefix="/coupang",
     tags=["Coupang Partners API Proxy"]
 )
 

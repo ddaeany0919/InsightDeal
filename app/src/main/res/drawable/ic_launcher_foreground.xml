@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Safe Zone Centered at (54, 54): Clean Rounded Price Tag Silhouette -->
+    <group
+        android:scaleX="3.15"
+        android:scaleY="3.15"
+        android:translateX="16.2"
+        android:translateY="13.05">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M17.65,12.82l-5.47,-5.47C11.96,7.13 11.66,7 11.33,7H7.2C6.54,7 6,7.54 6,8.2v4.13c0,0.33 0.13,0.63 0.35,0.85l5.47,5.47c0.47,0.47 1.23,0.47 1.7,0l4.13,-4.13c0.47,-0.47 0.47,-1.23 0,-1.7zM8.7,10.6c-0.66,0 -1.2,-0.54 -1.2,-1.2s0.54,-1.2 1.2,-1.2 1.2,0.54 1.2,1.2 -0.54,1.2 -1.2,1.2z" />
+    </group>
+</vector>

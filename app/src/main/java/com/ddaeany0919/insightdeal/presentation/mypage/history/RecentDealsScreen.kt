@@ -27,7 +27,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun RecentDealsScreen(
     onBack: () -> Unit,
-    onDealClick: (Int) -> Unit
+    onDealClick: (Int) -> Unit,
+    onOpenUrl: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -77,7 +78,12 @@ fun RecentDealsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(recentDeals, key = { it.id }) { deal ->
+                // [jetpack-compose-performance] 고유 key 및 contentType 명시
+                items(
+                    items = recentDeals,
+                    key = { it.id },
+                    contentType = { "recent_deal_item" }
+                ) { deal ->
                     val currentDeal = deal
                     
                     val dismissState = rememberSwipeToDismissBoxState(
@@ -147,7 +153,8 @@ fun RecentDealsScreen(
                             Box(modifier = Modifier.fillMaxWidth()) {
                                 DealCardComposable(
                                     deal = currentDeal,
-                                    onDetailClick = { onDealClick(currentDeal.id) }
+                                    onDetailClick = { onDealClick(currentDeal.id) },
+                                    onOpenUrl = onOpenUrl
                                 )
                                 
                                 // 사용자가 요청한 우측 하단 휴지통 단추 추가 (터치 오작동이 없는 하단 영역에 배치)

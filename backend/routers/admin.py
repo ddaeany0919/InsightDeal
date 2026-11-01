@@ -250,34 +250,56 @@ def get_logs():
 
     return JSONResponse(content={"logs": logs, "last_updated": last_updated, "is_running": is_running, "community_status": community_status})
 
+_LAST_ADMIN_TRIGGER_TS: float = 0.0
+
+def _verify_admin_key(request: Request):
+    expected_key = os.getenv("ADMIN_API_KEY", "").strip()
+    if expected_key:
+        provided_key = request.headers.get("X-Admin-Key", "").strip()
+        if provided_key != expected_key:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=403, detail="관리자 인증 키(X-Admin-Key)가 유효하지 않습니다.")
+
+@router.post("/backup-db")
+async def trigger_db_backup(request: Request):
+    _verify_admin_key(request)
+    from backend.database.session import db_manager
+    result = db_manager.perform_maintenance_and_backup(max_backups=3, slim_days=180)
+    return {"status": "ok", **result}
+
 @router.post("/trigger-update")
-async def trigger_update_script():
+async def trigger_update_script(request: Request):
+    _verify_admin_key(request)
+    global _LAST_ADMIN_TRIGGER_TS
     import subprocess
     import sys
+    import time
     
-    script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "update_all_deals.py")
+    now = time.time()
+    if now - _LAST_ADMIN_TRIGGER_TS < 60:
+        return {"message": "이미 최근 1분 내에 스크래퍼 작업이 시작되었습니다. 잠시 후 다시 시도해주세요."}
+    _LAST_ADMIN_TRIGGER_TS = now
+
+    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scheduler", "main.py")
     log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
     os.makedirs(log_dir, exist_ok=True)
     scraper_log = os.path.join(log_dir, "scraper_output.log")
     
     try:
-        # 기존 로그 삭제
-        with open(scraper_log, "w", encoding="utf-8") as f:
-            f.write("🚀 스크래퍼 실행이 예약되었습니다. 곧 로그가 표시됩니다...\n")
-            
         python_executable = sys.executable
-        # 파이썬 출력 버퍼링을 꺼서 실시간으로 로그 파일에 기록되도록 설정 (PYTHONUNBUFFERED=1)
-        # 덮어쓰기 모드('w')로 로그 저장
-        log_file_handle = open(scraper_log, "w", encoding="utf-8")
-        
         env = dict(os.environ, PYTHONUTF8="1", PYTHONUNBUFFERED="1")
         
-        subprocess.Popen(
-            [python_executable, script_path], 
-            stdout=log_file_handle, 
-            stderr=subprocess.STDOUT,
-            env=env
-        )
+        with open(scraper_log, "w", encoding="utf-8") as log_file_handle:
+            log_file_handle.write("🚀 스크래퍼 실행이 예약되었습니다. 곧 로그가 표시됩니다...\n")
+            log_file_handle.flush()
+            subprocess.Popen(
+                [python_executable, script_path, "--one-shot"], 
+                cwd=root_dir,
+                stdout=log_file_handle, 
+                stderr=subprocess.STDOUT,
+                env=env
+            )
         return {"message": "스크래퍼 작업이 시작되었습니다."}
     except Exception as e:
         from fastapi import HTTPException

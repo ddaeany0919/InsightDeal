@@ -21,6 +21,7 @@ import androidx.navigation.NavController
 import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.network.UserCommentDto
 import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
+import com.ddaeany0919.insightdeal.presentation.formatRelativeTime
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,32 +53,6 @@ class MyCommentsViewModel : ViewModel() {
                 _uiState.value = MyCommentsUiState.Error(e.message ?: "알 수 없는 오류")
             }
         }
-    }
-}
-
-private fun formatRelativeTime(dateTimeStr: String?): String {
-    if (dateTimeStr.isNullOrBlank()) return ""
-    return try {
-        val cleanStr = dateTimeStr.substringBefore(".").substringBefore("+")
-        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
-        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
-        val date = sdf.parse(cleanStr) ?: return dateTimeStr
-        
-        val diff = System.currentTimeMillis() - date.time
-        val seconds = diff / 1000
-        val minutes = seconds / 60
-        val hours = minutes / 60
-        val days = hours / 24
-        
-        when {
-            seconds < 60 -> "방금 전"
-            minutes < 60 -> "${minutes}분 전"
-            hours < 24 -> "${hours}시간 전"
-            days < 7 -> "${days}일 전"
-            else -> dateTimeStr.substringBefore("T")
-        }
-    } catch (e: Exception) {
-        dateTimeStr.substringBefore("T")
     }
 }
 
@@ -151,7 +126,15 @@ fun MyCommentsScreen(
                             .padding(paddingValues),
                         contentPadding = PaddingValues(vertical = 8.dp)
                     ) {
-                        items(myComments, key = { it.id }) { comment ->
+                        // [jetpack-compose-performance] 고유 key 및 contentType 명시, SimpleDateFormat 중복 생성 제거
+                        items(
+                            items = myComments,
+                            key = { it.id },
+                            contentType = { "my_comment_item" }
+                        ) { comment ->
+                            val formattedTime = remember(comment.created_at) {
+                                comment.created_at?.let { formatRelativeTime(it) } ?: ""
+                            }
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -187,7 +170,7 @@ fun MyCommentsScreen(
                                             modifier = Modifier.weight(1f).padding(end = 8.dp)
                                         )
                                         Text(
-                                            text = formatRelativeTime(comment.created_at),
+                                            text = formattedTime,
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                         )

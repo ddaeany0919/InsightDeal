@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from backend.database.session import get_db_session
 from backend.database import models
@@ -68,31 +68,6 @@ def add_user_keyword(req: KeywordReq, db: Session = Depends(get_db_session)):
         db.add(device)
         db.commit()
         db.refresh(device)
-        
-        # 💡 최초로 키워드를 등록하러 온 신규 사용자에게 웰컴 Mock 알림 3개를 딱 한 번만 수혈합니다.
-        # 이렇게 하면 전체 삭제를 명시적으로 실행했을 때 0개 상태가 온전히 수호됩니다.
-        mock_alerts = [
-            models.NotificationAlert(
-                user_id=user_id,
-                title="🔥 [쿠팡] 아이패드 프로 11인치 M4 256GB 관세내 대박 할인 특가!",
-                keyword="아이패드",
-                deal_url="https://www.coupang.com"
-            ),
-            models.NotificationAlert(
-                user_id=user_id,
-                title="🎁 [뽐뿌] 다이슨 에어랩 멀티 스타일러 역대급 구성 사은품 증정 딜",
-                keyword="다이슨",
-                deal_url="https://www.ppomppu.co.kr"
-            ),
-            models.NotificationAlert(
-                user_id=user_id,
-                title="💻 [펨코] 삼성전자 갤럭시북4 프로 고성능 노트북 최종 혜택가 119만원!",
-                keyword="노트북",
-                deal_url="https://www.fmkorea.com"
-            )
-        ]
-        db.add_all(mock_alerts)
-        db.commit()
     
     existing = db.query(models.PushKeyword).filter(
         models.PushKeyword.device_token_id == device.id,
@@ -103,11 +78,15 @@ def add_user_keyword(req: KeywordReq, db: Session = Depends(get_db_session)):
         if not existing.is_active:
             existing.is_active = True
             db.commit()
+        from backend.services.push_worker import match_existing_deals_for_keyword
+        match_existing_deals_for_keyword(db, user_id, req.keyword)
         return {"success": True, "message": "Keyword active"}
         
     kw = models.PushKeyword(device_token_id=device.id, keyword=req.keyword)
     db.add(kw)
     db.commit()
+    from backend.services.push_worker import match_existing_deals_for_keyword
+    match_existing_deals_for_keyword(db, user_id, req.keyword)
     return {"success": True, "message": "Keyword added"}
 
 @router.post("/keywords/toggle")
@@ -115,35 +94,52 @@ def toggle_user_keyword(req: KeywordReq, db: Session = Depends(get_db_session)):
     user_id = req.final_user_id
     device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == user_id).first()
     if not device:
-        raise HTTPException(status_code=404, detail="Device not found")
-        
+        device = models.DeviceToken(device_uuid=user_id)
+        db.add(device)
+        db.commit()
+        db.refresh(device)
+
     kw = db.query(models.PushKeyword).filter(
         models.PushKeyword.device_token_id == device.id,
         models.PushKeyword.keyword == req.keyword
     ).first()
-    
+
     if not kw:
-        raise HTTPException(status_code=404, detail="Keyword not registered")
-        
+        kw = models.PushKeyword(device_token_id=device.id, keyword=req.keyword, is_active=False)
+        db.add(kw)
+        db.commit()
+        db.refresh(kw)
+        return {"success": True, "is_active": kw.is_active, "message": f"Keyword active status toggled to {kw.is_active}"}
+
     kw.is_active = not kw.is_active
     db.commit()
     db.refresh(kw)
     return {"success": True, "is_active": kw.is_active, "message": f"Keyword active status toggled to {kw.is_active}"}
 
 @router.delete("/keywords")
-def delete_user_keyword(user_id: str = Query(...), keyword: str = Query(...), db: Session = Depends(get_db_session)):
-    device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == user_id).first()
-    if not device:
-        return {"success": False, "message": "Not found"}
-        
-    kw = db.query(models.PushKeyword).filter(
-        models.PushKeyword.device_token_id == device.id,
-        models.PushKeyword.keyword == keyword
-    ).first()
-    
-    if kw:
-        db.delete(kw)
-        db.commit()
+def delete_user_keyword(
+    user_id: Optional[str] = Query(None),
+    device_uuid: Optional[str] = Query(None),
+    keyword: Optional[str] = Query(None),
+    req: Optional[KeywordReq] = Body(None),
+    db: Session = Depends(get_db_session)
+):
+    target_user_id = user_id or device_uuid or (req.final_user_id if req else None)
+    target_keyword = keyword or (req.keyword if req else None)
+    if not target_keyword:
+        return {"success": False, "message": "키워드가 지정되지 않았습니다."}
+
+    if target_user_id:
+        device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == target_user_id).first()
+        if device:
+            kw = db.query(models.PushKeyword).filter(
+                models.PushKeyword.device_token_id == device.id,
+                models.PushKeyword.keyword == target_keyword
+            ).first()
+            if kw:
+                db.delete(kw)
+                db.commit()
+
     return {"success": True, "message": "Keyword removed"}
 
 # --- 2. Notifications API ---

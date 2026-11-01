@@ -29,13 +29,13 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://insightdeal:password@postgres:5432/insightdeal
+      - ENABLE_SCHEDULER=false
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
       - FIREBASE_SERVICE_ACCOUNT_PATH=${FIREBASE_SERVICE_ACCOUNT_PATH}
       - FIREBASE_CREDENTIALS=${FIREBASE_CREDENTIALS}
       - FCM_SERVER_KEY=${FCM_SERVER_KEY}
-      - NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
-      - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
+      - ADMIN_API_KEY=${ADMIN_API_KEY}
       - PYTHONPATH=/:/app
       - BASE_URL=http://192.168.0.36:8080
       - HEADLESS=true
@@ -73,8 +73,6 @@ services:
       - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
       - FIREBASE_SERVICE_ACCOUNT_PATH=${FIREBASE_SERVICE_ACCOUNT_PATH}
       - FIREBASE_CREDENTIALS=${FIREBASE_CREDENTIALS}
-      - NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
-      - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
       - PYTHONPATH=/:/app
     volumes:
       - ./backend:/app
@@ -82,7 +80,7 @@ services:
     networks:
       - insightdeal-network
     restart: unless-stopped
-    command: python -m scheduler.price_collector
+    command: python -m backend.scheduler.main
     working_dir: /app
     healthcheck:
       disable: true
@@ -100,16 +98,15 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./frontend-web:/app
-      - /app/node_modules
-      - /app/.next
+      - ./frontend-web/src:/app/src
+      - ./frontend-web/public:/app/public
     networks:
       - insightdeal-network
     restart: unless-stopped
 
-volumes:
-  postgres_data:
-
 networks:
   insightdeal-network:
     driver: bridge
+
+volumes:
+  postgres_data:

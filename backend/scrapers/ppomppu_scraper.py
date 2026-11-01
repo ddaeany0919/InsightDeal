@@ -32,8 +32,11 @@ class PpomppuScraper(AsyncBaseScraper):
             title_el = row.select_one('a.baseList-title') or row.select_one('.list_title') or row.select_one('font')
             if not title_el: return None
             
-            # [CEO 피드백] 뽐뿌의 핫딜 마크(is_super_hotdeal)는 hot_icon2.jpg 가 있을 때만 True로 설정
-            hot_icon = row.select_one('img[src*="hot_icon2.jpg"]')
+            if row.select_one('img[src*="icon_ppom_coupon"]'):
+                return None
+
+            # 뽐뿌 공식 인기 아이콘(pop_icon2.jpg) 또는 핫 아이콘(hot_icon2.jpg) 감지
+            hot_icon = row.select_one('img[src*="hot_icon2.jpg"], img[src*="pop_icon2.jpg"]')
                 
             full_title = title_el.get_text(strip=True)
             if not full_title or "공지" in full_title or "질문" in full_title or "문의" in full_title: return None
@@ -182,8 +185,8 @@ class PpomppuScraper(AsyncBaseScraper):
                 elif txt.isdigit(): # 조회수 (게시글 번호를 제외한 숫자)
                     view_count = int(txt)
 
-            # CEO 지시: 뽐뿌는 hot_icon2.jpg가 있는 경우에만 슈퍼핫딜로 인정
-            if hot_icon:
+            # 뽐뿌 공식 인기/핫 아이콘(pop_icon2.jpg / hot_icon2.jpg) 또는 추천 10개 이상 시 슈퍼핫딜 인정
+            if hot_icon or like_count >= 10:
                 is_super_hotdeal = True
 
             # 인기/HOT 여부(is_super_hotdeal)는 프론트엔드 UI의 뱃지(마크) 표시용으로 사용됨
@@ -308,12 +311,48 @@ class PpomppuScraper(AsyncBaseScraper):
         # 가격 파싱 폴백 (게시글 본문에서 가격 추출 시도)
         price_fallback = 0
         import re
-        
-        content_element = soup.select_one('td.board-contents') or soup.select_one('table.pic_bg td') or soup.select_one('td.han') or soup.select_one('.cont')
+
+        # 1. 이미지 태그를 먼저 추출 (아래 a.string 치환 시 a 태그 내부 img가 소실되는 버그 원천 차단!)
+        images = []
+        image_url = ""
+        for img in soup.select('td.board-contents img, td.han img, table.pic_bg img, .cont img'):
+            src = (img.get('data-original') or img.get('data-src') or img.get('src') or '').strip()
+            if src and src.startswith('//'):
+                src = 'https:' + src
+            if src and 'http' in src:
+                src_lower = src.lower()
+                # 이모티콘, 스티커, 로고, 프로필, 레이지로딩 플레이스홀더 등 배제
+                if any(x in src_lower for x in [
+                    'emoticon', 'sticker', 'transparent', 'logo', 'icon', 'reply',
+                    'blank', 'avatar', 'profile', 'lazyloading', '/t.gif', 'drag_img'
+                ]):
+                    continue
+                # 📸 [상세 고화질 변환 활성화]
+                if "ppomppu" in src:
+                    src = src.replace("_thumb/", "").replace("thumb/", "")
+                    src = src.replace("/small_", "/").replace("small_", "")
+                    src = src.replace("_thumb.", ".")
+                if src not in images:
+                    images.append(src)
+                if not image_url:
+                    image_url = src
+
+        # 2. 본문 엘리먼트 정밀 탐색 (table.pic_bg 의 첫 빈 td가 선택되어 본문이 증발하는 버그 수정!)
+        content_element = None
+        for candidate in soup.select('td.board-contents, td.han, .cont, table.pic_bg td'):
+            if len(candidate.get_text(strip=True)) > 0 or candidate.select('img, a'):
+                content_element = candidate
+                break
+
         if content_element:
             import urllib.parse
             import base64
-            # 링크 보존
+            # 뽐뿌 링크 프리뷰 박스(scrap_bx)의 중복 쇼핑몰 홍보 문구 제거 (본문 가독성 및 다중 옵션 파싱 정확도 향상)
+            for scrap in content_element.select('a.scrap_bx_href, div.scrap_bx'):
+                scrap.decompose()
+
+            # 링크 보존 및 본문 내 실제 구매 링크 추출 (상단 더미 링크 오탐 방어)
+            body_outlinks = []
             for a in content_element.find_all('a'):
                 href = a.get('href', '')
                 if "s.ppomppu.co.kr" in href:
@@ -328,34 +367,24 @@ class PpomppuScraper(AsyncBaseScraper):
                             decoded = base64.b64decode(encoded_target).decode('utf-8')
                             if decoded and decoded.startswith('http'):
                                 href = decoded
-                    except: pass
-                # a 태그 내용을 "[텍스트](링크)" 형태로 변경
-                new_text = f"{a.get_text()} (링크: {href})"
-                a.string = new_text
-            body_text = content_element.get_text(separator=' \n ', strip=True)
+                    except Exception:
+                        pass
+                a_text = a.get_text(strip=True)
+                if href and href.startswith('http'):
+                    if not any(x in href for x in ['ppomppu.co.kr', 'ppomppu4.co.kr', 'ppomppu8.co.kr']):
+                        body_outlinks.append(href)
+                    if a_text and href not in a_text:
+                        a.string = f"{a_text} (링크: {href})"
+                    else:
+                        a.string = f"(링크: {href})"
+            # 본문에 실제 구매 링크가 존재하고, 상단 링크가 없거나 알리뽐뿌 더미 링크인 경우 본문 첫 번째 링크 우선 채택
+            if body_outlinks:
+                if not ecommerce_link or (self.platform_name == "알리뽐뿌" and ecommerce_link not in body_outlinks):
+                    ecommerce_link = body_outlinks[0]
+            body_text = content_element.get_text(separator='\n', strip=True)
         else:
             body_text = soup.get_text(separator=' ')
-        
-        # 이미지 태그 추출해서 본문에 덧붙이기 (Gemini 매칭용)
-        images = []
-        image_url = ""
-        for img in soup.select('.board-contents img, table.pic_bg img, .han img, .cont img'):
-            src = img.get('src')
-            if src and src.startswith('//'): src = 'https:' + src
-            if src and 'http' in src:
-                src_lower = src.lower()
-                # 이모티콘, 스티커, 로고, 프로필 등 배제
-                if any(x in src_lower for x in ['emoticon', 'sticker', 'transparent', 'logo', 'icon', 'reply', 'blank', 'avatar', 'profile']):
-                    continue
-                # 📸 [상세 고화질 변환 활성화]: 이제 프록시가 작동하므로 고해상도 이미지를 추출합니다.
-                if "ppomppu" in src:
-                    src = src.replace("_thumb/", "").replace("thumb/", "")
-                    src = src.replace("/small_", "/").replace("small_", "")
-                    src = src.replace("_thumb.", ".")
-                images.append(src)
-                if not image_url:
-                    image_url = src
-                    
+
         if images:
             body_text += f"\n[첨부된 이미지 링크들]: {', '.join(images)}"
             
@@ -437,8 +466,9 @@ class PpomppuScraper(AsyncBaseScraper):
                 logger.info(f"[뽐뿌 상세] 과거 날짜 감지로 무효화: {posted_at_iso}")
                 posted_at_iso = None
             
-        # 📸 [고화질 썸네일 복구 가드]: 아웃링크(ecommerce_link)가 있으면 항상 고화질 og:image 조회를 시도하고 확보 시 우선 덮어쓰기
-        if ecommerce_link:
+        # 📸 [고화질 썸네일 복구 가드]: 본문 첨부 고화질 이미지(data3 등)가 없을 때만 외부 아웃링크 og:image 폴백 사용
+        has_valid_body_img = bool(image_url and ('/data3/' in image_url or 'files/attach' in image_url))
+        if ecommerce_link and not has_valid_body_img:
             og_img = await self.fetch_og_image(ecommerce_link)
             if og_img:
                 logger.info(f"✨ [뽐뿌 og:image] 외부 아웃링크에서 고화질 썸네일 확보: {og_img}")

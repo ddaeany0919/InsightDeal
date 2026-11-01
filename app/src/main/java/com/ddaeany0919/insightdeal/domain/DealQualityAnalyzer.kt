@@ -293,11 +293,11 @@ class DealQualityAnalyzer {
      */
     private fun getRecommendationText(score: Int): String {
         return when {
-            score >= 90 -> "🔥 초대박! 지금 당장 구매하세요!"
+            score >= 90 -> "최근 시세 대비 가장 낮은 가격대예요"
             score >= 70 -> "⭐ 추천! 좋은 딜입니다"
-            score >= 50 -> "👍 괜찮은 가격이에요"
-            score >= 30 -> "⚠️ 신중하게 검토해보세요"
-            else -> "❌ 이 딜은 피하시는 게 좋겠어요"
+            score >= 50 -> "평균보다 저렴한 편이에요"
+            score >= 30 -> "평소 시세와 비슷한 수준이에요"
+            else -> "과거 특가보다 다소 높은 가격이에요"
         }
     }
 
@@ -379,11 +379,11 @@ data class ScoreBreakdown(
 )
 
 enum class DealBadge(val emoji: String, val text: String, val color: String) {
-    SUPER_HOT("🔥", "초대박 꿀딜", "#FF3030"),
+    SUPER_HOT("●", "역대급 특가", "#FF3030"),
     RECOMMENDED("⭐", "추천 핫딜", "#FF6B35"),
-    OKAY("👍", "괜찮은 딜", "#2196F3"),
-    CAUTION("⚠️", "신중하게", "#9E9E9E"),
-    AVOID("❌", "피해야 할 딜", "#333333")
+    OKAY("●", "평균 이하", "#2196F3"),
+    CAUTION("●", "평소 수준", "#9E9E9E"),
+    AVOID("●", "가격 높음", "#333333")
 }
 
 enum class TrendPattern {

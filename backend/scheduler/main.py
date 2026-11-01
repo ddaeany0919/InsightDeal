@@ -11,11 +11,11 @@ sys.path.append(root_dir)
 load_dotenv(os.path.join(root_dir, '.env'))
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from backend.scheduler.naver_price_scheduler import run_naver_price_collection
 
 
 from backend.database.models import Base, Community, Deal
 from backend.scrapers.ppomppu_scraper import PpomppuScraper
+from backend.scrapers.ppomppu_overseas_scraper import PpomppuOverseasScraper
 from backend.scrapers.quasarzone_scraper import QuasarzoneScraper
 from backend.scrapers.fmkorea_scraper import FmkoreaScraper
 from backend.scrapers.ruliweb_scraper import RuliwebScraper
@@ -35,15 +35,17 @@ SCHEDULER_STATE = {
     "last_status": "Idle",
     "total_run_count": 0
 }
+COMMUNITY_COOLDOWN_UNTIL = {}
 
 # 🚀 메인 API 웹서버와 완전히 동일한 데이터베이스 파이프라인(session.py) 공유
 from backend.database.session import SessionLocal, db_manager
 
-# 메인 DB 연결 및 테이블 강제 동기화 (최초 1회)
-db_manager.init_database()
-
 async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
     """지정된 커뮤니티의 비동기 수집 파이프라인 태스크 (Producer-Consumer 큐 방식 적용)"""
+    cooldown_until = COMMUNITY_COOLDOWN_UNTIL.get(community_name)
+    if cooldown_until and datetime.now() < cooldown_until:
+        logger.info(f"⏳ [{community_name}] 430 쿨다운 보호 대기 중 (~{cooldown_until.strftime('%H:%M:%S')}) - 이번 주기는 건너뜁니다.")
+        return 0
     db = SessionLocal()
     try:
         community = db.query(Community).filter(Community.name == community_name).first()
@@ -52,7 +54,7 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                 "ppomppu": "뽐뿌", "quasarzone": "퀘이사존", "fmkorea": "펨코",
                 "ruliweb": "루리웹", "clien": "클리앙", "ali_ppomppu": "알리뽐뿌",
                 "bbasak_domestic": "빠삭국내", "bbasak_overseas": "빠삭해외",
-                "bbasak_parenting": "빠삭육아"
+                "bbasak_parenting": "빠삭육아", "ppomppu_overseas": "뽐뿌해외"
             }
             display_name = name_map.get(community_name, community_name)
             base_url = f"https://{community_name}.co.kr" if "ppomppu" in community_name else f"https://{community_name}.com"
@@ -68,6 +70,7 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
     try:
         success_count = 0
         update_count = 0
+        fetched_count = 0
         scraper = ScraperClass(community_id=community_id)
         queue = asyncio.Queue()
 
@@ -87,8 +90,21 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                     normalized_url = normalize_url(item['url'])
                     item['url'] = normalized_url  # 큐 내부 아이템의 URL도 정규화된 규격으로 통일
                     
-                    # 1. Exact Match로 기존 수집 여부 판별
+                    # 0. 게시판 공지/안내 스팸글은 상세 페이지 요청조차 하지 않고 즉시 스킵
+                    raw_t = item.get("title", "") or ""
+                    if any(kw in raw_t for kw in ("공지", "정보 안내", "사전 안내", "입고금지", "수익링크", "금지조치", "활동내역", "제재조치", "도와주세요", "어떤가요", "어디까지", "갈수있는데", "할수있는데")):
+                        local_db.close()
+                        queue.task_done()
+                        continue
+
+                    # 1. Exact Match 또는 이미 병합된 서브 커뮤니티 링크(merged_communities) 여부 판별
                     existing_deal = local_db.query(Deal).filter(Deal.post_link == normalized_url).first()
+                    if not existing_deal:
+                        existing_deal = local_db.query(Deal).filter(Deal.merged_communities.like(f"%{normalized_url}%")).first()
+                        if existing_deal and existing_deal.content_html:
+                            local_db.close()
+                            queue.task_done()
+                            continue
                     
                     # 2. 롤링 윈도우 (24시간 내 동일 상품명/쇼핑몰 링크) 사전 검출로 중복상세 원천 차단
                     if not existing_deal:
@@ -113,8 +129,10 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                             # 상세 페이지 내부의 외부 링크가 있다면 그것도 정규화
                             if detail.get("ecommerce_link"):
                                 detail["ecommerce_link"] = normalize_url(detail["ecommerce_link"])
-                            # [Smart Merge Guard] 빈 문자열이나 None이 아닌 유효한 값만 병합하여 목록 단의 posted_at 등 유실 방지
+                            # [Smart Merge Guard] 빈 문자열이나 None, 혹은 0원 가격으로 인해 목록 단의 유효값 유실 방지
                             for k, v in detail.items():
+                                if k == "price" and (not v or v == 0) and item.get("price", 0) > 0:
+                                    continue
                                 if v is not None and v != "":
                                     item[k] = v
                     else:
@@ -147,15 +165,33 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                                 queue.task_done()
                                 continue
                         
-                        # [Lazy-Loading 최적화 핵심]: 상세 정보(본문 등)가 예외적으로 누락된 경우가 아니라면,
-                        # 기존 딜 업데이트 시 상세 페이지(get_detail)를 다시 긁지 않고 목록의 초경량 메타데이터(추천수, 조회수 등)로만 Upsert!
-                        if not existing_deal.content_html:
+                        # [Lazy-Loading & Zero-Cost Delta Skip 최적화 핵심]:
+                        # 상세 정보(본문 등)가 이미 있고, 추천수/댓글수/품절여부/인기여부가 변하지 않았다면 무거운 정규화·병합 연산을 0ms로 즉시 스킵!
+                        if existing_deal.content_html:
+                            new_closed = bool(item.get("is_closed", False))
+                            new_super = bool(item.get("is_super_hotdeal", False))
+                            new_likes = int(item.get("like_count") or 0)
+                            new_comments = int(item.get("comment_count") or 0)
+                            new_views = int(item.get("view_count") or 0)
+                            if (
+                                bool(existing_deal.is_closed) == new_closed
+                                and (bool(existing_deal.is_super_hotdeal) or not new_super)
+                                and (existing_deal.like_count or 0) == new_likes
+                                and (existing_deal.comment_count or 0) == new_comments
+                                and abs((existing_deal.view_count or 0) - new_views) < 30
+                            ):
+                                local_db.close()
+                                queue.task_done()
+                                continue
+                        else:
                             detail = await scraper.get_detail(normalized_url)
                             if detail:
                                 if detail.get("ecommerce_link"):
                                     detail["ecommerce_link"] = normalize_url(detail["ecommerce_link"])
-                                # [Smart Merge Guard] 빈 문자열이나 None이 아닌 유효한 값만 병합하여 목록 단의 posted_at 등 유실 방지
+                                # [Smart Merge Guard] 빈 문자열이나 None, 혹은 0원 가격으로 인해 목록 단의 유효값 유실 방지
                                 for k, v in detail.items():
+                                    if k == "price" and (not v or v == 0) and item.get("price", 0) > 0:
+                                        continue
                                     if v is not None and v != "":
                                         item[k] = v
                     
@@ -173,10 +209,11 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                 queue.task_done()
 
         async with scraper:
-            logger.info(f"▶ [{community_display_name}] 큐 기반 스크래핑 워커 가동 (pages={pages})")
+            num_workers = 1 if "fmkorea" in community_name else 3
+            logger.info(f"▶ [{community_display_name}] 큐 기반 스크래핑 워커 가동 (pages={pages}, workers={num_workers})")
             
-            # SQLite 사용 시 동시 쓰기로 인한 DB 손상을 방지하기 위해 1개의 워커만 사용
-            workers = [asyncio.create_task(worker()) for _ in range(1)]
+            # SQLite WAL 모드 + busy_timeout=60000 환경에서 네트워크 I/O 병렬화를 위해 워커 다중화 (펨코는 WAF 보호용 1개 유지)
+            workers = [asyncio.create_task(worker()) for _ in range(num_workers)]
             global_seen_urls = set()
 
             # Producer: 리스트 페이지를 긁어서 Queue에 삽입
@@ -198,8 +235,9 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                         
                         if not items:
                             break
+                        fetched_count += len(items)
                             
-                        # [최적화] 현재 페이지의 딜이 전부 기존 DB에 있는지 확인 (조기 종료) 및 페이지 내 큐 중복 방지
+                        # [최적화] 개별 N+1 쿼리 대신 단 1번의 IN 쿼리로 기존 DB 존재 여부 일괄 스캔
                         duplicate_count = 0
                         check_db = SessionLocal()
                         unique_items = []
@@ -212,8 +250,10 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                                 global_seen_urls.add(norm_url)
                                 item['url'] = norm_url # 아이템의 url을 정규화된 것으로 미리 치환
                                 unique_items.append(item)
-                                if check_db.query(Deal).filter(Deal.post_link == norm_url).first():
-                                    duplicate_count += 1
+                            if unique_items:
+                                batch_urls = [it['url'] for it in unique_items]
+                                existing_url_rows = check_db.query(Deal.post_link).filter(Deal.post_link.in_(batch_urls)).all()
+                                duplicate_count = len({r[0] for r in existing_url_rows})
                         finally:
                             check_db.close()
                             
@@ -230,11 +270,16 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                                 logger.info(f"ℹ️ [{community_display_name}] {page}페이지 대부분({duplicate_count}/{len(items)})이 기존 딜이지만, 상태 갱신을 위해 스캔을 계속합니다.")
                 except Exception as e:
                     logger.error(f"[{community_display_name}] 리스트 페이지 {page} 파싱 에러: {e}")
+                    if "430" in str(e):
+                        from datetime import timedelta
+                        COMMUNITY_COOLDOWN_UNTIL[community_name] = datetime.now() + timedelta(minutes=12)
+                        scraper.parsing_pop = False
+                        setattr(scraper, "_skip_pop_due_to_430", True)
                     # 타임아웃/차단 등 심각한 에러 발생 시 다음 페이지 조회를 중단하여 파이프라인 지연 방지
                     break
 
             # [Optimization] 포텐/인기글 전용 URL이 있는 경우 추가 1페이지 크롤링 (과거 수집 딜의 핫딜 승격 상태 업데이트용)
-            if hasattr(scraper, 'pop_url') and getattr(scraper, 'pop_url'):
+            if hasattr(scraper, 'pop_url') and getattr(scraper, 'pop_url') and not getattr(scraper, '_skip_pop_due_to_430', False):
                 try:
                     logger.info(f"▶ [{community_display_name}] 핫딜 승격 감지용 인기글 페이지 스크래핑 추가 실행")
                     scraper.parsing_pop = True
@@ -252,7 +297,7 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
             await queue.join()
             
             # 워커 종료 신호 전송
-            for _ in range(5):
+            for _ in range(num_workers):
                 await queue.put(None)
             
             await asyncio.gather(*workers)
@@ -269,8 +314,10 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                         stats = json.load(f)
                 stats[community_display_name] = {
                     "last_count": success_count,
+                    "fetched_count": fetched_count,
+                    "updated_count": update_count,
                     "last_run": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "status": "Success" if success_count > 0 else "Blocked/Failed"
+                    "status": "Success" if (success_count > 0 or fetched_count > 0) else "Blocked/Failed"
                 }
                 with open(stats_file, 'w', encoding='utf-8') as f:
                     json.dump(stats, f, ensure_ascii=False, indent=2)
@@ -356,7 +403,12 @@ async def validate_closed_deals():
                                 
                             soup = BeautifulSoup(resp.content, 'html.parser')
                             title_tag = soup.title.string if soup.title else ""
-                            if any(kw in title_tag for kw in ["종료", "마감", "품절", "블라인드", "삭제"]):
+                            if any(kw in title_tag for kw in ["종료", "마감", "품절", "블라인드", "삭제", "완료"]):
+                                return True
+
+                            # 본문 헤더 및 품절/종료 배지 추가 스캔 (뽐뿌, 퀘이사존, 루리웹 등 종료 전환 즉시 감지)
+                            header_el = soup.select_one('h1, h3, .board-title, .view_title, .subject, span.end, .market-end')
+                            if header_el and any(kw in header_el.get_text(" ", strip=True) for kw in ["종료", "마감", "품절", "블라인드", "삭제"]):
                                 return True
                                 
                             return False
@@ -449,9 +501,8 @@ async def validate_closed_deals():
 async def run_pipeline_job():
     """
     자가 치유 복구(Self-Healing Backfill)가 내장된 투트랙 오케스트레이션 엔진:
-    - 매 5분 사이클: 단기 수집 (1페이지 초고속 - 신규 글 즉시 반영)
-    - 매 2번째 사이클 (10분): 심층 수집 (1~3페이지 - 핫딜마크 갱신)
-    - [Self-Healing]: 서버 장애 또는 개발 부재로 인한 누락 시간(최대 5일) 자동 감지 시, 복구 완료될 때까지 동적 백필(최대 25페이지) 자동 구동!
+    - 매 3분 사이클: 단기 수집 (1페이지 초고속 - 신규 글 즉시 반영)
+    - 매 2번째 사이클 (6분): 심층 수집 (1~2페이지 - 핫딜마크 및 추천/댓글수 갱신)
     """
     logger.info("====================================")
     
@@ -461,7 +512,6 @@ async def run_pipeline_job():
     gap_hours = 0.0
     
     try:
-        # DB에서 가장 최근에 수집된 핫딜 조회
         from backend.database.models import Deal
         last_deal = db.query(Deal).order_by(Deal.indexed_at.desc()).first()
         if last_deal and last_deal.indexed_at:
@@ -474,23 +524,24 @@ async def run_pipeline_job():
             gap_seconds = (now - last_time).total_seconds()
             gap_hours = gap_seconds / 3600.0
             
-            # 수집 공백이 2시간을 초과한 경우 ➔ 자가 치유 복구 백필 모드 가동!
-            if gap_hours > 2.0:
+            # 수집 공백이 2시간을 초과한 경우, 첫 사이클 병목을 막기 위해 최대 2페이지로 빠르게 최신 글부터 확보
+            if gap_hours > 2.0 and "--one-shot" not in sys.argv:
                 is_backfill_mode = True
-                # 누락 시간에 비례하여 탐색할 과거 페이지 깊이를 동적 결정 (최대 25페이지, 약 5일 치 분량 복구)
-                pages_to_scrape = min(25, max(3, int(gap_hours * 1.5)))
+                pages_to_scrape = 2
     except Exception as e:
         logger.error(f"[Self-Healing] 수집 공백 분석 실패: {e}")
     finally:
         db.close()
         
-    if not is_backfill_mode:
-        # 평시 모드
+    if "--one-shot" in sys.argv:
+        pages_to_scrape = 1
+        mode_str = "⚡ 즉시 동기화 (1페이지 초고속 수집)"
+    elif not is_backfill_mode:
         is_deep_scan = (SCHEDULER_STATE["total_run_count"] % 2 == 0)
-        pages_to_scrape = 3 if is_deep_scan else 1
-        mode_str = "핫딜마크 추적대(1~3페이지)" if is_deep_scan else "신규글 감시조(1페이지)"
+        pages_to_scrape = 2 if is_deep_scan else 1
+        mode_str = "핫딜마크 추적대(1~2페이지)" if is_deep_scan else "신규글 감시조(1페이지)"
     else:
-        mode_str = f"🔥 자가치유 백필 복구 가동 (공백 {gap_hours:.1f}시간 감지 -> {pages_to_scrape}페이지 자동 추적)"
+        mode_str = f"🔥 고속 백필 복구 가동 (공백 {gap_hours:.1f}시간 감지 -> {pages_to_scrape}페이지 우선 추적)"
         
     logger.info(f"🚀 [Background] 정기 핫딜 동시 수집 파이프라인 가동 - 모드: {mode_str}")
     logger.info("====================================")
@@ -501,6 +552,7 @@ async def run_pipeline_job():
         # 각 스크래퍼가 독립적인 DB Session을 사용하므로, asyncio.gather 시 데드락 방지 완벽 보장
         tasks = [
             scrape_community("ppomppu", PpomppuScraper, pages_to_scrape),
+            scrape_community("ppomppu_overseas", PpomppuOverseasScraper, pages_to_scrape),
             scrape_community("quasarzone", QuasarzoneScraper, pages_to_scrape),
             scrape_community("fmkorea", FmkoreaScraper, pages_to_scrape),
             scrape_community("ruliweb", RuliwebScraper, pages_to_scrape),
@@ -518,6 +570,12 @@ async def run_pipeline_job():
         SCHEDULER_STATE["last_status"] = f"Success ({total_collected} deals process)"
         SCHEDULER_STATE["total_run_count"] += 1
         
+        try:
+            from backend.routers.community import invalidate_feed_api_cache
+            invalidate_feed_api_cache()
+        except Exception:
+            pass
+        
         logger.info(f"🎉 파이프라인 사이클 완료! 총 {total_collected}건의 Deal 데이터가 갱신되었습니다.")
         logger.info("====================================\n")
         
@@ -525,18 +583,33 @@ async def run_pipeline_job():
         SCHEDULER_STATE["last_status"] = f"Error: {e}"
         logger.error(f"❌ 전체 파이프라인 사이클 붕괴 에러: {e}")
 
+from backend.services.cache_purger import purge_old_image_cache
+
+def purge_cache_job():
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cache_dir = os.path.join(backend_dir, "image_cache")
+    purge_old_image_cache(cache_dir, max_age_days=14)
+
+def db_maintenance_job():
+    try:
+        db_manager.perform_maintenance_and_backup(max_backups=3, slim_days=180)
+    except Exception as e:
+        logger.error(f"DB 일일 안전 백업 및 최적화 작업 중 오류: {e}")
+
 def start_scheduler():
+    db_manager.init_database()
     scheduler = AsyncIOScheduler()
-    # 핫딜 수집 데몬 (5분 주기)
-    scheduler.add_job(run_pipeline_job, 'interval', minutes=5, id='hotdeal_pipeline')
-    # 과거 딜 품절 검증 데몬 (20분 주기)
-    scheduler.add_job(validate_closed_deals, 'interval', minutes=20, id='hotdeal_validator')
+    # 핫딜 수집 데몬 (3분 주기 - 알구몬급 실시간 반영)
+    scheduler.add_job(run_pipeline_job, 'interval', minutes=3, id='hotdeal_pipeline')
+    # 과거 딜 품절/종료 검증 데몬 (10분 주기)
+    scheduler.add_job(validate_closed_deals, 'interval', minutes=10, id='hotdeal_validator')
     # 펨코 실시간 급상승 검색어 수집 (1시간 주기, 정각 실행)
     scheduler.add_job(update_fmkorea_trending_keywords, 'cron', minute=0, id='fmkorea_trending')
-    # 📈 네이버 쇼핑 시장 최저가 추적 배치 (매일 새벽 4시 실행)
-    scheduler.add_job(run_naver_price_collection, 'cron', hour=4, minute=0, id='naver_price_collection')
+    # 🧹 이미지 캐시 7일/14일 자동 정제 배치 (매일 새벽 3시 30분 실행 - On-demand 재생성 보장)
+    scheduler.add_job(purge_cache_job, 'cron', hour=3, minute=30, id='cache_purger')
+    scheduler.add_job(db_maintenance_job, 'cron', hour=4, minute=0, id='db_maintenance')
     scheduler.start()
-    logger.info("⏰ [System] 투트랙 스케줄러 & 상태 검증 & 네이버 쇼핑 배치 시동 완료")
+    logger.info("⏰ [System] 투트랙 스케줄러(3분 수집 / 10분 품절검증) 시동 완료")
     return scheduler
 
 if __name__ == "__main__":

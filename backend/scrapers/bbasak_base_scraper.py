@@ -34,9 +34,13 @@ class BbasakBaseScraper(AsyncBaseScraper):
             href = title_element.get('href')
             if not href: return None
 
-            url = urljoin("https://bbasak.com", href)
-            if 'device=pc' not in url:
-                url += "&device=pc" if "?" in url else "?device=pc"
+            url = urljoin("https://bbasak.com", href).replace("bbasak.com:443", "bbasak.com")
+            from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+            parsed_u = urlparse(url)
+            qs = parse_qs(parsed_u.query)
+            qs.pop("page", None)
+            qs["device"] = ["pc"]
+            url = urlunparse(parsed_u._replace(netloc="bbasak.com", query=urlencode(qs, doseq=True)))
                 
             full_title = title_element.get_text(strip=True)
             
@@ -79,11 +83,17 @@ class BbasakBaseScraper(AsyncBaseScraper):
                 
             is_super_hotdeal = False
             view_count = 0
+            like_count = 0
             tds = row.select('td')
             if len(tds) > 4:
                 hit_txt = tds[-1].get_text(strip=True).replace(',', '')
                 view_count = int(hit_txt) if hit_txt.isdigit() else 0
-                if view_count >= 2500:
+                if len(tds) >= 7:
+                    rec_txt = tds[-2].get_text(strip=True).replace(',', '')
+                    if rec_txt.isdigit():
+                        like_count = int(rec_txt)
+                view_threshold = 1500 if "국내" in getattr(self, "platform_name", "") else 2500
+                if view_count >= view_threshold or like_count >= 3:
                     is_super_hotdeal = True
                     
             # 댓글수 추출 (보통 제목 옆에 [3] 또는 span 태그)
@@ -140,7 +150,7 @@ class BbasakBaseScraper(AsyncBaseScraper):
                 "is_super_hotdeal": is_super_hotdeal,
                 "posted_at": posted_at_iso,
                 "view_count": view_count,
-                "like_count": 0,
+                "like_count": like_count,
                 "comment_count": comment_count,
                 "category": category_extracted
             }
@@ -236,46 +246,88 @@ class BbasakBaseScraper(AsyncBaseScraper):
         price_fallback = 0
         extracted_currency = "KRW"
         shipping_fee = ""
-        body_text = soup.get_text(separator=' ')
-        
-        # 가격 휴리스틱 추출
-        # [방어막 추가]: 본문 파싱 전 URL 소거 처리! (링크 내의 숫자 오인 차단)
-        cleaned_body_text = re.sub(r'https?://[^\s]+', '', body_text)
-        
-        usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', cleaned_body_text, re.IGNORECASE)
-        if not usd_match:
-            usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', cleaned_body_text, re.IGNORECASE)
-        
-        price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', cleaned_body_text)
-        
-        if usd_match:
-            try:
-                val = float(usd_match.group(1).replace(',', ''))
-                price_fallback = int(val * 100)
-                if '유로' in body_text or '€' in body_text:
-                    extracted_currency = "EUR"
+        view_content_el = soup.select_one('#view_content') or soup.select_one('#board_view')
+        body_text = view_content_el.get_text(separator=' ') if view_content_el else soup.get_text(separator=' ')
+
+        # 0. 빠삭 상품정보 영역(.detailTxt ul li)의 명시적 가격/배송비/링크 추출
+        for li in soup.select('#view_content .detailTxt li, .detailTxt li'):
+            tit_span = li.select_one('span.titTxt')
+            if not tit_span:
+                continue
+            label = tit_span.get_text(strip=True)
+            full_li_text = li.get_text(strip=True)
+            val_text = full_li_text[len(label):].strip() if full_li_text.startswith(label) else full_li_text.replace(label, '', 1).strip()
+            if '가격' in label and val_text:
+                usd_m = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)|([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', val_text, re.IGNORECASE)
+                if usd_m:
+                    try:
+                        raw_v = usd_m.group(1) or usd_m.group(2)
+                        price_fallback = int(float(raw_v.replace(',', '')) * 100)
+                        extracted_currency = "EUR" if ('유로' in val_text or '€' in val_text) else "USD"
+                    except Exception:
+                        pass
                 else:
-                    extracted_currency = "USD"
-            except: pass
-        elif price_matches:
-            try:
-                price_fallback = int(price_matches[0].replace(',', '').replace('.', ''))
-            except:
-                pass
-                
-        shipping_fee = ""
+                    num_m = re.search(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,8})', val_text)
+                    if num_m:
+                        try:
+                            cand = int(num_m.group(1).replace(',', ''))
+                            if 100 <= cand <= 15000000:
+                                price_fallback = cand
+                        except Exception:
+                            pass
+            elif ('배송' in label or '택배' in label) and val_text:
+                if val_text in ('0', '0원') or '무료' in val_text or '무배' in val_text:
+                    shipping_fee = "무료배송"
+                else:
+                    shipping_fee = val_text
+            elif '링크' in label and not ecommerce_link:
+                a_tag = li.select_one('a[href]')
+                if a_tag and a_tag['href'].startswith('http') and 'bbasak.com' not in a_tag['href']:
+                    ecommerce_link = a_tag['href'].strip()
+
+        # 가격 휴리스틱 추출 (상단 .detailTxt에 가격이 없을 때만)
+        cleaned_body_text = re.sub(r'https?://[^\s]+', '', body_text)
+
+        if price_fallback == 0:
+            usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', cleaned_body_text, re.IGNORECASE)
+            if not usd_match:
+                usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', cleaned_body_text, re.IGNORECASE)
+
+            price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', cleaned_body_text)
+
+            if usd_match:
+                try:
+                    val = float(usd_match.group(1).replace(',', ''))
+                    price_fallback = int(val * 100)
+                    if '유로' in body_text or '€' in body_text:
+                        extracted_currency = "EUR"
+                    else:
+                        extracted_currency = "USD"
+                except Exception:
+                    pass
+            elif price_matches:
+                for pm in price_matches:
+                    try:
+                        cand = int(pm.replace(',', '').replace('.', ''))
+                        if cand >= 100:
+                            price_fallback = cand
+                            break
+                    except Exception:
+                        pass
+
         # 1. 명시적인 테이블 정보(배송비/택배비) 확인
-        for tr in soup.select('table tr'):
-            th = tr.select_one('th')
-            td = tr.select_one('td')
-            if th and td:
-                th_text = th.get_text(strip=True)
-                if '배송비' in th_text or '택배비' in th_text:
-                    fee_text = td.get_text(strip=True)
-                    if fee_text:
-                        shipping_fee = fee_text
-                        break
-        
+        if not shipping_fee:
+            for tr in soup.select('table tr'):
+                th = tr.select_one('th')
+                td = tr.select_one('td')
+                if th and td:
+                    th_text = th.get_text(strip=True)
+                    if '배송비' in th_text or '택배비' in th_text:
+                        fee_text = td.get_text(strip=True)
+                        if fee_text:
+                            shipping_fee = "무료배송" if fee_text in ('0', '0원') else fee_text
+                            break
+
         # 2. 본문 휴리스틱
         if not shipping_fee:
             if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):
@@ -288,4 +340,24 @@ class BbasakBaseScraper(AsyncBaseScraper):
                 logger.info(f"✨ [빠삭 og:image] 외부 아웃링크에서 고화질 썸네일 확보: {og_img}")
                 image_url = og_img
 
-        return {"image_url": image_url, "ecommerce_link": ecommerce_link, "price": price_fallback, "currency": extracted_currency, "shipping_fee": shipping_fee}
+        content_html = ""
+        board_view_el = soup.select_one('#view_content') or soup.select_one('#board_view') or soup.select_one('div.board_view')
+        if board_view_el:
+            for tag in board_view_el.select('script, style, iframe, button, .Singoinfo, #s_layer'):
+                tag.decompose()
+            raw_lines = [line.strip() for line in board_view_el.get_text(separator='\n').splitlines() if line.strip()]
+            filtered_lines = [
+                ln for ln in raw_lines
+                if not any(noise in ln for noise in ('게시글 신고 기능 안내', '신고버튼을 누르면', '신고사유를 선택후', '빠삭 운영진에게 전달'))
+            ]
+            content_html = '\n'.join(filtered_lines)
+
+        return {
+            "image_url": image_url,
+            "ecommerce_link": ecommerce_link,
+            "price": price_fallback,
+            "currency": extracted_currency,
+            "shipping_fee": shipping_fee,
+            "content_html": content_html,
+        }
+

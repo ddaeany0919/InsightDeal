@@ -32,7 +32,8 @@ interface DealDao {
               (INSTR(',' || :platform || ',', ',클리앙,') > 0 AND INSTR(siteName, '클리앙') > 0) OR
               (INSTR(',' || :platform || ',', ',알리뽐뿌,') > 0 AND INSTR(siteName, '알리뽐뿌') > 0) OR
               (INSTR(',' || :platform || ',', ',빠삭국내,') > 0 AND INSTR(siteName, '빠삭국내') > 0) OR
-              (INSTR(',' || :platform || ',', ',빠삭해외,') > 0 AND INSTR(siteName, '빠삭해외') > 0)
+              (INSTR(',' || :platform || ',', ',빠삭해외,') > 0 AND INSTR(siteName, '빠삭해외') > 0) OR
+              (INSTR(',' || :platform || ',', ',빠삭육아,') > 0 AND INSTR(siteName, '빠삭육아') > 0)
           ))
         ORDER BY createdAt DESC, id DESC
     """)

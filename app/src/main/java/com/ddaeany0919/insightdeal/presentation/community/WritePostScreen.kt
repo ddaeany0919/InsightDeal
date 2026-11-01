@@ -56,7 +56,7 @@ class WritePostViewModel : ViewModel() {
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
-    
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -160,7 +160,7 @@ class WritePostViewModel : ViewModel() {
                         location.value = p.location ?: ""
                         bountyPoints.value = p.bountyPoints
                         likeCount.value = p.likeCount
-                        
+
                         p.location?.let { loc ->
                             if (loc.startsWith("deal_id:")) {
                                 val idStr = loc.removePrefix("deal_id:")
@@ -211,7 +211,7 @@ class WritePostViewModel : ViewModel() {
                 } else {
                     api.createCommunityPost(req)
                 }
-                
+
                 if (response.isSuccessful) {
                     _submitSuccess.value = true
                 } else {
@@ -275,9 +275,10 @@ fun WritePostScreen(
     }
 
     Scaffold(
+        modifier = Modifier.imePadding(),
         topBar = {
             TopAppBar(
-                title = { Text(if (postId == null) "⚖️ 꿀딜 투표 올리기" else "게시글 수정", fontWeight = FontWeight.Bold) },
+                title = { Text(if (postId == null) "구매 투표 올리기" else "게시글 수정", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { navController?.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로 가기")
@@ -308,7 +309,7 @@ fun WritePostScreen(
             }
             return@Scaffold
         }
-        
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -323,64 +324,20 @@ fun WritePostScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = it, 
+                        text = it,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(12.dp)
                     )
                 }
             }
 
-            // 가이드 배너
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = AccentOrangeSoft.copy(alpha = 0.6f)
-                ),
-                border = BorderStroke(
-                    1.dp,
-                    AccentOrange.copy(alpha = 0.2f)
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = AccentOrange.copy(alpha = 0.15f),
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text("⚖️", fontSize = 18.sp)
-                        }
-                    }
-                    Column {
-                        Text(
-                            text = "⚖️ 꿀딜 투표 가이드",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = AccentOrange
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "구매 여부가 망설여지는 특가 핫딜을 공유하고 글을 남겨주세요. 지름 고수들의 투표와 날카로운 피드백으로 고민을 해결해 드립니다!",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = NeutralGray700,
-                            lineHeight = 20.sp
-                        )
-                    }
-                }
-            }
-
-            // 🛍️ 핫딜 상품 연동 영역
+            // 핫딜 상품 연동 영역
             if (selectedDeal == null) {
                 Card(
                     onClick = { showBottomSheet = true },
                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(1.5.dp, NeutralGray200),
-                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, NeutralGray200),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -391,29 +348,29 @@ fun WritePostScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Surface(
-                            shape = CircleShape,
-                            color = AccentOrangeSoft,
-                            modifier = Modifier.size(40.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            color = NeutralGray50,
+                            modifier = Modifier.size(38.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Outlined.ShoppingCart,
                                     contentDescription = null,
-                                    tint = AccentOrange,
-                                    modifier = Modifier.size(20.dp)
+                                    tint = NeutralGray700,
+                                    modifier = Modifier.size(19.dp)
                                 )
                             }
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "🛍️ 투표에 연동할 핫딜 상품 선택 (선택)",
+                                text = "핫딜 상품 첨부 (선택)",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = NeutralGray900
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "망설여지는 핫딜을 연동해 고수들의 투표율을 높여보세요.",
+                                text = "고민 중인 상품을 연결해 의견을 물어보세요.",
                                 fontSize = 12.sp,
                                 color = NeutralGray500
                             )
@@ -425,8 +382,8 @@ fun WritePostScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(1.5.dp, AccentOrange.copy(alpha = 0.3f)),
-                    shape = RoundedCornerShape(16.dp)
+                    border = BorderStroke(1.dp, NeutralGray200),
+                    shape = RoundedCornerShape(14.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
@@ -434,21 +391,13 @@ fun WritePostScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(
-                                    imageVector = Icons.Outlined.ShoppingCart,
-                                    contentDescription = null,
-                                    tint = AccentOrange,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Text(
-                                    text = "🛍️ 연동된 핫딜 상품",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = AccentOrange
-                                )
-                            }
-                            
+                            Text(
+                                text = "첨부된 상품",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = NeutralGray700
+                            )
+
                             IconButton(
                                 onClick = { viewModel.setSelectedDeal(null) },
                                 modifier = Modifier.size(24.dp)
@@ -461,27 +410,31 @@ fun WritePostScreen(
                                 )
                             }
                         }
-                        
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             if (!deal.imageUrl.isNullOrBlank()) {
+                                val proxySelectedUrl = remember(deal.imageUrl) {
+                                    val raw = deal.imageUrl ?: ""
+                                    if (raw.startsWith("http")) "${com.ddaeany0919.insightdeal.BuildConfig.BASE_URL.trimEnd('/') + "/"}api/proxy-image?url=${java.net.URLEncoder.encode(raw, "UTF-8")}&v=5" else raw
+                                }
                                 AsyncImage(
-                                    model = deal.imageUrl,
+                                    model = proxySelectedUrl,
                                     contentDescription = null,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
-                                        .size(64.dp)
+                                        .size(60.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(NeutralGray50)
                                 )
                             } else {
                                 Box(
                                     modifier = Modifier
-                                        .size(64.dp)
+                                        .size(60.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(NeutralGray50),
                                     contentAlignment = Alignment.Center
@@ -490,11 +443,11 @@ fun WritePostScreen(
                                         imageVector = Icons.Outlined.ShoppingCart,
                                         contentDescription = null,
                                         tint = NeutralGray500,
-                                        modifier = Modifier.size(28.dp)
+                                        modifier = Modifier.size(24.dp)
                                     )
                                 }
                             }
-                            
+
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -532,7 +485,7 @@ fun WritePostScreen(
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "${"%,d".format(deal.price)}원",
+                                    text = com.ddaeany0919.insightdeal.presentation.formatPrice(deal.price.toLong(), null, deal.title),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = NeutralGray900
@@ -611,7 +564,7 @@ fun WritePostScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "🛍️ 연동할 핫딜 상품 선택",
+                        text = "연동할 핫딜 상품 선택",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = NeutralGray900
@@ -620,7 +573,7 @@ fun WritePostScreen(
                         Icon(imageVector = Icons.Default.Close, contentDescription = "닫기", tint = NeutralGray500)
                     }
                 }
-                
+
                 // 검색 바
                 OutlinedTextField(
                     value = searchQuery,
@@ -646,9 +599,9 @@ fun WritePostScreen(
                         focusedLabelColor = AccentOrange
                     )
                 )
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 // 최근 핫딜 리스트
                 if (dealsLoading) {
                     Box(
@@ -667,8 +620,6 @@ fun WritePostScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("🔍", fontSize = 40.sp)
-                            Spacer(modifier = Modifier.height(12.dp))
                             Text(
                                 text = "검색 결과가 없습니다",
                                 fontSize = 15.sp,
@@ -689,7 +640,7 @@ fun WritePostScreen(
                             .fillMaxWidth()
                             .weight(1f)
                     ) {
-                        items(deals, key = { it.id }) { deal ->
+                        items(items = deals, key = { it.id }, contentType = { "deal_select_item" }) { deal ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -702,8 +653,12 @@ fun WritePostScreen(
                                 horizontalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
                                 if (!deal.imageUrl.isNullOrBlank()) {
+                                    val proxySheetUrl = remember(deal.imageUrl) {
+                                        val raw = deal.imageUrl ?: ""
+                                        if (raw.startsWith("http")) "${com.ddaeany0919.insightdeal.BuildConfig.BASE_URL.trimEnd('/') + "/"}api/proxy-image?url=${java.net.URLEncoder.encode(raw, "UTF-8")}&v=5" else raw
+                                    }
                                     AsyncImage(
-                                        model = deal.imageUrl,
+                                        model = proxySheetUrl,
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
@@ -727,7 +682,7 @@ fun WritePostScreen(
                                         )
                                     }
                                 }
-                                
+
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -766,7 +721,7 @@ fun WritePostScreen(
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "${"%,d".format(deal.price)}원",
+                                        text = com.ddaeany0919.insightdeal.presentation.formatPrice(deal.price.toLong(), null, deal.title),
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = NeutralGray700

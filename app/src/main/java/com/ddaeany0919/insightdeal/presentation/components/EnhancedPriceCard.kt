@@ -83,7 +83,7 @@ fun EnhancedPriceCard(
                 modifier = Modifier.padding(bottom = 8.dp)
             ) {
                 Text(
-                    text = "✨ 뽐뿌, 퀘이사존 등 3곳에서 검증됨",
+                    text = "복수 커뮤니티 동시 등록",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -117,7 +117,7 @@ fun EnhancedPriceCard(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "💰 ${comparison.lowestPlatform} ${String.format("%,d", savings)}원 할인",
+                            text = "${comparison.lowestPlatform} ${String.format("%,d", savings)}원 저렴",
                             style = MaterialTheme.typography.bodyLarge,
                             color = Color(0xFF2E7D32),
                             fontWeight = FontWeight.Bold
@@ -126,7 +126,7 @@ fun EnhancedPriceCard(
                         // [Task 1] 역대 최저가 텍스트
                         if (recordLowDiff != null && comparison.recordLowPrice != null) {
                             Text(
-                                text = "📈 $recordLowDiff",
+                                text = "$recordLowDiff",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (comparison.lowestPrice <= comparison.recordLowPrice) Color(0xFFE91E63) else Color(0xFF1565C0),
                                 fontWeight = FontWeight.Bold,
@@ -134,7 +134,7 @@ fun EnhancedPriceCard(
                             )
                         } else {
                             Text(
-                                text = "🔥 지금이 3개월 중 최저가",
+                                text = "최근 3개월 중 가장 낮은 가격이에요",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFF1565C0),
                                 fontWeight = FontWeight.Medium

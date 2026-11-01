@@ -59,12 +59,12 @@ class LlmNormalizer(ProductNormalizer):
         
         진짜 분석할 제목: "{title}"
         """
-        max_retries = 3
+        max_retries = 2
         for attempt in range(max_retries):
             try:
                 from backend.core.ai_utils import get_random_gemini_key
                 import google.generativeai as genai
-                import time
+                import asyncio
                 
                 api_key = get_random_gemini_key()
                 if not api_key:
@@ -73,7 +73,7 @@ class LlmNormalizer(ProductNormalizer):
                 genai.configure(api_key=api_key)
                 model = genai.GenerativeModel('gemini-flash-latest')
                 
-                response = model.generate_content(prompt)
+                response = await asyncio.wait_for(model.generate_content_async(prompt), timeout=6.0)
                 text = response.text.replace('```json', '').replace('```', '').strip()
                 data = json.loads(text)
                 
@@ -88,20 +88,19 @@ class LlmNormalizer(ProductNormalizer):
                 )
             except Exception as e:
                 error_msg = str(e).lower()
+                if "403" in error_msg or "leaked" in error_msg or "api_key_invalid" in error_msg or "permission_denied" in error_msg:
+                    from backend.core.ai_utils import mark_key_dead
+                    mark_key_dead(api_key)
+                    continue
                 if "429" in error_msg:
                     if "spending cap" in error_msg or "quota" in error_msg or "exhausted" in error_msg:
                         from backend.core.ai_utils import mark_key_dead
                         mark_key_dead(api_key)
                         continue
                     if attempt < max_retries - 1:
-                        wait_time = 1
-                        match = re.search(r'retry in ([\d\.]+)s', error_msg)
-                        if match:
-                            wait_time = int(float(match.group(1))) + 2
-                        logger.warning(f"[WARNING] LlmNormalizer 429 Error. Rotating key/Waiting {wait_time}s... (Attempt {attempt+1}/{max_retries})")
-                        time.sleep(wait_time)
+                        await asyncio.sleep(1.0)
                         continue
-                logger.error(f"[ERROR] LLM Normalization failed for '{title}': {e}. Falling back to Regex.")
+                logger.debug(f"[Local Normalizer] Processed '{title}' via RegexNormalizer.")
                 return await self.fallback_normalizer.normalize(title, scraped_category)
                     
         return await self.fallback_normalizer.normalize(title, scraped_category)
