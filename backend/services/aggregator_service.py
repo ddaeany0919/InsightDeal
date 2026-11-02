@@ -802,6 +802,7 @@ class AggregatorService:
             )
 
             recent_deals = self.db.query(Deal).filter(
+                Deal.source_community_id == community_id,
                 Deal.indexed_at >= datetime.utcnow() - timedelta(hours=24)
             ).all()
             target_deals = []
@@ -1122,7 +1123,7 @@ class AggregatorService:
             self.db.rollback()  # 롤백 처리하여 후속 INSERT 트랜잭션 붕괴 원천 차단
             logger.error(f"DB 평균가 계산 에러: {e}")
             
-        if honey_score < 50 and price > 0:
+        if honey_score < 50:
             import random
             honey_score = random.randint(50, 70)  # 최소 점수 보장
         

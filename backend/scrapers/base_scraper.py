@@ -9,6 +9,9 @@ logger = logging.getLogger(__name__)
 
 from curl_cffi.requests import AsyncSession
 
+# 에펨코리아 WebAssembly(fm5/fm6/lite_year) 보안 챌린지 통과 쿠키 전역 캐시
+_FMKOREA_WASM_COOKIES: dict[str, str] = {}
+
 class AsyncBaseScraper(ABC):
     """
     🏗️ [비동기 v2.0] 통합 스크래퍼 기본 클래스
@@ -23,8 +26,9 @@ class AsyncBaseScraper(ABC):
         self.max_retries = 3
 
     async def __aenter__(self):
-        # chrome124 위장을 통해 Cloudflare 430/403 우회
-        self.client = AsyncSession(impersonate='chrome124', timeout=20.0)
+        # chrome124 위장을 통해 Cloudflare 430/403 우회 (펨코 Wasm 쿠키 캐시 자동 주입)
+        init_cookies = _FMKOREA_WASM_COOKIES.copy() if _FMKOREA_WASM_COOKIES else None
+        self.client = AsyncSession(impersonate='chrome124', timeout=20.0, cookies=init_cookies)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -74,6 +78,10 @@ class AsyncBaseScraper(ABC):
                         return None
 
                     if response.status_code == 430:
+                        if "fmkorea" in url:
+                            pw_html = await self._solve_fmkorea_430_via_playwright(url)
+                            if pw_html:
+                                return pw_html
                         logger.warning(f"[{self.platform_name}] 일시적 IP 쿨다운 감지 (HTTP 430) - 서울 릴레이 우회 시도: {url}")
                         relay_html = await self._fetch_via_seoul_relay(url)
                         if relay_html:
@@ -102,6 +110,50 @@ class AsyncBaseScraper(ABC):
                     logger.warning(f"⚠️ [{self.platform_name}] 요청 오류 (시도 {attempt+1}): {e}. 다음 지문으로 재시도합니다.")
                     await asyncio.sleep(1.5 * (attempt + 1))
             return None
+
+    async def _solve_fmkorea_430_via_playwright(self, url: str) -> Optional[str]:
+        """에펨코리아 HTTP 430 WebAssembly(fm5/fm6/lite_year) 보안 챌린지를 Headless Chromium으로 통과하고 쿠키를 캐싱합니다."""
+        try:
+            logger.info(f"🛡️ [{self.platform_name}] HTTP 430 Wasm 보안 챌린지 자동 통과 시작 (Playwright): {url}")
+
+            def _sync_solve(target_url: str):
+                import sys
+                if sys.platform == "win32":
+                    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                from playwright.sync_api import sync_playwright
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=True)
+                    context = browser.new_context(
+                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                        locale="ko-KR",
+                    )
+                    page = context.new_page()
+                    page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
+                    page.wait_for_selector("li.li, table.bd_lst, .rd_body, article", timeout=12000)
+                    content_str = page.content()
+                    cookie_list = context.cookies()
+                    browser.close()
+                    return content_str, cookie_list
+
+            html, cookies = await asyncio.to_thread(_sync_solve, url)
+
+            if cookies:
+                for c in cookies:
+                    if c.get("name") and c.get("value"):
+                        _FMKOREA_WASM_COOKIES[c["name"]] = c["value"]
+                if self.client:
+                    await self.client.close()
+                    self.client = AsyncSession(
+                        impersonate="chrome124",
+                        timeout=20.0,
+                        cookies=_FMKOREA_WASM_COOKIES.copy(),
+                    )
+                logger.info(f"✅ [{self.platform_name}] Wasm 보안 쿠키 {len(_FMKOREA_WASM_COOKIES)}종 획득 및 세션 주입 완료!")
+            if html and len(html) > 2000:
+                return html
+        except Exception as pw_err:
+            logger.warning(f"⚠️ [{self.platform_name}] Playwright 430 통과 실패 ({url}): {pw_err}")
+        return None
 
     async def _fetch_via_seoul_relay(self, url: str) -> Optional[str]:
         """미국(GCP us-central1) 서버 IP 차단 시 Vercel 서울 리전(icn1) 릴레이를 통해 한국 커뮤니티 HTML 페칭"""

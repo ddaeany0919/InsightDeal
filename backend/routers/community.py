@@ -1210,29 +1210,16 @@ async def get_hot_deals(
                 query = query.filter(or_(*filter_conditions))
         else:
             from sqlalchemy import and_, not_
-            # 전체 탭일 경우 '적립' 및 '이벤트' 카테고리와 정보성/적립성 제목 하드 필터링 (순수 핫딜만 노출)
+            # 전체 탭일 경우 순수 포인트 클릭형 '적립' 및 공지성 '정보 안내'만 제외하고, [슈퍼적립]/[즉시적립]/무료배포 핫딜은 모두 정상 노출
             query = query.filter(
                 and_(
-                    models.Deal.category != "적립", 
-                    models.Deal.category != "적립/이벤트", 
-                    models.Deal.category != "이벤트",
-                    not_(models.Deal.title.like("%적립%")),
-                    not_(models.Deal.title.like("%정보%")),
+                    models.Deal.category != "적립",
+                    models.Deal.category != "적립/이벤트",
+                    not_(models.Deal.title.like("%일일적립%")),
+                    not_(models.Deal.title.like("%정보 안내%")),
                     not_(models.Deal.title.like("%불가%"))
                 )
             )
-            
-        # [Epic 4: Noise Elimination] 
-        # 스팸/뇌절글 퇴출: 등록된 지 2시간이 지났는데도 꿀지수(honey_score)가 10점 미만이면 피드에서 제외
-        from datetime import datetime, timedelta
-        from sqlalchemy import or_
-        two_hours_ago = datetime.utcnow() - timedelta(hours=2)
-        query = query.filter(
-            or_(
-                models.Deal.indexed_at >= two_hours_ago, # 2시간 이내의 신규 딜은 무조건 노출
-                models.Deal.honey_score >= 10 # 2시간이 지났어도 점수가 10점 이상이면 노출
-            )
-        )
 
         search_max_price: Optional[int] = None
         if keyword and keyword.strip():
@@ -1281,7 +1268,7 @@ async def get_hot_deals(
                 query = query.filter(not_(models.Deal.title.ilike(et_like)))
             
         if platform and platform not in ["전체", ""]:
-            # DB의 communities.name 또는 display_name 정확 매칭 (뽐뿌 조회 시 알리뽐뿌/뽐뿌해외 혼입 원천 차단)
+            # DB의 communities.name / display_name 정확 매칭 + 다중 출처 병합(merged_communities) 포함
             REVERSE_COMMUNITY_MAP = {
                 "펨코": "fmkorea", "에펨": "fmkorea", "뽐뿌": "ppomppu", "루리웹": "ruliweb",
                 "클리앙": "clien", "퀘이사존": "quasarzone", "알리뽐뿌": "ali_ppomppu",
@@ -1291,14 +1278,27 @@ async def get_hot_deals(
             platforms = [p.strip() for p in platform.split(',') if p.strip()]
             from sqlalchemy import or_
             platform_conditions = []
+            target_names = set()
             for p in platforms:
+                target_names.add(p)
                 eng_name = REVERSE_COMMUNITY_MAP.get(p)
                 if eng_name:
+                    target_names.add(eng_name)
                     platform_conditions.append(models.Community.name == eng_name)
                     platform_conditions.append(models.Community.display_name == p)
                 else:
                     platform_conditions.append(models.Community.name == p)
                     platform_conditions.append(models.Community.display_name == p)
+            matched_comms = db.query(models.Community.id).filter(
+                or_(
+                    models.Community.name.in_(list(target_names)),
+                    models.Community.display_name.in_(list(target_names))
+                )
+            ).all()
+            for (cid,) in matched_comms:
+                platform_conditions.append(models.Deal.merged_communities.like(f"{cid}::%"))
+                platform_conditions.append(models.Deal.merged_communities.like(f"%,{cid}::%"))
+                platform_conditions.append(models.Deal.merged_communities == str(cid))
             if platform_conditions:
                 query = query.filter(or_(*platform_conditions))
             

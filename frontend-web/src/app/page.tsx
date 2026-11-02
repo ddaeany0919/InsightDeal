@@ -301,9 +301,21 @@ export default function Home() {
       const url = apiUrl(`/api/community/hot-deals?limit=${limit}&offset=${offset}${
         apiCategory ? `&category=${encodeURIComponent(apiCategory)}` : ""
       }${platformParam}${queryParam}`);
-      const res = await fetch(url);
+      let res: Response | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const r = await fetch(url);
+          if (r.ok) {
+            res = r;
+            break;
+          }
+        } catch {}
+        if (attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+        }
+      }
 
-      if (!res.ok) throw new Error("API Offline");
+      if (!res || !res.ok) throw new Error("API Offline");
       const data = await res.json();
       const dealsArray = Array.isArray(data) ? data : data.deals || data.items || [];
 
@@ -315,8 +327,20 @@ export default function Home() {
         const cleanPostLink = d.post_link && d.post_link.trim() !== "" ? d.post_link.trim() : null;
         const cleanLink = d.link && d.link.trim() !== "" ? d.link.trim() : null;
 
+        const matchedSource =
+          targetPlatform && targetPlatform !== "전체" && Array.isArray(d.sources)
+            ? d.sources.find(
+                (s: any) =>
+                  String(s.site_name || "").includes(targetPlatform) && s.post_url
+              )
+            : null;
         const finalEcommerce = cleanEcommerce || cleanPostLink || cleanLink || "#";
-        const finalPost = cleanPost || cleanPostLink || cleanLink || "#";
+        const finalPost =
+          (matchedSource && matchedSource.post_url) ||
+          cleanPost ||
+          cleanPostLink ||
+          cleanLink ||
+          "#";
         const titleFallback = (!d.price || Number(d.price) <= 0) ? extractPriceFromTitle(titleStr) : null;
 
         return {
@@ -408,12 +432,14 @@ export default function Home() {
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
+    setLoading(true);
     setDeals([]);
     setHasMore(true);
   };
 
   const handlePlatformChange = (platform: string) => {
     setActivePlatform(platform);
+    setLoading(true);
     setDeals([]);
     setHasMore(true);
   };
