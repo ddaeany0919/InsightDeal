@@ -12,7 +12,8 @@ CLOUD_API = "https://34.59.208.14.sslip.io/api/community/ingest-batch"
 
 async def scrape_and_push_once():
     from backend.scrapers.ppomppu_scraper import PpomppuScraper
-    from backend.scrapers.ali_ppomppu_scraper import AliPpomppuScraper
+    from backend.scrapers.ppomppu_overseas_scraper import PpomppuOverseasScraper
+    from backend.scrapers.alippomppu_scraper import AlippomppuScraper
     from backend.scrapers.quasarzone_scraper import QuasarzoneScraper
     from backend.scrapers.fmkorea_scraper import FmkoreaScraper
 
@@ -20,7 +21,8 @@ async def scrape_and_push_once():
         ("fmkorea", "펨코", "https://www.fmkorea.com/hotdeal", FmkoreaScraper(6), 12),
         ("ppomppu", "뽐뿌", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu", PpomppuScraper(1), 15),
         ("quasarzone", "퀘이사존", "https://quasarzone.com/bbs/qb_saleinfo", QuasarzoneScraper(5), 15),
-        ("ali_ppomppu", "알리뽐뿌", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu4", AliPpomppuScraper(4), 12),
+        ("ali_ppomppu", "알리뽐뿌", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu4", AlippomppuScraper(4), 12),
+        ("ppomppu_overseas", "뽐뿌해외", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu4", PpomppuOverseasScraper(10), 12),
     ]
 
     async with httpx.AsyncClient(timeout=30.0) as http_client:

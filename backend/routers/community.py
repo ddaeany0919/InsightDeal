@@ -1235,12 +1235,12 @@ async def get_hot_deals(
                 query = query.filter(not_(models.Deal.title.ilike(et_like)))
             
         if platform and platform not in ["전체", ""]:
-            # DB의 communities.name 또는 display_name 필터링
+            # DB의 communities.name 또는 display_name 정확 매칭 (뽐뿌 조회 시 알리뽐뿌/뽐뿌해외 혼입 원천 차단)
             REVERSE_COMMUNITY_MAP = {
                 "펨코": "fmkorea", "에펨": "fmkorea", "뽐뿌": "ppomppu", "루리웹": "ruliweb",
                 "클리앙": "clien", "퀘이사존": "quasarzone", "알리뽐뿌": "ali_ppomppu",
                 "빠삭국내": "bbasak_domestic", "빠삭해외": "bbasak_overseas",
-                "빠삭육아": "bbasak_parenting"
+                "빠삭육아": "bbasak_parenting", "뽐뿌해외": "ppomppu_overseas"
             }
             platforms = [p.strip() for p in platform.split(',') if p.strip()]
             from sqlalchemy import or_
@@ -1249,8 +1249,10 @@ async def get_hot_deals(
                 eng_name = REVERSE_COMMUNITY_MAP.get(p)
                 if eng_name:
                     platform_conditions.append(models.Community.name == eng_name)
-                platform_conditions.append(models.Community.name.ilike(f"%{p}%"))
-                platform_conditions.append(models.Community.display_name.ilike(f"%{p}%"))
+                    platform_conditions.append(models.Community.display_name == p)
+                else:
+                    platform_conditions.append(models.Community.name == p)
+                    platform_conditions.append(models.Community.display_name == p)
             if platform_conditions:
                 query = query.filter(or_(*platform_conditions))
             

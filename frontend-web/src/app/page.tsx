@@ -280,7 +280,7 @@ export default function Home() {
         targetPlatform && targetPlatform !== "전체"
           ? `&platform=${encodeURIComponent(targetPlatform)}`
           : "";
-      const limit = 20;
+      const limit = targetPlatform === "뽐뿌" ? 50 : 20;
 
       const activeKw = overrideKeyword !== undefined ? overrideKeyword : searchQuery;
       const queryParam = activeKw.trim() ? `&keyword=${encodeURIComponent(activeKw.trim())}` : "";
@@ -684,6 +684,13 @@ export default function Home() {
     .filter((d) => {
       if (hideClosedDeals && d.isClosed) return false;
       if (onlyHotDeals && (d.honeyScore || 0) < 100) return false;
+      if (activePlatform && activePlatform !== "전체") {
+        const commNames = (d.community_name || "").split(",").map((s) => s.trim());
+        const srcNames = (d.sources || []).map((s: any) => String(s.site_name || "").replace(/ - .*$/, "").trim());
+        if (!commNames.includes(activePlatform) && !srcNames.includes(activePlatform)) {
+          return false;
+        }
+      }
       return true;
     })
     .slice()
