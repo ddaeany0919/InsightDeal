@@ -207,11 +207,7 @@ class RegexNormalizer(ProductNormalizer):
         if clean_cat in self.SCRAPER_CATEGORY_MAP:
             return self.SCRAPER_CATEGORY_MAP[clean_cat]
             
-        # 부분 일치로 Fallback 매핑 (더 넓은 매칭을 위함)
-        for key, value in self.SCRAPER_CATEGORY_MAP.items():
-            if key in clean_cat or clean_cat in key:
-                return value
-                
+                        
         return None
 
 

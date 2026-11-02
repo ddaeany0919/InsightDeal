@@ -127,15 +127,8 @@ class BbasakBaseScraper(AsyncBaseScraper):
             if time_str:
                 posted_at_iso = self.parse_time_str(time_str)
                 
-            # 제목 맨 앞의 대괄호 [...] 에서 카테고리 추출
-            category_extracted = None
-            cat_match = re.search(r'^\s*\[([^\]]+)\]', full_title)
-            if cat_match:
-                category_extracted = cat_match.group(1).strip()
-            
-            # 대괄호가 없을 시 default_category 사용
-            if not category_extracted:
-                category_extracted = self.default_category
+            # 빠삭 제목 앞 대괄호([쿠팡], [슈퍼적립], [브랜드쿠폰] 등)는 쇼핑몰/프로모션 태그이므로 default_category 사용
+            category_extracted = self.default_category
 
             return {
                 "title": full_title,
