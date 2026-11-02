@@ -166,8 +166,8 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                                 continue
                         
                         # [Lazy-Loading & Zero-Cost Delta Skip 최적화 핵심]:
-                        # 상세 정보(본문 등)가 이미 있고, 추천수/댓글수/품절여부/인기여부가 변하지 않았다면 무거운 정규화·병합 연산을 0ms로 즉시 스킵!
-                        if existing_deal.content_html:
+                        # 상세 정보(본문 및 대표 썸네일 이미지)가 이미 모두 있고, 추천수/댓글수/품절여부/인기여부가 변하지 않았다면 무거운 정규화·병합 연산을 0ms로 즉시 스킵!
+                        if existing_deal.content_html and existing_deal.image_url:
                             new_closed = bool(item.get("is_closed", False))
                             new_super = bool(item.get("is_super_hotdeal", False))
                             new_likes = int(item.get("like_count") or 0)
