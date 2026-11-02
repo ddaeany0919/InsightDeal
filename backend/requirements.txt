@@ -1,62 +1,46 @@
 # FastAPI & Web Framework
 fastapi==0.104.1
-uvicorn[standard]==0.24.0
+uvicorn[standard]>=0.24.0
 
-# Database
+# Database (SQLite + SQLAlchemy 1.4)
 sqlalchemy==1.4.53
-psycopg2-binary==2.9.9
-asyncpg==0.29.0
 
 # Environment
-python-dotenv==1.0.0
+python-dotenv>=1.0.0
 
-# HTTP & Web Scraping
-requests==2.31.0
-httpx==0.25.2
-aiohttp==3.9.1
-beautifulsoup4==4.12.2
-lxml==4.9.3
+# HTTP & Web Scraping (Python 3.9 ~ 3.12 Prebuilt Wheels)
+requests>=2.31.0
+httpx>=0.25.2
+aiohttp>=3.9.5
+beautifulsoup4>=4.12.2
+lxml>=5.2.1
 
 # Selenium for Dynamic Content
-selenium==4.15.2
-selenium-stealth==1.0.6
+selenium>=4.15.2
+selenium-stealth>=1.0.6
 
-# OCR & Image Processing
-easyocr==1.7.0
-pillow==10.1.0
+# Image Processing
+pillow>=10.3.0
 
 # AI Integration
-google-generativeai==0.3.1
+google-generativeai>=0.3.1
 
 # Firebase/FCM for Push Notifications
-firebase-admin==6.2.0
-pyfcm==1.5.4
+firebase-admin>=6.2.0
 
 # Scheduling
-apscheduler==3.10.4
+apscheduler>=3.10.4
 
-# Logging
-structlog==23.2.0
-loguru==0.7.2
-
-# File Operations
-aiofiles==23.2.1
-
-# Utilities
-chardet==5.2.0
+# File Operations & Utilities
+aiofiles>=23.2.1
+chardet>=5.2.0
 
 # Development & Testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
 
-# 데이터베이스 비동기 지원 (SQLAlchemy 1.4와 호환)
-databases==0.8.0
-
-# 캐싱 (선택사항)
-redis==5.0.1
-
-# Pydantic v1 (FastAPI 0.104.1과 호환)
-pydantic==1.10.13
+# Pydantic v1 (FastAPI 0.104.1과 호환 및 Python 3.12 지원)
+pydantic>=1.10.13,<2.0.0
 importlib-metadata>=6.0.0
-curl_cffi==0.7.4
+curl_cffi>=0.7.4
 tenacity>=8.2.0

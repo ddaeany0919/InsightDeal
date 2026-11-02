@@ -12,7 +12,7 @@ const stashDir = path.join(rootDir, ".toss-api-stash");
 const outDir = path.join(rootDir, "out");
 const zipPath = path.join(rootDir, "insightdeal-apps-in-toss-bundle.zip");
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080";
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "https://34.59.208.14.sslip.io";
 
 console.log("====================================================");
 console.log("🚀 [InsightDeal] Apps in Toss (앱인토스) 정적 번들 빌더");

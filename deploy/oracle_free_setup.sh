@@ -79,10 +79,14 @@ systemctl restart insightdeal-backend
 # 5. Caddy 웹서버 설치 및 자동 무료 HTTPS(Let's Encrypt) 리버스 프록시 적용
 echo "🔒 [5/5] Caddy 설치 및 무료 HTTPS(https://${DOMAIN}) 인증서 자동 발급 설정 중..."
 if ! command -v caddy >/dev/null 2>&1; then
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg --yes
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
     apt-get update -y
-    apt-get install -y caddy
+    DEBIAN_FRONTEND=noninteractive apt-get install -y caddy || {
+        DEBIAN_FRONTEND=noninteractive apt-get install -y gnupg
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg --yes
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+        apt-get update -y
+        DEBIAN_FRONTEND=noninteractive apt-get install -y caddy
+    }
 fi
 
 cat >/etc/caddy/Caddyfile <<EOF

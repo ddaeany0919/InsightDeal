@@ -46,9 +46,9 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            buildConfigField "String", "BASE_URL", '"http://3.35.205.24:8080/"'
-            buildConfigField "String", "DEV_SERVER_IP", '"3.35.205.24"'
-            buildConfigField "String", "EMULATOR_BASE_URL", '"http://3.35.205.24:8080/"'
+            buildConfigField "String", "BASE_URL", '"https://34.59.208.14.sslip.io/"'
+            buildConfigField "String", "DEV_SERVER_IP", '"34.59.208.14"'
+            buildConfigField "String", "EMULATOR_BASE_URL", '"https://34.59.208.14.sslip.io/"'
             buildConfigField "String", "VERSION_NAME", '"1.0.0"'
             buildConfigField "boolean", "DEBUG_MODE", "false"
         }
