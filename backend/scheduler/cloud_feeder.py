@@ -21,6 +21,7 @@ async def _preload_existing_urls(http_client: httpx.AsyncClient):
     if _SEEN_DETAIL_CACHE:
         return
     try:
+        from backend.core.url_utils import normalize_url
         for page in (1, 2, 3, 4):
             res = await http_client.get(f"{CLOUD_DEALS_API}?page={page}&limit=100")
             if res.status_code == 200:
@@ -29,20 +30,25 @@ async def _preload_existing_urls(http_client: httpx.AsyncClient):
                 for d in deals:
                     if not isinstance(d, dict):
                         continue
-                    u = d.get("source_url")
-                    if u and d.get("content_html"):
+                    raw_u = d.get("post_link") or d.get("source_url") or d.get("url")
+                    if raw_u:
+                        u = normalize_url(raw_u)
                         _SEEN_DETAIL_CACHE[u] = {
-                            "content_html": d.get("content_html"),
-                            "ecommerce_link": d.get("ecommerce_link"),
-                            "image_url": d.get("image_url"),
-                            "shipping_fee": d.get("shipping_fee"),
+                            "content_html": d.get("content_html") or "",
+                            "ecommerce_link": d.get("ecommerce_link") or "",
+                            "image_url": d.get("image_url") or "",
+                            "shipping_fee": d.get("shipping_fee") or "",
+                            "is_closed": bool(d.get("is_closed", False)),
+                            "like_count": int(d.get("like_count") or 0),
+                            "comment_count": int(d.get("comment_count") or 0),
                         }
-        logger.info(f"📦 기존 DB 게시글 {len(_SEEN_DETAIL_CACHE)}건 상세 캐시 로드 완료 (중복 상세 요청 생략)")
+        logger.info(f"📦 기존 DB 게시글 {len(_SEEN_DETAIL_CACHE)}건 상세 캐시 로드 완료 (이미 파싱된 게시글 스킵 활성화)")
     except Exception as e:
         logger.warning(f"기존 DB URL 프리로드 생략: {e}")
 
 
 async def scrape_and_push_once():
+    from backend.core.url_utils import normalize_url
     from backend.scrapers.ppomppu_scraper import PpomppuScraper
     from backend.scrapers.ppomppu_overseas_scraper import PpomppuOverseasScraper
     from backend.scrapers.alippomppu_scraper import AlippomppuScraper
@@ -65,27 +71,46 @@ async def scrape_and_push_once():
                     items = await sc.run(sc.list_url)
                     items = items[:max_items]
                     enriched = []
+                    skipped_count = 0
                     for item in items:
-                        item_url = item["url"]
+                        item_url = normalize_url(item["url"])
+                        item["url"] = item_url
                         if item_url in _SEEN_DETAIL_CACHE:
                             cached_detail = _SEEN_DETAIL_CACHE[item_url]
-                            for k, v in cached_detail.items():
-                                if v is not None and v != "" and not item.get(k):
+                            # 이미 파싱된 글이고 마감 여부(is_closed)가 그대로라면 상세 파싱 및 재전송 모두 완전히 스킵!
+                            if bool(item.get("is_closed", False)) == bool(cached_detail.get("is_closed", False)):
+                                skipped_count += 1
+                                continue
+                            for k in ("content_html", "ecommerce_link", "image_url", "shipping_fee"):
+                                v = cached_detail.get(k)
+                                if v and not item.get(k):
                                     item[k] = v
+                            cached_detail["is_closed"] = bool(item.get("is_closed", False))
                             enriched.append(item)
                             continue
                         try:
                             detail = await sc.get_detail(item_url, item.get("title", ""))
                             if detail:
-                                _SEEN_DETAIL_CACHE[item_url] = detail
                                 for k, v in detail.items():
                                     if k == "price" and (not v or v == 0) and item.get("price", 0) > 0:
                                         continue
                                     if v is not None and v != "":
                                         item[k] = v
+                            _SEEN_DETAIL_CACHE[item_url] = {
+                                "content_html": item.get("content_html") or "",
+                                "ecommerce_link": item.get("ecommerce_link") or "",
+                                "image_url": item.get("image_url") or "",
+                                "shipping_fee": item.get("shipping_fee") or "",
+                                "is_closed": bool(item.get("is_closed", False)),
+                                "like_count": int(item.get("like_count") or 0),
+                                "comment_count": int(item.get("comment_count") or 0),
+                            }
                         except Exception as de:
                             logger.warning(f"[{display_name}] detail warning: {de}")
                         enriched.append(item)
+
+                    if skipped_count > 0 and not enriched:
+                        logger.info(f"⏭️ [{display_name}] 신규/변경 게시글 없음 (기존 파싱 완료 {skipped_count}건 전체 스킵)")
 
                     if enriched:
                         res = await http_client.post(
