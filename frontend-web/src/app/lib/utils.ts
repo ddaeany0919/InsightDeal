@@ -145,3 +145,182 @@ export const resolveOutboundUrl = (rawUrl: string | undefined | null): string =>
 
   return url;
 };
+
+// 본문 HTML/텍스트 자동 정돈 (공구 다중 상품 구분선, 깨진 할인코드 줄바꿈 병합, 불필요한 화살표 링크 노이즈 제거)
+export const polishDealBodyText = (rawHtml: string | undefined | null): string => {
+  if (!rawHtml) return "";
+  let text = rawHtml
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+
+  const rawLines = text
+    .split(/\r?\n/)
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter((l) => {
+      if (!l) return false;
+      if (/^(?:링크|제품\s*바로가기|상품\s*바로가기|구매\s*링크)\s*>{2,}/i.test(l)) return false;
+      if (/^>{3,}/.test(l)) return false;
+      if (l === "보기>" || l === "보기 >" || l === "바로가기>" || l === "바로가기 >") return false;
+      return true;
+    });
+
+  // 깨진 프로모션/공구코드 줄바꿈 병합 (예: "공구코드 $34" 다음 줄의 "WLRRN558, DIRECT00," -> 한 줄로 병합)
+  const mergedLines: string[] = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    let curr = rawLines[i]
+      .replace(/,\s*,+/g, ", ")
+      .replace(/\s*,\s*/g, ", ")
+      .replace(/,\s*$/, "")
+      .trim();
+
+    if (!curr) continue;
+
+    const isCodeOnlyLine = /^[A-Z0-9]{4,12}(?:\s*,\s*[A-Z0-9]{4,12})*$/i.test(curr) && /[A-Z]/i.test(curr) && /[0-9]/.test(curr);
+    if (isCodeOnlyLine && mergedLines.length > 0) {
+      const prev = mergedLines[mergedLines.length - 1];
+      if (/(?:코드|쿠폰|할인)/i.test(prev) || /[A-Z0-9]{4,12}$/i.test(prev)) {
+        mergedLines[mergedLines.length - 1] = prev.endsWith(":") || prev.endsWith(",")
+          ? `${prev} ${curr}`
+          : `${prev} (${curr})`;
+        continue;
+      }
+    }
+    mergedLines.push(curr);
+  }
+
+  // 다중 상품 공구 게시글에서 '최종가 ...' 또는 '최대혜택가 ...' 뒤에 다음 상품이 이어질 때 구분선 삽입
+  const finalLines: string[] = [];
+  for (let i = 0; i < mergedLines.length; i++) {
+    const line = mergedLines[i];
+    finalLines.push(line);
+    const isFinalPriceLine = /^(?:최종가|최종\s*체감가|최대\s*혜택가|최대\s*할인가)\b/i.test(line);
+    if (isFinalPriceLine && i < mergedLines.length - 1) {
+      finalLines.push("────────────────────────");
+    }
+  }
+
+  return finalLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+};
+
+// 본문 내 프로모션/할인 코드 자동 추출 (원클릭 복사용)
+export const extractPromoCodes = (rawText: string | undefined | null): string[] => {
+  if (!rawText) return [];
+  const codes = new Set<string>();
+  const blacklist = new Set([
+    "HTTP", "HTTPS", "HTML", "UTF8", "ALLDOCUBE", "BIGME", "VIOFO", "VIOFEO",
+    "JONR", "UWANT", "SHOKZ", "IPLAY", "MINI", "PRO", "MAX", "PLUS", "ULTRA",
+    "WIFI", "LTE", "NVME", "DDR4", "DDR5", "HDMI", "USBC", "TYPEC", "PD100W"
+  ]);
+
+  const lines = rawText.split(/\r?\n/);
+  for (const line of lines) {
+    // 코드/쿠폰 키워드 주변 또는 대문자+숫자 조합 코드 추출
+    const matches = line.match(/\b[A-Z]{2,8}[0-9]{2,6}[A-Z0-9]{0,4}\b/g);
+    if (matches) {
+      for (const m of matches) {
+        const up = m.toUpperCase();
+        if (blacklist.has(up)) continue;
+        // 모델명(예: A229, P20, V500, B6, B7, M800 등 짧은 모델번호) 제외: 최소 6자 이상이거나 코드 문맥이 있을 때만 허용
+        const hasCodeContext = /(?:코드|쿠폰|프로모션|할인|소진시|적용)/i.test(line) || line.includes(",");
+        if (up.length >= 6 || (up.length >= 5 && hasCodeContext)) {
+          codes.add(up);
+        }
+      }
+    }
+  }
+  return Array.from(codes).slice(0, 10);
+};
+
+const VAPID_PUBLIC_KEY =
+  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
+  "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U";
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+// 비로그인 기기 고유 UUID 발급 및 로컬스토리지 키 통일
+export const getOrCreateWebDeviceUuid = (): string => {
+  if (typeof window === "undefined") return "web_guest";
+  let uuid =
+    localStorage.getItem("insightdeal_web_device_uuid") ||
+    localStorage.getItem("insightdeal_token");
+  if (!uuid || uuid === "web_guest") {
+    const randomPart =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    uuid = `web_${randomPart}`;
+  }
+  localStorage.setItem("insightdeal_web_device_uuid", uuid);
+  localStorage.setItem("insightdeal_token", uuid);
+  return uuid;
+};
+
+// 웹에서 알림 설정 클릭 시 별도 로그인 없이 브라우저 Web Push 권한 요청 및 서비스워커 자동 구독
+export const ensureWebPushSubscribed = async (): Promise<{
+  deviceUuid: string;
+  pushGranted: boolean;
+}> => {
+  const deviceUuid = getOrCreateWebDeviceUuid();
+  if (
+    typeof window === "undefined" ||
+    !("serviceWorker" in navigator) ||
+    !("PushManager" in window) ||
+    !("Notification" in window)
+  ) {
+    return { deviceUuid, pushGranted: false };
+  }
+
+  try {
+    let permission = Notification.permission;
+    if (permission === "default") {
+      permission = await Notification.requestPermission();
+    }
+    if (permission !== "granted") {
+      return { deviceUuid, pushGranted: false };
+    }
+
+    const registration = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+
+    const subJson = subscription.toJSON();
+    await fetch(apiUrl("/api/push-register"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        device_uuid: deviceUuid,
+        endpoint: subJson.endpoint,
+        keys: subJson.keys,
+      }),
+    }).catch(() => null);
+
+    return { deviceUuid, pushGranted: true };
+  } catch {
+    return { deviceUuid, pushGranted: Notification.permission === "granted" };
+  }
+};

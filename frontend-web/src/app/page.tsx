@@ -11,13 +11,22 @@ import {
   X,
   Share2,
   Flame,
-  ChevronRight
+  ChevronRight,
+  RotateCcw
 } from "lucide-react";
 import Link from "next/link";
 
 // 분리된 모듈 import
 import type { Deal, PopularKeywordRanking } from "./lib/types";
-import { formatPrice, categorizeDeal, getProxyImageUrl, apiUrl, resolveOutboundUrl } from "./lib/utils";
+import {
+  formatPrice,
+  categorizeDeal,
+  getProxyImageUrl,
+  apiUrl,
+  resolveOutboundUrl,
+  getOrCreateWebDeviceUuid,
+  ensureWebPushSubscribed,
+} from "./lib/utils";
 
 // 리팩토링된 컴포넌트 import
 import PrivacyModal from "./components/PrivacyModal";
@@ -101,17 +110,7 @@ export default function Home() {
 
   // 웹 푸시/키워드 알림과 동일한 기기 식별자 공유
   const getOrCreateBrowserUserId = () => {
-    if (typeof window === "undefined") return "web_guest";
-    let uuid = localStorage.getItem("insightdeal_web_device_uuid") || localStorage.getItem("insightdeal_token");
-    if (!uuid) {
-      const randomPart =
-        typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-      uuid = `web_${randomPart}`;
-    }
-    localStorage.setItem("insightdeal_web_device_uuid", uuid);
-    localStorage.setItem("insightdeal_token", uuid);
+    const uuid = getOrCreateWebDeviceUuid();
     setIsLoggedIn(true);
     return uuid;
   };
@@ -121,7 +120,7 @@ export default function Home() {
     const cleanKw = rawKw.trim();
     if (!cleanKw) return;
     try {
-      const deviceUuid = getOrCreateBrowserUserId();
+      const { deviceUuid, pushGranted } = await ensureWebPushSubscribed();
       await fetch(apiUrl("/api/push/keywords"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -136,7 +135,11 @@ export default function Home() {
           localStorage.setItem("insightdeal_web_keywords", JSON.stringify(updated));
         }
       }
-      showToast(`'${cleanKw}' 키워드 알림을 켰어요`);
+      showToast(
+        pushGranted
+          ? `'${cleanKw}' 새 핫딜이 올라오면 브라우저 푸시로 바로 알려드릴게요.`
+          : `'${cleanKw}' 키워드 알림을 켰어요. 브라우저 알림 권한을 허용하면 푸시를 받을 수 있어요.`
+      );
     } catch (e) {
       showToast("키워드 알림 등록 중 오류가 발생했습니다.");
     }
@@ -210,8 +213,16 @@ export default function Home() {
       if (isAlertOn) {
         showToast("가격 변동 알림을 해제했습니다.");
       } else {
+        ensureWebPushSubscribed().catch(() => null);
+        const isUsd = targetDeal?.currency === "USD";
         const rawPrice = targetDeal ? parseInt(String(targetDeal.price || "").replace(/[^0-9]/g, ""), 10) || 0 : 0;
-        const autoTarget = rawPrice >= 1000 ? Math.max(100, Math.round((rawPrice * 0.95) / 100) * 100) : rawPrice;
+        const autoTarget = isUsd
+          ? rawPrice >= 500
+            ? Math.max(100, Math.floor((rawPrice / 100) * 0.95) * 100)
+            : rawPrice
+          : rawPrice >= 1000
+            ? Math.max(100, Math.round((rawPrice * 0.95) / 100) * 100)
+            : rawPrice;
         if (targetDeal && autoTarget > 0) {
           const cleanKw = (targetDeal.title || "")
             .replace(/\[[^\]]*\]/g, "")
@@ -230,10 +241,12 @@ export default function Home() {
           try {
             const mapStr = localStorage.getItem("insightdeal_target_prices");
             const targetMap = mapStr ? JSON.parse(mapStr) : {};
-            targetMap[id] = autoTarget;
+            targetMap[id] = isUsd ? Math.floor(autoTarget / 100) : autoTarget;
             localStorage.setItem("insightdeal_target_prices", JSON.stringify(targetMap));
           } catch {}
-          showToast(`목표가(${autoTarget.toLocaleString()}원 이하) 알림을 등록했어요.`);
+          showToast(
+            `목표가(${formatPrice(autoTarget, targetDeal.currency)} 이하) 알림을 등록했어요.`
+          );
         } else {
           showToast("가격 변동 알림을 등록했습니다.");
         }
@@ -353,9 +366,16 @@ export default function Home() {
         setHasMore(false);
       }
     } catch (e) {
-      if (offset === 0) {
-        const fallback = getFallbackDeals();
-        setDeals(fallback);
+      if (offset === 0 && typeof window !== "undefined") {
+        try {
+          const cached = localStorage.getItem("insightdeal_cached_deals");
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setDeals(parsed);
+            }
+          }
+        } catch {}
       }
       setHasMore(false);
     } finally {
@@ -364,39 +384,6 @@ export default function Home() {
       }
     }
   };
-
-  const getFallbackDeals = (): Deal[] => [
-    {
-      id: 901,
-      community_name: "뽐뿌",
-      title: "국내산 파로 영양 찰가래떡 특가 (26,900원/무료)",
-      price: "26900",
-      image_url: "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?w=500&auto=format&fit=crop&q=60",
-      scraped_at: "방금 전",
-      post_link: "#",
-      ecommerce_url: "#",
-      shipping_fee: "무료배송",
-      category: "식품/건강",
-      isClosed: false,
-      honeyScore: 120,
-      aiSummary: "커뮤니티 추천 핫딜",
-    },
-    {
-      id: 902,
-      community_name: "알리뽐뿌",
-      title: "디럭스 M800 무선 게이밍 마우스 ($13.93/무료)",
-      price: "1393",
-      image_url: "https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=500&auto=format&fit=crop&q=60",
-      scraped_at: "방금 전",
-      post_link: "#",
-      ecommerce_url: "#",
-      shipping_fee: "무료배송",
-      category: "PC/하드웨어",
-      isClosed: false,
-      honeyScore: 110,
-      aiSummary: "해외직구 인기 상품",
-    },
-  ];
 
   const getCommunityName = (id: number) => {
     const map: Record<number, string> = {
@@ -469,12 +456,42 @@ export default function Home() {
   };
 
   const handleSelectPopularKeyword = (kw: string) => {
+    if (searchQuery.trim() === kw.trim()) {
+      setSearchQuery("");
+      setDeals([]);
+      setHasMore(true);
+      fetchLiveDeals(true, 0, activeTab, activePlatform, "");
+      return;
+    }
     setSearchQuery(kw);
     saveRecentSearch(kw);
+    setActivePlatform("전체");
+    setActiveTab("전체");
     setDeals([]);
     setHasMore(true);
-    fetchLiveDeals(true, 0, activeTab, activePlatform, kw);
+    fetchLiveDeals(true, 0, "전체", "전체", kw);
   };
+
+  const handleResetAllFilters = () => {
+    setSearchQuery("");
+    setActiveTab("전체");
+    setActivePlatform("전체");
+    setOnlyHotDeals(false);
+    setHideClosedDeals(false);
+    setSortBy("latest");
+    setDeals([]);
+    setHasMore(true);
+    fetchLiveDeals(true, 0, "전체", "전체", "");
+    showToast("검색어 및 필터 설정을 모두 초기화했습니다.");
+  };
+
+  const hasActiveFilters =
+    searchQuery.trim() !== "" ||
+    activePlatform !== "전체" ||
+    activeTab !== "전체" ||
+    onlyHotDeals ||
+    hideClosedDeals ||
+    sortBy !== "latest";
 
   useEffect(() => {
     setIsMounted(true);
@@ -990,6 +1007,29 @@ export default function Home() {
                   );
                 })}
               </div>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  className="bounce-click"
+                  onClick={handleResetAllFilters}
+                  style={{
+                    padding: "8px 13px",
+                    borderRadius: "10px",
+                    background: "rgba(var(--accent-rgb), 0.12)",
+                    color: "var(--accent)",
+                    border: "1px solid rgba(var(--accent-rgb), 0.35)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    fontSize: "0.82rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  <RotateCcw size={13} />
+                  <span>설정 초기화</span>
+                </button>
+              )}
               <button
                 type="button"
                 className="bounce-click"
@@ -1172,7 +1212,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* 실시간 급상승 검색어 티커 & 랭킹 보드 */}
+          {/* 실시간 급상승 검색어 티커 & 랭킹 보드 (클릭 시 즉시 검색) */}
           <TrendingKeywordsTicker
             keywords={popularKeywords}
             rankings={popularRankings}
@@ -1180,50 +1220,6 @@ export default function Home() {
             selectedKeyword={searchQuery}
             onSelectKeyword={handleSelectPopularKeyword}
           />
-
-          {/* 실시간 인기 검색어 칩 */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              flexWrap: "wrap",
-              marginBottom: "16px",
-            }}
-          >
-            <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "var(--accent)", marginRight: "4px" }}>
-              인기 검색어
-            </span>
-            {popularKeywords.map((kw, idx) => {
-              const isSelected = searchQuery === kw;
-              return (
-                <button
-                  key={kw}
-                  type="button"
-                  onClick={() => handleSelectPopularKeyword(kw)}
-                  className="bounce-click"
-                  style={{
-                    padding: "5px 12px",
-                    borderRadius: "999px",
-                    fontSize: "0.78rem",
-                    fontWeight: isSelected ? 800 : 600,
-                    cursor: "pointer",
-                    background: isSelected ? "rgba(var(--accent-rgb), 0.12)" : "var(--card-bg)",
-                    color: isSelected ? "var(--accent)" : "var(--text-main)",
-                    border: isSelected ? "1px solid var(--accent)" : "1px solid var(--card-border)",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "5px",
-                  }}
-                >
-                  <span style={{ fontSize: "0.72rem", fontWeight: 800, color: idx < 3 ? "var(--deal-orange)" : "var(--text-muted)" }}>
-                    {idx + 1}
-                  </span>
-                  <span>{kw}</span>
-                </button>
-              );
-            })}
-          </div>
 
           {/* 출처 커뮤니티 필터 칩 */}
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" }}>
@@ -1268,18 +1264,172 @@ export default function Home() {
             </div>
           </div>
 
+          {/* 현재 적용된 검색어·필터 상태 바 및 1클릭 초기화 */}
+          {hasActiveFilters && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "8px",
+                padding: "9px 14px",
+                marginBottom: "16px",
+                borderRadius: "12px",
+                background: "var(--card-bg)",
+                border: "1px solid var(--card-border)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", fontSize: "0.78rem" }}>
+                <span style={{ fontWeight: 800, color: "var(--text-sub)", marginRight: "2px" }}>적용된 조건:</span>
+                {searchQuery.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery("");
+                      setDeals([]);
+                      setHasMore(true);
+                      fetchLiveDeals(true, 0, activeTab, activePlatform, "");
+                    }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "3px 9px",
+                      borderRadius: "999px",
+                      background: "rgba(var(--accent-rgb), 0.12)",
+                      color: "var(--accent)",
+                      border: "1px solid rgba(var(--accent-rgb), 0.3)",
+                      fontSize: "0.76rem",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span>검색어: {searchQuery.trim()}</span>
+                    <X size={12} />
+                  </button>
+                )}
+                {activePlatform !== "전체" && (
+                  <button
+                    type="button"
+                    onClick={() => handlePlatformChange("전체")}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "3px 9px",
+                      borderRadius: "999px",
+                      background: "var(--surface-subtle)",
+                      color: "var(--text-main)",
+                      border: "1px solid var(--card-border)",
+                      fontSize: "0.76rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span>커뮤니티: {activePlatform}</span>
+                    <X size={12} />
+                  </button>
+                )}
+                {activeTab !== "전체" && (
+                  <button
+                    type="button"
+                    onClick={() => handleTabChange("전체")}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "3px 9px",
+                      borderRadius: "999px",
+                      background: "var(--surface-subtle)",
+                      color: "var(--text-main)",
+                      border: "1px solid var(--card-border)",
+                      fontSize: "0.76rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span>카테고리: {activeTab}</span>
+                    <X size={12} />
+                  </button>
+                )}
+                {onlyHotDeals && (
+                  <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--deal-orange)" }}>· 인기 핫딜만</span>
+                )}
+                {hideClosedDeals && (
+                  <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--accent)" }}>· 품절 숨김</span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleResetAllFilters}
+                className="bounce-click"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "5px 11px",
+                  borderRadius: "8px",
+                  background: "var(--accent)",
+                  color: "#FFFFFF",
+                  border: "none",
+                  fontSize: "0.76rem",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                <RotateCcw size={12} />
+                <span>설정 초기화</span>
+              </button>
+            </div>
+          )}
+
           {/* 핫딜 목록 카드 그리드 */}
           <div className="deal-list">
             {filteredDeals.length === 0 ? (
               <div
                 className="glass-panel"
-                style={{ padding: "40px", borderRadius: "24px", textAlign: "center", color: "var(--text-sub)" }}
+                style={{
+                  padding: "40px 24px",
+                  borderRadius: "24px",
+                  textAlign: "center",
+                  color: "var(--text-sub)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "14px",
+                }}
               >
-                <p>
+                <p style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--text-main)", margin: 0 }}>
                   {loading && deals.length === 0
                     ? "핫딜 목록을 불러오고 있습니다..."
                     : "조건에 맞는 핫딜이 없습니다."}
                 </p>
+                {!loading && hasActiveFilters && (
+                  <>
+                    <p style={{ fontSize: "0.82rem", color: "var(--text-sub)", margin: 0 }}>
+                      선택된 검색어나 커뮤니티·카테고리 필터를 초기화하면 전체 핫딜을 바로 볼 수 있어요.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleResetAllFilters}
+                      className="btn-primary bounce-click"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "10px 18px",
+                        borderRadius: "12px",
+                        fontSize: "0.85rem",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <RotateCcw size={15} />
+                      <span>검색어 및 필터 초기화 (전체 보기)</span>
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               filteredDeals.map((deal) => {

@@ -1908,6 +1908,8 @@ fun DealHeader(deal: DealItem, onOpenOrigin: (String) -> Unit) {
                 if (raw.isBlank()) ""
                 else {
                     val step1 = raw
+                        .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+                        .replace(Regex("</(p|div|li)>", RegexOption.IGNORE_CASE), "\n")
                         .replace(Regex("\\(\\s*링크\\s*:\\s*https?://[^)]+\\)", RegexOption.IGNORE_CASE), "")
                         .replace(Regex("\\[첨부된 이미지 링크들\\]\\s*:?[\\s\\S]*$", RegexOption.IGNORE_CASE), "")
                         .replace(Regex("Your browser does not support the video tag\\.?", RegexOption.IGNORE_CASE), "")
@@ -1920,31 +1922,113 @@ fun DealHeader(deal: DealItem, onOpenOrigin: (String) -> Unit) {
                         .replace("&#039;", "'")
                         .replace("&#39;", "'")
                         .replace(Regex("https?://\\S+"), "")
-                    val lines = step1.lines().map { it.trim() }
+                    val lines = step1.lines().map { it.replace(Regex("\\s+"), " ").trim() }
                     val validLines = mutableListOf<String>()
                     for (ln in lines) {
-                        if (ln.isEmpty()) {
-                            if (validLines.isNotEmpty() && validLines.last().isNotEmpty()) {
-                                validLines.add("")
-                            }
-                            continue
-                        }
+                        if (ln.isEmpty()) continue
                         if (ln.matches(Regex("^[\\-=*_~.,:;()\\[\\]/\\\\]+$"))) continue
-                        validLines.add(ln)
+                        if (ln.matches(Regex("^(?:링크|제품\\s*바로가기|상품\\s*바로가기|구매\\s*링크)\\s*>{2,}.*$", RegexOption.IGNORE_CASE))) continue
+                        if (ln.matches(Regex("^>{3,}.*$"))) continue
+                        if (ln == "보기>" || ln == "보기 >" || ln == "바로가기>" || ln == "바로가기 >") continue
+                        val cleanLn = ln.replace(Regex(",\\s*,+"), ", ").replace(Regex(",\\s*$"), "").trim()
+                        if (cleanLn.isEmpty()) continue
+                        val isCodeOnly = cleanLn.matches(Regex("^[A-Z0-9]{4,12}(?:\\s*,\\s*[A-Z0-9]{4,12})*$", RegexOption.IGNORE_CASE)) &&
+                            cleanLn.contains(Regex("[A-Za-z]")) && cleanLn.contains(Regex("[0-9]"))
+                        if (isCodeOnly && validLines.isNotEmpty()) {
+                            val prev = validLines.last()
+                            if (prev.contains(Regex("(?:코드|쿠폰|할인)")) || prev.contains(Regex("[A-Z0-9]{4,12}$", RegexOption.IGNORE_CASE))) {
+                                validLines[validLines.lastIndex] = if (prev.endsWith(":") || prev.endsWith(",")) "$prev $cleanLn" else "$prev ($cleanLn)"
+                                continue
+                            }
+                        }
+                        validLines.add(cleanLn)
                     }
-                    val joined = validLines.joinToString("\n").trim()
+                    val formattedLines = mutableListOf<String>()
+                    for (i in validLines.indices) {
+                        val ln = validLines[i]
+                        formattedLines.add(ln)
+                        if (ln.matches(Regex("^(?:최종가|최종\\s*체감가|최대\\s*혜택가|최대\\s*할인가)\\b.*$")) && i < validLines.lastIndex) {
+                            formattedLines.add("────────────────────────")
+                        }
+                    }
+                    val joined = formattedLines.joinToString("\n").trim()
                     if (joined.length < 4 || joined.replace(" ", "") == deal.title.replace(" ", "")) "" else joined
+                }
+            }
+
+            val promoCodes = remember(cleanedBodyText) {
+                if (cleanedBodyText.isBlank()) emptyList()
+                else {
+                    val blacklist = setOf(
+                        "HTTP", "HTTPS", "HTML", "UTF8", "ALLDOCUBE", "BIGME", "VIOFO", "VIOFEO",
+                        "JONR", "UWANT", "SHOKZ", "IPLAY", "MINI", "PRO", "MAX", "PLUS", "ULTRA",
+                        "WIFI", "LTE", "NVME", "DDR4", "DDR5", "HDMI", "USBC", "TYPEC", "PD100W"
+                    )
+                    val found = linkedSetOf<String>()
+                    val codeRegex = Regex("\\b[A-Z]{2,8}[0-9]{2,6}[A-Z0-9]{0,4}\\b")
+                    for (line in cleanedBodyText.lines()) {
+                        val hasContext = line.contains(Regex("(?:코드|쿠폰|프로모션|할인|소진시|적용)")) || line.contains(",")
+                        for (m in codeRegex.findAll(line)) {
+                            val up = m.value.uppercase()
+                            if (up !in blacklist && (up.length >= 6 || (up.length >= 5 && hasContext))) {
+                                found.add(up)
+                            }
+                        }
+                    }
+                    found.take(8).toList()
                 }
             }
 
             if (cleanedBodyText.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(20.dp))
-                Text(
-                    text = "상품 안내 요약",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "상품 안내 요약",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (promoCodes.isNotEmpty()) {
+                        Text(
+                            text = "할인코드 터치 시 복사",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                if (promoCodes.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(promoCodes) { code ->
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+                                modifier = Modifier.clickable {
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                    clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("promo_code", code))
+                                    android.widget.Toast.makeText(context, "할인코드 '$code' 복사 완료", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Text(
+                                    text = "📋 $code",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 Card(
                     shape = RoundedCornerShape(14.dp),

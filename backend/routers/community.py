@@ -1518,7 +1518,8 @@ def get_popular_keywords(db: Session = Depends(get_db_session)):
             "쿠폰", "할인", "특가", "무료", "무배", "무료배송", "넾다", "넾다세일", "메가", "빅스마일",
             "광군제", "선착순", "공동구매", "총정리", "이벤트", "적립", "포인트", "기타", "품절", "종료",
             "pro", "max", "plus", "mini", "ultra", "usb", "pc", "tv", "led", "유튜버", "공구", "링크", "코드",
-            "프로", "미니", "플러스", "맥스", "울트라", "자켓", "게이밍", "멤버십", "다운", "헤비", "브랜드"
+            "프로", "미니", "플러스", "맥스", "울트라", "자켓", "게이밍", "멤버십", "다운", "헤비", "브랜드",
+            "일시", "일시품절", "스토어", "프로모션", "결제", "판매가", "최종가", "기본가", "청구할인", "즉시할인"
         }
         modifier_noise = {
             "국내산", "무선", "유선", "세트", "골라담기", "정품", "새상품", "미개봉", "리퍼", "증정", "포함",
@@ -1526,12 +1527,36 @@ def get_popular_keywords(db: Session = Depends(get_db_session)):
             "초특가", "할인가", "쿠폰가", "사은품", "무료증정", "한정수량", "당일발송", "빠른배송", "박스", "팩",
             "남성", "여성", "공용", "겨울", "여름", "구분", "기준", "옵션", "대체", "제품별", "상품권",
             "게이밍", "멤버십", "다운", "가정용", "업소용", "대용량", "소용량", "제주", "프리미엄", "슈퍼",
-            "울트라", "스페셜", "오리지널", "클래식", "베이직", "스탠다드", "슬림", "와이드", "멀티", "고속", "초고속"
+            "울트라", "스페셜", "오리지널", "클래식", "베이직", "스탠다드", "슬림", "와이드", "멀티", "고속", "초고속",
+            "일시", "일시품절", "스토어쿠폰", "결제할인", "공구코드", "슈퍼적립", "브랜드쿠폰", "전원증정"
         }
-        stop_words = {"특가", "할인", "무료배송", "무배", "체감가", "역대급", "최저가", "핫딜", "쿠폰", "카드", "적립", "오늘마켓", "추천"}
+        stop_words = {"특가", "할인", "무료배송", "무배", "체감가", "역대급", "최저가", "핫딜", "쿠폰", "카드", "적립", "오늘마켓", "추천", "일시"}
+
+        # 최근 핫딜 제목 분석 및 실제 DB 매칭 검증용 목록 로드
+        deals_rows = db.query(models.Deal.title, models.Deal.indexed_at).filter(
+            models.Deal.is_closed == False
+        ).order_by(models.Deal.indexed_at.desc()).limit(1000).all()
+
+        def count_matching_deals(kw_str: str) -> tuple[int, int]:
+            tokens = [t.lower() for t in kw_str.split() if t]
+            if not tokens:
+                return 0, 0
+            d_cnt = 0
+            r_cnt = 0
+            now_u = datetime.utcnow()
+            r_cut = now_u - timedelta(hours=12)
+            for t_val, idx_val in deals_rows:
+                if not t_val:
+                    continue
+                t_low = t_val.lower()
+                if all(tok in t_low for tok in tokens):
+                    d_cnt += 1
+                    if idx_val and idx_val >= r_cut:
+                        r_cnt += 1
+            return d_cnt, r_cnt
 
         filtered_keywords = []
-        # 1. 펨코 실시간 급상승 검색어 JSON 확인 (쇼핑몰명/프로모션 노이즈 필터링 적용, 1글자 한글 상품명 '쌀', '배', '꿀' 허용)
+        # 1. 펨코 실시간 급상승 검색어 JSON 확인 (실제 DB에 매칭되는 핫딜이 최소 1건 이상 존재하는 키워드만 채택!)
         data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
         file_path = os.path.join(data_dir, "fmkorea_trending.json")
         if os.path.exists(file_path):
@@ -1546,12 +1571,12 @@ def get_popular_keywords(db: Session = Depends(get_db_session)):
                     elif kw_clean == "폴드":
                         kw_clean = "갤럭시 폴드"
                     is_valid_len = len(kw_clean) >= 2 or (len(kw_clean) == 1 and '가' <= kw_clean <= '힣')
-                    if is_valid_len and kw_clean.lower() not in noise_keywords and not kw_clean.isdigit():
-                        if kw_clean not in filtered_keywords:
+                    if is_valid_len and kw_clean.lower() not in noise_keywords and kw_clean.lower() not in modifier_noise and not kw_clean.isdigit():
+                        d_cnt, _ = count_matching_deals(kw_clean)
+                        if d_cnt > 0 and kw_clean not in filtered_keywords:
                             filtered_keywords.append(kw_clean)
 
         # 2. 최근 핫딜 제목 분석 및 최근 12시간 vs 이전 구간 급상승 집계
-        deals_rows = db.query(models.Deal.title, models.Deal.indexed_at).order_by(models.Deal.indexed_at.desc()).limit(1000).all()
         words_count: dict[str, int] = {}
         recent_count: dict[str, int] = {}
         now_utc = datetime.utcnow()
@@ -1579,7 +1604,9 @@ def get_popular_keywords(db: Session = Depends(get_db_session)):
             if re.match(r'^\d+[a-zA-Z가-힣]*$', w_norm) or re.match(r'^[a-zA-Z가-힣]\d+$', w_norm):
                 continue
             if len(w_norm) >= 2 and w_norm not in top_keywords:
-                top_keywords.append(w_norm)
+                d_cnt, _ = count_matching_deals(w_norm)
+                if d_cnt > 0:
+                    top_keywords.append(w_norm)
             if len(top_keywords) >= 10:
                 break
 
@@ -1587,25 +1614,16 @@ def get_popular_keywords(db: Session = Depends(get_db_session)):
         if len(top_keywords) < 10:
             for bk in base_keywords:
                 if bk not in top_keywords:
-                    top_keywords.append(bk)
+                    d_cnt, _ = count_matching_deals(bk)
+                    if d_cnt > 0:
+                        top_keywords.append(bk)
                 if len(top_keywords) >= 10:
                     break
 
         final_keywords = top_keywords[:10]
         rankings = []
         for idx, kw in enumerate(final_keywords):
-            # 매칭 건수 계산 (토큰 포함 여부)
-            kw_tokens = [t.lower() for t in kw.split() if t]
-            deal_cnt = 0
-            recent_cnt = 0
-            for title_val, indexed_at_val in deals_rows:
-                if not title_val:
-                    continue
-                t_low = title_val.lower()
-                if all(tok in t_low for tok in kw_tokens):
-                    deal_cnt += 1
-                    if indexed_at_val and indexed_at_val >= recent_cutoff:
-                        recent_cnt += 1
+            deal_cnt, recent_cnt = count_matching_deals(kw)
             if deal_cnt == 0:
                 deal_cnt = words_count.get(kw, 1)
 

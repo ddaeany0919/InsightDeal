@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { RefreshCw, Sparkles } from "lucide-react";
 import type { PriceHistoryItem } from "../lib/types";
-import { apiUrl } from "../lib/utils";
+import { apiUrl, formatPrice } from "../lib/utils";
 
 export interface PriceTrendStats {
   minPrice: number;
@@ -15,6 +15,7 @@ export interface PriceTrendStats {
 interface PriceTrendChartProps {
   basePrice: any;
   dealId?: number;
+  currency?: string;
   onHistoryStatus?: (hasData: boolean, stats?: PriceTrendStats) => void;
 }
 
@@ -30,7 +31,7 @@ type PeriodKey = (typeof PERIOD_OPTIONS)[number]["key"];
 // [react-patterns] React StrictMode 이중 마운트 및 탭 재전환 시 중복 네트워크 호출 방지용 인플라이트 캐시
 const historyPromiseCache = new Map<string, { ts: number; promise: Promise<PriceHistoryItem[]> }>();
 
-export default function PriceTrendChart({ basePrice, dealId, onHistoryStatus }: PriceTrendChartProps) {
+export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", onHistoryStatus }: PriceTrendChartProps) {
   const [userPeriod, setUserPeriod] = useState<PeriodKey | null>(null);
   const [autoFellBackTo3m, setAutoFellBackTo3m] = useState(false);
   const [chartData, setChartData] = useState<{ price: number; date: string }[]>([]);
@@ -142,6 +143,9 @@ export default function PriceTrendChart({ basePrice, dealId, onHistoryStatus }: 
   }, [dealId, userPeriod]);
 
   const formatPriceNum = (num: number) => {
+    if (currency === "USD" || currency === "EUR") {
+      return formatPrice(Math.round(num), currency);
+    }
     if (num < 150) return `$${num.toFixed(2)}`;
     return `${Math.round(num).toLocaleString()}원`;
   };

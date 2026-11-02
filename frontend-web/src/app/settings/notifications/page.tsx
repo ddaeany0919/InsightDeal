@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
-import { apiUrl, API_BASE_URL } from '../../lib/utils';
+import { apiUrl, API_BASE_URL, getOrCreateWebDeviceUuid } from '../../lib/utils';
 
 interface Keyword {
   id: string;
@@ -43,18 +43,7 @@ export default function NotificationSettingsPage() {
     }
   };
 
-  const getBrowserDeviceUuid = (): string => {
-    if (typeof window === 'undefined') return 'web_guest';
-    let token = localStorage.getItem('insightdeal_token');
-    if (!token) {
-      const randomPart = typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-      token = `web_${randomPart}`;
-      localStorage.setItem('insightdeal_token', token);
-    }
-    return token;
-  };
+  const getBrowserDeviceUuid = (): string => getOrCreateWebDeviceUuid();
 
   const fetchSettings = async () => {
     setIsLoading(true);

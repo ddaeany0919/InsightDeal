@@ -1,9 +1,18 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { ThumbsUp, ThumbsDown, Share2, MessageSquare, Send, Bell } from "lucide-react";
-import type { Deal } from "../lib/types";
-import { formatPrice, getProxyImageUrl, apiUrl, resolveOutboundUrl } from "../lib/utils";
+import { ThumbsUp, ThumbsDown, Share2, MessageSquare, Send, Bell, Copy, ExternalLink } from "lucide-react";
+import type { Deal, DealSource } from "../lib/types";
+import {
+  formatPrice,
+  getProxyImageUrl,
+  apiUrl,
+  resolveOutboundUrl,
+  polishDealBodyText,
+  extractPromoCodes,
+  getOrCreateWebDeviceUuid,
+  ensureWebPushSubscribed,
+} from "../lib/utils";
 import PriceTrendChart, { type PriceTrendStats } from "./PriceTrendChart";
 
 interface DealDetailModalProps {
@@ -27,6 +36,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
   const [savedTargetPrice, setSavedTargetPrice] = useState<number | null>(null);
   const [savingTargetAlert, setSavingTargetAlert] = useState<boolean>(false);
   const [detailHtml, setDetailHtml] = useState<string>("");
+  const [detailSources, setDetailSources] = useState<DealSource[]>([]);
   const [buyCount, setBuyCount] = useState<number>(0);
   const [saveCount, setSaveCount] = useState<number>(0);
   const [userVote, setUserVote] = useState<string | null>(null);
@@ -34,19 +44,13 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
   const [commentInput, setCommentInput] = useState<string>("");
   const [submittingComment, setSubmittingComment] = useState<boolean>(false);
 
-  const getBrowserUserId = () => {
-    if (typeof window === "undefined") return "web_guest";
-    return (
-      localStorage.getItem("insightdeal_web_device_uuid") ||
-      localStorage.getItem("insightdeal_token") ||
-      "web_guest"
-    );
-  };
+  const getBrowserUserId = () => getOrCreateWebDeviceUuid();
 
   useEffect(() => {
     setHasChartData(false);
     setChartStats(null);
     setDetailHtml(deal?.contentHtml || "");
+    setDetailSources(deal?.sources || []);
     setBuyCount(0);
     setSaveCount(0);
     setUserVote(null);
@@ -55,7 +59,15 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
     if (!deal) return;
 
+    const isUsd = deal.currency === "USD";
     const rawPriceNum = parseInt(String(deal.price || "").replace(/[^0-9]/g, ""), 10) || 0;
+    const defaultTarget = isUsd
+      ? rawPriceNum >= 500
+        ? Math.max(1, Math.floor((rawPriceNum / 100) * 0.95))
+        : 0
+      : rawPriceNum >= 1000
+        ? Math.round((rawPriceNum * 0.95) / 100) * 100
+        : 0;
     try {
       const mapStr = localStorage.getItem("insightdeal_target_prices");
       const targetMap = mapStr ? JSON.parse(mapStr) : {};
@@ -64,26 +76,28 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
         setTargetPriceInput(String(targetMap[deal.id]));
       } else {
         setSavedTargetPrice(null);
-        setTargetPriceInput(rawPriceNum >= 1000 ? String(Math.round((rawPriceNum * 0.95) / 100) * 100) : "");
+        setTargetPriceInput(defaultTarget > 0 ? String(defaultTarget) : "");
       }
     } catch {
       setSavedTargetPrice(null);
-      setTargetPriceInput(rawPriceNum >= 1000 ? String(Math.round((rawPriceNum * 0.95) / 100) * 100) : "");
+      setTargetPriceInput(defaultTarget > 0 ? String(defaultTarget) : "");
     }
 
     const uid = getBrowserUserId();
 
-    // 1. 상세 본문(content_html)이 비어 있으면 단건 조회로 보충
-    if (!deal.contentHtml) {
-      fetch(apiUrl(`/api/community/deals/${deal.id}`))
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          if (d && d.content_html) {
-            setDetailHtml(d.content_html);
-          }
-        })
-        .catch(() => {});
-    }
+    // 1. 단건 조회로 상세 본문(content_html) 및 공구/다중 옵션(sources) 전체 로드
+    fetch(apiUrl(`/api/community/deals/${deal.id}`))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        if (d.content_html) {
+          setDetailHtml(d.content_html);
+        }
+        if (Array.isArray(d.sources) && d.sources.length > 0) {
+          setDetailSources(d.sources);
+        }
+      })
+      .catch(() => {});
 
     // 2. 살까/말까 투표 현황 로드
     fetch(apiUrl(`/api/community/deals/${deal.id}/votes?user_id=${encodeURIComponent(uid)}`))
@@ -118,19 +132,12 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
   if (!deal) return null;
 
-  // HTML 태그를 제거하고 깔끔한 본문 텍스트만 추출
-  const cleanBodyText = detailHtml
-    ? detailHtml
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<\/p>/gi, "\n")
-        .replace(/<[^>]+>/g, "")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim()
-    : "";
+  // HTML 태그 제거 + 공구 다중 상품 구분선 및 깨진 쿠폰 코드 줄바꿈 자동 다듬기
+  const cleanBodyText = polishDealBodyText(detailHtml);
+  const promoCodes = extractPromoCodes(cleanBodyText);
+  const optionSources = (detailSources || []).filter(
+    (src) => src.site_name && src.site_name.includes(" - ") && src.ecommerce_url
+  );
 
   const handleVote = async (voteType: "buy" | "save") => {
     try {
@@ -409,26 +416,144 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
             border: "1px solid var(--card-border)",
             borderRadius: "16px",
             padding: "16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "12px",
           }}
         >
-          <div style={{ fontSize: "0.82rem", color: "var(--accent)", fontWeight: 800, marginBottom: "8px" }}>
-            상세 내용 및 구매 조건
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+            <div style={{ fontSize: "0.82rem", color: "var(--accent)", fontWeight: 800 }}>
+              상세 내용 및 구매 조건
+            </div>
+            {promoCodes.length > 0 && (
+              <span style={{ fontSize: "0.72rem", color: "var(--text-sub)", fontWeight: 600 }}>
+                코드를 누르면 바로 복사돼요
+              </span>
+            )}
           </div>
+
+          {/* 원클릭 프로모션/공구 할인코드 복사 칩 */}
+          {promoCodes.length > 0 && (
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {promoCodes.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={async () => {
+                    if (typeof navigator !== "undefined" && navigator.clipboard) {
+                      await navigator.clipboard.writeText(code);
+                      showToast(`할인코드 '${code}'가 복사되었습니다.`);
+                    }
+                  }}
+                  className="bounce-click"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    padding: "5px 10px",
+                    borderRadius: "8px",
+                    background: "rgba(var(--accent-rgb), 0.1)",
+                    border: "1px dashed rgba(var(--accent-rgb), 0.45)",
+                    color: "var(--accent)",
+                    fontSize: "0.76rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                  title="클릭하여 할인코드 복사"
+                >
+                  <Copy size={12} />
+                  <span>{code}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           <div
             style={{
               fontSize: "0.9rem",
-              lineHeight: 1.6,
+              lineHeight: 1.65,
               color: "var(--text-main)",
               whiteSpace: "pre-line",
-              maxHeight: "180px",
+              maxHeight: "230px",
               overflowY: "auto",
+              paddingRight: "4px",
             }}
           >
             {cleanBodyText
-              ? cleanBodyText.slice(0, 600)
+              ? cleanBodyText.slice(0, 1200)
               : deal.aiSummary ||
                 `[${deal.community_name}]에서 등록된 핫딜입니다. 쿠폰 및 카드 할인 조건은 아래 쇼핑몰 또는 원본 게시글에서 확인해 주세요.`}
           </div>
+
+          {/* 다중 상품(공구/모음전) 개별 상품 선택 및 바로가기 */}
+          {optionSources.length > 0 && (
+            <div
+              style={{
+                borderTop: "1px solid var(--card-border)",
+                paddingTop: "12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              <div style={{ fontSize: "0.78rem", color: "var(--accent)", fontWeight: 800 }}>
+                구성 상품 선택 및 바로가기 ({optionSources.length}종)
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "170px", overflowY: "auto" }}>
+                {optionSources.map((src, idx) => {
+                  const optionTitle = src.site_name.split(" - ").slice(1).join(" - ").trim() || src.site_name;
+                  const optionCurrency = src.currency || deal.currency || "KRW";
+                  return (
+                    <a
+                      key={`${src.site_name}-${idx}`}
+                      href={resolveOutboundUrl(src.ecommerce_url || deal.post_link)}
+                      target="_blank"
+                      rel="noopener"
+                      className="bounce-click"
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: "10px",
+                        padding: "9px 12px",
+                        borderRadius: "10px",
+                        background: "var(--card-bg)",
+                        border: "1px solid var(--card-border)",
+                        textDecoration: "none",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "0.83rem",
+                          fontWeight: 700,
+                          color: "var(--text-main)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {optionTitle}
+                      </span>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          flexShrink: 0,
+                          fontSize: "0.84rem",
+                          fontWeight: 800,
+                          color: "var(--deal-orange)",
+                        }}
+                      >
+                        <span>{src.price && src.price > 0 ? formatPrice(src.price, optionCurrency) : "상세보기"}</span>
+                        <ExternalLink size={13} color="var(--accent)" />
+                      </span>
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 가격 추이 차트 */}
@@ -443,6 +568,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
           <PriceTrendChart
             basePrice={deal.price}
             dealId={deal.id}
+            currency={deal.currency}
             onHistoryStatus={(hasData, stats) => {
               setHasChartData(hasData);
               if (stats) setChartStats(stats);
@@ -452,26 +578,32 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
         {/* 목표가 도달 시 알림 설정 카드 */}
         {(() => {
-          const cleanPriceNum = parseInt(String(deal.price || "").replace(/[^0-9]/g, ""), 10) || 0;
-          if (cleanPriceNum < 1000) return null;
+          const isUsd = deal.currency === "USD";
+          const rawPriceNum = parseInt(String(deal.price || "").replace(/[^0-9]/g, ""), 10) || 0;
+          const cleanPriceNum = isUsd ? Math.round(rawPriceNum / 100) : rawPriceNum;
+          if ((isUsd && cleanPriceNum < 5) || (!isUsd && cleanPriceNum < 1000)) return null;
 
-          const round100 = (v: number) => Math.max(100, Math.round(v / 100) * 100);
+          const roundUnit = (v: number) => (isUsd ? Math.max(1, Math.floor(v)) : Math.max(100, Math.round(v / 100) * 100));
+          const formatUnit = (v: number) => (isUsd ? `$${v.toLocaleString()}` : `${v.toLocaleString()}원`);
           const presets: { label: string; value: number }[] = [];
-          if (chartStats && chartStats.minPrice >= 1000 && chartStats.minPrice < cleanPriceNum) {
-            presets.push({ label: `역대 최저가 (${chartStats.minPrice.toLocaleString()}원)`, value: chartStats.minPrice });
+          const statMin = chartStats ? (isUsd ? Math.round(chartStats.minPrice / 100) : chartStats.minPrice) : 0;
+          const statAvg = chartStats ? (isUsd ? Math.round(chartStats.avgPrice / 100) : chartStats.avgPrice) : 0;
+
+          if (statMin > 0 && statMin < cleanPriceNum) {
+            presets.push({ label: `역대 최저가 (${formatUnit(statMin)})`, value: statMin });
           }
-          if (chartStats && chartStats.avgPrice >= 1000 && round100(chartStats.avgPrice * 0.95) < cleanPriceNum) {
-            const avgTarget = round100(chartStats.avgPrice * 0.95);
+          if (statAvg > 0 && roundUnit(statAvg * 0.95) < cleanPriceNum) {
+            const avgTarget = roundUnit(statAvg * 0.95);
             if (!presets.some((p) => p.value === avgTarget)) {
-              presets.push({ label: `평균 -5% (${avgTarget.toLocaleString()}원)`, value: avgTarget });
+              presets.push({ label: `평균 -5% (${formatUnit(avgTarget)})`, value: avgTarget });
             }
           }
           [
-            { label: "-5%", value: round100(cleanPriceNum * 0.95) },
-            { label: "-10%", value: round100(cleanPriceNum * 0.9) },
-            { label: "-15%", value: round100(cleanPriceNum * 0.85) },
+            { label: "-5%", value: roundUnit(cleanPriceNum * 0.95) },
+            { label: "-10%", value: roundUnit(cleanPriceNum * 0.9) },
+            { label: "-15%", value: roundUnit(cleanPriceNum * 0.85) },
           ].forEach((item) => {
-            if (!presets.some((p) => p.value === item.value)) {
+            if (item.value > 0 && !presets.some((p) => p.value === item.value)) {
               presets.push(item);
             }
           });
@@ -481,26 +613,28 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
           const handleSaveTargetAlert = async (e: React.FormEvent) => {
             e.preventDefault();
-            if (parsedInput < 100 || savingTargetAlert) {
+            const minValid = isUsd ? 1 : 100;
+            if (parsedInput < minValid || savingTargetAlert) {
               showToast("유효한 목표 금액을 입력해 주세요.");
               return;
             }
             setSavingTargetAlert(true);
             try {
-              const uid = getBrowserUserId();
+              const { deviceUuid, pushGranted } = await ensureWebPushSubscribed();
               const keywordToTrack = (deal.title || "")
                 .replace(/\[[^\]]*\]/g, "")
                 .replace(/\([^)]*\)/g, "")
                 .trim()
                 .slice(0, 50);
 
+              const apiTargetPrice = isUsd ? parsedInput * 100 : parsedInput;
               const res = await fetch(apiUrl("/api/wishlist/item-alert"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  user_id: uid,
+                  user_id: deviceUuid,
                   keyword: keywordToTrack || deal.title.slice(0, 40),
-                  target_price: parsedInput,
+                  target_price: apiTargetPrice,
                 }),
               });
 
@@ -512,7 +646,11 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                   targetMap[deal.id] = parsedInput;
                   localStorage.setItem("insightdeal_target_prices", JSON.stringify(targetMap));
                 } catch {}
-                showToast(`목표가(${parsedInput.toLocaleString()}원) 이하 도달 시 알림이 설정되었어요.`);
+                showToast(
+                  pushGranted
+                    ? `목표가(${formatUnit(parsedInput)}) 이하 도달 시 브라우저 푸시 알림이 발송돼요.`
+                    : `목표가(${formatUnit(parsedInput)}) 알림이 저장되었어요. 브라우저 알림 권한을 허용하면 실시간 푸시를 받을 수 있어요.`
+                );
               } else {
                 showToast("목표가 알림 저장 중 오류가 발생했어요.");
               }
@@ -552,7 +690,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                       borderRadius: "999px",
                     }}
                   >
-                    설정됨 · {savedTargetPrice.toLocaleString()}원 이하
+                    설정됨 · {formatUnit(savedTargetPrice)} 이하
                   </span>
                 )}
               </div>
@@ -604,7 +742,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                     }}
                   />
                   <span style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "0.8rem", color: "var(--text-sub)", fontWeight: 700 }}>
-                    원
+                    {isUsd ? "$" : "원"}
                   </span>
                 </div>
                 <button
@@ -620,8 +758,8 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
               {parsedInput > 0 && (
                 <div style={{ fontSize: "0.75rem", color: diffAmount > 0 ? "#10b981" : "var(--text-sub)", fontWeight: 700 }}>
                   {diffAmount > 0
-                    ? `현재가보다 ${diffAmount.toLocaleString()}원 더 내려가면 알려드려요.`
-                    : "현재 판매가 이하로 금액을 설정하면 가격 하락 시 알림을 받을 수 있어요."}
+                    ? `현재가보다 ${formatUnit(diffAmount)} 더 내려가면 로그인 없이 이 기기(브라우저)로 즉시 푸시 알림을 보내드려요.`
+                    : "현재 판매가 이하로 금액을 설정하면 가격 하락 시 이 기기로 바로 알림을 받을 수 있어요."}
                 </div>
               )}
             </div>
