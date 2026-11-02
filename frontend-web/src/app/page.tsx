@@ -348,7 +348,7 @@ export default function Home() {
         setHasMore(formatted.length >= limit);
       } else {
         if (offset === 0) {
-          setDeals(activeKw.trim() ? [] : getFallbackDeals());
+          setDeals([]);
         }
         setHasMore(false);
       }

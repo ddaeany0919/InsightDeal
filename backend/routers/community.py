@@ -1146,6 +1146,19 @@ async def get_hot_deals(
                         *[models.Deal.title.ilike(f"%{kw}%") for kw in beauty_title_kws]
                     )
                 )
+            elif category == "가전제품":
+                appliance_title_kws = [
+                    "선풍기", "에어컨", "청소기", "로봇청소기", "냉장고", "세탁기", "건조기", "공기청정기",
+                    "제습기", "가습기", "전자레인지", "오븐", "에어프라이어", "밥솥", "식기세척기", "블렌더",
+                    "믹서기", "다리미", "안마", "드라이기", "면도기", "전동칫솔", "이어폰", "헤드폰", "스피커",
+                    "사운드바", "버즈", "에어팟", "빔프로젝터", "TV", "티비"
+                ]
+                query = query.filter(
+                    or_(
+                        *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
+                        *[models.Deal.title.ilike(f"%{kw}%") for kw in appliance_title_kws]
+                    )
+                )
             else:
                 filter_conditions = [models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords]
                 query = query.filter(or_(*filter_conditions))
@@ -2500,3 +2513,65 @@ def get_user_comments(
         })
         
     return result
+
+
+class IngestBatchPayload(BaseModel):
+    community_name: str
+    display_name: str
+    base_url: str
+    deals: List[dict]
+
+
+@router.post("/ingest-batch")
+async def ingest_scraped_deals_batch(
+    payload: IngestBatchPayload,
+    db: Session = Depends(get_db_session),
+):
+    """한국 리전 릴레이/피더로부터 수집된 핫딜 배치를 서버 DB에 즉시 병합하고 통계를 갱신합니다."""
+    from backend.services.aggregator_service import AggregatorService
+
+    community = db.query(models.Community).filter(models.Community.name == payload.community_name).first()
+    if not community:
+        community = models.Community(
+            name=payload.community_name,
+            display_name=payload.display_name,
+            base_url=payload.base_url,
+        )
+        db.add(community)
+        db.commit()
+        db.refresh(community)
+
+    aggregator = AggregatorService(db)
+    inserted = 0
+    for item in payload.deals:
+        try:
+            deal = await aggregator.process_scraped_deal(community.id, item)
+            if deal:
+                inserted += 1
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"[ingest-batch] item error ({payload.community_name}): {e}")
+
+    # Update scraper_stats.json
+    stats_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scraper_stats.json")
+    try:
+        stats = {}
+        if os.path.exists(stats_file):
+            with open(stats_file, "r", encoding="utf-8") as f:
+                stats = json.load(f)
+        kst_tz = timezone(timedelta(hours=9))
+        stats[payload.display_name] = {
+            "last_count": inserted,
+            "fetched_count": len(payload.deals),
+            "updated_count": inserted,
+            "last_run": datetime.now(kst_tz).strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "Success",
+        }
+        with open(stats_file, "w", encoding="utf-8") as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+    invalidate_feed_api_cache()
+    return {"status": "ok", "community": payload.display_name, "processed": inserted}
+

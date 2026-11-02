@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const runtime = "edge";
-export const preferredRegion = ["icn1", "hnd1"];
+export const runtime = "nodejs";
+export const preferredRegion = "icn1";
 
 export async function GET(req: NextRequest) {
   const targetUrl = req.nextUrl.searchParams.get("url");
