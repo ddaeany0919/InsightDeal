@@ -30,18 +30,22 @@ async def _preload_existing_urls(http_client: httpx.AsyncClient):
                 for d in deals:
                     if not isinstance(d, dict):
                         continue
-                    raw_u = d.get("post_link") or d.get("source_url") or d.get("url")
-                    if raw_u:
-                        u = normalize_url(raw_u)
-                        _SEEN_DETAIL_CACHE[u] = {
-                            "content_html": d.get("content_html") or "",
-                            "ecommerce_link": d.get("ecommerce_link") or "",
-                            "image_url": d.get("image_url") or "",
-                            "shipping_fee": d.get("shipping_fee") or "",
-                            "is_closed": bool(d.get("is_closed", False)),
-                            "like_count": int(d.get("like_count") or 0),
-                            "comment_count": int(d.get("comment_count") or 0),
-                        }
+                    candidate_urls = [d.get("post_url") or d.get("post_link") or d.get("source_url") or d.get("url")]
+                    for src in d.get("sources") or []:
+                        if isinstance(src, dict) and src.get("post_url"):
+                            candidate_urls.append(src.get("post_url"))
+                    for raw_u in candidate_urls:
+                        if raw_u:
+                            u = normalize_url(raw_u)
+                            _SEEN_DETAIL_CACHE[u] = {
+                                "content_html": d.get("content_html") or "",
+                                "ecommerce_link": d.get("ecommerce_url") or d.get("ecommerce_link") or "",
+                                "image_url": d.get("image_url") or "",
+                                "shipping_fee": d.get("shipping_fee") or "",
+                                "is_closed": bool(d.get("is_closed", False)),
+                                "like_count": int(d.get("like_count") or 0),
+                                "comment_count": int(d.get("comment_count") or 0),
+                            }
         logger.info(f"📦 기존 DB 게시글 {len(_SEEN_DETAIL_CACHE)}건 상세 캐시 로드 완료 (이미 파싱된 게시글 스킵 활성화)")
     except Exception as e:
         logger.warning(f"기존 DB URL 프리로드 생략: {e}")
