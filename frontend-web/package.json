@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build",
+    "build:toss": "node scripts/build-toss-bundle.mjs",
     "start": "next start",
     "lint": "eslint"
   },

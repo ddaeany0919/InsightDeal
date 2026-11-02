@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
+import { apiUrl, API_BASE_URL } from '../../lib/utils';
 
 interface Keyword {
   id: string;
@@ -59,7 +60,7 @@ export default function NotificationSettingsPage() {
     setIsLoading(true);
     try {
       const deviceUuid = getBrowserDeviceUuid();
-      const response = await fetch(`/api/push/keywords?device_uuid=${encodeURIComponent(deviceUuid)}`).catch(() => null);
+      const response = await fetch(apiUrl(`/api/push/keywords?device_uuid=${encodeURIComponent(deviceUuid)}`)).catch(() => null);
       if (response && response.ok) {
         const data = await response.json();
         const detailed = Array.isArray(data.detailed_keywords)
@@ -106,7 +107,7 @@ export default function NotificationSettingsPage() {
       console.log('Service Worker registered with scope:', registration.scope);
 
       // 백엔드 VAPID Public Key 가져오기
-      const vapidResponse = await fetch('/api/push-public-key').catch(() => null);
+      const vapidResponse = await fetch(apiUrl('/api/push-public-key')).catch(() => null);
       const vapidKey = vapidResponse && vapidResponse.ok 
         ? await vapidResponse.text() 
         : 'BEl62i53FC45g9eZTIzMzYyR3N...'; // Fallback VAPID Key
@@ -119,7 +120,8 @@ export default function NotificationSettingsPage() {
       // 토큰 동기화 API Routes 호출 (브라우저 고유 device_uuid와 함께 전달하여 관심 키워드와 1:1 매핑)
       const subJson = subscription.toJSON();
       const deviceUuid = getBrowserDeviceUuid();
-      await fetch('/api/push-register', {
+      const pushRegisterEndpoint = API_BASE_URL ? apiUrl('/api/push/register-web') : '/api/push-register';
+      await fetch(pushRegisterEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -145,7 +147,10 @@ export default function NotificationSettingsPage() {
         const deviceUuid = getBrowserDeviceUuid();
         await subscription.unsubscribe();
         // 백엔드 등록 토큰 해제 요청
-        await fetch('/api/push-register', {
+        const pushDeleteEndpoint = API_BASE_URL
+          ? apiUrl(`/api/push/register-web?endpoint=${encodeURIComponent(subscription.endpoint)}&device_uuid=${encodeURIComponent(deviceUuid)}`)
+          : '/api/push-register';
+        await fetch(pushDeleteEndpoint, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ endpoint: subscription.endpoint, device_uuid: deviceUuid })
@@ -172,7 +177,7 @@ export default function NotificationSettingsPage() {
     setIsLoading(true);
     try {
       const deviceUuid = getBrowserDeviceUuid();
-      await fetch('/api/push/keywords', {
+      await fetch(apiUrl('/api/push/keywords'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ device_uuid: deviceUuid, keyword: newKeywordStr })
@@ -195,7 +200,7 @@ export default function NotificationSettingsPage() {
   const handleToggleKeyword = async (keywordStr: string) => {
     try {
       const deviceUuid = getBrowserDeviceUuid();
-      const res = await fetch('/api/push/keywords/toggle', {
+      const res = await fetch(apiUrl('/api/push/keywords/toggle'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ device_uuid: deviceUuid, keyword: keywordStr })
@@ -223,7 +228,7 @@ export default function NotificationSettingsPage() {
     setIsLoading(true);
     try {
       const deviceUuid = getBrowserDeviceUuid();
-      await fetch('/api/push/keywords', {
+      await fetch(apiUrl('/api/push/keywords'), {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ device_uuid: deviceUuid, keyword: keywordStr })
@@ -244,7 +249,7 @@ export default function NotificationSettingsPage() {
   const syncDndToBackend = async (nextEnabled: boolean, startStr: string, endStr: string) => {
     try {
       const deviceUuid = getBrowserDeviceUuid();
-      await fetch('/api/push/device', {
+      await fetch(apiUrl('/api/push/device'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
