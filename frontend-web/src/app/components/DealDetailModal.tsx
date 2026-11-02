@@ -135,9 +135,19 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
   // HTML 태그 제거 + 공구 다중 상품 구분선 및 깨진 쿠폰 코드 줄바꿈 자동 다듬기
   const cleanBodyText = polishDealBodyText(detailHtml);
   const promoCodes = extractPromoCodes(cleanBodyText);
-  const optionSources = (detailSources || []).filter(
-    (src) => src.site_name && src.site_name.includes(" - ") && src.ecommerce_url
-  );
+  const optionSources = (() => {
+    const seen = new Set<string>();
+    const result: DealSource[] = [];
+    for (const src of detailSources || []) {
+      if (!src.site_name || !src.site_name.includes(" - ") || !src.ecommerce_url) continue;
+      const optTitle = src.site_name.split(" - ").slice(1).join(" - ").trim();
+      const normKey = optTitle.toLowerCase().replace(/\s+/g, "");
+      if (!normKey || seen.has(normKey)) continue;
+      seen.add(normKey);
+      result.push(src);
+    }
+    return result;
+  })();
 
   const handleVote = async (voteType: "buy" | "save") => {
     try {
@@ -353,7 +363,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
           <div>
             <div style={{ fontSize: "0.78rem", color: "var(--text-sub)", fontWeight: 600 }}>판매 가격</div>
             <div style={{ color: "var(--deal-orange)", fontSize: "1.45rem", fontWeight: 900, marginTop: "2px", fontVariantNumeric: "tabular-nums" }}>
-              {formatPrice(deal.price, deal.currency)}
+              {formatPrice(deal.price, deal.currency, deal.title)}
             </div>
             {deal.shipping_fee && (
               <div style={{ fontSize: "0.8rem", color: "var(--accent)", marginTop: "2px", fontWeight: 700 }}>
@@ -480,7 +490,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
             }}
           >
             {cleanBodyText
-              ? cleanBodyText.slice(0, 1200)
+              ? cleanBodyText.slice(0, 3500)
               : deal.aiSummary ||
                 `[${deal.community_name}]에서 등록된 핫딜입니다. 쿠폰 및 카드 할인 조건은 아래 쇼핑몰 또는 원본 게시글에서 확인해 주세요.`}
           </div>

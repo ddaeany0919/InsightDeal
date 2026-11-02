@@ -20,6 +20,7 @@ import Link from "next/link";
 import type { Deal, PopularKeywordRanking } from "./lib/types";
 import {
   formatPrice,
+  extractPriceFromTitle,
   categorizeDeal,
   getProxyImageUrl,
   apiUrl,
@@ -316,6 +317,7 @@ export default function Home() {
 
         const finalEcommerce = cleanEcommerce || cleanPostLink || cleanLink || "#";
         const finalPost = cleanPost || cleanPostLink || cleanLink || "#";
+        const titleFallback = (!d.price || Number(d.price) <= 0) ? extractPriceFromTitle(titleStr) : null;
 
         return {
           id: d.id,
@@ -326,7 +328,7 @@ export default function Home() {
             d.communityName ||
             getCommunityName(d.source_community_id),
           title: titleStr,
-          price: d.price || "가격 문의",
+          price: titleFallback ? titleFallback.price : (d.price || "가격 문의"),
           image_url: d.image_url || d.imageUrl || null,
           scraped_at: d.scraped_at || d.timeAgo || "방금 전",
           post_link: finalPost,
@@ -335,7 +337,7 @@ export default function Home() {
           category: d.category || categorizeDeal(titleStr),
           isClosed: Boolean(d.is_closed ?? d.isClosed),
           originalDate: d.created_at || d.originalDate,
-          currency: d.currency || "KRW",
+          currency: titleFallback ? titleFallback.currency : (d.currency || "KRW"),
           honeyScore: d.honey_score || d.honeyScore || 0,
           aiSummary: d.ai_summary || d.aiSummary || "",
           contentHtml: d.content_html || d.contentHtml || "",

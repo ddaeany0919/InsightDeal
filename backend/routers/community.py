@@ -338,6 +338,44 @@ def extract_price(price_str):
         return parsed_val
     return 0
 
+
+def resolve_deal_price_and_currency(deal) -> tuple[int, str]:
+    parsed_price = extract_price(getattr(deal, 'price', 0))
+    currency = getattr(deal, 'currency', 'KRW') or 'KRW'
+    if parsed_price > 0:
+        return parsed_price, currency
+    title = getattr(deal, 'title', '') or ''
+    if not title:
+        return 0, currency
+    m_usd = re.search(r'(?:\$\s*([0-9]+(?:\.[0-9]+)?)|([0-9]+(?:\.[0-9]+)?)\s*(?:달러|불))', title, re.IGNORECASE)
+    if m_usd:
+        val = float(m_usd.group(1) or m_usd.group(2))
+        if 0 < val < 100000:
+            return int(round(val * 100)), 'USD'
+    won_matches = list(re.finditer(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7})\s*원', title))
+    if won_matches:
+        val = int(won_matches[-1].group(1).replace(',', ''))
+        if 100 <= val <= 15000000:
+            return val, 'KRW'
+    m_chun = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*천\s*원', title)
+    if m_chun:
+        return int(round(float(m_chun.group(1)) * 1000)), 'KRW'
+    return 0, currency
+
+
+def extend_unique_sources(existing_sources: list, new_sources: list):
+    for ns in new_sources:
+        ns_site = ns.get("site_name") or ""
+        if " - " in ns_site:
+            opt_name = re.sub(r'\s+', ' ', ns_site.split(" - ", 1)[1].strip()).lower()
+            if any(
+                " - " in (es.get("site_name") or "")
+                and re.sub(r'\s+', ' ', (es.get("site_name") or "").split(" - ", 1)[1].strip()).lower() == opt_name
+                for es in existing_sources
+            ):
+                continue
+        existing_sources.append(ns)
+
 def extract_shipping_fee(fee_str):
     if not fee_str:
         return 0
@@ -909,7 +947,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
 
         for deal in deals:
             comp_name = getattr(deal.community, 'display_name', None) or COMMUNITY_MAP.get(deal.community.name, deal.community.name)
-            parsed_price_int = extract_price(deal.price)
+            parsed_price_int, resolved_currency = resolve_deal_price_and_currency(deal)
             parsed_shipping_fee = extract_shipping_fee(deal.shipping_fee)
             total_price = parsed_price_int + parsed_shipping_fee if parsed_price_int > 0 else 0
             
@@ -933,8 +971,8 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                         existing["price"] = parsed_price_int
                         existing["shipping_fee"] = deal.shipping_fee or ""
                         existing["total_price"] = total_price
-                        existing["currency"] = getattr(deal, 'currency', 'KRW') or 'KRW'
-                        clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:달러|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
+                        existing["currency"] = resolved_currency
+                        clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:달러|불|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
                         existing["title"] = clean_title
                         
                         # 더 저렴한 최저가에 유효한 이미지가 있거나 기존 딜에 이미지가 없는 경우에만 덮어씀
@@ -954,14 +992,14 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                         if comp_name not in existing.setdefault("site_names", []):
                             existing["site_names"].append(comp_name)
                             existing["site_name"] = ", ".join(existing["site_names"])
-                        existing["sources"].extend(get_deal_sources(deal, comp_name, parsed_price_int, db))
+                        extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db))
                 else:
                     if existing.get("total_price", 0) == 0:
                         if not any(s.get('post_url') == (deal.post_link or "") for s in existing.setdefault("sources", [])):
                             if comp_name not in existing.setdefault("site_names", []):
                                 existing["site_names"].append(comp_name)
                                 existing["site_name"] = ", ".join(existing["site_names"])
-                            existing["sources"].extend(get_deal_sources(deal, comp_name, parsed_price_int, db))
+                            extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db))
                 
                 # 하나라도 살아있다면 전체 딜을 진행중인 것으로 처리
                 existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
@@ -977,7 +1015,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
             else:
                 ai_sum = _clean_ai_summary(deal.ai_summary)
                 # Clean title for display
-                clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:달러|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
+                clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:달러|불|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
                 
                 buy_count = deal.like_count or 0
                 save_count = 0
@@ -992,7 +1030,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     "price": parsed_price_int,
                     "shipping_fee": deal.shipping_fee or "",
                     "total_price": total_price,
-                    "currency": getattr(deal, 'currency', 'KRW') or 'KRW',
+                    "currency": resolved_currency,
                     "original_price": None,
                     "discount_rate": 0,
                     "image_url": image_url,
@@ -1325,9 +1363,9 @@ async def get_hot_deals(
             image_url = _resolve_best_image_url(deal, BASE_URL)
 
             # UI를 위해 제목에서 가격 태그 날리기
-            clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:달러|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
+            clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:달러|불|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
             
-            parsed_price_int = extract_price(deal.price)
+            parsed_price_int, resolved_currency = resolve_deal_price_and_currency(deal)
             parsed_shipping_fee = extract_shipping_fee(deal.shipping_fee)
             total_price = parsed_price_int + parsed_shipping_fee if parsed_price_int > 0 else 0
 
@@ -1340,7 +1378,7 @@ async def get_hot_deals(
                         existing["price"] = parsed_price_int
                         existing["shipping_fee"] = deal.shipping_fee or ""
                         existing["total_price"] = total_price
-                        existing["currency"] = getattr(deal, 'currency', 'KRW') or 'KRW'
+                        existing["currency"] = resolved_currency
                         
                         if image_url or not existing.get("image_url") or "ui-avatars.com" in (existing.get("image_url", "") or ""):
                             existing["image_url"] = image_url or existing.get("image_url")
@@ -1366,14 +1404,14 @@ async def get_hot_deals(
                         if comp_name not in existing.setdefault("site_names", []):
                             existing["site_names"].append(comp_name)
                             existing["site_name"] = ", ".join(existing["site_names"])
-                        existing["sources"].extend(get_deal_sources(deal, comp_name, parsed_price_int, db))
+                        extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db))
                 else:
                     if existing.get("total_price", 0) == 0:
                         if not any(s.get('post_url') == (deal.post_link or "") for s in existing.setdefault("sources", [])):
                             if comp_name not in existing.setdefault("site_names", []):
                                 existing["site_names"].append(comp_name)
                                 existing["site_name"] = ", ".join(existing["site_names"])
-                            existing["sources"].extend(get_deal_sources(deal, comp_name, parsed_price_int, db))
+                            extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db))
                             
                 # 하나라도 살아있다면 전체 딜을 진행중인 것으로 처리
                 existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
@@ -1412,7 +1450,7 @@ async def get_hot_deals(
                     "price": parsed_price_int,
                     "shipping_fee": deal.shipping_fee or "",
                     "total_price": total_price,
-                    "currency": getattr(deal, 'currency', 'KRW') or 'KRW',
+                    "currency": resolved_currency,
                     "image_url": image_url,
                     "ecommerce_url": get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi),
                     "post_url": deal.post_link or "",

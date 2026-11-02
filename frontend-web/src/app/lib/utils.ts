@@ -1,17 +1,55 @@
-// 가격 표시 포맷팅 헬퍼
-export const formatPrice = (priceVal: any, currency?: string): string => {
-    if (priceVal === null || priceVal === undefined) return "가격 문의";
-    const price = String(priceVal).trim();
-    if (!price || price === "0" || price === "정보 없음" || price === "가격 문의" || price === "null" || price === "undefined") {
-      return "가격 문의";
+// 제목에서 가격/통화 보조 추출 (예: "11.6불", "$13.93", "8500원", "9천원")
+export const extractPriceFromTitle = (title?: string | null): { price: string; currency: string } | null => {
+  if (!title) return null;
+  const usdMatch =
+    title.match(/\$\s*([0-9]+(?:\.[0-9]+)?)/i) ||
+    title.match(/([0-9]+(?:\.[0-9]+)?)\s*(?:달러|불)(?![가-힣])/i);
+  if (usdMatch && usdMatch[1]) {
+    const val = parseFloat(usdMatch[1]);
+    if (val > 0 && val < 10000) {
+      return { price: String(Math.round(val * 100)), currency: "USD" };
     }
+  }
+  const wonMatches = Array.from(title.matchAll(/([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7})\s*원/g));
+  if (wonMatches.length > 0) {
+    const lastWon = wonMatches[wonMatches.length - 1][1].replace(/,/g, "");
+    const val = parseInt(lastWon, 10);
+    if (val >= 100 && val <= 15000000) {
+      return { price: String(val), currency: "KRW" };
+    }
+  }
+  const cheonMatch = title.match(/([0-9]+(?:\.[0-9]+)?)\s*천\s*원/);
+  if (cheonMatch && cheonMatch[1]) {
+    const val = Math.round(parseFloat(cheonMatch[1]) * 1000);
+    if (val >= 500) {
+      return { price: String(val), currency: "KRW" };
+    }
+  }
+  return null;
+};
+
+// 가격 표시 포맷팅 헬퍼
+export const formatPrice = (priceVal: any, currency?: string, title?: string): string => {
+    let targetPrice = priceVal;
+    let targetCurrency = currency;
+    const rawStr = targetPrice === null || targetPrice === undefined ? "" : String(targetPrice).trim();
+    if (!rawStr || rawStr === "0" || rawStr === "정보 없음" || rawStr === "가격 문의" || rawStr === "null" || rawStr === "undefined") {
+      const fromTitle = extractPriceFromTitle(title);
+      if (fromTitle) {
+        targetPrice = fromTitle.price;
+        targetCurrency = fromTitle.currency;
+      } else {
+        return "가격 문의";
+      }
+    }
+    const price = String(targetPrice).trim();
     if (price.includes("원") || price.includes("$") || price.includes("€")) return price;
     const numOnly = price.replace(/[^0-9.]/g, "");
     if (!numOnly) return price;
     const parsedNum = parseFloat(numOnly);
     if (parsedNum <= 0) return "가격 문의";
 
-    if (currency === "USD" || (price.includes(".") && parsedNum < 150)) {
+    if (targetCurrency === "USD" || (price.includes(".") && parsedNum < 150)) {
       if (!price.includes(".") && parsedNum >= 100) {
         const dollars = parsedNum / 100;
         return dollars % 1 === 0 ? `$${dollars}` : `$${dollars.toFixed(2)}`;
@@ -19,7 +57,7 @@ export const formatPrice = (priceVal: any, currency?: string): string => {
         return parsedNum % 1 === 0 ? `$${parsedNum}` : `$${parsedNum.toFixed(2)}`;
       }
     }
-    if (currency === "EUR") {
+    if (targetCurrency === "EUR") {
       if (!price.includes(".") && parsedNum >= 100) {
         const euros = parsedNum / 100;
         return euros % 1 === 0 ? `€${euros}` : `€${euros.toFixed(2)}`;
@@ -151,60 +189,88 @@ export const polishDealBodyText = (rawHtml: string | undefined | null): string =
   if (!rawHtml) return "";
   let text = rawHtml
     .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/div>/gi, "\n")
-    .replace(/<\/li>/gi, "\n")
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, "\n")
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+    .replace(/&#39;/g, "'")
+    .replace(/\uFFFD/g, "");
+
+  // 한 줄로 뭉쳐진 본문(퀘이사존/클리앙 등) 자동 줄바꿈 복원
+  text = text
+    .replace(/\s+(?=[📱📶💰📦🎁⚠️✅🎟️🔥👉ⒶⒷ①②③④⑤])/g, "\n")
+    .replace(/\s*🔗\s*/g, "\n")
+    .replace(/\s+(?=(?:[1-9]\.\s+[가-힣A-Za-z]))/g, "\n\n")
+    .replace(/([^\n])\s*(최종가\s*:\s*[0-9,]+원)/g, "$1\n$2\n");
 
   const rawLines = text
     .split(/\r?\n/)
     .map((l) => l.replace(/\s+/g, " ").trim())
+    .map((l) => l.replace(/^(?:보기|바로가기|제품\s*바로가기|상품\s*바로가기)\s*>{1,}\s*/i, "▪ "))
+    .map((l) => l.replace(/\s+최근\s*본\s*상품\s*>\s*$/i, ""))
     .filter((l) => {
-      if (!l) return false;
-      if (/^(?:링크|제품\s*바로가기|상품\s*바로가기|구매\s*링크)\s*>{2,}/i.test(l)) return false;
-      if (/^>{3,}/.test(l)) return false;
-      if (l === "보기>" || l === "보기 >" || l === "바로가기>" || l === "바로가기 >") return false;
+      if (!l || l === "▪") return false;
+      if (/^(?:링크|바로가기|보기)\s*>{0,}$/i.test(l)) return false;
+      if (/^(?:링크|구매\s*링크)\s*>{2,}/i.test(l)) return false;
+      if (/^>{2,}/.test(l)) return false;
+      if (/^링크오류시$/i.test(l)) return false;
+      if (/^(?:갤럭시|아이폰)\s*:\s*.*(?:링크\s*꾹|알리익스프레스\s*앱)/i.test(l)) return false;
+      if (/^2\)\s*알리앱\s*꾹\s*눌러서/i.test(l)) return false;
+      if (/^-\s*가격은\s*쿠폰\s*적용\s*전\s*가격을\s*적어주세요/i.test(l)) return false;
       return true;
     });
 
-  // 깨진 프로모션/공구코드 줄바꿈 병합 (예: "공구코드 $34" 다음 줄의 "WLRRN558, DIRECT00," -> 한 줄로 병합)
+  // 깨진 프로모션/공구코드 줄바꿈 병합 (숫자 천단위 콤마 96,030은 절대 건드리지 않음)
   const mergedLines: string[] = [];
   for (let i = 0; i < rawLines.length; i++) {
     let curr = rawLines[i]
       .replace(/,\s*,+/g, ", ")
-      .replace(/\s*,\s*/g, ", ")
+      .replace(/([A-Za-z0-9]{4,})\s*,\s*(?=[A-Za-z0-9]{4,})/g, "$1, ")
       .replace(/,\s*$/, "")
       .trim();
 
     if (!curr) continue;
 
-    const isCodeOnlyLine = /^[A-Z0-9]{4,12}(?:\s*,\s*[A-Z0-9]{4,12})*$/i.test(curr) && /[A-Z]/i.test(curr) && /[0-9]/.test(curr);
+    const isCodeOnlyLine =
+      /^[A-Z0-9]{4,14}(?:\s*,\s*[A-Z0-9]{4,14})*$/i.test(curr) &&
+      /[A-Z]/i.test(curr) &&
+      /[0-9]/.test(curr);
     if (isCodeOnlyLine && mergedLines.length > 0) {
       const prev = mergedLines[mergedLines.length - 1];
-      if (/(?:코드|쿠폰|할인)/i.test(prev) || /[A-Z0-9]{4,12}$/i.test(prev)) {
-        mergedLines[mergedLines.length - 1] = prev.endsWith(":") || prev.endsWith(",")
-          ? `${prev} ${curr}`
-          : `${prev} (${curr})`;
+      if (/(?:코드|쿠폰|할인)/i.test(prev) || /[A-Z0-9]{4,14}\)?$/i.test(prev)) {
+        if (prev.endsWith(")")) {
+          mergedLines[mergedLines.length - 1] = `${prev.slice(0, -1)}, ${curr})`;
+        } else {
+          mergedLines[mergedLines.length - 1] =
+            prev.endsWith(":") || prev.endsWith(",") ? `${prev} ${curr}` : `${prev} (${curr})`;
+        }
         continue;
       }
     }
     mergedLines.push(curr);
   }
 
-  // 다중 상품 공구 게시글에서 '최종가 ...' 또는 '최대혜택가 ...' 뒤에 다음 상품이 이어질 때 구분선 삽입
+  // 다중 상품 공구 게시글에서 '최종가 ...', '최대 할인가 ...', '합계 ...' 뒤에 다음 상품이 이어질 때 구분선 삽입
   const finalLines: string[] = [];
   for (let i = 0; i < mergedLines.length; i++) {
     const line = mergedLines[i];
     finalLines.push(line);
-    const isFinalPriceLine = /^(?:최종가|최종\s*체감가|최대\s*혜택가|최대\s*할인가)\b/i.test(line);
+    const isFinalPriceLine =
+      /^(?:최종가|최종\s*체감가|최대\s*혜택가|최대\s*할인가|합계)(?=\s|:|$)/i.test(line) ||
+      /최저가\s*:\s*\$?[0-9,.]+/i.test(line);
     if (isFinalPriceLine && i < mergedLines.length - 1) {
-      finalLines.push("────────────────────────");
+      const next1 = mergedLines[i + 1] || "";
+      const next2 = mergedLines[i + 2] || "";
+      const isNext1PaymentFollowUp = /^(?:우리카드|국민카드|결제\s*할인|카드\s*할인|※\s*관세|\*[0-9]+인치)/i.test(next1);
+      const hasFollowUpFinal =
+        /^(?:최종가|최대\s*할인가)(?=\s|:|$)/i.test(next1) ||
+        (isNext1PaymentFollowUp && /^(?:최종가|최대\s*할인가)(?=\s|:|$)/i.test(next2));
+      if (!hasFollowUpFinal) {
+        finalLines.push("────────────────────────");
+      }
     }
   }
 
@@ -218,20 +284,23 @@ export const extractPromoCodes = (rawText: string | undefined | null): string[] 
   const blacklist = new Set([
     "HTTP", "HTTPS", "HTML", "UTF8", "ALLDOCUBE", "BIGME", "VIOFO", "VIOFEO",
     "JONR", "UWANT", "SHOKZ", "IPLAY", "MINI", "PRO", "MAX", "PLUS", "ULTRA",
-    "WIFI", "LTE", "NVME", "DDR4", "DDR5", "HDMI", "USBC", "TYPEC", "PD100W"
+    "WIFI", "LTE", "NVME", "DDR4", "DDR5", "HDMI", "USBC", "TYPEC", "PD100W",
+    "PAW3395", "5000IU", "10000MAH", "20000MAH", "PD20W", "IN1200T", "CB3000"
   ]);
 
   const lines = rawText.split(/\r?\n/);
   for (const line of lines) {
-    // 코드/쿠폰 키워드 주변 또는 대문자+숫자 조합 코드 추출
-    const matches = line.match(/\b[A-Z]{2,8}[0-9]{2,6}[A-Z0-9]{0,4}\b/g);
+    const hasCodeContext = /(?:코드|쿠폰|프로모션|할인|소진시|적용|선착순|🎟|Ⓐ|Ⓑ)/i.test(line) || line.includes(",");
+    const matches = line.match(/\b[A-Z0-9]{5,14}\b/g);
     if (matches) {
       for (const m of matches) {
         const up = m.toUpperCase();
         if (blacklist.has(up)) continue;
-        // 모델명(예: A229, P20, V500, B6, B7, M800 등 짧은 모델번호) 제외: 최소 6자 이상이거나 코드 문맥이 있을 때만 허용
-        const hasCodeContext = /(?:코드|쿠폰|프로모션|할인|소진시|적용)/i.test(line) || line.includes(",");
-        if (up.length >= 6 || (up.length >= 5 && hasCodeContext)) {
+        if (!/[A-Z]/.test(up) || !/[0-9]/.test(up)) continue;
+        if (/^[0-9]+(?:GB|TB|MB|MAH|W|HZ|INCH|PACK|P|G|ML|KG|IU)$/i.test(up)) continue;
+        if (hasCodeContext && up.length >= 5 && /^[A-Z0-9]+$/.test(up)) {
+          codes.add(up);
+        } else if (up.length >= 7 && /^[A-Z]{3,8}[0-9]{2,6}$/.test(up)) {
           codes.add(up);
         }
       }

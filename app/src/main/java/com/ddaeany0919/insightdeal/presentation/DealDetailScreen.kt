@@ -1810,7 +1810,12 @@ fun DealHeader(deal: DealItem, onOpenOrigin: (String) -> Unit) {
             }
 
             val multiOptions = remember(deal.id, deal.sources) {
-                deal.sources?.filter { it.siteName.contains(" - ") && (it.price ?: 0L) > 0L } ?: emptyList()
+                val rawList = deal.sources?.filter { it.siteName.contains(" - ") && (it.price ?: 0L) > 0L } ?: emptyList()
+                val seen = mutableSetOf<String>()
+                rawList.filter { src ->
+                    val optTitle = src.siteName.substringAfter(" - ").trim().lowercase().replace(" ", "")
+                    optTitle.isNotEmpty() && seen.add(optTitle)
+                }
             }
 
             if (multiOptions.size > 1) {
@@ -1909,7 +1914,7 @@ fun DealHeader(deal: DealItem, onOpenOrigin: (String) -> Unit) {
                 else {
                     val step1 = raw
                         .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
-                        .replace(Regex("</(p|div|li)>", RegexOption.IGNORE_CASE), "\n")
+                        .replace(Regex("</(p|div|li|tr|h[1-6])>", RegexOption.IGNORE_CASE), "\n")
                         .replace(Regex("\\(\\s*링크\\s*:\\s*https?://[^)]+\\)", RegexOption.IGNORE_CASE), "")
                         .replace(Regex("\\[첨부된 이미지 링크들\\]\\s*:?[\\s\\S]*$", RegexOption.IGNORE_CASE), "")
                         .replace(Regex("Your browser does not support the video tag\\.?", RegexOption.IGNORE_CASE), "")
@@ -1921,23 +1926,43 @@ fun DealHeader(deal: DealItem, onOpenOrigin: (String) -> Unit) {
                         .replace("&quot;", "\"")
                         .replace("&#039;", "'")
                         .replace("&#39;", "'")
+                        .replace("\uFFFD", "")
                         .replace(Regex("https?://\\S+"), "")
-                    val lines = step1.lines().map { it.replace(Regex("\\s+"), " ").trim() }
+                        .replace(Regex("\\s+(?=[📱📶💰📦🎁⚠️✅🎟️🔥👉ⒶⒷ①②③④⑤])"), "\n")
+                        .replace(Regex("\\s*🔗\\s*"), "\n")
+                        .replace(Regex("\\s+(?=(?:[1-9]\\.\\s+[가-힣A-Za-z]))"), "\n\n")
+                        .replace(Regex("([^\\n])\\s*(최종가\\s*:\\s*[0-9,]+원)"), "$1\n$2\n")
+                    val lines = step1.lines()
+                        .map { it.replace(Regex("\\s+"), " ").trim() }
+                        .map { it.replace(Regex("^(?:보기|바로가기|제품\\s*바로가기|상품\\s*바로가기)\\s*>{1,}\\s*", RegexOption.IGNORE_CASE), "▪ ") }
+                        .map { it.replace(Regex("\\s+최근\\s*본\\s*상품\\s*>\\s*$", RegexOption.IGNORE_CASE), "") }
                     val validLines = mutableListOf<String>()
                     for (ln in lines) {
-                        if (ln.isEmpty()) continue
+                        if (ln.isEmpty() || ln == "▪") continue
                         if (ln.matches(Regex("^[\\-=*_~.,:;()\\[\\]/\\\\]+$"))) continue
-                        if (ln.matches(Regex("^(?:링크|제품\\s*바로가기|상품\\s*바로가기|구매\\s*링크)\\s*>{2,}.*$", RegexOption.IGNORE_CASE))) continue
-                        if (ln.matches(Regex("^>{3,}.*$"))) continue
-                        if (ln == "보기>" || ln == "보기 >" || ln == "바로가기>" || ln == "바로가기 >") continue
-                        val cleanLn = ln.replace(Regex(",\\s*,+"), ", ").replace(Regex(",\\s*$"), "").trim()
+                        if (ln.matches(Regex("^(?:링크|바로가기|보기)\\s*>{0,}$", RegexOption.IGNORE_CASE))) continue
+                        if (ln.matches(Regex("^(?:링크|구매\\s*링크)\\s*>{2,}.*$", RegexOption.IGNORE_CASE))) continue
+                        if (ln.matches(Regex("^>{2,}.*$"))) continue
+                        if (ln.matches(Regex("^링크오류시$", RegexOption.IGNORE_CASE))) continue
+                        if (ln.matches(Regex("^(?:갤럭시|아이폰)\\s*:\\s*.*(?:링크\\s*꾹|알리익스프레스\\s*앱).*$", RegexOption.IGNORE_CASE))) continue
+                        if (ln.matches(Regex("^2\\)\\s*알리앱\\s*꾹\\s*눌러서.*$", RegexOption.IGNORE_CASE))) continue
+                        if (ln.matches(Regex("^-\\s*가격은\\s*쿠폰\\s*적용\\s*전\\s*가격을\\s*적어주세요.*$", RegexOption.IGNORE_CASE))) continue
+                        val cleanLn = ln
+                            .replace(Regex(",\\s*,+"), ", ")
+                            .replace(Regex("([A-Za-z0-9]{4,})\\s*,\\s*(?=[A-Za-z0-9]{4,})"), "$1, ")
+                            .replace(Regex(",\\s*$"), "")
+                            .trim()
                         if (cleanLn.isEmpty()) continue
-                        val isCodeOnly = cleanLn.matches(Regex("^[A-Z0-9]{4,12}(?:\\s*,\\s*[A-Z0-9]{4,12})*$", RegexOption.IGNORE_CASE)) &&
+                        val isCodeOnly = cleanLn.matches(Regex("^[A-Z0-9]{4,14}(?:\\s*,\\s*[A-Z0-9]{4,14})*$", RegexOption.IGNORE_CASE)) &&
                             cleanLn.contains(Regex("[A-Za-z]")) && cleanLn.contains(Regex("[0-9]"))
                         if (isCodeOnly && validLines.isNotEmpty()) {
                             val prev = validLines.last()
-                            if (prev.contains(Regex("(?:코드|쿠폰|할인)")) || prev.contains(Regex("[A-Z0-9]{4,12}$", RegexOption.IGNORE_CASE))) {
-                                validLines[validLines.lastIndex] = if (prev.endsWith(":") || prev.endsWith(",")) "$prev $cleanLn" else "$prev ($cleanLn)"
+                            if (prev.contains(Regex("(?:코드|쿠폰|할인)")) || prev.contains(Regex("[A-Z0-9]{4,14}\\)?$", RegexOption.IGNORE_CASE))) {
+                                validLines[validLines.lastIndex] = when {
+                                    prev.endsWith(")") -> "${prev.dropLast(1)}, $cleanLn)"
+                                    prev.endsWith(":") || prev.endsWith(",") -> "$prev $cleanLn"
+                                    else -> "$prev ($cleanLn)"
+                                }
                                 continue
                             }
                         }
@@ -1947,8 +1972,17 @@ fun DealHeader(deal: DealItem, onOpenOrigin: (String) -> Unit) {
                     for (i in validLines.indices) {
                         val ln = validLines[i]
                         formattedLines.add(ln)
-                        if (ln.matches(Regex("^(?:최종가|최종\\s*체감가|최대\\s*혜택가|최대\\s*할인가)\\b.*$")) && i < validLines.lastIndex) {
-                            formattedLines.add("────────────────────────")
+                        val isFinal = ln.contains(Regex("^(?:최종가|최종\\s*체감가|최대\\s*혜택가|최대\\s*할인가|합계)(?=\\s|:|$)")) ||
+                            ln.contains(Regex("최저가\\s*:\\s*\\$?[0-9,.]+"))
+                        if (isFinal && i < validLines.lastIndex) {
+                            val next1 = validLines.getOrNull(i + 1).orEmpty()
+                            val next2 = validLines.getOrNull(i + 2).orEmpty()
+                            val isNext1Payment = next1.contains(Regex("^(?:우리카드|국민카드|결제\\s*할인|카드\\s*할인|※\\s*관세|\\*[0-9]+인치)"))
+                            val hasFollowUp = next1.contains(Regex("^(?:최종가|최대\\s*할인가)(?=\\s|:|$)")) ||
+                                (isNext1Payment && next2.contains(Regex("^(?:최종가|최대\\s*할인가)(?=\\s|:|$)")))
+                            if (!hasFollowUp) {
+                                formattedLines.add("────────────────────────")
+                            }
                         }
                     }
                     val joined = formattedLines.joinToString("\n").trim()
@@ -1962,20 +1996,26 @@ fun DealHeader(deal: DealItem, onOpenOrigin: (String) -> Unit) {
                     val blacklist = setOf(
                         "HTTP", "HTTPS", "HTML", "UTF8", "ALLDOCUBE", "BIGME", "VIOFO", "VIOFEO",
                         "JONR", "UWANT", "SHOKZ", "IPLAY", "MINI", "PRO", "MAX", "PLUS", "ULTRA",
-                        "WIFI", "LTE", "NVME", "DDR4", "DDR5", "HDMI", "USBC", "TYPEC", "PD100W"
+                        "WIFI", "LTE", "NVME", "DDR4", "DDR5", "HDMI", "USBC", "TYPEC", "PD100W",
+                        "PAW3395", "5000IU", "10000MAH", "20000MAH", "PD20W", "IN1200T", "CB3000"
                     )
                     val found = linkedSetOf<String>()
-                    val codeRegex = Regex("\\b[A-Z]{2,8}[0-9]{2,6}[A-Z0-9]{0,4}\\b")
+                    val codeRegex = Regex("\\b[A-Z0-9]{5,14}\\b")
+                    val unitRegex = Regex("^[0-9]+(?:GB|TB|MB|MAH|W|HZ|INCH|PACK|P|G|ML|KG|IU)$", RegexOption.IGNORE_CASE)
+                    val strictCodeRegex = Regex("^[A-Z]{3,8}[0-9]{2,6}$")
                     for (line in cleanedBodyText.lines()) {
-                        val hasContext = line.contains(Regex("(?:코드|쿠폰|프로모션|할인|소진시|적용)")) || line.contains(",")
+                        val hasContext = line.contains(Regex("(?:코드|쿠폰|프로모션|할인|소진시|적용|선착순|🎟|Ⓐ|Ⓑ)")) || line.contains(",")
                         for (m in codeRegex.findAll(line)) {
                             val up = m.value.uppercase()
-                            if (up !in blacklist && (up.length >= 6 || (up.length >= 5 && hasContext))) {
+                            if (up in blacklist) continue
+                            if (!up.contains(Regex("[A-Z]")) || !up.contains(Regex("[0-9]"))) continue
+                            if (up.matches(unitRegex)) continue
+                            if ((hasContext && up.length >= 5) || (up.length >= 7 && up.matches(strictCodeRegex))) {
                                 found.add(up)
                             }
                         }
                     }
-                    found.take(8).toList()
+                    found.take(10).toList()
                 }
             }
 
