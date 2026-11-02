@@ -61,5 +61,5 @@
 
 ## 🧠 9. Obsidian Wiki (`Ar9av/obsidian-wiki`) 자동 동기화 규칙 (영구 준수)
 - **옵시디언 위키 볼트 경로**: `C:\Users\kth00\OneDrive\문서\Obsidian Vault\InsightDeal`
-- **프로젝트 중심 허브 문서**: `projects/insightdeal/insightdeal.md` 및 `projects/insightdeal/concepts/*.md`
+- **프로젝트 중심 허브 문서**: `projects/insightdeal.md` 및 `concepts/*.md`
 - **자동 갱신 의무**: 주요 기능 추가, 아키텍처 변경, 에픽 완료 시 반드시 해당 내용을 옵시디언 볼트의 `.md` 위키 문서에 `[[wikilink]]`와 함께 반영하고, 터미널에서 `obsidian-wiki memory sync --verb WIKI_UPDATE --field project=insightdeal` 명령을 실행하여 `index.md`, `log.md`, `hot.md`를 최신 상태로 유지한다.
