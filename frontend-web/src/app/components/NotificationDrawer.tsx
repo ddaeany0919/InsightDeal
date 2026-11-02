@@ -34,6 +34,15 @@ export default function NotificationDrawer({
   const [serverAlerts, setServerAlerts] = useState<NotificationLogItem[]>([]);
   const [alertIds, setAlertIds] = useState<number[]>([]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   const getDeviceUuid = () => {
     if (typeof window === "undefined") return "";
     return (

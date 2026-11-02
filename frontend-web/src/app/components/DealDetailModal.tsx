@@ -108,6 +108,14 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
       .catch(() => {});
   }, [deal]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   if (!deal) return null;
 
   // HTML 태그를 제거하고 깔끔한 본문 텍스트만 추출

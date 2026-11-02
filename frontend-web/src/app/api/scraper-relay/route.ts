@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const runtime = "nodejs";
+export const runtime = "edge";
 export const preferredRegion = ["icn1", "hnd1"];
 
 export async function GET(req: NextRequest) {
