@@ -3,6 +3,9 @@ import logging
 import sys
 import httpx
 
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 sys.stdout.reconfigure(encoding="utf-8")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("CloudFeeder")
@@ -18,10 +21,14 @@ async def _preload_existing_urls(http_client: httpx.AsyncClient):
     if _SEEN_DETAIL_CACHE:
         return
     try:
-        for page in (1, 2):
+        for page in (1, 2, 3, 4):
             res = await http_client.get(f"{CLOUD_DEALS_API}?page={page}&limit=100")
             if res.status_code == 200:
-                for d in res.json():
+                payload = res.json()
+                deals = payload if isinstance(payload, list) else payload.get("items", payload.get("deals", []))
+                for d in deals:
+                    if not isinstance(d, dict):
+                        continue
                     u = d.get("source_url")
                     if u and d.get("content_html"):
                         _SEEN_DETAIL_CACHE[u] = {
