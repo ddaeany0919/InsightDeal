@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Bell, Trash2 } from "lucide-react";
 import Link from "next/link";
 import type { Deal } from "../lib/types";
-import { formatPrice } from "../lib/utils";
+import { formatPrice, apiUrl } from "../lib/utils";
 
 interface NotificationDrawerProps {
   isOpen: boolean;
@@ -70,7 +70,7 @@ export default function NotificationDrawer({
     // 2. 실제 백엔드 알림 수신 내역 조회
     const deviceUuid = getDeviceUuid();
     if (deviceUuid) {
-      fetch(`/api/users/notifications?user_id=${encodeURIComponent(deviceUuid)}`)
+      fetch(apiUrl(`/api/users/notifications?user_id=${encodeURIComponent(deviceUuid)}`))
         .then((res) => (res.ok ? res.json() : []))
         .then((data) => {
           if (Array.isArray(data)) {
@@ -86,7 +86,7 @@ export default function NotificationDrawer({
     e.stopPropagation();
     const deviceUuid = getDeviceUuid();
     if (!deviceUuid) return;
-    await fetch(`/api/users/notifications/${alertId}?user_id=${encodeURIComponent(deviceUuid)}`, {
+    await fetch(apiUrl(`/api/users/notifications/${alertId}?user_id=${encodeURIComponent(deviceUuid)}`), {
       method: "DELETE",
     }).catch(() => null);
     setServerAlerts((prev) => {
@@ -99,7 +99,7 @@ export default function NotificationDrawer({
   const handleClearAllServerAlerts = async () => {
     const deviceUuid = getDeviceUuid();
     if (!deviceUuid) return;
-    await fetch(`/api/users/notifications/clear?user_id=${encodeURIComponent(deviceUuid)}`, {
+    await fetch(apiUrl(`/api/users/notifications/clear?user_id=${encodeURIComponent(deviceUuid)}`), {
       method: "POST",
     }).catch(() => null);
     setServerAlerts([]);

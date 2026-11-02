@@ -45,14 +45,22 @@ if not os.path.exists(IMAGE_CACHE_DIR):
 # 정적 파일 마운트 (이미지 서비스)
 app.mount("/images", StaticFiles(directory=IMAGE_CACHE_DIR), name="images")
 
-# CORS 설정
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
-if not ALLOWED_ORIGINS or ALLOWED_ORIGINS == [""]:
-    ALLOWED_ORIGINS = ["http://localhost", "http://localhost:3000", "capacitor://localhost", "http://10.0.2.2"]
+# CORS 설정 (로컬, 앱 WebView 및 앱인토스(Apps in Toss) 미니앱 CDN 도메인 허용)
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+if not ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS = [
+        "http://localhost",
+        "http://localhost:3000",
+        "capacitor://localhost",
+        "http://10.0.2.2",
+        "https://toss.im",
+        "https://apps-in-toss.toss.im",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.(toss\.im|tossmini\.com|sslip\.io|nip\.io|duckdns\.org|trycloudflare\.com)",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "X-Admin-Key"],

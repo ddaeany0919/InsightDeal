@@ -17,7 +17,7 @@ import Link from "next/link";
 
 // 분리된 모듈 import
 import type { Deal, PopularKeywordRanking } from "./lib/types";
-import { formatPrice, categorizeDeal, getProxyImageUrl } from "./lib/utils";
+import { formatPrice, categorizeDeal, getProxyImageUrl, apiUrl } from "./lib/utils";
 
 // 리팩토링된 컴포넌트 import
 import PrivacyModal from "./components/PrivacyModal";
@@ -57,6 +57,9 @@ export default function Home() {
   const [hideClosedDeals, setHideClosedDeals] = useState(false);
   const [sortBy, setSortBy] = useState<"latest" | "popular" | "price_asc">("latest");
   const [hideKeywordBanner, setHideKeywordBanner] = useState(false);
+  const [isTossMiniApp, setIsTossMiniApp] = useState(
+    process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true"
+  );
 
   // 무한 스크롤 상태
   const [hasMore, setHasMore] = useState(true);
@@ -119,7 +122,7 @@ export default function Home() {
     if (!cleanKw) return;
     try {
       const deviceUuid = getOrCreateBrowserUserId();
-      await fetch("/api/push/keywords", {
+      await fetch(apiUrl("/api/push/keywords"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ device_uuid: deviceUuid, keyword: cleanKw }),
@@ -215,7 +218,7 @@ export default function Home() {
             .replace(/\([^)]*\)/g, "")
             .trim()
             .slice(0, 50);
-          fetch("/api/wishlist/item-alert", {
+          fetch(apiUrl("/api/wishlist/item-alert"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -281,9 +284,9 @@ export default function Home() {
 
       const activeKw = overrideKeyword !== undefined ? overrideKeyword : searchQuery;
       const queryParam = activeKw.trim() ? `&keyword=${encodeURIComponent(activeKw.trim())}` : "";
-      const url = `/api/community/hot-deals?limit=${limit}&offset=${offset}${
+      const url = apiUrl(`/api/community/hot-deals?limit=${limit}&offset=${offset}${
         apiCategory ? `&category=${encodeURIComponent(apiCategory)}` : ""
-      }${platformParam}${queryParam}`;
+      }${platformParam}${queryParam}`);
       const res = await fetch(url);
 
       if (!res.ok) throw new Error("API Offline");
@@ -407,7 +410,7 @@ export default function Home() {
     if (isRefreshing) return;
     setIsRefreshing(true);
     try {
-      await fetch("/api/community/force-scrape", { method: "POST" });
+      await fetch(apiUrl("/api/community/force-scrape"), { method: "POST" });
     } catch (e) {}
     await fetchLiveDeals(false, 0, activeTab, activePlatform);
     setIsRefreshing(false);
@@ -494,10 +497,19 @@ export default function Home() {
       if (localStorage.getItem("insightdeal_hide_kw_banner") === "1") {
         setHideKeywordBanner(true);
       }
+
+      const ua = navigator.userAgent || "";
+      if (
+        ua.includes("TossApp") ||
+        window.location.hostname.includes("toss") ||
+        urlParams.get("toss") === "1"
+      ) {
+        setIsTossMiniApp(true);
+      }
     }
 
     // 실시간 인기 검색어 로드
-    fetch("/api/community/popular-keywords")
+    fetch(apiUrl("/api/community/popular-keywords"))
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data && Array.isArray(data.keywords) && data.keywords.length > 0) {
@@ -529,7 +541,7 @@ export default function Home() {
       const token = getOrCreateBrowserUserId();
       if (token) {
         setIsLoggedIn(true);
-        fetch(`/api/users/notifications?user_id=${encodeURIComponent(token)}`)
+        fetch(apiUrl(`/api/users/notifications?user_id=${encodeURIComponent(token)}`))
           .then((r) => (r.ok ? r.json() : []))
           .then((list) => {
             if (Array.isArray(list)) setServerAlertCount(list.length);
@@ -774,10 +786,12 @@ export default function Home() {
               </span>
             </Link>
           </div>
-          <button className="btn-primary" onClick={handleInstallApp}>
-            <Download size={18} />
-            <span>앱 설치</span>
-          </button>
+          {!isTossMiniApp && (
+            <button className="btn-primary" onClick={handleInstallApp}>
+              <Download size={18} />
+              <span>앱 설치</span>
+            </button>
+          )}
         </div>
       </header>
 

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { RefreshCw, Sparkles } from "lucide-react";
 import type { PriceHistoryItem } from "../lib/types";
+import { apiUrl } from "../lib/utils";
 
 export interface PriceTrendStats {
   minPrice: number;
@@ -80,7 +81,7 @@ export default function PriceTrendChart({ basePrice, dealId, onHistoryStatus }: 
         const now = Date.now();
         let cached = historyPromiseCache.get(cacheKey);
         if (!cached || now - cached.ts > 15000) {
-          const promise = fetch(`/api/community/deals/${dealId}/history?period=${queryPeriod}`).then((res) => {
+          const promise = fetch(apiUrl(`/api/community/deals/${dealId}/history?period=${queryPeriod}`)).then((res) => {
             if (!res.ok) throw new Error("Failed to fetch");
             return res.json() as Promise<PriceHistoryItem[]>;
           });

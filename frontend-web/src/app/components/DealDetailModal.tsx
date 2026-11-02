@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { ThumbsUp, ThumbsDown, Share2, MessageSquare, Send, Bell } from "lucide-react";
 import type { Deal } from "../lib/types";
-import { formatPrice, getProxyImageUrl } from "../lib/utils";
+import { formatPrice, getProxyImageUrl, apiUrl } from "../lib/utils";
 import PriceTrendChart, { type PriceTrendStats } from "./PriceTrendChart";
 
 interface DealDetailModalProps {
@@ -75,7 +75,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
     // 1. 상세 본문(content_html)이 비어 있으면 단건 조회로 보충
     if (!deal.contentHtml) {
-      fetch(`/api/community/deals/${deal.id}`)
+      fetch(apiUrl(`/api/community/deals/${deal.id}`))
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
           if (d && d.content_html) {
@@ -86,7 +86,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
     }
 
     // 2. 살까/말까 투표 현황 로드
-    fetch(`/api/community/deals/${deal.id}/votes?user_id=${encodeURIComponent(uid)}`)
+    fetch(apiUrl(`/api/community/deals/${deal.id}/votes?user_id=${encodeURIComponent(uid)}`))
       .then((r) => (r.ok ? r.json() : null))
       .then((v) => {
         if (v) {
@@ -98,7 +98,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
       .catch(() => {});
 
     // 3. 한줄평 댓글 로드
-    fetch(`/api/community/deals/${deal.id}/comments`)
+    fetch(apiUrl(`/api/community/deals/${deal.id}/comments`))
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => {
         if (Array.isArray(list)) {
@@ -127,7 +127,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
   const handleVote = async (voteType: "buy" | "save") => {
     try {
       const uid = getBrowserUserId();
-      const res = await fetch(`/api/community/deals/${deal.id}/votes`, {
+      const res = await fetch(apiUrl(`/api/community/deals/${deal.id}/votes`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: uid, vote_type: voteType }),
@@ -150,7 +150,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
     setSubmittingComment(true);
     try {
       const uid = getBrowserUserId();
-      const res = await fetch(`/api/community/deals/${deal.id}/comments`, {
+      const res = await fetch(apiUrl(`/api/community/deals/${deal.id}/comments`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -486,7 +486,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                 .trim()
                 .slice(0, 50);
 
-              const res = await fetch("/api/wishlist/item-alert", {
+              const res = await fetch(apiUrl("/api/wishlist/item-alert"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

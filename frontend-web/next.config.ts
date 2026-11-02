@@ -1,9 +1,11 @@
 import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
 
+const isTossMiniApp = process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true";
+
 const withPWA = withPWAInit({
   dest: "public",
-  disable: process.env.NODE_ENV === "development",
+  disable: process.env.NODE_ENV === "development" || isTossMiniApp,
   register: true,
 });
 
@@ -17,25 +19,33 @@ const isVercel = process.env.VERCEL === "1";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  ...(isVercel ? {} : { output: "standalone" as const }),
+  ...(isTossMiniApp
+    ? { output: "export" as const, images: { unoptimized: true } }
+    : isVercel
+      ? {}
+      : { output: "standalone" as const }),
   typescript: {
     // 빌드 시 TypeScript 정적 검사 통과 보장 가드
     ignoreBuildErrors: true,
   },
   turbopack: {},
-  // CORS 문제를 해결하기 위해 백엔드로 프록시합니다.
-  async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${backendUrl}/api/:path*`, 
-      },
-      {
-        source: "/images/:path*",
-        destination: `${backendUrl}/images/:path*`,
-      }
-    ];
-  },
+  // CORS 문제를 해결하기 위해 백엔드로 프록시합니다. (앱인토스 정적 빌드 시에는 apiUrl()이 직접 백엔드 HTTPS를 호출)
+  ...(isTossMiniApp
+    ? {}
+    : {
+        async rewrites() {
+          return [
+            {
+              source: "/api/:path*",
+              destination: `${backendUrl}/api/:path*`,
+            },
+            {
+              source: "/images/:path*",
+              destination: `${backendUrl}/images/:path*`,
+            },
+          ];
+        },
+      }),
 };
 
 export default withPWA(nextConfig);

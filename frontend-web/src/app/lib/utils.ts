@@ -43,10 +43,22 @@ export const categorizeDeal = (title: string): string => {
     return "기타";
 };
 
+// 외부 백엔드 API 기본 경로 (앱인토스 정적 빌드 시 NEXT_PUBLIC_API_BASE_URL 환경변수로 주입)
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
+
+export const apiUrl = (path: string): string => {
+  if (!path) return API_BASE_URL;
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return API_BASE_URL ? `${API_BASE_URL}${normalized}` : normalized;
+};
+
 // 이미지 프록시 URL 생성 (핫링크 차단 커뮤니티 이미지 및 http 혼합 콘텐츠 전체 방어)
 export const getProxyImageUrl = (url: string | null): string => {
   if (!url) return "";
-  if (url.startsWith("/api/proxy-image") || url.startsWith("/images/")) return url;
+  if (url.startsWith("/api/proxy-image") || url.startsWith("/images/")) {
+    return apiUrl(url);
+  }
   if (
     url.startsWith("http://") ||
     url.includes("bbasak.com") ||
@@ -57,7 +69,7 @@ export const getProxyImageUrl = (url: string | null): string => {
     url.includes("ruliweb.com") ||
     url.includes("clien.net")
   ) {
-    return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+    return apiUrl(`/api/proxy-image?url=${encodeURIComponent(url)}`);
   }
   return url;
 };
