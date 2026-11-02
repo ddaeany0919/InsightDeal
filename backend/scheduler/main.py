@@ -123,7 +123,7 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                         # (최적화) 1~3페이지 게시글만 상세 파싱(고화질/컨텐츠 추출) 수행하여 속도 향상
                         detail = {}
                         if item.get("page", 1) <= 3:
-                            detail = await scraper.get_detail(normalized_url)
+                            detail = await scraper.get_detail(normalized_url, item.get("title", ""))
                         
                         if detail:
                             # 상세 페이지 내부의 외부 링크가 있다면 그것도 정규화
@@ -184,7 +184,7 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                                 queue.task_done()
                                 continue
                         else:
-                            detail = await scraper.get_detail(normalized_url)
+                            detail = await scraper.get_detail(normalized_url, item.get("title", ""))
                             if detail:
                                 if detail.get("ecommerce_link"):
                                     detail["ecommerce_link"] = normalize_url(detail["ecommerce_link"])

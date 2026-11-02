@@ -466,12 +466,12 @@ class PpomppuScraper(AsyncBaseScraper):
                 logger.info(f"[뽐뿌 상세] 과거 날짜 감지로 무효화: {posted_at_iso}")
                 posted_at_iso = None
             
-        # 📸 [고화질 썸네일 복구 가드]: 본문 첨부 고화질 이미지(data3 등)가 없을 때만 외부 아웃링크 og:image 폴백 사용
+        # 📸 [고화질 썸네일 복구 가드]: 본문 첨부 고화질 이미지(data3 등)가 없을 때 외부 아웃링크 og:image 및 상품명 폴백 사용
         has_valid_body_img = bool(image_url and ('/data3/' in image_url or 'files/attach' in image_url))
-        if ecommerce_link and not has_valid_body_img:
-            og_img = await self.fetch_og_image(ecommerce_link)
+        if not has_valid_body_img:
+            og_img = await self.fetch_og_image(ecommerce_link, full_title)
             if og_img:
-                logger.info(f"✨ [뽐뿌 og:image] 외부 아웃링크에서 고화질 썸네일 확보: {og_img}")
+                logger.info(f"✨ [뽐뿌 og:image] 외부 아웃링크/상품명에서 고화질 썸네일 확보: {og_img}")
                 image_url = og_img
 
         # [CEO 피드백: 모음전 분할을 위해 텍스트 길이 충분한 본문을 content_html로 반환]

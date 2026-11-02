@@ -101,10 +101,15 @@ class ClienScraper(AsyncBaseScraper):
             
         return deals
 
-    async def get_detail(self, url: str) -> dict:
+    async def get_detail(self, url: str, full_title: str = "") -> dict:
         """상세 페이지 데이터 파싱 로직"""
         html = await self.fetch_html(url)
-        if not html: return {}
+        if not html:
+            if full_title:
+                fb_img = await self.fetch_og_image("", full_title)
+                if fb_img:
+                    return {"image_url": fb_img}
+            return {}
         soup = BeautifulSoup(html, 'html.parser')
         
         image_url = ""
@@ -175,11 +180,16 @@ class ClienScraper(AsyncBaseScraper):
         if content_area:
             content_html = content_area.get_text(separator=' ', strip=True)
 
-        # 📸 [고화질 썸네일 복구 가드]: 본문에 이미지가 없거나 cache 관련 썸네일인 경우, 아웃링크 og:image 추출
-        if (not image_url or "cache" in image_url) and ecommerce_link:
-            og_img = await self.fetch_og_image(ecommerce_link)
+        if not full_title:
+            title_el = soup.select_one('.post_subject span:not(.post_category)') or soup.select_one('h3.post_subject')
+            if title_el:
+                full_title = title_el.get_text(strip=True)
+
+        # 📸 [고화질 썸네일 복구 가드]: 본문에 이미지가 없거나 cache 관련 썸네일인 경우, 아웃링크 og:image 및 상품명 기반 폴백 추출
+        if not image_url or "cache" in image_url:
+            og_img = await self.fetch_og_image(ecommerce_link, full_title)
             if og_img:
-                logger.info(f"✨ [클리앙 og:image] 외부 아웃링크에서 고화질 썸네일 확보: {og_img}")
+                logger.info(f"✨ [클리앙 og:image] 외부 아웃링크/상품명에서 고화질 썸네일 확보: {og_img}")
                 image_url = og_img
 
         return {"ecommerce_link": ecommerce_link, "image_url": image_url, "price": price_fallback, "currency": extracted_currency, "shipping_fee": shipping_fee, "content_html": content_html}

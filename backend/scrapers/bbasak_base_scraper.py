@@ -162,7 +162,7 @@ class BbasakBaseScraper(AsyncBaseScraper):
             
         return deals
 
-    async def get_detail(self, url: str) -> dict:
+    async def get_detail(self, url: str, full_title: str = "") -> dict:
         """상세 페이지 데이터 파싱 로직 (추후 고도화)"""
         html = await self.fetch_html(url)
         if not html: return {}
@@ -333,11 +333,11 @@ class BbasakBaseScraper(AsyncBaseScraper):
             if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):
                 shipping_fee = "무료배송"
 
-        # 📸 [고화질 썸네일 복구 가드]: 본문에 이미지가 없거나 cache 관련 썸네일인 경우, 아웃링크 og:image 추출
-        if (not image_url or "cache" in image_url) and ecommerce_link:
-            og_img = await self.fetch_og_image(ecommerce_link)
+        # 📸 [고화질 썸네일 복구 가드]: 본문에 이미지가 없거나 cache 관련 썸네일인 경우, 아웃링크 og:image 및 상품명 폴백 추출
+        if not image_url or "cache" in image_url:
+            og_img = await self.fetch_og_image(ecommerce_link, full_title)
             if og_img:
-                logger.info(f"✨ [빠삭 og:image] 외부 아웃링크에서 고화질 썸네일 확보: {og_img}")
+                logger.info(f"✨ [빠삭 og:image] 외부 아웃링크/상품명에서 고화질 썸네일 확보: {og_img}")
                 image_url = og_img
 
         content_html = ""

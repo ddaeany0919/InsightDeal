@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { ThumbsUp, ThumbsDown, Share2, MessageSquare, Send, Bell } from "lucide-react";
 import type { Deal } from "../lib/types";
-import { formatPrice, getProxyImageUrl, apiUrl } from "../lib/utils";
+import { formatPrice, getProxyImageUrl, apiUrl, resolveOutboundUrl } from "../lib/utils";
 import PriceTrendChart, { type PriceTrendStats } from "./PriceTrendChart";
 
 interface DealDetailModalProps {
@@ -701,36 +701,47 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
           }}
         >
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-            <button
-              className="btn-primary"
-              onClick={() => {
+            <a
+              className="btn-primary bounce-click"
+              href={resolveOutboundUrl(
+                deal.ecommerce_url && deal.ecommerce_url !== "#" && String(deal.ecommerce_url).trim() !== ""
+                  ? deal.ecommerce_url
+                  : deal.post_link
+              )}
+              target="_blank"
+              rel="noopener"
+              onClick={(e) => {
                 const hasValidEcommerceLink =
                   deal.ecommerce_url &&
                   deal.ecommerce_url !== "#" &&
                   String(deal.ecommerce_url).trim() !== "";
-
-                const targetUrl = hasValidEcommerceLink ? deal.ecommerce_url : deal.post_link;
-
-                if (targetUrl && targetUrl !== "#" && String(targetUrl).trim() !== "") {
-                  if (!hasValidEcommerceLink) {
-                    showToast("쇼핑몰 직접 링크가 없어 원본 게시글로 이동합니다.");
-                  }
-                  window.open(targetUrl, "_blank", "noopener,noreferrer");
-                } else {
+                const targetUrl = resolveOutboundUrl(hasValidEcommerceLink ? deal.ecommerce_url : deal.post_link);
+                if (!targetUrl || targetUrl === "#") {
+                  e.preventDefault();
                   showToast("이동할 수 있는 링크가 없습니다.");
+                } else if (!hasValidEcommerceLink) {
+                  showToast("쇼핑몰 직접 링크가 없어 원본 게시글로 이동합니다.");
                 }
               }}
-              style={{ flex: 2, minWidth: "180px", justifyContent: "center", padding: "14px", borderRadius: "14px" }}
+              style={{
+                flex: 2,
+                minWidth: "180px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "14px",
+                borderRadius: "14px",
+                textDecoration: "none",
+              }}
             >
               <span>쇼핑몰 바로가기</span>
-            </button>
+            </a>
             {deal.post_link && deal.post_link !== "#" && (
-              <button
-                type="button"
+              <a
+                href={resolveOutboundUrl(deal.post_link)}
+                target="_blank"
+                rel="noopener"
                 className="bounce-click"
-                onClick={() => {
-                  window.open(deal.post_link, "_blank", "noopener,noreferrer");
-                }}
                 style={{
                   flex: 1.5,
                   minWidth: "150px",
@@ -743,10 +754,11 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                   border: "1px solid rgba(var(--accent-rgb), 0.3)",
                   color: "var(--accent)",
                   fontWeight: 800,
+                  textDecoration: "none",
                 }}
               >
                 <span>원본 게시글 보기</span>
-              </button>
+              </a>
             )}
             <button
               type="button"

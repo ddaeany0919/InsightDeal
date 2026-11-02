@@ -223,7 +223,7 @@ class FmkoreaScraper(AsyncBaseScraper):
         results = await asyncio.gather(*tasks)
         return [r for r in results if r]
 
-    async def get_detail(self, url: str) -> dict:
+    async def get_detail(self, url: str, full_title: str = "") -> dict:
         """펨코리아 상세 페이지 데이터 파싱 로직"""
         # WAF 레이트 리밋(430) 차단 방지를 위한 강제 서핑 딜레이 주입
         import asyncio
@@ -463,11 +463,11 @@ class FmkoreaScraper(AsyncBaseScraper):
         if soup.find(string=re.compile(r'종료된 핫딜입니다')):
             is_closed = True
 
-        # 📸 [고화질 썸네일 복구 가드]: 아웃링크(ecommerce_link)가 있으면 항상 고화질 og:image 조회를 시도하고 확보 시 우선 덮어쓰기
-        if ecommerce_link:
-            og_img = await self.fetch_og_image(ecommerce_link)
+        # 📸 [고화질 썸네일 복구 가드]: 아웃링크(ecommerce_link) 또는 상품명 기반 고화질 og:image 조회
+        if ecommerce_link or not image_url:
+            og_img = await self.fetch_og_image(ecommerce_link, full_title if not image_url else "")
             if og_img:
-                logger.info(f"✨ [펨코 og:image] 외부 아웃링크에서 고화질 썸네일 확보: {og_img}")
+                logger.info(f"✨ [펨코 og:image] 외부 아웃링크/상품명에서 고화질 썸네일 확보: {og_img}")
                 image_url = og_img
 
         ret_data = {

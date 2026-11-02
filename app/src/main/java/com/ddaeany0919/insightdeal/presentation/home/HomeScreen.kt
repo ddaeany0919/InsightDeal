@@ -2149,7 +2149,11 @@ fun DealCardComposable(
                                                 val targetUrl = source.postUrl
                                                 val safeUrl = targetUrl.replace(":443", "")
                                                 if (safeUrl.isNotBlank()) {
-                                                    uriHandler.openUri(safeUrl)
+                                                    var finalUrl = if (safeUrl.startsWith("http")) safeUrl else "https://$safeUrl"
+                                                    if (finalUrl.contains("bbasak.com") && !finalUrl.contains("device=pc")) {
+                                                        finalUrl += if (finalUrl.contains("?")) "&device=pc" else "?device=pc"
+                                                    }
+                                                    onOpenUrl(finalUrl)
                                                 } else {
                                                     android.widget.Toast.makeText(context, "연결할 대상 링크가 존재하지 않습니다.", android.widget.Toast.LENGTH_SHORT).show()
                                                 }

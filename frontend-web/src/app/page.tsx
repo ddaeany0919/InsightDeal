@@ -17,7 +17,7 @@ import Link from "next/link";
 
 // 분리된 모듈 import
 import type { Deal, PopularKeywordRanking } from "./lib/types";
-import { formatPrice, categorizeDeal, getProxyImageUrl, apiUrl } from "./lib/utils";
+import { formatPrice, categorizeDeal, getProxyImageUrl, apiUrl, resolveOutboundUrl } from "./lib/utils";
 
 // 리팩토링된 컴포넌트 import
 import PrivacyModal from "./components/PrivacyModal";
@@ -1287,21 +1287,24 @@ export default function Home() {
                 return (
                   <a
                     key={deal.id}
-                    href={hasValidEcommerceLink ? deal.ecommerce_url : "#"}
+                    href={
+                      hasValidEcommerceLink
+                        ? resolveOutboundUrl(deal.ecommerce_url)
+                        : deal.post_link && deal.post_link !== "#"
+                          ? resolveOutboundUrl(deal.post_link)
+                          : "#"
+                    }
                     target="_blank"
-                    rel="noopener noreferrer"
+                    rel="noopener"
                     className="glass-panel deal-card bounce-click"
                     style={deal.isClosed ? { opacity: 0.6, filter: "grayscale(0.5)" } : {}}
                     onClick={(e) => {
                       if (!hasValidEcommerceLink) {
-                        e.preventDefault();
-                        if (deal.post_link && deal.post_link !== "#") {
-                          showToast("쇼핑몰 직접 링크가 없어 원본 게시글로 이동합니다.");
-                          setTimeout(() => {
-                            window.open(deal.post_link, "_blank", "noopener,noreferrer");
-                          }, 400);
-                        } else {
+                        if (!deal.post_link || deal.post_link === "#") {
+                          e.preventDefault();
                           showToast("이동할 수 있는 링크가 없습니다.");
+                        } else {
+                          showToast("쇼핑몰 직접 링크가 없어 원본 게시글로 이동합니다.");
                         }
                       }
                     }}
@@ -1369,7 +1372,7 @@ export default function Home() {
                                     e.stopPropagation();
                                     const targetUrl = source.post_url || deal.post_link;
                                     if (targetUrl && targetUrl !== "#") {
-                                      window.open(targetUrl, "_blank", "noopener,noreferrer");
+                                      window.open(resolveOutboundUrl(targetUrl), "_blank", "noopener");
                                     } else {
                                       showToast("원본 게시글 링크를 찾을 수 없습니다.");
                                     }

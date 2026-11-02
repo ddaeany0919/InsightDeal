@@ -73,3 +73,75 @@ export const getProxyImageUrl = (url: string | null): string => {
   }
   return url;
 };
+
+// 기기 환경(모바일 vs PC)에 맞춰 쇼핑몰 봇 차단 방지 및 커뮤니티 본문 직행 URL로 변환
+export const resolveOutboundUrl = (rawUrl: string | undefined | null): string => {
+  if (!rawUrl || rawUrl === "#") return "#";
+  let url = String(rawUrl).trim();
+  if (!url) return "#";
+
+  const isMobile =
+    typeof navigator !== "undefined" &&
+    /Android|iPhone|iPad|iPod|Mobile|TossApp|KAKAOTALK/i.test(navigator.userAgent || "");
+
+  try {
+    // 1. 빠삭(bbasak.com): 상단 900px 거대 배너/헤더를 건너뛰고 실제 게시글 본문(#view_content)으로 즉시 스크롤 이동
+    if (url.includes("bbasak.com/bbs/board.php") && url.includes("wr_id=")) {
+      if (!url.includes("#")) {
+        return `${url}#view_content`;
+      }
+      return url;
+    }
+
+    if (isMobile) {
+      // 2. 모바일에서 데스크톱 전용 쇼핑몰 URL 접속 시 Akamai/Cloudflare 봇 인증(Captcha)이 뜨는 현상 원천 차단
+      // (1) 옥션: itempage3.auction.co.kr/DetailView.aspx?itemno=XXXX -> mitem.auction.co.kr/vip?itemNo=XXXX
+      const auctionMatch = url.match(/itempage3\.auction\.co\.kr\/DetailView\.aspx\?.*?(?:itemno|itemNo)=([A-Za-z0-9]+)/i);
+      if (auctionMatch && auctionMatch[1]) {
+        return `http://mitem.auction.co.kr/vip?itemNo=${auctionMatch[1]}`;
+      }
+
+      // (2) G마켓: item.gmarket.co.kr/Item?goodscode=XXXX -> mitem.gmarket.co.kr/vi/product/XXXX
+      const gmarketMatch = url.match(/item\.gmarket\.co\.kr\/Item\?.*?goodscode=([0-9]+)/i);
+      if (gmarketMatch && gmarketMatch[1]) {
+        return `http://mitem.gmarket.co.kr/vi/product/${gmarketMatch[1]}`;
+      }
+
+      // (3) 11번가: www.11st.co.kr/products/XXXX -> m.11st.co.kr/products/m/XXXX
+      const st11Match = url.match(/www\.11st\.co\.kr\/products\/([0-9]+)/i);
+      if (st11Match && st11Match[1]) {
+        return `https://m.11st.co.kr/products/m/${st11Match[1]}`;
+      }
+
+      // (4) 쿠팡: www.coupang.com/vp/products/XXXX -> m.coupang.com/vm/products/XXXX
+      if (url.includes("www.coupang.com/vp/products/")) {
+        return url.replace("www.coupang.com/vp/products/", "m.coupang.com/vm/products/");
+      }
+
+      // (5) 뽐뿌 PC 게시글 -> 모바일 뷰어 직행
+      const ppomppuMatch = url.match(/www\.ppomppu\.co\.kr\/zboard\/(?:view|zboard)\.php\?.*?id=([^&#]+).*?no=([0-9]+)/i);
+      if (ppomppuMatch && ppomppuMatch[1] && ppomppuMatch[2]) {
+        return `https://m.ppomppu.co.kr/new/bbs_view.php?id=${ppomppuMatch[1]}&no=${ppomppuMatch[2]}`;
+      }
+
+      // (6) 클리앙 PC 게시글 -> 모바일 뷰어 직행
+      if (url.includes("www.clien.net/service/board/")) {
+        return url.replace("www.clien.net/service/board/", "m.clien.net/service/board/");
+      }
+    } else {
+      // 3. PC(데스크톱)에서 모바일 전용 쇼핑몰 링크 클릭 시 PC 상세 페이지로 정규화
+      const mAuctionMatch = url.match(/mitem\.auction\.co\.kr\/vip\?.*?itemNo=([A-Za-z0-9]+)/i);
+      if (mAuctionMatch && mAuctionMatch[1]) {
+        return `http://itempage3.auction.co.kr/DetailView.aspx?itemno=${mAuctionMatch[1]}`;
+      }
+      const mGmarketMatch = url.match(/m(?:item)?\.gmarket\.co\.kr\/vi\/product\/([0-9]+)/i);
+      if (mGmarketMatch && mGmarketMatch[1]) {
+        return `http://item.gmarket.co.kr/Item?goodscode=${mGmarketMatch[1]}`;
+      }
+    }
+  } catch {
+    return url;
+  }
+
+  return url;
+};

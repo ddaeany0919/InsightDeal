@@ -266,11 +266,11 @@ class RuliwebScraper(AsyncBaseScraper):
                 except Exception:
                     pass
 
-        # 📸 [고화질 썸네일 복구 가드]: 본문에 이미지가 없거나 cache 관련 썸네일인 경우, 아웃링크 og:image 추출
-        if (not image_url or "cache" in image_url) and ecommerce_link:
-            og_img = await self.fetch_og_image(ecommerce_link)
+        # 📸 [고화질 썸네일 복구 가드]: 본문에 이미지가 없거나 cache 관련 썸네일인 경우, 아웃링크 og:image 및 상품명 기반 폴백 추출
+        if not image_url or "cache" in image_url:
+            og_img = await self.fetch_og_image(ecommerce_link, full_title or detail_title)
             if og_img:
-                logger.info(f"✨ [루리웹 og:image] 외부 아웃링크에서 고화질 썸네일 확보: {og_img}")
+                logger.info(f"✨ [루리웹 og:image] 외부 아웃링크/상품명에서 고화질 썸네일 확보: {og_img}")
                 image_url = og_img
 
         result = {

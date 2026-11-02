@@ -39,7 +39,7 @@ class AsyncBaseScraper(ABC):
         }
 
     async def fetch_html(self, url: str, headers: Optional[dict] = None) -> Optional[str]:
-        """비동기 네트워크 페칭 (동적 브라우저 지문 로테이션 및 재시도 적용)"""
+        """비동기 네트워크 페칭 (동적 브라우저 지문 로테이션, 서울 릴레이 우회 및 재시도 적용)"""
         if not self.client:
             raise RuntimeError("Scraper must be used within 'async with' context")
 
@@ -69,13 +69,23 @@ class AsyncBaseScraper(ABC):
                             
                     response = await self.client.get(url, headers=req_headers)
                     
+                    if response.status_code == 404:
+                        logger.warning(f"[{self.platform_name}] 삭제된 게시글 감지 (HTTP 404) - 재시도 중단: {url}")
+                        return None
+
                     if response.status_code == 430:
-                        logger.warning(f"[{self.platform_name}] 쿨다운 감지 (HTTP 430) - 과도한 재시도 중단: {url}")
+                        logger.warning(f"[{self.platform_name}] 쿨다운 감지 (HTTP 430) - 서울 릴레이 우회 시도: {url}")
+                        relay_html = await self._fetch_via_seoul_relay(url)
+                        if relay_html:
+                            return relay_html
                         raise Exception("Anti-bot block detected: 430")
 
                     if response.status_code == 403:
                         logger.warning(f"[{self.platform_name}] 안티봇 차단 감지 (HTTP 403) [시도 {attempt+1}/{len(impersonates)}] - {url}")
                         if attempt == len(impersonates) - 1:
+                            relay_html = await self._fetch_via_seoul_relay(url)
+                            if relay_html:
+                                return relay_html
                             raise Exception(f"Anti-bot block detected after all retries: {response.status_code}")
                         await asyncio.sleep(1.5 * (attempt + 1))
                         continue
@@ -84,27 +94,32 @@ class AsyncBaseScraper(ABC):
                     return response.text
                 except Exception as e:
                     if "430" in str(e) or attempt == len(impersonates) - 1:
+                        relay_html = await self._fetch_via_seoul_relay(url)
+                        if relay_html:
+                            return relay_html
                         raise e
                     logger.warning(f"⚠️ [{self.platform_name}] 요청 오류 (시도 {attempt+1}): {e}. 다음 지문으로 재시도합니다.")
                     await asyncio.sleep(1.5 * (attempt + 1))
             return None
 
-    async def fetch_og_image(self, url: str) -> Optional[str]:
-        """외부 쇼핑몰 URL의 og:image 메타 태그를 파싱하여 고화질 대표 이미지 획득 (SVG/로고 배제 및 본문 상품 이미지 폴백)"""
-        if not url or not url.startswith('http'):
-            return None
+    async def _fetch_via_seoul_relay(self, url: str) -> Optional[str]:
+        """미국(GCP us-central1) 서버 IP 차단 시 Vercel 서울 리전(icn1) 릴레이를 통해 한국 커뮤니티 HTML 페칭"""
+        try:
+            from urllib.parse import quote
+            relay_url = f"https://insightdeal.vercel.app/api/scraper-relay?url={quote(url, safe='')}"
+            async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+                res = await client.get(relay_url)
+                if res.status_code == 200 and len(res.text) > 500:
+                    logger.info(f"🌐 [{self.platform_name}] 서울 리전 릴레이 우회 페칭 성공: {url}")
+                    return res.text
+        except Exception as re_err:
+            logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 릴레이 페칭 실패 ({url}): {re_err}")
+        return None
 
-        # 1. 지마켓(Gmarket) 안티봇 차단 원천 우회를 위한 초고속 CDN 이미지 조립 룰 적용
-        if 'gmarket.co.kr' in url:
-            import re
-            match = re.search(r'goodscode=([0-9]+)', url)
-            if match:
-                g_id = match.group(1)
-                return f"https://gdimg.gmarket.co.kr/{g_id}/still/600"
-
-        # 뽐뿌/펨코 내부용 도메인은 외부 쇼핑몰이 아니므로 배제
-        if any(x in url for x in ['ppomppu.co.kr', 'fmkorea.com', 'fmkorea.org', 'quasarzone.com', 'clien.net', 'ruliweb.com', 'bbasak.com']):
-            return None
+    async def fetch_og_image(self, url: str = "", fallback_title: str = "") -> Optional[str]:
+        """외부 쇼핑몰 URL의 og:image 메타 태그를 파싱하여 고화질 대표 이미지 획득 (차단/무링크 시 상품명 기반 검색 폴백 완비)"""
+        import re
+        from urllib.parse import urljoin, quote
 
         def _is_valid_product_img(candidate_url: str) -> bool:
             if not candidate_url or not candidate_url.startswith('http'):
@@ -114,55 +129,96 @@ class AsyncBaseScraper(ABC):
                 return False
             bad_tokens = [
                 'logo', 'icon', 'noimage', 'no_image', 'blank', 'transparent',
-                'common/', 'btn_', 'button', 'share_', 'footer', 'header', 'avatar', 'lazyload'
+                'common/', 'btn_', 'button', 'share_', 'footer', 'header', 'avatar', 'lazyload',
+                '11st_', 'gmarket_logo', 'auction_logo', 'naver_logo',
+                'lookaside.fbsbx.com', 'facebook.com', 'instagram.com'
             ]
             return not any(tok in low for tok in bad_tokens)
 
-        try:
-            if not self.client:
-                return None
+        # 1. 지마켓(Gmarket) 안티봇 차단 원천 우회를 위한 초고속 CDN 이미지 조립 룰 적용
+        if url and 'gmarket.co.kr' in url:
+            match = re.search(r'goodscode=([0-9]+)', url)
+            if match:
+                g_id = match.group(1)
+                return f"https://gdimg.gmarket.co.kr/{g_id}/still/600"
 
-            logger.info(f"🔍 [og:image] 외부 쇼핑몰 og:image 탐색 시도: {url}")
-            from urllib.parse import urljoin
-            response = await self.client.get(url, timeout=3.5, allow_redirects=True, headers={
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            })
-            if response.status_code == 200:
-                from bs4 import BeautifulSoup
-                final_base_url = str(getattr(response, 'url', url) or url)
-                soup = BeautifulSoup(response.text, 'html.parser')
-                meta_img = (
-                    soup.find('meta', property='og:image')
-                    or soup.find('meta', attrs={'name': 'twitter:image'})
-                    or soup.find('meta', itemprop='image')
-                )
-                if meta_img and meta_img.get('content'):
-                    img_url = meta_img['content'].strip()
-                    if img_url.startswith('//'):
-                        img_url = 'https:' + img_url
-                    elif not img_url.startswith('http'):
-                        img_url = urljoin(final_base_url, img_url)
-                    if _is_valid_product_img(img_url):
-                        return img_url
+        # 2. 외부 쇼핑몰 직접 파싱 시도 (타임아웃 8.0초 확장 + 11번가 모바일 폴백)
+        is_community_internal = any(
+            x in (url or '') for x in ['ppomppu.co.kr', 'fmkorea.com', 'fmkorea.org', 'quasarzone.com', 'clien.net', 'ruliweb.com', 'bbasak.com']
+        )
+        if url and url.startswith('http') and not is_community_internal and self.client:
+            candidate_urls = [url]
+            st11_m = re.search(r'11st\.co\.kr/products/([0-9]+)', url)
+            if st11_m:
+                candidate_urls.append(f"https://m.11st.co.kr/products/m/{st11_m.group(1)}")
 
-                # 폴백: og:image가 로고(.svg 등)이거나 없는 쇼핑몰(종근당건강몰 등)은 본문 내 실제 상품 이미지 탐색
-                for img in soup.select('img'):
-                    raw_src = (img.get('data-original') or img.get('data-src') or img.get('src') or '').strip()
-                    if not raw_src or raw_src.startswith('data:'):
-                        continue
-                    if raw_src.startswith('//'):
-                        full_src = 'https:' + raw_src
-                    elif not raw_src.startswith('http'):
-                        full_src = urljoin(final_base_url, raw_src)
-                    else:
-                        full_src = raw_src
-                    if _is_valid_product_img(full_src) and any(
-                        k in full_src.lower() for k in ['product', 'goods', 'item', 'prd', 'upload', 'shop', 'image', 'img']
-                    ):
-                        return full_src
-        except Exception as e:
-            logger.warning(f"⚠️ [og:image] 외부 쇼핑몰 이미지 파싱 실패 ({url}): {e}")
+            for target_url in candidate_urls:
+                try:
+                    logger.info(f"🔍 [og:image] 외부 쇼핑몰 og:image 탐색 시도: {target_url}")
+                    response = await self.client.get(target_url, timeout=8.0, allow_redirects=True, headers={
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                    })
+                    if response.status_code == 200 and response.text:
+                        from bs4 import BeautifulSoup
+                        final_base_url = str(getattr(response, 'url', target_url) or target_url)
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        meta_img = (
+                            soup.find('meta', property='og:image')
+                            or soup.find('meta', attrs={'name': 'twitter:image'})
+                            or soup.find('meta', itemprop='image')
+                        )
+                        if meta_img and meta_img.get('content'):
+                            img_url = meta_img['content'].strip()
+                            if img_url.startswith('//'):
+                                img_url = 'https:' + img_url
+                            elif not img_url.startswith('http'):
+                                img_url = urljoin(final_base_url, img_url)
+                            if _is_valid_product_img(img_url):
+                                return img_url
+
+                        for img in soup.select('img'):
+                            raw_src = (img.get('data-original') or img.get('data-src') or img.get('src') or '').strip()
+                            if not raw_src or raw_src.startswith('data:'):
+                                continue
+                            if raw_src.startswith('//'):
+                                full_src = 'https:' + raw_src
+                            elif not raw_src.startswith('http'):
+                                full_src = urljoin(final_base_url, raw_src)
+                            else:
+                                full_src = raw_src
+                            if _is_valid_product_img(full_src) and any(
+                                k in full_src.lower() for k in ['product', 'goods', 'item', 'prd', 'upload', 'shop', 'image', 'img']
+                            ):
+                                return full_src
+                except Exception as e:
+                    logger.warning(f"⚠️ [og:image] 외부 쇼핑몰 이미지 파싱 실패 ({target_url}): {e}")
+
+        # 3. 쇼핑몰 403/타임아웃(옥션 등) 또는 본문 내 사진/쇼핑몰 링크가 없는 텍스트 게시글인 경우:
+        #    스크래핑 시점에 상품 제목(fallback_title)으로 실시간 상품 이미지를 즉시 확보하여 누락 제로화!
+        if fallback_title and fallback_title.strip():
+            try:
+                clean_q = re.sub(r'^\[[^\]]+\]\s*', '', fallback_title.strip())
+                clean_q = re.sub(r'\([^)]*(?:원|무료|무배|배송|쿠폰|할인|적립|최대)[^)]*\)', ' ', clean_q)
+                clean_q = re.sub(r'[0-9,]+\s*원', ' ', clean_q)
+                clean_q = re.sub(r'(?:무료배송|무배|배송비|특가|할인|핫딜)', ' ', clean_q)
+                clean_q = re.sub(r'\s+', ' ', clean_q).strip()
+                if len(clean_q) >= 2:
+                    search_url = f"https://www.bing.com/images/search?q={quote(clean_q + ' 상품')}&FORM=HDRSC2"
+                    async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as hclient:
+                        res = await hclient.get(search_url, headers={
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                            "Accept-Language": "ko-KR,ko;q=0.9"
+                        })
+                        if res.status_code == 200:
+                            murls = re.findall(r'murl&quot;:&quot;(https?://[^&]+?)&quot;', res.text)
+                            for candidate in murls[:6]:
+                                if _is_valid_product_img(candidate):
+                                    logger.info(f"🖼️ [Scraper Image Fallback] 상품명('{clean_q}') 기반 대표 이미지 확보 성공: {candidate}")
+                                    return candidate
+            except Exception as fb_err:
+                logger.warning(f"⚠️ [Scraper Image Fallback] 상품명 이미지 검색 실패 ({fallback_title}): {fb_err}")
+
         return None
 
     @abstractmethod

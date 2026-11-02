@@ -213,7 +213,7 @@ class QuasarzoneScraper(AsyncBaseScraper):
         results = await asyncio.gather(*tasks)
         return [r for r in results if r]
 
-    async def get_detail(self, url: str) -> dict:
+    async def get_detail(self, url: str, full_title: str = "") -> dict:
         """상세 페이지 데이터 파싱 로직"""
         html = await self.fetch_html(url)
         if not html: return {}
@@ -314,6 +314,12 @@ class QuasarzoneScraper(AsyncBaseScraper):
                 image_url = urljoin("https://quasarzone.com", image_url)
             if "thumb_" in image_url:
                 image_url = image_url.replace("thumb_", "")
+
+        if not image_url:
+            og_img = await self.fetch_og_image(ecommerce_link, full_title)
+            if og_img:
+                logger.info(f"✨ [퀘이사존 og:image] 외부 아웃링크/상품명에서 고화질 썸네일 확보: {og_img}")
+                image_url = og_img
 
         return {
             "price": price,

@@ -22,6 +22,62 @@ import androidx.compose.ui.viewinterop.AndroidView
 private const val CLEAN_MOBILE_UA = "Mozilla/5.0 (Linux; Android 14; SM-S928N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 private const val DESKTOP_CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
+/**
+ * 안드로이드 모바일 환경에서 데스크톱 전용 쇼핑몰 URL 접속 시 발생하는 봇 인증(Captcha)을 원천 차단하고,
+ * 빠삭(bbasak.com) 게시글 접속 시 상단 대형 배너를 건너뛰고 본문(#view_content)으로 즉시 스크롤되도록 변환합니다.
+ */
+fun resolveMobileWebViewUrl(rawUrl: String): String {
+    var trimmed = rawUrl.trim().replace(":443", "")
+    if (trimmed.isBlank()) return ""
+    if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+        trimmed = "https://$trimmed"
+    }
+
+    // 1. 빠삭(bbasak.com) 게시글 본문 앵커(#view_content) 자동 부착
+    if (trimmed.contains("bbasak.com/bbs/board.php", ignoreCase = true) &&
+        trimmed.contains("wr_id=", ignoreCase = true) &&
+        !trimmed.contains("#")
+    ) {
+        trimmed = "$trimmed#view_content"
+    }
+
+    // 2. 옥션 데스크톱 상세 URL -> 모바일 VIP URL 변환 (모바일 UA에서 PC URL 접속 시 봇 차단 우회)
+    val auctionMatch = Regex("itempage3?\\.auction\\.co\\.kr/DetailView\\.aspx\\?.*itemno=([A-Za-z0-9]+)", RegexOption.IGNORE_CASE).find(trimmed)
+    if (auctionMatch != null) {
+        return "http://mitem.auction.co.kr/vip?itemNo=${auctionMatch.groupValues[1]}"
+    }
+
+    // 3. G마켓 데스크톱 상세 URL -> 모바일 VIP URL 변환
+    val gmarketMatch = Regex("item\\.gmarket\\.co\\.kr/Item\\?.*goodscode=([0-9]+)", RegexOption.IGNORE_CASE).find(trimmed)
+    if (gmarketMatch != null) {
+        return "http://mitem.gmarket.co.kr/vi/product/${gmarketMatch.groupValues[1]}"
+    }
+
+    // 4. 11번가 데스크톱 URL -> 모바일 URL 변환
+    val st11Match = Regex("www\\.11st\\.co\\.kr/products/([0-9]+)", RegexOption.IGNORE_CASE).find(trimmed)
+    if (st11Match != null) {
+        return "https://m.11st.co.kr/products/m/${st11Match.groupValues[1]}"
+    }
+
+    // 5. 쿠팡 데스크톱 URL -> 모바일 URL 변환
+    if (trimmed.contains("://www.coupang.com/vp/products/", ignoreCase = true)) {
+        return trimmed.replace(Regex("://www\\.coupang\\.com/vp/products/", RegexOption.IGNORE_CASE), "://m.coupang.com/vm/products/")
+    }
+
+    // 6. 뽐뿌 데스크톱 URL -> 모바일 URL 변환
+    val ppomppuMatch = Regex("www\\.ppomppu\\.co\\.kr/zboard/(?:view|zboard)\\.php\\?.*id=([^&]+).*no=([0-9]+)", RegexOption.IGNORE_CASE).find(trimmed)
+    if (ppomppuMatch != null) {
+        return "https://m.ppomppu.co.kr/new/bbs_view.php?id=${ppomppuMatch.groupValues[1]}&no=${ppomppuMatch.groupValues[2]}"
+    }
+
+    // 7. 클리앙 데스크톱 URL -> 모바일 URL 변환
+    if (trimmed.contains("://www.clien.net/service/board/", ignoreCase = true)) {
+        return trimmed.replace("://www.clien.net/", "://m.clien.net/")
+    }
+
+    return trimmed
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -157,6 +213,12 @@ fun DealWebViewScreen(
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
                             canGoBack = view?.canGoBack() == true
+                            if (url?.contains("bbasak.com/bbs/board.php") == true && url.contains("wr_id=")) {
+                                view?.evaluateJavascript(
+                                    "(function(){var el=document.getElementById('view_content')||document.querySelector('.view_content,.board_view');if(el){el.scrollIntoView({behavior:'instant',block:'start'});}})();",
+                                    null
+                                )
+                            }
                         }
 
                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -240,9 +302,11 @@ fun DealWebViewScreen(
                         mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                     }
 
+                    val resolvedUrl = resolveMobileWebViewUrl(url)
+
                     // 봇 차단(네이버 스마트스토어, 클라우드플레어 등)을 완벽히 우회하기 위해 
                     // 일반 모바일 크롬 브라우저와 완전히 동일한 User-Agent 사용
-                    settings.userAgentString = if (url.contains("bbasak.com")) {
+                    settings.userAgentString = if (resolvedUrl.contains("bbasak.com")) {
                         DESKTOP_CHROME_UA
                     } else {
                         CLEAN_MOBILE_UA
@@ -252,11 +316,15 @@ fun DealWebViewScreen(
                     
                     // 네이버 스마트스토어 등 봇 차단 우회를 위한 헤더 조작
                     val extraHeaders = mutableMapOf<String, String>()
-                    if (url.contains("naver.com") || url.contains("fmkorea.com") || url.contains("clien.net") || url.contains("quasarzone.com")) {
+                    if (resolvedUrl.contains("naver.com") || resolvedUrl.contains("fmkorea.com") || resolvedUrl.contains("clien.net") || resolvedUrl.contains("quasarzone.com")) {
                         extraHeaders["Referer"] = "https://search.naver.com"
+                    } else if (resolvedUrl.contains("auction.co.kr")) {
+                        extraHeaders["Referer"] = "https://m.auction.co.kr"
+                    } else if (resolvedUrl.contains("gmarket.co.kr")) {
+                        extraHeaders["Referer"] = "https://m.gmarket.co.kr"
                     }
 
-                    loadUrl(url, extraHeaders)
+                    loadUrl(resolvedUrl, extraHeaders)
                 }
             },
             update = {
