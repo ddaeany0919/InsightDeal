@@ -102,9 +102,9 @@ class RuliwebScraper(AsyncBaseScraper):
             price = 0
             
             if price == 0:
-                usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
+                usd_match = re.search(r'(?:\$|USD|달러|불|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
                 if not usd_match:
-                    usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', full_title, re.IGNORECASE)
+                    usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|불|유로|€)', full_title, re.IGNORECASE)
                     
                 price_match = re.search(r'([\d,]+(?:원|만원))', full_title)
                 

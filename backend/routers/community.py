@@ -352,12 +352,20 @@ def resolve_deal_price_and_currency(deal) -> tuple[int, str]:
         val = float(m_usd.group(1) or m_usd.group(2))
         if 0 < val < 100000:
             return int(round(val * 100)), 'USD'
-    won_matches = list(re.finditer(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7})\s*원', title))
+    won_matches = list(
+        re.finditer(
+            r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7})\s*원(?!\s*(?:권|이상|할인|적립|페이백|캐시백|청구|한도|증정))',
+            title
+        )
+    )
     if won_matches:
         val = int(won_matches[-1].group(1).replace(',', ''))
         if 100 <= val <= 15000000:
             return val, 'KRW'
-    m_chun = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*천\s*원', title)
+    m_chun = re.search(
+        r'([0-9]+(?:\.[0-9]+)?)\s*천\s*원(?!\s*(?:권|이상|할인|적립|페이백|캐시백|청구|한도|증정))',
+        title
+    )
     if m_chun:
         return int(round(float(m_chun.group(1)) * 1000)), 'KRW'
     return 0, currency

@@ -125,9 +125,9 @@ class PpomppuScraper(AsyncBaseScraper):
             
             usd_match = None
             if is_overseas:
-                usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
+                usd_match = re.search(r'(?:\$|USD|달러|불|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
                 if not usd_match:
-                    usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', full_title, re.IGNORECASE)
+                    usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|불|유로|€)', full_title, re.IGNORECASE)
                 
             price_match = re.search(r'([\d,]+(?:원|만원))', full_title)
             
@@ -398,9 +398,9 @@ class PpomppuScraper(AsyncBaseScraper):
         
         usd_match = None
         if is_overseas:
-            usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', cleaned_body_text, re.IGNORECASE)
+            usd_match = re.search(r'(?:\$|USD|달러|불|유로|€)\s*([0-9,.]+)', cleaned_body_text, re.IGNORECASE)
             if not usd_match:
-                usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', cleaned_body_text, re.IGNORECASE)
+                usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|불|유로|€)', cleaned_body_text, re.IGNORECASE)
             
         price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', cleaned_body_text)
         

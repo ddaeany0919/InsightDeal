@@ -527,18 +527,59 @@ export default function Home() {
       }
     }
 
-    // 실시간 인기 검색어 로드
+    // 실시간 인기 검색어 로드 및 실제 매칭 딜(>=1건) 검증 필터링
     fetch(apiUrl("/api/community/popular-keywords"))
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data && Array.isArray(data.keywords) && data.keywords.length > 0) {
-          setPopularKeywords(data.keywords.slice(0, 10));
-        }
-        if (data && Array.isArray(data.rankings)) {
-          setPopularRankings(data.rankings.slice(0, 10));
-        }
-        if (data && data.updated_at) {
+      .then(async (data) => {
+        if (!data) return;
+        if (data.updated_at) {
           setPopularUpdatedAt(String(data.updated_at));
+        }
+        const rawKeywords: string[] = Array.isArray(data.keywords) ? data.keywords.slice(0, 12) : [];
+        const rawRankings: PopularKeywordRanking[] = Array.isArray(data.rankings) ? data.rankings.slice(0, 12) : [];
+        if (rawKeywords.length > 0) {
+          setPopularKeywords(rawKeywords.slice(0, 10));
+        }
+        if (rawRankings.length > 0) {
+          setPopularRankings(rawRankings.slice(0, 10));
+        }
+        // 백엔드 캐시/외부 트렌드 중 실제 검색 결과 0건인 키워드(예: '갤럭시 폴드', '일시' 등)를 즉시 검증해 제거
+        const candidateList =
+          rawRankings.length > 0
+            ? rawRankings
+            : rawKeywords.map((kw, i) => ({
+                rank: i + 1,
+                keyword: kw,
+                deal_count: 1,
+                recent_count: 1,
+                status: (i === 0 ? "HOT" : i < 3 ? "UP" : "SAME") as "HOT" | "UP" | "NEW" | "SAME",
+              }));
+        const verified = await Promise.all(
+          candidateList.map(async (item) => {
+            const kw = (item.keyword || "").trim();
+            if (!kw || kw === "일시") return null;
+            try {
+              const r = await fetch(apiUrl(`/api/community/hot-deals?limit=1&keyword=${encodeURIComponent(kw)}`));
+              if (!r.ok) return item;
+              const j = await r.json();
+              const arr = Array.isArray(j) ? j : j.deals || [];
+              return arr.length > 0 ? item : null;
+            } catch {
+              return item;
+            }
+          })
+        );
+        const validRankings = verified
+          .filter((x): x is PopularKeywordRanking => x !== null)
+          .slice(0, 10)
+          .map((item, idx) => ({
+            ...item,
+            rank: idx + 1,
+            status: (idx === 0 ? "HOT" : item.status) as "HOT" | "UP" | "NEW" | "SAME",
+          }));
+        if (validRankings.length > 0) {
+          setPopularRankings(validRankings);
+          setPopularKeywords(validRankings.map((v) => v.keyword));
         }
       })
       .catch(() => {});

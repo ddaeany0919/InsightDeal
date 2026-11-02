@@ -10,7 +10,9 @@ export const extractPriceFromTitle = (title?: string | null): { price: string; c
       return { price: String(Math.round(val * 100)), currency: "USD" };
     }
   }
-  const wonMatches = Array.from(title.matchAll(/([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7})\s*원/g));
+  const wonMatches = Array.from(
+    title.matchAll(/([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7})\s*원(?!\s*(?:권|이상|할인|적립|페이백|캐시백|청구|한도|증정))/g)
+  );
   if (wonMatches.length > 0) {
     const lastWon = wonMatches[wonMatches.length - 1][1].replace(/,/g, "");
     const val = parseInt(lastWon, 10);
@@ -18,7 +20,9 @@ export const extractPriceFromTitle = (title?: string | null): { price: string; c
       return { price: String(val), currency: "KRW" };
     }
   }
-  const cheonMatch = title.match(/([0-9]+(?:\.[0-9]+)?)\s*천\s*원/);
+  const cheonMatch = title.match(
+    /([0-9]+(?:\.[0-9]+)?)\s*천\s*원(?!\s*(?:권|이상|할인|적립|페이백|캐시백|청구|한도|증정))/
+  );
   if (cheonMatch && cheonMatch[1]) {
     const val = Math.round(parseFloat(cheonMatch[1]) * 1000);
     if (val >= 500) {
@@ -277,30 +281,38 @@ export const polishDealBodyText = (rawHtml: string | undefined | null): string =
   return finalLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 };
 
-// 본문 내 프로모션/할인 코드 자동 추출 (원클릭 복사용)
-export const extractPromoCodes = (rawText: string | undefined | null): string[] => {
+// 본문 내 프로모션/할인 코드 자동 추출 (원클릭 복사용 — 상품 모델번호 오탐 원천 차단)
+export const extractPromoCodes = (rawText: string | undefined | null, dealTitle?: string | null): string[] => {
   if (!rawText) return [];
   const codes = new Set<string>();
   const blacklist = new Set([
     "HTTP", "HTTPS", "HTML", "UTF8", "ALLDOCUBE", "BIGME", "VIOFO", "VIOFEO",
     "JONR", "UWANT", "SHOKZ", "IPLAY", "MINI", "PRO", "MAX", "PLUS", "ULTRA",
     "WIFI", "LTE", "NVME", "DDR4", "DDR5", "HDMI", "USBC", "TYPEC", "PD100W",
-    "PAW3395", "5000IU", "10000MAH", "20000MAH", "PD20W", "IN1200T", "CB3000"
+    "PAW3395", "5000IU", "10000MAH", "20000MAH", "PD20W", "IN1200T", "CB3000",
+    "11STREET", "27U411B", "27G411B", "LS32FG810", "S32FG500", "S32FG50", "32U701SB"
   ]);
+
+  const titleUpper = (dealTitle || "").toUpperCase().replace(/[^A-Z0-9]/g, " ");
+  const titleTokens = new Set(titleUpper.split(/\s+/).filter((t) => t.length >= 4));
 
   const lines = rawText.split(/\r?\n/);
   for (const line of lines) {
-    const hasCodeContext = /(?:코드|쿠폰|프로모션|할인|소진시|적용|선착순|🎟|Ⓐ|Ⓑ)/i.test(line) || line.includes(",");
+    const hasExplicitCodeLabel = /(?:공구\s*코드|할인\s*코드|프로모션\s*코드|쿠폰\s*코드|소진시\s*쿠폰|코드\s*할인|코드\s*:|코드\s*\$|🎟|Ⓐ|Ⓑ)/i.test(line);
+    const isCodeListLine = /^[A-Z0-9,\s()/$-]{5,80}$/i.test(line.trim()) && line.includes(",");
     const matches = line.match(/\b[A-Z0-9]{5,14}\b/g);
     if (matches) {
       for (const m of matches) {
         const up = m.toUpperCase();
         if (blacklist.has(up)) continue;
+        if (titleTokens.has(up) || Array.from(titleTokens).some((tt) => tt.includes(up) || up.includes(tt))) continue;
         if (!/[A-Z]/.test(up) || !/[0-9]/.test(up)) continue;
         if (/^[0-9]+(?:GB|TB|MB|MAH|W|HZ|INCH|PACK|P|G|ML|KG|IU)$/i.test(up)) continue;
-        if (hasCodeContext && up.length >= 5 && /^[A-Z0-9]+$/.test(up)) {
+        // 모니터/가전 모델명 패턴(예: 27U411B, LS32FG810, RQ33DB74C1AP) 배제
+        if (/^(?:[0-9]{2}[A-Z]{1,3}[0-9]{3,4}[A-Z]{0,2}|LS[0-9]{2}[A-Z]{2}[0-9]{3}|RQ[0-9]{2}[A-Z0-9]{5,})$/i.test(up)) continue;
+        if ((hasExplicitCodeLabel || isCodeListLine) && up.length >= 5 && /^[A-Z0-9]+$/.test(up)) {
           codes.add(up);
-        } else if (up.length >= 7 && /^[A-Z]{3,8}[0-9]{2,6}$/.test(up)) {
+        } else if (up.length >= 6 && /^[A-Z]{3,8}[0-9]{2,6}$/.test(up)) {
           codes.add(up);
         }
       }

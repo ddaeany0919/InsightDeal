@@ -134,7 +134,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
   // HTML 태그 제거 + 공구 다중 상품 구분선 및 깨진 쿠폰 코드 줄바꿈 자동 다듬기
   const cleanBodyText = polishDealBodyText(detailHtml);
-  const promoCodes = extractPromoCodes(cleanBodyText);
+  const promoCodes = extractPromoCodes(cleanBodyText, deal.title);
   const optionSources = (() => {
     const seen = new Set<string>();
     const result: DealSource[] = [];

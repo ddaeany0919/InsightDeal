@@ -507,21 +507,22 @@ class AggregatorService:
         title_price = 0
         title_currency = "KRW"
 
-        # 단위당 가격(예: 100g당 990원)의 단위 숫자가 대표 가격(100원)으로 오인되는 현상 차단
+        # 단위당 가격(예: 100g당 990원)의 단위 숫자가 대표 가격(100원)으로 오인되는 현상 및 날짜 괄호((11/2), (11/2~30)) 오인 차단
         title_for_price = re.sub(r'\d+(?:\.\d+)?\s*(?:kg|g|ml|l|개|입|봉|팩|포|장|매|구|미|알|병|캔|통|박스)\s*당', ' ', raw_title, flags=re.IGNORECASE)
+        title_for_price = re.sub(r'\(\s*(?:0?[1-9]|1[0-2])\s*[/\.]\s*(?:0?[1-9]|[12]\d|3[01])(?:\s*~\s*[^\)]*)?\s*\)', ' ', title_for_price)
         is_explicit_free_deal = bool(re.search(r'\(\s*(?:무료|0\s*원|free)\s*\)|무료\s*배포|한정\s*무료|무료\s*\(유료', raw_title, re.IGNORECASE))
         
-        # 1. 괄호/대괄호 속 달러/유로/원 우선 파싱 (예: (53,475원 외/무료), (3,920원~ / 무배), (46638/무), [899,000], [롯데온 18000])
+        # 1. 괄호/대괄호 속 달러/유로/원 우선 파싱 (예: (53,475원 외/무료), (11.6불/무배), (3,920원~ / 무배), (46638/무), [899,000], [롯데온 18000])
         match = re.search(
-            r'[\(\[]\s*(?:최저가?\s*|체감가?\s*|쿠폰가?\s*|할인가?\s*|약\s*)*\$?\s*((?:[\d,]+|[\d,]*\.[\d]+)\s*(?:만\s*원?|원|달러|유로|€|\$)?)\s*(?:외|부터|~|각|이상|이하|전후)?\s*(?:[/,]\s*([^\)\]]*))?[\)\]]',
+            r'[\(\[]\s*(?:최저가?\s*|체감가?\s*|쿠폰가?\s*|할인가?\s*|약\s*)*\$?\s*((?:[\d,]+|[\d,]*\.[\d]+)\s*(?:만\s*원?|원|달러|불|유로|€|\$)?)\s*(?:외|부터|~|각|이상|이하|전후)?\s*(?:[/,]\s*([^\)\]]*))?[\)\]]',
             title_for_price
         )
         if match:
             raw_token_p = match.group(1).replace(',', '').strip()
-            has_slash_or_unit = bool(match.group(2)) or any(u in match.group(0) for u in ('원', '만', '달러', '유로', '$', '€'))
+            has_slash_or_unit = bool(match.group(2)) or any(u in match.group(0) for u in ('원', '만', '달러', '불', '유로', '$', '€'))
             # 단순 수량/용량 괄호 (예: (180일분), (2024)) 오인 방지를 위해 단위 또는 슬래시 배송비가 있거나 4자리 이상일 때만 인정
             if has_slash_or_unit or (raw_token_p.isdigit() and len(raw_token_p) >= 4 and not re.match(r'^202\d$', raw_token_p)):
-                if '달러' in raw_token_p or '$' in match.group(0) or ('.' in raw_token_p and '만' not in raw_token_p and '유로' not in raw_token_p and '€' not in match.group(0)):
+                if '달러' in raw_token_p or '불' in raw_token_p or '$' in match.group(0) or ('.' in raw_token_p and '만' not in raw_token_p and '유로' not in raw_token_p and '€' not in match.group(0)):
                     title_currency = "USD"
                     clean_p = re.sub(r'[^\d.]', '', raw_token_p)
                     if clean_p.replace('.', '', 1).isdigit():

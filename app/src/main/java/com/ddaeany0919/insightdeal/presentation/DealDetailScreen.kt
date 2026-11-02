@@ -1990,27 +1990,36 @@ fun DealHeader(deal: DealItem, onOpenOrigin: (String) -> Unit) {
                 }
             }
 
-            val promoCodes = remember(cleanedBodyText) {
+            val promoCodes = remember(cleanedBodyText, deal.title) {
                 if (cleanedBodyText.isBlank()) emptyList()
                 else {
                     val blacklist = setOf(
                         "HTTP", "HTTPS", "HTML", "UTF8", "ALLDOCUBE", "BIGME", "VIOFO", "VIOFEO",
                         "JONR", "UWANT", "SHOKZ", "IPLAY", "MINI", "PRO", "MAX", "PLUS", "ULTRA",
                         "WIFI", "LTE", "NVME", "DDR4", "DDR5", "HDMI", "USBC", "TYPEC", "PD100W",
-                        "PAW3395", "5000IU", "10000MAH", "20000MAH", "PD20W", "IN1200T", "CB3000"
+                        "PAW3395", "5000IU", "10000MAH", "20000MAH", "PD20W", "IN1200T", "CB3000",
+                        "11STREET", "27U411B", "27G411B", "LS32FG810", "S32FG500", "S32FG50", "32U701SB"
                     )
+                    val titleTokens = deal.title.uppercase()
+                        .replace(Regex("[^A-Z0-9]"), " ")
+                        .split(Regex("\\s+"))
+                        .filter { it.length >= 4 }
+                        .toSet()
                     val found = linkedSetOf<String>()
                     val codeRegex = Regex("\\b[A-Z0-9]{5,14}\\b")
                     val unitRegex = Regex("^[0-9]+(?:GB|TB|MB|MAH|W|HZ|INCH|PACK|P|G|ML|KG|IU)$", RegexOption.IGNORE_CASE)
+                    val modelRegex = Regex("^(?:[0-9]{2}[A-Z]{1,3}[0-9]{3,4}[A-Z]{0,2}|LS[0-9]{2}[A-Z]{2}[0-9]{3}|RQ[0-9]{2}[A-Z0-9]{5,})$", RegexOption.IGNORE_CASE)
                     val strictCodeRegex = Regex("^[A-Z]{3,8}[0-9]{2,6}$")
                     for (line in cleanedBodyText.lines()) {
-                        val hasContext = line.contains(Regex("(?:코드|쿠폰|프로모션|할인|소진시|적용|선착순|🎟|Ⓐ|Ⓑ)")) || line.contains(",")
+                        val hasExplicitCodeLabel = line.contains(Regex("(?:공구\\s*코드|할인\\s*코드|프로모션\\s*코드|쿠폰\\s*코드|소진시\\s*쿠폰|코드\\s*할인|코드\\s*:|코드\\s*\\$|🎟|Ⓐ|Ⓑ)"))
+                        val isCodeListLine = line.trim().matches(Regex("^[A-Z0-9,\\s()/\\$-]{5,80}$", RegexOption.IGNORE_CASE)) && line.contains(",")
                         for (m in codeRegex.findAll(line)) {
                             val up = m.value.uppercase()
                             if (up in blacklist) continue
+                            if (up in titleTokens || titleTokens.any { it.contains(up) || up.contains(it) }) continue
                             if (!up.contains(Regex("[A-Z]")) || !up.contains(Regex("[0-9]"))) continue
-                            if (up.matches(unitRegex)) continue
-                            if ((hasContext && up.length >= 5) || (up.length >= 7 && up.matches(strictCodeRegex))) {
+                            if (up.matches(unitRegex) || up.matches(modelRegex)) continue
+                            if (((hasExplicitCodeLabel || isCodeListLine) && up.length >= 5) || (up.length >= 6 && up.matches(strictCodeRegex))) {
                                 found.add(up)
                             }
                         }
