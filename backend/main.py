@@ -60,7 +60,7 @@ if not ALLOWED_ORIGINS:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://.*\.(toss\.im|tossmini\.com|sslip\.io|nip\.io|duckdns\.org|trycloudflare\.com)",
+    allow_origin_regex=r"https://.*\.(toss\.im|tossmini\.com|vercel\.app|sslip\.io|nip\.io|duckdns\.org|trycloudflare\.com)",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "X-Admin-Key"],

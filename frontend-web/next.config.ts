@@ -9,13 +9,18 @@ const withPWA = withPWAInit({
   register: true,
 });
 
-// 도커 컨테이너 기동 시 브릿지 네트워크 호스트인 backend:8080으로 프록시하고, 로컬 기동 시 localhost:8080을 탑니다.
+// 도커 컨테이너 기동 시 브릿지 네트워크 호스트인 backend:8080으로 프록시하고, Vercel 배포 시 클라우드 실서버로, 로컬 기동 시 localhost:8080을 탑니다.
 const isDocker = process.env.DOCKER_ENV === "true";
-const backendUrl = process.env.BACKEND_URL || (isDocker ? "http://backend:8080" : "http://localhost:8080");
+const isVercel = process.env.VERCEL === "1";
+const backendUrl =
+  process.env.BACKEND_URL ||
+  (isVercel
+    ? "https://34.59.208.14.sslip.io"
+    : isDocker
+      ? "http://backend:8080"
+      : "http://localhost:8080");
 
 console.log(`[Next.js Rewrite Engine] Configured rewrite destination to: ${backendUrl}`);
-
-const isVercel = process.env.VERCEL === "1";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

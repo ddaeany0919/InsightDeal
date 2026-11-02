@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 
-const BACKEND_API_URL = process.env.BACKEND_API_URL || 'http://localhost:8080';
+const BACKEND_API_URL =
+  process.env.BACKEND_API_URL ||
+  (process.env.VERCEL === '1' ? 'https://34.59.208.14.sslip.io' : 'http://localhost:8080');
 
 export async function POST(request: Request) {
   try {
