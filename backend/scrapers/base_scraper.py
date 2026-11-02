@@ -50,7 +50,7 @@ class AsyncBaseScraper(ABC):
             for attempt, imp in enumerate(impersonates):
                 try:
                     if "fmkorea" in url:
-                        await asyncio.sleep(random.uniform(1.0, 1.8))
+                        await asyncio.sleep(random.uniform(2.0, 3.2))
                     elif "quasarzone" in url:
                         await asyncio.sleep(random.uniform(0.35, 0.7))
                     else:
@@ -74,11 +74,12 @@ class AsyncBaseScraper(ABC):
                         return None
 
                     if response.status_code == 430:
-                        logger.warning(f"[{self.platform_name}] 쿨다운 감지 (HTTP 430) - 서울 릴레이 우회 시도: {url}")
+                        logger.warning(f"[{self.platform_name}] 일시적 IP 쿨다운 감지 (HTTP 430) - 서울 릴레이 우회 시도: {url}")
                         relay_html = await self._fetch_via_seoul_relay(url)
                         if relay_html:
                             return relay_html
-                        raise Exception("Anti-bot block detected: 430")
+                        logger.info(f"⏳ [{self.platform_name}] 현재 IP 쿨다운(HTTP 430) 상태입니다. 기존 수집 데이터는 유지되며 다음 주기에 자동 재시도합니다.")
+                        return None
 
                     if response.status_code == 403:
                         logger.warning(f"[{self.platform_name}] 안티봇 차단 감지 (HTTP 403) [시도 {attempt+1}/{len(impersonates)}] - {url}")
@@ -93,7 +94,7 @@ class AsyncBaseScraper(ABC):
                     response.raise_for_status()
                     return response.text
                 except Exception as e:
-                    if "430" in str(e) or attempt == len(impersonates) - 1:
+                    if attempt == len(impersonates) - 1:
                         relay_html = await self._fetch_via_seoul_relay(url)
                         if relay_html:
                             return relay_html

@@ -8,6 +8,31 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("CloudFeeder")
 
 CLOUD_API = "https://34.59.208.14.sslip.io/api/community/ingest-batch"
+CLOUD_DEALS_API = "https://34.59.208.14.sslip.io/api/community/hot-deals"
+
+# 이미 상세 페이지를 파싱했거나 클라우드 DB에 존재하는 게시글 URL 캐시 (펨코 430 과호출 방지)
+_SEEN_DETAIL_CACHE: dict[str, dict] = {}
+
+
+async def _preload_existing_urls(http_client: httpx.AsyncClient):
+    if _SEEN_DETAIL_CACHE:
+        return
+    try:
+        for page in (1, 2):
+            res = await http_client.get(f"{CLOUD_DEALS_API}?page={page}&limit=100")
+            if res.status_code == 200:
+                for d in res.json():
+                    u = d.get("source_url")
+                    if u and d.get("content_html"):
+                        _SEEN_DETAIL_CACHE[u] = {
+                            "content_html": d.get("content_html"),
+                            "ecommerce_link": d.get("ecommerce_link"),
+                            "image_url": d.get("image_url"),
+                            "shipping_fee": d.get("shipping_fee"),
+                        }
+        logger.info(f"📦 기존 DB 게시글 {len(_SEEN_DETAIL_CACHE)}건 상세 캐시 로드 완료 (중복 상세 요청 생략)")
+    except Exception as e:
+        logger.warning(f"기존 DB URL 프리로드 생략: {e}")
 
 
 async def scrape_and_push_once():
@@ -26,6 +51,7 @@ async def scrape_and_push_once():
     ]
 
     async with httpx.AsyncClient(timeout=30.0) as http_client:
+        await _preload_existing_urls(http_client)
         for name, display_name, base_url, scraper_inst, max_items in targets:
             try:
                 async with scraper_inst as sc:
@@ -33,9 +59,18 @@ async def scrape_and_push_once():
                     items = items[:max_items]
                     enriched = []
                     for item in items:
+                        item_url = item["url"]
+                        if item_url in _SEEN_DETAIL_CACHE:
+                            cached_detail = _SEEN_DETAIL_CACHE[item_url]
+                            for k, v in cached_detail.items():
+                                if v is not None and v != "" and not item.get(k):
+                                    item[k] = v
+                            enriched.append(item)
+                            continue
                         try:
-                            detail = await sc.get_detail(item["url"], item.get("title", ""))
+                            detail = await sc.get_detail(item_url, item.get("title", ""))
                             if detail:
+                                _SEEN_DETAIL_CACHE[item_url] = detail
                                 for k, v in detail.items():
                                     if k == "price" and (not v or v == 0) and item.get("price", 0) > 0:
                                         continue
