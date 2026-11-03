@@ -1,0 +1,32 @@
+name: Cloud HotDeal Feeder (24/7 Scheduled Sync)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sync-hotdeals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python dependencies and Playwright Chromium
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt playwright
+          playwright install chromium --with-deps
+
+      - name: Run One-Shot Cloud Feeder
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m backend.scheduler.cloud_feeder --one-shot
