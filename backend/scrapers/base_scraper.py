@@ -129,7 +129,15 @@ class AsyncBaseScraper(ABC):
                     )
                     page = context.new_page()
                     page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
-                    page.wait_for_selector("li.li, table.bd_lst, .rd_body, article", timeout=12000)
+                    try:
+                        page.wait_for_selector("li.li, table.bd_lst, .rd_body, article", timeout=4000)
+                    except Exception:
+                        page.wait_for_timeout(2000)
+                        try:
+                            page.evaluate("if (window.doPost) window.doPost()")
+                            page.wait_for_selector("li.li, table.bd_lst, .rd_body, article", timeout=5000)
+                        except Exception:
+                            pass
                     content_str = page.content()
                     cookie_list = context.cookies()
                     browser.close()
@@ -149,7 +157,7 @@ class AsyncBaseScraper(ABC):
                         cookies=_FMKOREA_WASM_COOKIES.copy(),
                     )
                 logger.info(f"✅ [{self.platform_name}] Wasm 보안 쿠키 {len(_FMKOREA_WASM_COOKIES)}종 획득 및 세션 주입 완료!")
-            if html and len(html) > 2000:
+            if html and ("hotdeal_info" in html or "bd_lst" in html or "rd_body" in html):
                 return html
         except Exception as pw_err:
             logger.warning(f"⚠️ [{self.platform_name}] Playwright 430 통과 실패 ({url}): {pw_err}")
@@ -158,13 +166,23 @@ class AsyncBaseScraper(ABC):
     async def _fetch_via_seoul_relay(self, url: str) -> Optional[str]:
         """미국(GCP us-central1) 서버 IP 차단 시 Vercel 서울 리전(icn1) 릴레이를 통해 한국 커뮤니티 HTML 페칭"""
         try:
+            import re
             from urllib.parse import quote
             relay_url = f"https://insightdeal.vercel.app/api/scraper-relay?url={quote(url, safe='')}"
-            async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                 res = await client.get(relay_url)
                 if res.status_code == 200 and len(res.text) > 500:
                     logger.info(f"🌐 [{self.platform_name}] 서울 리전 릴레이 우회 페칭 성공: {url}")
                     return res.text
+                if "ppomppu.co.kr/zboard/zboard.php" in url and "page=" not in url:
+                    m_id = re.search(r"id=([a-zA-Z0-9_]+)", url)
+                    board_id = m_id.group(1) if m_id else "ppomppu"
+                    rss_target = f"https://www.ppomppu.co.kr/rss.php?id={board_id}"
+                    rss_relay = f"https://insightdeal.vercel.app/api/scraper-relay?url={quote(rss_target, safe='')}"
+                    rss_res = await client.get(rss_relay)
+                    if rss_res.status_code == 200 and "<item>" in rss_res.text:
+                        logger.info(f"🌐 [{self.platform_name}] 서울 리전 RSS 릴레이 우회 페칭 성공: {rss_target}")
+                        return rss_res.text
         except Exception as re_err:
             logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 릴레이 페칭 실패 ({url}): {re_err}")
         return None

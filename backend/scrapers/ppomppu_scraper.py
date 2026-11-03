@@ -15,6 +15,69 @@ class PpomppuScraper(AsyncBaseScraper):
 
     async def parse_list(self, html: str) -> list[dict]:
         """뽐뿌 게시판 리스트에서 제목과 URL (그리고 가능하면 가격) 추출"""
+        if "<rss" in html or "<item>" in html:
+            soup_xml = BeautifulSoup(html, "html.parser")
+            rss_items = soup_xml.select("item")
+            rss_deals = []
+            is_overseas = self.platform_name in ["뽐뿌해외", "알리뽐뿌"]
+            for it in rss_items:
+                t_el = it.find("title")
+                full_title = t_el.get_text(strip=True) if t_el else ""
+                if not full_title or any(k in full_title for k in ("공지", "질문", "문의")):
+                    continue
+                m_link = re.search(r"<link>\s*(https?://[^\s<]+)", str(it))
+                raw_link = m_link.group(1).replace("&amp;", "&") if m_link else ""
+                if not raw_link:
+                    continue
+                url = raw_link.replace("http://", "https://")
+                desc_el = it.find("description")
+                desc_txt = desc_el.get_text(" ", strip=True) if desc_el else ""
+                ecom_m = re.search(r"(https?://[^\s\"'<>]+)", desc_txt)
+                ecom_url = ecom_m.group(1) if ecom_m and "ppomppu.co.kr" not in ecom_m.group(1) else ""
+                extracted_price = 0
+                extracted_currency = "KRW"
+                usd_m = re.search(r"(?:\$|USD|달러|불|유로|€)\s*([0-9,.]+)|([0-9,.]+)\s*(?:\$|USD|달러|불|유로|€)", full_title, re.IGNORECASE) if is_overseas else None
+                krw_m = re.search(r"([\d,]+(?:원|만원))", full_title)
+                if is_overseas and usd_m:
+                    try:
+                        val = float((usd_m.group(1) or usd_m.group(2)).replace(",", ""))
+                        extracted_price = round(val * 100)
+                        extracted_currency = "EUR" if ("유로" in full_title or "€" in full_title) else "USD"
+                    except Exception:
+                        pass
+                elif krw_m:
+                    nums = re.findall(r"\d+", krw_m.group(1).replace(",", ""))
+                    if nums:
+                        extracted_price = int("".join(nums))
+                hits_el = it.find("hits")
+                hits_txt = hits_el.get_text(strip=True) if hits_el else ""
+                like_count, view_count = 0, 1500
+                hm = re.search(r"\[(\d+)\|(\d+)", hits_txt)
+                if hm:
+                    like_count = int(hm.group(1))
+                    view_count = max(int(hm.group(2)), 1500)
+                cat_m = re.match(r"^\[(.*?)\]", full_title)
+                rss_deals.append({
+                    "title": full_title,
+                    "url": url,
+                    "price": extracted_price,
+                    "currency": extracted_currency,
+                    "shop_name": "",
+                    "image_url": "",
+                    "ecommerce_link": ecom_url,
+                    "content_html": f"<p>{desc_txt}</p>" if desc_txt else "",
+                    "is_closed": any(k in full_title for k in ("종료", "마감", "품절")),
+                    "shipping_fee": "무료배송" if any(k in full_title for k in ("무배", "무료")) else "",
+                    "is_super_hotdeal": like_count >= 10,
+                    "posted_at": None,
+                    "view_count": view_count,
+                    "like_count": like_count,
+                    "comment_count": 0,
+                    "category": cat_m.group(1).strip() if cat_m else None,
+                })
+            if rss_deals:
+                return rss_deals
+
         soup = BeautifulSoup(html, 'html.parser')
         
         # 쇼핑포럼 (관련 없는 게시글/광고) 제거
@@ -260,7 +323,12 @@ class PpomppuScraper(AsyncBaseScraper):
         headers = self._get_headers()
         headers["Referer"] = self.list_url  # 봇 차단 및 로그인 리다이렉트 방지를 위한 Referer 설정
         html = await self.fetch_html(url, headers=headers)
-        if not html: return {}
+        if not html:
+            if full_title:
+                fb_img = await self.fetch_og_image("", full_title)
+                if fb_img:
+                    return {"image_url": fb_img}
+            return {}
         soup = BeautifulSoup(html, 'html.parser')
         
         ecommerce_link = ""
