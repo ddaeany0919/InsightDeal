@@ -19,13 +19,40 @@ logger = logging.getLogger("CloudFeeder")
 CLOUD_API = "https://34.59.208.14.sslip.io/api/community/ingest-batch"
 CLOUD_DEALS_API = "https://34.59.208.14.sslip.io/api/community/hot-deals"
 
-# 이미 상세 페이지를 파싱했거나 클라우드 DB에 존재하는 게시글 URL 캐시 (커뮤니티별 분리)
+# 이미 상세 페이지를 파싱했거나 클라우드 DB에 존재하는 게시글 URL 캐시 (커뮤니티별 분리 + 로컬 파일 영구 캐시 연동)
 _SEEN_DETAIL_CACHE: dict[tuple[str, str], dict] = {}
+_CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "feeder_seen_cache.json") if "os" in globals() else "backend/logs/feeder_seen_cache.json"
+
+
+def _load_local_seen_cache():
+    import json, os
+    if os.path.exists(_CACHE_FILE):
+        try:
+            with open(_CACHE_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            for k_str, val in raw.items():
+                if "::" in k_str and isinstance(val, dict):
+                    pf, u = k_str.split("::", 1)
+                    _SEEN_DETAIL_CACHE[(pf, u)] = val
+        except Exception:
+            pass
+
+
+def _save_local_seen_cache():
+    import json, os
+    try:
+        os.makedirs(os.path.dirname(_CACHE_FILE), exist_ok=True)
+        serializable = {f"{pf}::{u}": v for (pf, u), v in list(_SEEN_DETAIL_CACHE.items())[-3000:]}
+        with open(_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, ensure_ascii=False)
+    except Exception:
+        pass
 
 
 async def _preload_existing_urls(http_client: httpx.AsyncClient):
     if _SEEN_DETAIL_CACHE:
         return
+    _load_local_seen_cache()
     try:
         from backend.core.url_utils import normalize_url
         platforms = ("펨코", "뽐뿌", "퀘이사존", "알리뽐뿌", "루리웹", "클리앙", "빠삭국내", "빠삭해외", "빠삭육아")
@@ -242,6 +269,7 @@ async def scrape_and_push_once():
                         logger.info(f"✅ [{display_name}] 클라우드 서버 전송 완료 (신규/갱신 {len(enriched)}건 중 {total_processed}건 반영)")
             except Exception as e:
                 logger.error(f"❌ [{display_name}] 수집/전송 오류: {e}")
+        _save_local_seen_cache()
 
 
 async def main():
