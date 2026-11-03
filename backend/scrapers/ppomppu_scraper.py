@@ -16,22 +16,21 @@ class PpomppuScraper(AsyncBaseScraper):
     async def parse_list(self, html: str) -> list[dict]:
         """뽐뿌 게시판 리스트에서 제목과 URL (그리고 가능하면 가격) 추출"""
         if "<rss" in html or "<item>" in html:
-            soup_xml = BeautifulSoup(html, "html.parser")
-            rss_items = soup_xml.select("item")
+            rss_blocks = re.findall(r"<item>(.*?)</item>", html, re.DOTALL)
             rss_deals = []
             is_overseas = self.platform_name in ["뽐뿌해외", "알리뽐뿌"]
-            for it in rss_items:
-                t_el = it.find("title")
-                full_title = t_el.get_text(strip=True) if t_el else ""
+            for blk in rss_blocks:
+                m_t = re.search(r"<title>(.*?)</title>", blk, re.DOTALL)
+                full_title = BeautifulSoup(m_t.group(1), "html.parser").get_text(strip=True) if m_t else ""
                 if not full_title or any(k in full_title for k in ("공지", "질문", "문의")):
                     continue
-                m_link = re.search(r"<link>\s*(https?://[^\s<]+)", str(it))
+                m_link = re.search(r"<link>\s*(https?://[^\s<]+)", blk)
                 raw_link = m_link.group(1).replace("&amp;", "&") if m_link else ""
                 if not raw_link:
                     continue
                 url = raw_link.replace("http://", "https://")
-                desc_el = it.find("description")
-                desc_txt = desc_el.get_text(" ", strip=True) if desc_el else ""
+                m_desc = re.search(r"<description>(.*?)</description>", blk, re.DOTALL)
+                desc_txt = BeautifulSoup(m_desc.group(1), "html.parser").get_text(" ", strip=True) if m_desc else ""
                 ecom_m = re.search(r"(https?://[^\s\"'<>]+)", desc_txt)
                 ecom_url = ecom_m.group(1) if ecom_m and "ppomppu.co.kr" not in ecom_m.group(1) else ""
                 extracted_price = 0
@@ -49,8 +48,8 @@ class PpomppuScraper(AsyncBaseScraper):
                     nums = re.findall(r"\d+", krw_m.group(1).replace(",", ""))
                     if nums:
                         extracted_price = int("".join(nums))
-                hits_el = it.find("hits")
-                hits_txt = hits_el.get_text(strip=True) if hits_el else ""
+                m_hits = re.search(r"<hits>(.*?)</hits>", blk, re.DOTALL)
+                hits_txt = m_hits.group(1).strip() if m_hits else ""
                 like_count, view_count = 0, 1500
                 hm = re.search(r"\[(\d+)\|(\d+)", hits_txt)
                 if hm:
