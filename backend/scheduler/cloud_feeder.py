@@ -30,31 +30,37 @@ async def _preload_existing_urls(http_client: httpx.AsyncClient):
         from backend.core.url_utils import normalize_url
         platforms = ("펨코", "뽐뿌", "퀘이사존", "알리뽐뿌", "루리웹", "클리앙", "빠삭국내", "빠삭해외", "빠삭육아")
         for pf in platforms:
-            res = await http_client.get(f"{CLOUD_DEALS_API}?limit=100&offset=0&platform={pf}")
-            if res.status_code == 200:
-                payload = res.json()
-                deals = payload if isinstance(payload, list) else payload.get("items", payload.get("deals", []))
-                for d in deals:
-                    if not isinstance(d, dict):
-                        continue
-                    raw_u = d.get("post_url") or d.get("post_link") or d.get("source_url") or d.get("url")
-                    if raw_u:
-                        u = normalize_url(raw_u)
-                        _SEEN_DETAIL_CACHE[(pf, u)] = {
-                            "content_html": d.get("content_html") or "",
-                            "ecommerce_link": d.get("ecommerce_url") or d.get("ecommerce_link") or "",
-                            "image_url": d.get("image_url") or "",
-                            "shipping_fee": d.get("shipping_fee") or "",
-                            "is_closed": bool(d.get("is_closed", False)),
-                            "like_count": int(d.get("like_count") or 0),
-                            "comment_count": int(d.get("comment_count") or 0),
-                        }
+            for off in (0, 100, 200):
+                res = await http_client.get(f"{CLOUD_DEALS_API}?limit=100&offset={off}&platform={pf}")
+                if res.status_code == 200:
+                    payload = res.json()
+                    deals = payload if isinstance(payload, list) else payload.get("items", payload.get("deals", []))
+                    if not deals:
+                        break
+                    for d in deals:
+                        if not isinstance(d, dict):
+                            continue
+                        raw_u = d.get("post_url") or d.get("post_link") or d.get("source_url") or d.get("url")
+                        if raw_u:
+                            u = normalize_url(raw_u)
+                            _SEEN_DETAIL_CACHE[(pf, u)] = {
+                                "content_html": d.get("content_html") or "",
+                                "ecommerce_link": d.get("ecommerce_url") or d.get("ecommerce_link") or "",
+                                "image_url": d.get("image_url") or "",
+                                "shipping_fee": d.get("shipping_fee") or "",
+                                "is_closed": bool(d.get("is_closed", False)),
+                                "like_count": int(d.get("like_count") or 0),
+                                "comment_count": int(d.get("comment_count") or 0),
+                            }
+                    if len(deals) < 100:
+                        break
         logger.info(f"📦 기존 DB 게시글 {len(_SEEN_DETAIL_CACHE)}건 상세 캐시 로드 완료 (이미 파싱된 게시글 스킵 활성화)")
     except Exception as e:
         logger.warning(f"기존 DB URL 프리로드 생략: {e}")
 
 
 async def scrape_and_push_once():
+    from datetime import datetime, timedelta, timezone
     from backend.core.url_utils import normalize_url
     from backend.scrapers.ppomppu_scraper import PpomppuScraper
     from backend.scrapers.ppomppu_overseas_scraper import PpomppuOverseasScraper
@@ -67,32 +73,72 @@ async def scrape_and_push_once():
     from backend.scrapers.bbasak_overseas_scraper import BbasakOverseasScraper
     from backend.scrapers.bbasak_parenting_scraper import BbasakParentingScraper
 
+    # KST 기준 오늘 00:00:00의 UTC ISO 문자열 계산 (공백 시간대 다중 페이지 자동 백필 기준선)
+    kst = timezone(timedelta(hours=9))
+    today_start_kst = datetime.now(kst).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc_iso = today_start_kst.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
     targets = [
-        ("fmkorea", "펨코", "https://www.fmkorea.com/hotdeal", FmkoreaScraper(6), 35),
-        ("ppomppu", "뽐뿌", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu", PpomppuScraper(1), 35),
-        ("quasarzone", "퀘이사존", "https://quasarzone.com/bbs/qb_saleinfo", QuasarzoneScraper(5), 35),
-        ("ali_ppomppu", "알리뽐뿌", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu8", AlippomppuScraper(4), 35),
-        ("ppomppu_overseas", "뽐뿌해외", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu4", PpomppuOverseasScraper(10), 35),
-        ("ruliweb", "루리웹", "https://bbs.ruliweb.com/market/board/1020", RuliwebScraper(2), 35),
-        ("clien", "클리앙", "https://www.clien.net/service/board/jirum", ClienScraper(3), 35),
-        ("bbasak_domestic", "빠삭국내", "https://bbasak.com/bbs/board.php?bo_table=bbasak1", BbasakDomesticScraper(7), 35),
-        ("bbasak_overseas", "빠삭해외", "https://bbasak.com/bbs/board.php?bo_table=bbasak2", BbasakOverseasScraper(8), 35),
-        ("bbasak_parenting", "빠삭육아", "https://bbasak.com/bbs/board.php?bo_table=bbasak3", BbasakParentingScraper(9), 35),
+        ("fmkorea", "펨코", "https://www.fmkorea.com/hotdeal", FmkoreaScraper(6), 12),
+        ("ppomppu", "뽐뿌", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu", PpomppuScraper(1), 14),
+        ("quasarzone", "퀘이사존", "https://quasarzone.com/bbs/qb_saleinfo", QuasarzoneScraper(5), 3),
+        ("ali_ppomppu", "알리뽐뿌", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu8", AlippomppuScraper(4), 5),
+        ("ppomppu_overseas", "뽐뿌해외", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu4", PpomppuOverseasScraper(10), 2),
+        ("ruliweb", "루리웹", "https://bbs.ruliweb.com/market/board/1020", RuliwebScraper(2), 2),
+        ("clien", "클리앙", "https://www.clien.net/service/board/jirum", ClienScraper(3), 2),
+        ("bbasak_domestic", "빠삭국내", "https://bbasak.com/bbs/board.php?bo_table=bbasak1", BbasakDomesticScraper(7), 2),
+        ("bbasak_overseas", "빠삭해외", "https://bbasak.com/bbs/board.php?bo_table=bbasak2", BbasakOverseasScraper(8), 1),
+        ("bbasak_parenting", "빠삭육아", "https://bbasak.com/bbs/board.php?bo_table=bbasak3", BbasakParentingScraper(9), 1),
     ]
 
     async with httpx.AsyncClient(timeout=60.0) as http_client:
         await _preload_existing_urls(http_client)
-        for name, display_name, base_url, scraper_inst, max_items in targets:
+        for name, display_name, base_url, scraper_inst, max_pages in targets:
             try:
                 async with scraper_inst as sc:
-                    items = await sc.run(sc.list_url)
-                    items = items[:max_items]
+                    cache_pf = "알리뽐뿌" if display_name == "뽐뿌해외" else display_name
+                    items = []
+                    seen_page_urls = set()
+                    for page_no in range(1, max_pages + 1):
+                        if page_no == 1:
+                            page_url = sc.list_url
+                        elif "clien" in name:
+                            sep = "&" if "?" in sc.list_url else "?"
+                            page_url = f"{sc.list_url}{sep}po={page_no - 1}"
+                        else:
+                            sep = "&" if "?" in sc.list_url else "?"
+                            page_url = f"{sc.list_url}{sep}page={page_no}"
+
+                        page_items = await sc.run(page_url)
+                        if not page_items:
+                            break
+
+                        unseen_today_on_page = 0
+                        today_on_page = 0
+                        for pit in page_items:
+                            norm_u = normalize_url(pit["url"])
+                            if norm_u in seen_page_urls:
+                                continue
+                            seen_page_urls.add(norm_u)
+                            pit["url"] = norm_u
+                            pit["_page_no"] = page_no
+                            items.append(pit)
+                            posted_iso = pit.get("posted_at") or ""
+                            is_today = (not posted_iso) or (posted_iso >= today_start_utc_iso)
+                            if is_today:
+                                today_on_page += 1
+                                if (cache_pf, norm_u) not in _SEEN_DETAIL_CACHE:
+                                    unseen_today_on_page += 1
+
+                        if page_no >= 1 and (unseen_today_on_page == 0 or today_on_page == 0):
+                            break
+
                     enriched = []
                     skipped_count = 0
-                    cache_pf = "알리뽐뿌" if display_name == "뽐뿌해외" else display_name
                     for item in items:
                         item_url = normalize_url(item["url"])
                         item["url"] = item_url
+                        item_page_no = item.pop("_page_no", 1)
                         cache_key = (cache_pf, item_url)
                         if cache_key in _SEEN_DETAIL_CACHE:
                             cached_detail = _SEEN_DETAIL_CACHE[cache_key]
@@ -108,13 +154,22 @@ async def scrape_and_push_once():
                             enriched.append(item)
                             continue
                         try:
-                            detail = await sc.get_detail(item_url, item.get("title", ""))
-                            if detail:
-                                for k, v in detail.items():
-                                    if k == "price" and (not v or v == 0) and item.get("price", 0) > 0:
-                                        continue
-                                    if v is not None and v != "":
-                                        item[k] = v
+                            # 1페이지 최신글이거나 목록에 썸네일 이미지가 없는 경우 상세 페이지 파싱 수행
+                            # 2페이지 이상 대량 백필 구간에서 이미 목록 썸네일/가격이 있는 경우에는 안티봇(430/429) 방어를 위해 고속 백필
+                            need_detail = (item_page_no == 1) or (not item.get("image_url"))
+                            if need_detail:
+                                detail = await sc.get_detail(item_url, item.get("title", ""))
+                                if detail:
+                                    for k, v in detail.items():
+                                        if k == "price" and (not v or v == 0) and item.get("price", 0) > 0:
+                                            continue
+                                        if v is not None and v != "":
+                                            item[k] = v
+                            if not item.get("content_html"):
+                                shop_txt = item.get("shop_name") or display_name
+                                ship_txt = item.get("shipping_fee") or ""
+                                img_tag = f'<p><img src="{item["image_url"]}" alt="thumbnail" /></p>' if item.get("image_url") else ""
+                                item["content_html"] = f"{img_tag}<p><strong>{item.get('title', '')}</strong></p><p>출처: {shop_txt} {ship_txt}</p>"
                             _SEEN_DETAIL_CACHE[cache_key] = {
                                 "content_html": item.get("content_html") or "",
                                 "ecommerce_link": item.get("ecommerce_link") or "",

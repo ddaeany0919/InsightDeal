@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class PpomppuScraper(AsyncBaseScraper):
     def __init__(self, community_id: int):
-        super().__init__("뽐뿌", max_concurrent_requests=5)
+        super().__init__("뽐뿌", max_concurrent_requests=2)
         self.community_id = community_id
         # CEO 피드백: 뽐뿌 전체 핫딜을 수집하되, 추천수(like_count)로 인기 마크를 판별
         self.list_url = "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu"
