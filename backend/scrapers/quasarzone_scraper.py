@@ -402,20 +402,21 @@ class QuasarzoneScraper(AsyncBaseScraper):
                         currency = "KRW"
                         shipping_fee = "무료배송" if any(k in full_text for k in ["무료", "무배", "무료배송"]) else ""
 
-                        # 가격 정규식: 화폐 기호 우선 탐색
-                        m_price = re.search(r"[￦₩\\]\s*([0-9,]+)", full_text)
+                        # 가격 정규식: 화폐 기호 및 이모지(💰) 우선 탐색
+                        m_price = re.search(r"[￦₩\\💰]\s*([0-9,]+)", full_text)
                         if m_price:
                             digits = re.sub(r"[^0-9]", "", m_price.group(1))
                             if digits:
                                 price = int(digits)
                         else:
-                            m_price_num = re.search(r"([0-9,]+)\s*원(?:\s*/|\s*\))", full_text)
+                            m_price_num = re.search(r"([0-9,]+)\s*원(?:\s*/|\s*\)|\s*🚚)", full_text)
                             if m_price_num:
                                 digits = re.sub(r"[^0-9]", "", m_price_num.group(1))
                                 if digits:
                                     price = int(digits)
 
-                        clean_title = re.sub(r"[￦₩\\]\s*[0-9,]+.*$", "", clean_text).strip()
+                        clean_title = re.sub(r"[￦₩\\💰]\s*[0-9,]+.*$", "", clean_text).strip()
+                        clean_title = re.sub(r"\s*(?:🚚|퀘이사존/지름).*$", "", clean_title).strip()
                         clean_title = re.sub(r"\s*\([0-9,]+원.*$", "", clean_title).strip()
                         if not clean_title:
                             clean_title = full_text
@@ -453,6 +454,66 @@ class QuasarzoneScraper(AsyncBaseScraper):
                             pass
                 except Exception as b_err:
                     logger.warning(f"⚠️ [퀘이사존 브릿지] 페칭 경고 ({u}): {b_err}")
+
+            # hotgusa API(communities=3) 병합: 텔레그램 미러에 누락된 퀘이사존 게시글까지 100% 보완
+            try:
+                hg_url = (
+                    "https://www.hotgusa.com/api/products?communities=3&isOutOfStock=true"
+                    "&category=&sort=date&shop=all&timeRange=24h&hiddenKeywords="
+                    "&lastId=9_99999999999&lastValue=2099-12-31T23:59:59%2B09:00"
+                )
+                rh = await client.get(hg_url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+                if rh.status_code == 200:
+                    payload = rh.json()
+                    rows = payload.get("products", []) if isinstance(payload, dict) else (payload if isinstance(payload, list) else [])
+                    by_url = {it["url"]: it for it in parsed_items}
+                    for row in rows:
+                        rid = str(row.get("id") or "")
+                        if not rid.startswith("3_"):
+                            continue
+                        pno = rid.split("_", 1)[1]
+                        q_url = f"https://quasarzone.com/bbs/qb_saleinfo/views/{pno}"
+                        mall = str(row.get("mall_name") or "").strip()
+                        raw_t = str(row.get("title") or "").strip()
+                        full_t = f"[{mall}] {raw_t}" if mall and not raw_t.startswith("[") else raw_t
+                        thumb = f"https://d2w999htn2iva3.cloudfront.net/thumbs/3/{pno}.jpg" if row.get("has_thumb", True) else ""
+                        if q_url in by_url:
+                            ex = by_url[q_url]
+                            ex["title"] = full_t or ex["title"]
+                            if int(row.get("price") or 0) > 0:
+                                ex["price"] = int(row["price"])
+                            if mall and not ex.get("shop_name"):
+                                ex["shop_name"] = mall
+                            if not ex.get("image_url") and thumb:
+                                ex["image_url"] = thumb
+                            ex["is_closed"] = ex["is_closed"] or bool(row.get("is_end", False))
+                            ex["like_count"] = max(int(ex.get("like_count") or 0), int(row.get("recm_cnt") or 0))
+                            ex["view_count"] = max(int(ex.get("view_count") or 0), int(row.get("view_cnt") or 0))
+                            ex["comment_count"] = max(int(ex.get("comment_count") or 0), int(row.get("cmt_cnt") or 0))
+                        else:
+                            seen_urls.add(q_url)
+                            deliv = int(row.get("delivery_price") or 0)
+                            new_it = {
+                                "category": None,
+                                "title": full_t,
+                                "url": q_url,
+                                "price": int(row.get("price") or 0),
+                                "currency": "USD" if row.get("currency_code") == 1 else "KRW",
+                                "shop_name": mall,
+                                "image_url": thumb,
+                                "ecommerce_link": "",
+                                "is_closed": bool(row.get("is_end", False)),
+                                "shipping_fee": "무료배송" if deliv == 0 else f"{deliv:,}원",
+                                "is_super_hotdeal": int(row.get("recm_cnt") or 0) >= 8 or int(row.get("view_cnt") or 0) >= 2500,
+                                "posted_at": row.get("reg_date"),
+                                "view_count": int(row.get("view_cnt") or 100),
+                                "like_count": int(row.get("recm_cnt") or 0),
+                                "comment_count": int(row.get("cmt_cnt") or 0),
+                                "content_html": f"<p>{full_t}</p>",
+                            }
+                            parsed_items.append(new_it)
+            except Exception as hg_err:
+                logger.warning(f"⚠️ [퀘이사존 hotgusa 브릿지] 경고: {hg_err}")
 
         logger.info(f"⚡ [퀘이사존 브릿지] 실시간 공공 핫딜 브릿지에서 {len(parsed_items)}건 수집 완료")
         return parsed_items

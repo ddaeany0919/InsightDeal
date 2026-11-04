@@ -396,7 +396,9 @@ async def scrape_and_push_once():
                                 page_board_ids.setdefault(b_key, []).append(p_id)
 
                         for b_key, id_list in page_board_ids.items():
-                            if len(id_list) < 10:
+                            # 텔레그램 큐레이션 브릿지(퀘이사존 클라우드 9~11건 등)처럼 일부 게시글만 발췌하는 소스는
+                            # 전체 1페이지 전수 목록이 아니므로 증발 감지 대상에서 제외하고, 최소 18건 이상의 정식 1페이지 목록에만 적용!
+                            if len(id_list) < 18 or (b_key == "quasarzone" and IS_CLOUD_ENV):
                                 continue
                             sorted_ids = sorted(id_list)
                             # 하단 경계 흔들림 방지를 위해 하위 2번째 ID를 바닥(floor)으로 설정
