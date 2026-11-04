@@ -408,7 +408,6 @@ async def scrape_and_push_once():
                                 cb_key, cp_id = _extract_board_and_post_id(c_url)
                                 if cb_key == b_key and (floor_id < cp_id < ceil_id) and c_url not in seen_page_urls:
                                     logger.info(f"🗑️ [{display_name}] 1페이지 범위({floor_id}~{ceil_id}) 내 게시글 삭제 감지(ID={cp_id}) -> 자동 마감 처리: {c_val.get('title')} ({c_url})")
-                                    c_val["is_closed"] = True
                                     items.append({
                                         "title": c_val["title"],
                                         "url": c_url,
