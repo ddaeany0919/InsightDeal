@@ -26,6 +26,9 @@
 | 9 | Missing Deals Backfill (00:05 KST ~ Now) | 퀘이사존 12건 포함 누락 22건 전수 선별 및 클라우드 DB 원스톱 백필 | M3 | Survey |
 | 10 | 3-Way Consistency Verification | Cloud DB vs Live Web vs 실제 사이트 0 불일치 정합성 무결성 검증 | M3 | Survey |
 | 11 | Multi-Branch Git Push & Clean | `origin/main` 및 `origin/master` 동시 푸시 및 임시 파일 완전 청소 | M3 | Survey |
+| 12 | Quasarzone 403 Detection Fix & Bridge | 퀘이사존 403 오탐지 버그 수정 및 실시간 브릿지 폴백 파서 구축 | M4 (Gen2) | Gen2 |
+| 13 | Fmkorea 430 Datacenter Turnstile Bridge | 펨코 데이터센터 Turnstile 430 차단 시 실시간 핫딜 브릿지 자동 전환 | M4 (Gen2) | Gen2 |
+| 14 | 24/7 GCP-Triggered GHA Dispatcher | GCP 24시간 백엔드 서버에서 10분마다 GHA workflow_dispatch 직접 격발 | M4 (Gen2) | Gen2 |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
@@ -33,6 +36,7 @@
 | 1 | Cloud Pipeline Fast-Failover & Concurrency | `base_scraper.py`, `cloud_feeder.py`, `cloud-feeder.yml` | none | DONE |
 | 2 | Server-Side Community Bypass & PC Detachment | `base_scraper.py`, `scrapers/*.py`, Windows scheduler | M1 | DONE |
 | 3 | Backfill, 3-Way Consistency & Multi-Branch Push | Backfill script, Cloud DB, `origin/main`, `origin/master` | M2 | DONE |
+| 4 | Gen 2: 24/7 Zero-Delay Cloud Autonomous Ingestion | `fmkorea_scraper.py`, `quasarzone_scraper.py`, `main.py` | M3 | DONE |
 
 ## Interface Contracts
 ### BaseScraper ↔ Community Scrapers
