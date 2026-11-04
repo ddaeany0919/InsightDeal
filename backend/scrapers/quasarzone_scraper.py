@@ -458,7 +458,11 @@ class QuasarzoneScraper(AsyncBaseScraper):
         return parsed_items
 
     async def run(self, url: str) -> list[dict]:
-        """웹 직접 파싱 시도 후 실패/0건 시 브릿지 폴백 가동"""
+        """클라우드 환경에서는 403 차단을 피하기 위해 즉시 실시간 핫딜 브릿지로 직행하고, 로컬에서는 웹 파싱 우선 시도"""
+        import os
+        is_cloud = os.getenv("IS_CLOUD_ENV", "false").lower() in ("1", "true", "yes") or os.getenv("GITHUB_ACTIONS", "").lower() == "true"
+        if is_cloud:
+            return await self._fetch_fallback_from_bridge()
         deals = await super().run(url)
         if not deals:
             logger.info(f"🌐 [퀘이사존] 웹 페이지 수집 0건/차단 감지 -> 실시간 핫딜 브릿지 폴백 발동: {url}")

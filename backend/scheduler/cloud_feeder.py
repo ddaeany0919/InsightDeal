@@ -354,22 +354,60 @@ async def scrape_and_push_once():
                                 if int(ext.get("comment_count") or 0) > int(pit.get("comment_count") or 0):
                                     pit["comment_count"] = int(ext["comment_count"])
 
-                        # 2.6 [게시글 삭제(Post Vanished) 감지]:
-                        # 최근 45분 내에 수집된 활성 게시글(is_closed=False)이 1페이지 최신 목록 범위(최소 15건 이상 수집된 정상 목록)에서
-                        # 완전히 증발(작성자 자진 삭제 또는 관리자 삭제)했다면 상세 페이지 404/삭제 여부를 확인하거나 즉시 마감 처리!
-                        if len(seen_page_urls) >= 12 and display_name != "뽐뿌해외":
-                            recent_cutoff_iso = (now_utc - timedelta(minutes=45)).strftime("%Y-%m-%dT%H:%M:%S")
-                            oldest_on_page_iso = min(
-                                [it.get("posted_at") for it in items if it.get("posted_at")],
-                                default=recent_cutoff_iso,
-                            )
-                            check_floor_iso = max(recent_cutoff_iso, oldest_on_page_iso)
+                        # 2.6 [게시글 삭제(Post Vanished) 감지 - 고유 Post ID 단조 증가 범위 기반]:
+                        # 각 게시판의 고유 게시글 번호(Post ID)는 단조 증가하므로, 현재 1페이지 목록의 (최소 ID ~ 최대 ID) 범위 사이에
+                        # 위치한 활성 게시글(is_closed=False)이 1페이지 목록에서 증발했다면 2페이지로 밀려난 것이 아니라
+                        # 작성자/관리자에 의해 실제 삭제된 게시글임이 수학적으로 보장됩니다.
+                        def _extract_board_and_post_id(u: str) -> tuple[str, int]:
+                            if not u:
+                                return ("", 0)
+                            if "ppomppu.co.kr" in u:
+                                m_b = re.search(r"id=(ppomppu\d*)", u)
+                                m_n = re.search(r"no=(\d+)", u)
+                                if m_b and m_n:
+                                    return (m_b.group(1), int(m_n.group(1)))
+                            elif "fmkorea.com/" in u:
+                                m_n = re.search(r"fmkorea\.com/(?:index\.php\?.*?document_srl=)?(\d{7,12})", u)
+                                if m_n:
+                                    return ("fmkorea", int(m_n.group(1)))
+                            elif "quasarzone.com" in u:
+                                m_n = re.search(r"/views/(\d+)", u)
+                                if m_n:
+                                    return ("quasarzone", int(m_n.group(1)))
+                            elif "ruliweb.com" in u:
+                                m_n = re.search(r"/read/(\d+)", u)
+                                if m_n:
+                                    return ("ruliweb", int(m_n.group(1)))
+                            elif "clien.net" in u:
+                                m_n = re.search(r"/jirum/(\d+)", u)
+                                if m_n:
+                                    return ("clien", int(m_n.group(1)))
+                            elif "bbasak.com" in u:
+                                m_b = re.search(r"bo_table=(bbasak\d+)", u)
+                                m_n = re.search(r"wr_id=(\d+)", u)
+                                if m_b and m_n:
+                                    return (m_b.group(1), int(m_n.group(1)))
+                            return ("", 0)
+
+                        page_board_ids: dict[str, list[int]] = {}
+                        for p_u in seen_page_urls:
+                            b_key, p_id = _extract_board_and_post_id(p_u)
+                            if b_key and p_id > 0:
+                                page_board_ids.setdefault(b_key, []).append(p_id)
+
+                        for b_key, id_list in page_board_ids.items():
+                            if len(id_list) < 10:
+                                continue
+                            sorted_ids = sorted(id_list)
+                            # 하단 경계 흔들림 방지를 위해 하위 2번째 ID를 바닥(floor)으로 설정
+                            floor_id = sorted_ids[1]
+                            ceil_id = sorted_ids[-1]
                             for (c_pf, c_url), c_val in list(_SEEN_DETAIL_CACHE.items()):
-                                if c_pf != cache_pf or c_val.get("is_closed"):
+                                if c_pf != cache_pf or c_val.get("is_closed") or not c_val.get("title"):
                                     continue
-                                c_created = c_val.get("created_at") or ""
-                                if c_created and c_created >= check_floor_iso and c_url not in seen_page_urls and c_val.get("title"):
-                                    logger.info(f"🗑️ [{display_name}] 최근 게시글 목록 증발(삭제 추정) 감지 -> 자동 마감 처리: {c_val.get('title')} ({c_url})")
+                                cb_key, cp_id = _extract_board_and_post_id(c_url)
+                                if cb_key == b_key and (floor_id < cp_id < ceil_id) and c_url not in seen_page_urls:
+                                    logger.info(f"🗑️ [{display_name}] 1페이지 범위({floor_id}~{ceil_id}) 내 게시글 삭제 감지(ID={cp_id}) -> 자동 마감 처리: {c_val.get('title')} ({c_url})")
                                     c_val["is_closed"] = True
                                     items.append({
                                         "title": c_val["title"],
