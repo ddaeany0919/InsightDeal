@@ -452,7 +452,7 @@ async def scrape_and_push_once():
                                 # 3) 추천수 유의미 증가(+3 이상 또는 8개 돌파), 4) 신규 쇼핑몰 직접 링크 확보 시에만
                                 # 상세 페이지 재요청(0-RTT) 없이 캐시된 본문과 합쳐 서버로 차등 업데이트 전송!
                                 status_changed = (
-                                    (new_closed != old_closed)
+                                    (new_closed and not old_closed)
                                     or (new_hot and not old_hot)
                                     or (new_likes >= 8 and old_likes < 8)
                                     or (new_likes - old_likes >= 3)

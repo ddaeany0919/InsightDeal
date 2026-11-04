@@ -493,6 +493,14 @@ class QuasarzoneScraper(AsyncBaseScraper):
                         else:
                             seen_urls.add(q_url)
                             deliv = int(row.get("delivery_price") or 0)
+                            reg_iso = str(row.get("reg_date") or "")
+                            if reg_iso:
+                                try:
+                                    from datetime import datetime, timezone
+                                    dt_reg = datetime.fromisoformat(reg_iso.replace("Z", "+00:00")).astimezone(timezone.utc)
+                                    reg_iso = dt_reg.strftime("%Y-%m-%dT%H:%M:%SZ")
+                                except Exception:
+                                    pass
                             new_it = {
                                 "category": None,
                                 "title": full_t,
@@ -505,7 +513,7 @@ class QuasarzoneScraper(AsyncBaseScraper):
                                 "is_closed": bool(row.get("is_end", False)),
                                 "shipping_fee": "무료배송" if deliv == 0 else f"{deliv:,}원",
                                 "is_super_hotdeal": int(row.get("recm_cnt") or 0) >= 8 or int(row.get("view_cnt") or 0) >= 2500,
-                                "posted_at": row.get("reg_date"),
+                                "posted_at": reg_iso or None,
                                 "view_count": int(row.get("view_cnt") or 100),
                                 "like_count": int(row.get("recm_cnt") or 0),
                                 "comment_count": int(row.get("cmt_cnt") or 0),

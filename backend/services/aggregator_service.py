@@ -744,6 +744,12 @@ class AggregatorService:
                 # Ensure datetime has UTC timezone info before storing
                 if posted_dt.tzinfo is None:
                     posted_dt = posted_dt.replace(tzinfo=timezone.utc)
+                else:
+                    posted_dt = posted_dt.astimezone(timezone.utc)
+                # 미래 시간(KST 중복 가산 등) 방어: 현재 UTC 시각을 초과하면 현재 시각으로 클램핑
+                now_utc_chk = datetime.now(timezone.utc)
+                if posted_dt > now_utc_chk:
+                    posted_dt = now_utc_chk
             except Exception:
                 pass
 
