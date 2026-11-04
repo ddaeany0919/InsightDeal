@@ -161,6 +161,9 @@ class AsyncBaseScraper(ABC):
         🛡️ Playwright Headless Chromium에 Stealth 플래그 및 init_script를 주입하여
         Cloudflare 403(퀘이사존) 및 Wasm 430(에펨코리아)을 우회하고 쿠키/HTML을 획득합니다.
         """
+        if os.environ.get("SKIP_PLAYWRIGHT") == "true":
+            logger.info(f"⚡ [{self.platform_name}] SKIP_PLAYWRIGHT 활성화 -> 무거운 브라우저 구동 생략 후 경량 브릿지/릴레이 폴백")
+            return None
         try:
             logger.info(f"🛡️ [{self.platform_name}] Playwright Chromium Stealth 우회 가동: {url}")
 

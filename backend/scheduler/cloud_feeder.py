@@ -25,8 +25,8 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("CloudFeeder")
 
-CLOUD_API = "https://34.59.208.14.sslip.io/api/community/ingest-batch"
-CLOUD_DEALS_API = "https://34.59.208.14.sslip.io/api/community/hot-deals"
+CLOUD_API = os.environ.get("CLOUD_API_URL", "https://34.59.208.14.sslip.io/api/community/ingest-batch")
+CLOUD_DEALS_API = os.environ.get("CLOUD_DEALS_API_URL", "https://34.59.208.14.sslip.io/api/community/hot-deals")
 
 # 이미 상세 페이지를 파싱했거나 클라우드 DB에 존재하는 게시글 URL 캐시 (커뮤니티별 분리 + 로컬 파일 영구 캐시 연동)
 _SEEN_DETAIL_CACHE: dict[tuple[str, str], dict] = {}
