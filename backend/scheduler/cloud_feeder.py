@@ -115,14 +115,17 @@ async def _fetch_jsmon_and_hotgusa_enrichment(http_client: httpx.AsyncClient) ->
 
     enrichment_map: dict[str, dict] = {}
 
-    # 1. t.me/s/jsmon 파싱 (최근 3페이지)
+    # 1. t.me/s/jsmon 파싱 (최근 5페이지 = 100개 메시지)
     try:
         jsmon_urls = ["https://t.me/s/jsmon"]
         r0 = await http_client.get(jsmon_urls[0], headers={"User-Agent": "Mozilla/5.0"}, timeout=8.0)
         if r0.status_code == 200:
-            befores = re.findall(r'href="(/s/jsmon\?before=\d+)"', r0.text)
-            for bp in befores[-2:]:
-                jsmon_urls.append(f"https://t.me{bp}")
+            befores = re.findall(r'href="/s/jsmon\?before=(\d+)"', r0.text)
+            if befores:
+                base_bf = int(befores[0])
+                for step in (0, 20, 40, 60):
+                    if base_bf - step > 0:
+                        jsmon_urls.append(f"https://t.me/s/jsmon?before={base_bf - step}")
 
         for idx_u, j_url in enumerate(jsmon_urls):
             html_txt = r0.text if idx_u == 0 and r0.status_code == 200 else None
@@ -451,12 +454,16 @@ async def scrape_and_push_once():
                                 # 1) 마감 상태 변경(False->True), 2) 포텐/인기 핫딜 승격(False->True),
                                 # 3) 추천수 유의미 증가(+3 이상 또는 8개 돌파), 4) 신규 쇼핑몰 직접 링크 확보 시에만
                                 # 상세 페이지 재요청(0-RTT) 없이 캐시된 본문과 합쳐 서버로 차등 업데이트 전송!
+                                is_old_ecom_empty_or_search = (
+                                    not old_ecom
+                                    or any(sk in old_ecom.lower() for sk in ("search?keyword=", "search/all?query=", "total-search?kwd=", "np/search?q=", "wholesale-", "letsearch?searchterm="))
+                                )
                                 status_changed = (
                                     (new_closed and not old_closed)
                                     or (new_hot and not old_hot)
                                     or (new_likes >= 8 and old_likes < 8)
                                     or (new_likes - old_likes >= 3)
-                                    or (bool(new_ecom) and not bool(old_ecom))
+                                    or (bool(new_ecom) and is_old_ecom_empty_or_search)
                                 )
                                 if not status_changed:
                                     skipped_count += 1

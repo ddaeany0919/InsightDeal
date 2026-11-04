@@ -65,9 +65,6 @@ _PROSE_NOISE_SUBSTRINGS = (
 
 def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str = "") -> str:
     """제목 앞머리의 [쇼핑몰] 대괄호 또는 구매 링크 도메인에서 쇼핑몰명을 정규화하여 추출합니다."""
-    if current_shop and current_shop.strip() and current_shop.strip() not in ("정보 없음", "-", "기타"):
-        return current_shop.strip()
-
     non_mall_brackets = {
         "끌올", "초특가", "특가", "알리특가", "알뜰특가", "코인딜", "골드박스", "핫딜", "직구", "해외직구", "역대급", "품절", "종료", "마감", "모음", "모음전",
         "광군제", "빅스마일", "빅스마일데이", "무료", "무배", "무료배송", "할인", "타임딜", "원두모음", "다이슨부품", "기타",
@@ -75,18 +72,29 @@ def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str 
     }
     mall_alias_map = {
         "지마켓": "G마켓", "g마켓": "G마켓", "gmarket": "G마켓",
-        "옥션": "옥션", "11번가": "11번가", "쿠팡": "쿠팡", "롯데온": "롯데온",
+        "옥션": "옥션", "11번가": "11번가", "쿠팡": "쿠팡", "롯데온": "롯데온", "롯데백화점": "롯데온",
         "네이버": "네이버", "스마트스토어": "네이버", "네쇼라": "네이버", "넾다세일": "네이버",
         "오늘의집": "오늘의집", "알리": "알리익스프레스", "알리익스프레스": "알리익스프레스",
         "티몬": "티몬", "위메프": "위메프", "인터파크": "인터파크", "ssg": "SSG", "쓱": "SSG", "신세계몰": "신세계몰", "이마트몰": "이마트몰",
         "무신사": "무신사", "29cm": "29CM", "토스": "토스", "토스쇼핑": "토스", "톡딜": "톡딜", "카카오": "카카오", "카카오톡딜": "톡딜", "카카오선물하기": "카카오",
         "우체국쇼핑": "우체국쇼핑", "우체국": "우체국쇼핑", "하이마트": "하이마트", "롯데하이마트": "하이마트",
-        "cj온스타일": "CJ온스타일", "cjonstyle": "CJ온스타일", "gs샵": "GS샵", "gsshop": "GS샵",
+        "cj온스타일": "CJ온스타일", "cjonstyle": "CJ온스타일", "gs샵": "GS샵", "gsshop": "GS샵", "gs25": "GS샵", "gs25앱": "GS샵",
         "현대hmall": "현대Hmall", "hmall": "현대Hmall", "컬리": "컬리", "마켓컬리": "컬리",
         "아마존": "아마존", "큐텐": "큐텐", "qoo10": "큐텐", "테무": "테무",
         "스팀": "스팀", "steam": "스팀", "에픽게임즈": "에픽게임즈", "에픽": "에픽게임즈",
-        "올리브영": "올리브영", "다이소": "다이소몰", "다이소몰": "다이소몰", "코스트코": "코스트코", "홈플러스": "홈플러스"
+        "올리브영": "올리브영", "다이소": "다이소몰", "다이소몰": "다이소몰", "코스트코": "코스트코", "홈플러스": "홈플러스",
+        "lf몰": "LF몰", "lf스퀘어": "LF몰", "하프클럽": "하프클럽", "보리보리": "보리보리"
     }
+
+    if current_shop and current_shop.strip() and current_shop.strip() not in ("정보 없음", "-", "기타", "None"):
+        cs_clean = re.sub(r"\s+", "", current_shop.strip()).lower()
+        if cs_clean in mall_alias_map:
+            return mall_alias_map[cs_clean]
+        for k, v in mall_alias_map.items():
+            if k in cs_clean:
+                return v
+        if cs_clean not in non_mall_brackets:
+            return current_shop.strip()
 
     if raw_title:
         m_br = re.match(r"^\s*\[([^\]]{1,16})\]", raw_title)
@@ -953,8 +961,16 @@ class AggregatorService:
                      elif existing_deal.image_url != image_url:
                          existing_deal.image_url = image_url
                     
-                 if scraped_data.get("ecommerce_link") and not existing_deal.ecommerce_link:
-                     existing_deal.ecommerce_link = scraped_data.get("ecommerce_link")
+                 new_ecom_cand = (scraped_data.get("ecommerce_link") or "").strip()
+                 if new_ecom_cand and not any(cd in new_ecom_cand.lower() for cd in ("ppomppu.co.kr", "fmkorea.com", "fmkorea.org", "quasarzone.com", "ruliweb.com", "clien.net", "bbasak.com")):
+                     old_ecom_curr = (existing_deal.ecommerce_link or "").strip().lower()
+                     is_old_invalid_or_search = (
+                         not old_ecom_curr
+                         or any(cd in old_ecom_curr for cd in ("ppomppu.co.kr", "fmkorea.com", "fmkorea.org", "quasarzone.com", "ruliweb.com", "clien.net", "bbasak.com"))
+                         or any(sk in old_ecom_curr for sk in ("search?keyword=", "search/all?query=", "total-search?kwd=", "np/search?q=", "wholesale-"))
+                     )
+                     if is_old_invalid_or_search:
+                         existing_deal.ecommerce_link = new_ecom_cand
                  
                  if shop_name and not existing_deal.shop_name:
                      existing_deal.shop_name = shop_name
@@ -1356,10 +1372,10 @@ class AggregatorService:
                 # [대표님 초정밀 안전 장치]: 쪼개지지 않는 모음전이거나, 단일 등록인 모음전(is_multi_item)인 경우,
                 # 아웃링크를 이상한 디코딩 주소로 억지 매핑하지 않고, 뽐뿌 상세 원본글 주소(url)로 강제 고정하여 복원성을 100% 사수한다!
                 # 🎯 단, 유효한 외부 쇼핑몰 아웃링크가 확보되었다면(뽐뿌 도메인이 아닌 외부 주소) 그 외부 주소를 사수한다!
-                single_ecommerce_link = scraped_data.get("ecommerce_link") or url
-                if is_multi_item:
-                    if not single_ecommerce_link or 'ppomppu.co.kr' in single_ecommerce_link:
-                        single_ecommerce_link = url
+                raw_single_ecom = (scraped_data.get("ecommerce_link") or "").strip()
+                if any(cd in raw_single_ecom.lower() for cd in ("ppomppu.co.kr", "fmkorea.com", "fmkorea.org", "quasarzone.com", "ruliweb.com", "clien.net", "bbasak.com")):
+                    raw_single_ecom = ""
+                single_ecommerce_link = raw_single_ecom
 
                 single_ai_summary = ai_summary
                 if scraped_data.get("options_data") and len(scraped_data["options_data"]) >= 2:

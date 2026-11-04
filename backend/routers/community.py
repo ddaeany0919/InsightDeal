@@ -67,7 +67,7 @@ def _build_direct_mall_search_url(shop_name: str, raw_title: str, post_url: str 
                 elif "kream" in b_txt or "크림" in b_txt:
                     inferred_shop = "KREAM"
     if not inferred_shop:
-        return ""
+        inferred_shop = "네이버"
 
     # 상품명에서 대괄호 쇼핑몰명, 가격/배송비 괄호, 노이즈 제거 후 핵심 모델/상품명 추출
     clean_q = re.sub(r"^\s*\[[^\]]+\]\s*", "", raw_title or "").strip()
@@ -77,6 +77,8 @@ def _build_direct_mall_search_url(shop_name: str, raw_title: str, post_url: str 
     clean_q = re.sub(r"[/|·~()]+", " ", clean_q)
     clean_q = re.sub(r"\s+", " ", clean_q).strip(" -.,()")
     if len(clean_q) < 2:
+        clean_q = (raw_title or "").strip()
+    if len(clean_q) < 2:
         return ""
     tokens = clean_q.split()
     query_str = " ".join(tokens[:6])
@@ -84,6 +86,7 @@ def _build_direct_mall_search_url(shop_name: str, raw_title: str, post_url: str 
 
     mall_search_templates = {
         "G마켓": f"https://www.gmarket.co.kr/n/search?keyword={q_enc}",
+        "지마켓": f"https://www.gmarket.co.kr/n/search?keyword={q_enc}",
         "옥션": f"https://browse.auction.co.kr/search?keyword={q_enc}",
         "11번가": f"https://search.11st.co.kr/pc/total-search?kwd={q_enc}",
         "쿠팡": f"https://www.coupang.com/np/search?q={q_enc}",
@@ -100,6 +103,7 @@ def _build_direct_mall_search_url(shop_name: str, raw_title: str, post_url: str 
         "톡딜": f"https://store.kakao.com/search/result/product?q={q_enc}",
         "카카오": f"https://store.kakao.com/search/result/product?q={q_enc}",
         "알리익스프레스": f"https://ko.aliexpress.com/w/wholesale-{urllib.parse.quote(query_str.replace(' ', '-'))}.html?SearchText={q_enc}",
+        "알리": f"https://ko.aliexpress.com/w/wholesale-{urllib.parse.quote(query_str.replace(' ', '-'))}.html?SearchText={q_enc}",
         "우체국쇼핑": f"https://mall.epost.go.kr/fo/search/search.do?searchTerm={q_enc}",
         "하이마트": f"https://www.e-himart.co.kr/app/search/totalSearch?query={q_enc}",
         "CJ온스타일": f"https://display.cjonstyle.com/p/search/searchAllList?k={q_enc}",
@@ -112,8 +116,11 @@ def _build_direct_mall_search_url(shop_name: str, raw_title: str, post_url: str 
         "올리브영": f"https://www.oliveyoung.co.kr/store/search/getSearchMain.do?query={q_enc}",
         "다이소몰": f"https://www.daisomall.co.kr/ds/search?searchTerm={q_enc}",
         "홈플러스": f"https://front.homeplus.co.kr/search?entry=direct&keyword={q_enc}",
+        "LF몰": f"https://www.lfmall.co.kr/app/search/letSearch?searchTerm={q_enc}",
+        "하프클럽": f"https://www.halfclub.com/search?keyword={q_enc}",
+        "보리보리": f"https://www.boribori.co.kr/search?keyword={q_enc}",
     }
-    return mall_search_templates.get(inferred_shop, "")
+    return mall_search_templates.get(inferred_shop, f"https://search.shopping.naver.com/search/all?query={q_enc}")
 
 
 def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
@@ -1073,6 +1080,8 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                             existing["image_url"] = image_url or existing.get("image_url")
                             
                         new_ecom_url = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
+                        if not new_ecom_url:
+                            new_ecom_url = _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
                         if new_ecom_url or not existing.get("ecommerce_url"):
                             existing["ecommerce_url"] = new_ecom_url
                         existing["post_url"] = deal.post_link or ""
@@ -1127,7 +1136,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     "original_price": None,
                     "discount_rate": 0,
                     "image_url": image_url,
-                    "ecommerce_url": get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi),
+                    "ecommerce_url": get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi) or _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name),
                     "post_url": deal.post_link or "",
                     "site_name": comp_name,
                     "site_names": [comp_name],
