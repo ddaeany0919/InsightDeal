@@ -115,9 +115,9 @@ async def scrape_and_push_once():
     today_start_utc_iso = today_start_kst.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
     targets = [
-        ("fmkorea", "펨코", "https://www.fmkorea.com/hotdeal", FmkoreaScraper, 6, 2 if IS_CLOUD_ENV else 12),
+        ("fmkorea", "펨코", "https://www.fmkorea.com/hotdeal", FmkoreaScraper, 6, 1 if IS_CLOUD_ENV else 12),
         ("ppomppu", "뽐뿌", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu", PpomppuScraper, 1, 1 if IS_CLOUD_ENV else 14),
-        ("quasarzone", "퀘이사존", "https://quasarzone.com/bbs/qb_saleinfo", QuasarzoneScraper, 5, 2 if IS_CLOUD_ENV else 3),
+        ("quasarzone", "퀘이사존", "https://quasarzone.com/bbs/qb_saleinfo", QuasarzoneScraper, 5, 1 if IS_CLOUD_ENV else 3),
         ("ali_ppomppu", "알리뽐뿌", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu8", AlippomppuScraper, 4, 1 if IS_CLOUD_ENV else 5),
         ("ppomppu_overseas", "뽐뿌해외", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu4", PpomppuOverseasScraper, 10, 1 if IS_CLOUD_ENV else 2),
         ("ruliweb", "루리웹", "https://bbs.ruliweb.com/market/board/1020", RuliwebScraper, 2, 2),

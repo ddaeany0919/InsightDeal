@@ -77,7 +77,7 @@ def normalize_url(url: str) -> str:
             # 커뮤니티 게시글 및 리다이렉트 링크에 필수적인 키만 보존 (페이징 page, divpage 등 제거)
             keep_keys_lower = {
                 "id", "no", "document_srl", "article_id", "board_id",
-                "bo_table", "wr_id", "ol", "target", "link", "gourl", "url"
+                "bo_table", "wr_id", "ol", "target", "link", "gourl", "url", "bridge_id"
             }
             filtered_qs = {k: v for k, v in qs.items() if k.lower() in keep_keys_lower}
 

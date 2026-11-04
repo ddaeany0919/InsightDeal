@@ -362,7 +362,7 @@ class QuasarzoneScraper(AsyncBaseScraper):
                     if res.status_code != 200:
                         continue
                     soup = BeautifulSoup(res.text, "html.parser")
-                    for w in soup.select(".tgme_widget_message_wrap"):
+                    for w in reversed(soup.select(".tgme_widget_message_wrap")):
                         a_qz = w.select_one('a[href*="quasarzone.com/bbs/qb_saleinfo/views"]')
                         if not a_qz:
                             continue

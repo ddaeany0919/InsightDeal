@@ -203,18 +203,31 @@ class AsyncBaseScraper(ABC):
 
                     if "quasarzone.com" in target_url:
                         try:
-                            page.wait_for_selector(".v2-list-row, .market-info-type-list, .market-info-view-table, .view-content, h1", timeout=5000)
+                            page.wait_for_selector(".v2-list-row, .market-info-type-list, .market-info-view-table, .view-content", timeout=4000)
                         except Exception:
-                            page.wait_for_timeout(1500)
-                    elif "fmkorea.com" in target_url:
-                        # 430 후 브라우저 내 Wasm/스크립트 자동 실행 대기
-                        try:
-                            page.wait_for_selector("li.li, table.bd_lst, .rd_body, article, .hotdeal_info", timeout=4000)
-                        except Exception:
-                            page.wait_for_timeout(2500)
                             try:
+                                cf_el = page.query_selector(".cf-turnstile, iframe[src*='challenges.cloudflare.com']")
+                                if cf_el:
+                                    box = cf_el.bounding_box()
+                                    if box:
+                                        page.mouse.click(box["x"] + 28, box["y"] + 32)
+                                page.wait_for_selector(".v2-list-row, .market-info-type-list, .market-info-view-table, .view-content", timeout=4000)
+                            except Exception:
+                                pass
+                    elif "fmkorea.com" in target_url:
+                        # 430 후 브라우저 내 Wasm/Turnstile 자동 실행 및 체크박스 클릭 시도
+                        try:
+                            page.wait_for_selector("li.li, table.bd_lst, .rd_body, article, .hotdeal_info", timeout=3500)
+                        except Exception:
+                            try:
+                                cf_el = page.query_selector(".cf-turnstile, iframe[src*='challenges.cloudflare.com']")
+                                if cf_el:
+                                    box = cf_el.bounding_box()
+                                    if box:
+                                        page.mouse.click(box["x"] + 28, box["y"] + 32)
+                                page.wait_for_timeout(2500)
                                 page.evaluate("if (window.doPost) window.doPost()")
-                                page.wait_for_selector("li.li, table.bd_lst, .rd_body, article", timeout=3000)
+                                page.wait_for_selector("li.li, table.bd_lst, .rd_body, article, .hotdeal_info", timeout=3500)
                             except Exception:
                                 pass
                     else:
@@ -249,16 +262,17 @@ class AsyncBaseScraper(ABC):
 
             if "quasarzone.com" in url:
                 has_qz_items = html and any(sel in html for sel in [".v2-list-row", "v2-list-row", "market-info-type-list", "tr.default_list", "market-info-view-table", "view-content"])
-                if status == 200 and not is_cf_blocked and has_qz_items:
-                    logger.info(f"✅ [{self.platform_name}] 퀘이사존 Stealth 우회 성공! (HTML: {len(html):,} bytes, status: {status})")
+                if not is_cf_blocked and has_qz_items:
+                    logger.info(f"✅ [{self.platform_name}] 퀘이사존 Stealth 우회 성공! (HTML: {len(html):,} bytes, initial_status: {status})")
                     return html
                 else:
                     logger.warning(f"⚠️ [{self.platform_name}] 퀘이사존 응답이 차단 페이지이거나 유효하지 않음 (status={status}, cf_blocked={is_cf_blocked}, has_items={has_qz_items})")
                     return None
             elif "fmkorea.com" in url:
+                is_fm_430 = html and ("에펨코리아 보안 시스템" in html or "adcForm" in html)
                 has_fm_items = html and any(sel in html for sel in ["hotdeal_info", "bd_lst", "rd_body", "li.li"])
-                if status == 200 and not is_cf_blocked and (has_fm_items or len(html) > 50000):
-                    logger.info(f"✅ [{self.platform_name}] 펨코 Stealth 우회 성공! (HTML: {len(html):,} bytes)")
+                if not is_cf_blocked and not is_fm_430 and (has_fm_items or len(html) > 50000):
+                    logger.info(f"✅ [{self.platform_name}] 펨코 Stealth 우회 성공! (HTML: {len(html):,} bytes, initial_status: {status})")
                     return html
                 else:
                     logger.warning(f"⚠️ [{self.platform_name}] 펨코 응답이 430/차단 페이지임 (status={status}, cf_blocked={is_cf_blocked}, has_items={has_fm_items})")
