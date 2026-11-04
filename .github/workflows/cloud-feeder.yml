@@ -8,7 +8,7 @@ on:
 jobs:
   sync-hotdeals:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,5 +28,7 @@ jobs:
       - name: Run One-Shot Cloud Feeder
         env:
           PYTHONPATH: ${{ github.workspace }}
+          GITHUB_ACTIONS: "true"
+          IS_CLOUD: "true"
         run: |
           python -m backend.scheduler.cloud_feeder --one-shot

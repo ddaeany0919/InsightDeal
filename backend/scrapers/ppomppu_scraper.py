@@ -36,7 +36,7 @@ class PpomppuScraper(AsyncBaseScraper):
                 extracted_price = 0
                 extracted_currency = "KRW"
                 usd_m = re.search(r"(?:\$|USD|달러|불|유로|€)\s*([0-9,.]+)|([0-9,.]+)\s*(?:\$|USD|달러|불|유로|€)", full_title, re.IGNORECASE) if is_overseas else None
-                krw_m = re.search(r"([\d,]+(?:원|만원))", full_title)
+                krw_m = re.search(r"([\d,.]+(?:원|만원|만))", full_title)
                 if is_overseas and usd_m:
                     try:
                         val = float((usd_m.group(1) or usd_m.group(2)).replace(",", ""))
@@ -45,9 +45,18 @@ class PpomppuScraper(AsyncBaseScraper):
                     except Exception:
                         pass
                 elif krw_m:
-                    nums = re.findall(r"\d+", krw_m.group(1).replace(",", ""))
-                    if nums:
-                        extracted_price = int("".join(nums))
+                    p_str = krw_m.group(1).replace(",", "")
+                    if "만" in p_str:
+                        try:
+                            clean_p = re.sub(r"[^\d.]", "", p_str)
+                            if clean_p:
+                                extracted_price = int(float(clean_p) * 10000)
+                        except Exception:
+                            pass
+                    else:
+                        nums = re.findall(r"\d+", p_str)
+                        if nums:
+                            extracted_price = int("".join(nums))
                 m_hits = re.search(r"<hits>(.*?)</hits>", blk, re.DOTALL)
                 hits_txt = m_hits.group(1).strip() if m_hits else ""
                 like_count, view_count = 0, 1500

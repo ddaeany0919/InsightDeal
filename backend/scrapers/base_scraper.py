@@ -1,6 +1,7 @@
 import asyncio
 import httpx
 import logging
+import os
 import random
 from abc import ABC, abstractmethod
 from typing import List, Optional
@@ -8,6 +9,13 @@ from typing import List, Optional
 logger = logging.getLogger(__name__)
 
 from curl_cffi.requests import AsyncSession
+
+# 클라우드 실행 환경 감지 (GitHub Actions, Cloud Run, Docker 서버 등)
+IS_CLOUD_ENV = bool(
+    os.environ.get("GITHUB_ACTIONS") == "true"
+    or os.environ.get("IS_CLOUD") == "true"
+    or os.environ.get("RUN_IN_CLOUD") == "true"
+)
 
 # 에펨코리아 WebAssembly(fm5/fm6/lite_year) 보안 챌린지 통과 쿠키 전역 캐시
 _FMKOREA_WASM_COOKIES: dict[str, str] = {}
@@ -47,18 +55,31 @@ class AsyncBaseScraper(ABC):
         if not self.client:
             raise RuntimeError("Scraper must be used within 'async with' context")
 
-        impersonates = ['chrome124', 'safari17_0', 'edge101', 'chrome120']
+        # 1. 클라우드 환경에서 빠삭(bbasak.com) 등 해외 IP 100% 차단 사이트는 4회 지문 로테이션(75.5초 지연)을 건너뛰고 0초 만에 Vercel 서울 릴레이 직행
+        if IS_CLOUD_ENV and "bbasak.com" in url:
+            relay_html = await self._fetch_via_seoul_relay(url)
+            if relay_html:
+                return relay_html
+
+        # 2. 클라우드 환경에서는 불필요한 4회 지문 로테이션을 1회('chrome124')로 축소하고 타임아웃을 5.0초로 타이트하게 설정
+        impersonates = ['chrome124'] if IS_CLOUD_ENV else ['chrome124', 'safari17_0', 'edge101', 'chrome120']
         req_headers = headers if headers is not None else self._get_headers()
         
         async with self.semaphore:
             for attempt, imp in enumerate(impersonates):
                 try:
-                    if "fmkorea" in url:
-                        await asyncio.sleep(random.uniform(2.0, 3.2))
-                    elif "quasarzone" in url:
-                        await asyncio.sleep(random.uniform(0.35, 0.7))
+                    if not IS_CLOUD_ENV:
+                        if "fmkorea" in url:
+                            await asyncio.sleep(random.uniform(2.0, 3.2))
+                        elif "quasarzone" in url:
+                            await asyncio.sleep(random.uniform(0.35, 0.7))
+                        else:
+                            await asyncio.sleep(random.uniform(0.12, 0.3))
                     else:
-                        await asyncio.sleep(random.uniform(0.12, 0.3))
+                        if "fmkorea" in url:
+                            await asyncio.sleep(random.uniform(0.5, 1.0))
+                        else:
+                            await asyncio.sleep(0.05)
                     
                     if attempt > 0:
                         logger.info(f"🔄 [{self.platform_name}] 지문 로테이션 재시도 ({imp}) - {url}")
@@ -71,15 +92,16 @@ class AsyncBaseScraper(ABC):
                             req_headers.pop("Sec-Ch-Ua-Mobile", None)
                             req_headers.pop("Sec-Ch-Ua-Platform", None)
                             
-                    response = await self.client.get(url, headers=req_headers)
+                    req_timeout = 5.0 if IS_CLOUD_ENV else (20.0 if attempt == 0 else 15.0)
+                    response = await self.client.get(url, headers=req_headers, timeout=req_timeout)
                     
                     if response.status_code == 404:
                         logger.warning(f"[{self.platform_name}] 삭제된 게시글 감지 (HTTP 404) - 재시도 중단: {url}")
                         return None
 
                     if response.status_code == 430:
-                        if "fmkorea" in url:
-                            pw_html = await self._solve_fmkorea_430_via_playwright(url)
+                        if "fmkorea" in url or "quasarzone" in url:
+                            pw_html = await self._solve_playwright_stealth(url)
                             if pw_html:
                                 return pw_html
                         logger.warning(f"[{self.platform_name}] 일시적 IP 쿨다운 감지 (HTTP 430) - 서울 릴레이 우회 시도: {url}")
@@ -91,10 +113,16 @@ class AsyncBaseScraper(ABC):
 
                     if response.status_code == 403:
                         logger.warning(f"[{self.platform_name}] 안티봇 차단 감지 (HTTP 403) [시도 {attempt+1}/{len(impersonates)}] - {url}")
-                        if attempt == len(impersonates) - 1:
+                        if "quasarzone" in url or "fmkorea" in url:
+                            pw_html = await self._solve_playwright_stealth(url)
+                            if pw_html:
+                                return pw_html
+                        if IS_CLOUD_ENV or attempt == len(impersonates) - 1:
                             relay_html = await self._fetch_via_seoul_relay(url)
                             if relay_html:
                                 return relay_html
+                            if IS_CLOUD_ENV:
+                                return None
                             raise Exception(f"Anti-bot block detected after all retries: {response.status_code}")
                         await asyncio.sleep(1.5 * (attempt + 1))
                         continue
@@ -102,6 +130,19 @@ class AsyncBaseScraper(ABC):
                     response.raise_for_status()
                     return response.text
                 except Exception as e:
+                    if "quasarzone" in url or "fmkorea" in url:
+                        logger.info(f"🛡️ [{self.platform_name}] 직접 요청 오류({e}) -> Playwright Stealth 우회 시도: {url}")
+                        pw_html = await self._solve_playwright_stealth(url)
+                        if pw_html:
+                            return pw_html
+
+                    if IS_CLOUD_ENV:
+                        logger.warning(f"⚠️ [{self.platform_name}] 클라우드 직접 요청 실패 ({e}) -> 즉시 서울 릴레이 폴백: {url}")
+                        relay_html = await self._fetch_via_seoul_relay(url)
+                        if relay_html:
+                            return relay_html
+                        return None
+
                     if attempt == len(impersonates) - 1:
                         relay_html = await self._fetch_via_seoul_relay(url)
                         if relay_html:
@@ -112,55 +153,96 @@ class AsyncBaseScraper(ABC):
             return None
 
     async def _solve_fmkorea_430_via_playwright(self, url: str) -> Optional[str]:
-        """에펨코리아 HTTP 430 WebAssembly(fm5/fm6/lite_year) 보안 챌린지를 Headless Chromium으로 통과하고 쿠키를 캐싱합니다."""
-        try:
-            logger.info(f"🛡️ [{self.platform_name}] HTTP 430 Wasm 보안 챌린지 자동 통과 시작 (Playwright): {url}")
+        """하위 호환용 래퍼: _solve_playwright_stealth로 위임"""
+        return await self._solve_playwright_stealth(url)
 
-            def _sync_solve(target_url: str):
+    async def _solve_playwright_stealth(self, url: str) -> Optional[str]:
+        """
+        🛡️ Playwright Headless Chromium에 Stealth 플래그 및 init_script를 주입하여
+        Cloudflare 403(퀘이사존) 및 Wasm 430(에펨코리아)을 우회하고 쿠키/HTML을 획득합니다.
+        """
+        try:
+            logger.info(f"🛡️ [{self.platform_name}] Playwright Chromium Stealth 우회 가동: {url}")
+
+            def _sync_stealth_fetch(target_url: str):
                 import sys
                 if sys.platform == "win32":
                     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
                 from playwright.sync_api import sync_playwright
                 with sync_playwright() as p:
-                    browser = p.chromium.launch(headless=True)
+                    browser = p.chromium.launch(
+                        headless=True,
+                        args=[
+                            '--no-sandbox',
+                            '--disable-setuid-sandbox',
+                            '--disable-dev-shm-usage',
+                            '--disable-blink-features=AutomationControlled',
+                        ]
+                    )
                     context = browser.new_context(
                         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                         locale="ko-KR",
                     )
                     page = context.new_page()
-                    page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
-                    try:
-                        page.wait_for_selector("li.li, table.bd_lst, .rd_body, article", timeout=4000)
-                    except Exception:
-                        page.wait_for_timeout(2000)
+                    page.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
+
+                    response = page.goto(target_url, wait_until="domcontentloaded", timeout=20000)
+                    status_code = response.status if response else 0
+
+                    if "quasarzone.com" in target_url:
                         try:
-                            page.evaluate("if (window.doPost) window.doPost()")
-                            page.wait_for_selector("li.li, table.bd_lst, .rd_body, article", timeout=5000)
+                            page.wait_for_selector(".v2-list-row, .market-info-type-list, .market-info-view-table, .view-content, h1", timeout=5000)
                         except Exception:
-                            pass
+                            page.wait_for_timeout(1500)
+                    elif "fmkorea.com" in target_url:
+                        # 430 후 브라우저 내 Wasm/스크립트 자동 실행 대기
+                        try:
+                            page.wait_for_selector("li.li, table.bd_lst, .rd_body, article, .hotdeal_info", timeout=4000)
+                        except Exception:
+                            page.wait_for_timeout(2500)
+                            try:
+                                page.evaluate("if (window.doPost) window.doPost()")
+                                page.wait_for_selector("li.li, table.bd_lst, .rd_body, article", timeout=3000)
+                            except Exception:
+                                pass
+                    else:
+                        page.wait_for_timeout(2000)
+
                     content_str = page.content()
                     cookie_list = context.cookies()
                     browser.close()
-                    return content_str, cookie_list
+                    return content_str, cookie_list, status_code
 
-            html, cookies = await asyncio.to_thread(_sync_solve, url)
+            html, cookies, status = await asyncio.to_thread(_sync_stealth_fetch, url)
 
             if cookies:
                 for c in cookies:
                     if c.get("name") and c.get("value"):
                         _FMKOREA_WASM_COOKIES[c["name"]] = c["value"]
                 if self.client:
-                    await self.client.close()
-                    self.client = AsyncSession(
-                        impersonate="chrome124",
-                        timeout=20.0,
-                        cookies=_FMKOREA_WASM_COOKIES.copy(),
-                    )
-                logger.info(f"✅ [{self.platform_name}] Wasm 보안 쿠키 {len(_FMKOREA_WASM_COOKIES)}종 획득 및 세션 주입 완료!")
-            if html and ("hotdeal_info" in html or "bd_lst" in html or "rd_body" in html):
+                    try:
+                        await self.client.close()
+                        self.client = AsyncSession(
+                            impersonate="chrome124",
+                            timeout=20.0,
+                            cookies=_FMKOREA_WASM_COOKIES.copy(),
+                        )
+                        logger.info(f"✅ [{self.platform_name}] Stealth 보안 쿠키 {len(_FMKOREA_WASM_COOKIES)}종 획득 및 세션 동기화 완료!")
+                    except Exception:
+                        pass
+
+            if "quasarzone.com" in url:
+                if html and ("qb_saleinfo" in html or "v2-list-row" in html or "market-info" in html or "view-content" in html or status == 200):
+                    logger.info(f"✅ [{self.platform_name}] 퀘이사존 Stealth 우회 성공! (HTML: {len(html):,} bytes, status: {status})")
+                    return html
+            elif "fmkorea.com" in url:
+                if html and ("hotdeal_info" in html or "bd_lst" in html or "rd_body" in html or "li.li" in html or len(html) > 50000):
+                    logger.info(f"✅ [{self.platform_name}] 펨코 Stealth 우회 성공! (HTML: {len(html):,} bytes)")
+                    return html
+            elif html and len(html) > 1000:
                 return html
         except Exception as pw_err:
-            logger.warning(f"⚠️ [{self.platform_name}] Playwright 430 통과 실패 ({url}): {pw_err}")
+            logger.warning(f"⚠️ [{self.platform_name}] Playwright Stealth 우회 실패 ({url}): {pw_err}")
         return None
 
     async def _fetch_via_seoul_relay(self, url: str) -> Optional[str]:
@@ -169,7 +251,8 @@ class AsyncBaseScraper(ABC):
             import re
             from urllib.parse import quote
             relay_url = f"https://insightdeal.vercel.app/api/scraper-relay?url={quote(url, safe='')}"
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            relay_timeout = 10.0 if IS_CLOUD_ENV else 15.0
+            async with httpx.AsyncClient(timeout=relay_timeout, follow_redirects=True) as client:
                 res = await client.get(relay_url)
                 if res.status_code == 200 and len(res.text) > 500:
                     logger.info(f"🌐 [{self.platform_name}] 서울 리전 릴레이 우회 페칭 성공: {url}")

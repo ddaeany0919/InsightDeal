@@ -82,8 +82,10 @@ backend/.venv/
 .agents/orchestrator/
 .agents/sentinel/
 .agents/victory_auditor/
+.agents/teamwork/
 .agents/ORIGINAL_REQUEST.md
 ORIGINAL_REQUEST.md
+backend/logs/feeder_seen_cache.json
 
 # Backups & Keystore
 backend/backups/
