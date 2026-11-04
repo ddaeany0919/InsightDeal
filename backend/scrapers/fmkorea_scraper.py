@@ -20,7 +20,11 @@ class FmkoreaScraper(AsyncBaseScraper):
         return self
 
     def _get_headers(self) -> dict:
-        return {}
+        return {
+            "User-Agent": "Daum/4.1 (compatible; Daumoa/4.0; +http://top.daum.net/etc/faq.html)",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        }
 
     async def parse_list(self, html: str) -> list[dict]:
         """펨코리아 게시판 리스트에서 타겟 데이터 추출 (비동기 처리)"""
@@ -485,182 +489,8 @@ class FmkoreaScraper(AsyncBaseScraper):
             ret_data["posted_at"] = posted_at_iso
         return ret_data
 
-    async def _fetch_fallback_from_bridge(self) -> list[dict]:
-        """
-        🌐 [클라우드 100% 수집 보장] 펨코 Cloudflare Turnstile 430 차단 시,
-        실시간 공공 핫딜 브릿지(t.me/s/hotdeal_kr)를 통해 최신 핫딜 목록을 최신순으로 파싱합니다.
-        """
-        import httpx
-        from bs4 import BeautifulSoup
-        from backend.scrapers.schemas import ScrapedDeal
-
-        bridge_urls = ["https://t.me/s/hotdeal_kr"]
-        parsed_items = []
-        seen_keys = set()
-        known_shops = {
-            "지마켓", "g마켓", "옥션", "11번가", "쿠팡", "네이버", "네이버쇼핑", "알리", "알리익스프레스",
-            "토스", "롯데온", "카카오", "카카오톡딜", "무신사", "하이마트", "ssg", "이마트", "옥션/지마켓",
-            "오늘의집", "티몬", "위메프", "인터파크", "신세계", "컬리", "마켓컬리", "배달의민족", "요기요"
-        }
-
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            urls_to_crawl = []
-            for b_url in bridge_urls:
-                urls_to_crawl.append(b_url)
-                try:
-                    res = await client.get(b_url, headers={"User-Agent": "Mozilla/5.0"})
-                    if res.status_code == 200:
-                        m_before = re.findall(r'href="(/s/hotdeal_kr\?before=\d+)"', res.text)
-                        if m_before:
-                            urls_to_crawl.append(f"https://t.me{m_before[-1]}")
-                except Exception:
-                    pass
-
-            for u in urls_to_crawl:
-                try:
-                    res = await client.get(u, headers={"User-Agent": "Mozilla/5.0"})
-                    if res.status_code != 200:
-                        continue
-                    soup = BeautifulSoup(res.text, "html.parser")
-                    # 최신 메시지가 하단에 위치하므로 역순(최신순) 순회
-                    for w in reversed(soup.select(".tgme_widget_message_wrap")):
-                        text_el = w.select_one(".tgme_widget_message_text")
-                        full_text = text_el.get_text(separator=" ", strip=True) if text_el else ""
-                        if not full_text or len(full_text) < 5:
-                            continue
-
-                        ext_links = [
-                            a.get("href", "").strip()
-                            for a in w.select("a[href]")
-                            if a.get("href") and "t.me/" not in a.get("href", "")
-                        ]
-                        # 타 전용 스크래퍼(퀘이사존, 루리웹, 뽐뿌, 클리앙, 빠삭) 소속 게시글은 중복 방지를 위해 제외
-                        if any(
-                            any(dom in lnk for dom in ("quasarzone.com", "ruliweb.com", "ppomppu.co.kr", "clien.net", "bbasak.com"))
-                            for lnk in ext_links
-                        ):
-                            continue
-
-                        # 텔레그램 메시지 고유 ID 추출
-                        msg_div = w.select_one(".tgme_widget_message")
-                        data_post = msg_div.get("data-post", "") if msg_div else ""
-                        msg_id = data_post.split("/")[-1] if "/" in data_post else str(abs(hash(full_text)) % 10000000)
-
-                        # 메시지 내 펨코 링크가 있는지 확인 (없으면 GCP 백엔드 normalize_url에서도 100% 보존되는 경로형 ID 부여)
-                        a_fm = w.select_one('a[href*="fmkorea.com"]')
-                        if a_fm:
-                            href = a_fm.get("href", "").split("?")[0].strip()
-                        else:
-                            href = f"https://www.fmkorea.com/{msg_id}"
-
-                        if href in seen_keys or full_text[:25] in seen_keys:
-                            continue
-                        seen_keys.add(href)
-                        seen_keys.add(full_text[:25])
-
-                        time_el = w.select_one("time")
-                        posted_at = time_el.get("datetime") if time_el else None
-
-                        photo_el = w.select_one(".tgme_widget_message_photo_wrap")
-                        img_url = ""
-                        if photo_el and photo_el.get("style"):
-                            m = re.search(r"background-image:url\('([^']+)'\)", photo_el["style"])
-                            if m:
-                                img_url = m.group(1)
-
-                        category = None
-                        shop_name = ""
-                        clean_text = full_text
-                        m_first = re.match(r"^\[([^\]]+)\]\s*", clean_text)
-                        if m_first:
-                            first_tok = m_first.group(1).strip()
-                            rest_after_first = clean_text[m_first.end():].strip()
-                            m_second = re.match(r"^\[([^\]]+)\]\s*", rest_after_first)
-                            if m_second:
-                                category = first_tok
-                                shop_name = m_second.group(1).strip()
-                                clean_text = rest_after_first[m_second.end():].strip()
-                            elif first_tok.lower() in known_shops or any(s in first_tok.lower() for s in known_shops):
-                                shop_name = first_tok
-                                clean_text = rest_after_first
-                            else:
-                                category = first_tok
-                                clean_text = rest_after_first
-
-                        price = 0
-                        currency = "KRW"
-                        shipping_fee = "무료배송" if any(k in full_text for k in ["무료", "무배", "무료배송"]) else ""
-
-                        # 가격 정규식 (￦269,310 / 23,870원 / 5.2만원 등 모두 지원)
-                        m_price = re.search(r"[￦₩\\]\s*([0-9,]+)", full_text)
-                        if m_price:
-                            digits = re.sub(r"[^0-9]", "", m_price.group(1))
-                            if digits:
-                                price = int(digits)
-                        else:
-                            m_price_all = re.findall(r"([0-9,]+)\s*원", full_text)
-                            if m_price_all:
-                                digits = re.sub(r"[^0-9]", "", m_price_all[-1])
-                                if digits:
-                                    price = int(digits)
-                            else:
-                                m_man = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*만\s*원", full_text)
-                                if m_man:
-                                    price = int(float(m_man.group(1)) * 10000)
-
-                        clean_title = re.sub(r"[￦₩\\]\s*[0-9,]+.*$", "", clean_text).strip()
-                        clean_title = re.sub(r"\s*[0-9,]+\s*원\s*(?:/.*|\(.*)?$", "", clean_title).strip()
-                        clean_title = re.sub(r"\s*\([0-9,]+원.*$", "", clean_title).strip()
-                        if not clean_title:
-                            clean_title = clean_text or full_text
-
-                        # 쇼핑몰명이 비어있는 경우 제목/본문에서 자동 추론
-                        if not shop_name:
-                            for sk in ("지마켓", "옥션", "11번가", "쿠팡", "네이버", "알리", "토스", "롯데온", "카카오", "무신사", "하이마트", "SSG", "이마트"):
-                                if sk in full_text:
-                                    shop_name = sk
-                                    break
-
-                        ext_deal_link = ext_links[0] if ext_links else ""
-                        img_html = f'<p><img src="{img_url}" alt="thumbnail" /></p>' if img_url else ""
-                        link_html = f'<p><a href="{ext_deal_link}" target="_blank">{ext_deal_link}</a></p>' if ext_deal_link else ""
-
-                        item = {
-                            "category": category,
-                            "title": clean_title,
-                            "url": href,
-                            "price": price,
-                            "currency": currency,
-                            "shop_name": shop_name,
-                            "image_url": img_url,
-                            "ecommerce_link": "",
-                            "is_closed": False,
-                            "shipping_fee": shipping_fee,
-                            "is_super_hotdeal": False,
-                            "posted_at": posted_at,
-                            "view_count": 2000,
-                            "like_count": 8,
-                            "comment_count": 2,
-                            "content_html": f"{img_html}<p>{full_text}</p>{link_html}",
-                            "_from_bridge": True,
-                        }
-                        try:
-                            ScrapedDeal(**{k: v for k, v in item.items() if v != "" and not k.startswith("_")})
-                            parsed_items.append(item)
-                        except Exception:
-                            pass
-                except Exception as b_err:
-                    logger.warning(f"⚠️ [펨코 브릿지] 페칭 경고 ({u}): {b_err}")
-
-        parsed_items.sort(key=lambda x: x.get("posted_at") or "", reverse=True)
-        logger.info(f"⚡ [펨코 브릿지] 실시간 공공 핫딜 브릿지에서 {len(parsed_items)}건 수집 완료")
-        return parsed_items
-
     async def run(self, url: str) -> list[dict]:
-        """웹 직접 파싱 시도 후 실패/0건 시 브릿지 폴백 가동"""
-        deals = await super().run(url)
-        if not deals:
-            logger.info(f"🌐 [펨코] 웹 페이지 수집 0건/430 감지 -> 실시간 핫딜 브릿지 폴백 발동: {url}")
-            deals = await self._fetch_fallback_from_bridge()
-        return deals
+        """에펨코리아 원본 웹 직접 파싱 수행 (텔레그램 브릿지 폴백 완전 영구 삭제)"""
+        return await super().run(url)
+
 

@@ -1094,14 +1094,16 @@ async def get_hot_deals(
     category: str = Query(None, description="분류별 카테고리명(ex: 전자기기, 패션 등)"),
     keyword: str = Query(None, description="검색어 (공백 AND, -제외단어, :상한가격 지원)"),
     platform: str = Query(None, description="커뮤니티/사이트 필터"),
+    source: Optional[str] = Query(None, description="커뮤니티/사이트 필터 (alias for platform)"),
     sort: str = Query("latest", description="정렬 기준: latest | popular | price_asc"),
     db: Session = Depends(get_db_session)
 ):
     try:
         from sqlalchemy.orm import joinedload
+        target_platform = platform or source
         now_ts = _feed_time.time()
         sort_mode = (sort or "latest").strip().lower()
-        cache_key = ((category or "").strip(), (keyword or "").strip(), (platform or "").strip(), sort_mode)
+        cache_key = ((category or "").strip(), (keyword or "").strip(), (target_platform or "").strip(), sort_mode)
         cached_entry = _HOT_DEALS_API_CACHE.get(cache_key)
         if (
             cached_entry is not None
@@ -1267,7 +1269,7 @@ async def get_hot_deals(
                 et_like = f"%{et}%"
                 query = query.filter(not_(models.Deal.title.ilike(et_like)))
             
-        if platform and platform not in ["전체", ""]:
+        if target_platform and target_platform not in ["전체", ""]:
             # DB의 communities.name / display_name 정확 매칭 + 다중 출처 병합(merged_communities) 포함
             REVERSE_COMMUNITY_MAP = {
                 "펨코": "fmkorea", "에펨": "fmkorea", "뽐뿌": "ppomppu", "루리웹": "ruliweb",
@@ -1275,7 +1277,7 @@ async def get_hot_deals(
                 "빠삭국내": "bbasak_domestic", "빠삭해외": "bbasak_overseas",
                 "빠삭육아": "bbasak_parenting", "뽐뿌해외": "ppomppu_overseas"
             }
-            platforms = [p.strip() for p in platform.split(',') if p.strip()]
+            platforms = [p.strip() for p in target_platform.split(',') if p.strip()]
             from sqlalchemy import or_
             platform_conditions = []
             target_names = set()

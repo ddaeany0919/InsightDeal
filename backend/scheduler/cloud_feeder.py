@@ -4,7 +4,6 @@ import os
 import re
 import sys
 import urllib.parse
-import zlib
 import httpx
 
 # 클라우드 실행 환경 감지 (GitHub Actions, Cloud Run, Docker 서버 등)
@@ -292,28 +291,6 @@ async def scrape_and_push_once():
                         p_val = int(item.get("price") or 0)
                         if "적립" in raw_t and (p_val > 100 or any(k in raw_t for k in ("슈퍼적립", "즉시적립", "캐시적립", "만 적립", "만원 적립"))):
                             raw_t = raw_t.replace("슈퍼적립", "슈퍼혜택").replace("즉시적립", "즉시페이백").replace("캐시적립", "캐시백").replace("적립", "페이백")
-
-                        # 커뮤니티별 독립 행 보장 및 일시무료('이벤트' 오분류) 방어 태그 주입
-                        tier_map = {
-                            "fmkorea": "에어 라이트",
-                            "ppomppu": "플러스 미니",
-                            "quasarzone": "울트라 맥스",
-                            "ali_ppomppu": "에어 미니",
-                            "ppomppu_overseas": "에어 플러스",
-                            "ruliweb": "라이트 플러스",
-                            "clien": "미니 울트라",
-                            "bbasak_domestic": "에어 울트라",
-                            "bbasak_overseas": "라이트 맥스",
-                            "bbasak_parenting": "플러스 맥스",
-                        }
-                        tier_combo = tier_map.get(name, "에어")
-                        watt_num = 1000 + (zlib.crc32(f"{name}:{item['url']}".encode("utf-8")) % 8900)
-                        m_trail = re.search(r"\s*\(([^)]*[가-힣0-9]+(?:달러|불|배송|무배|무료)[^)]*)\)\s*$", raw_t)
-                        if m_trail:
-                            inner = m_trail.group(1).strip()
-                            raw_t = f"{raw_t[:m_trail.start()].strip()} ({inner} {tier_combo} {watt_num}w 택배배송)"
-                        else:
-                            raw_t = f"{raw_t} ({tier_combo} {watt_num}w 택배배송)"
 
                         item["title"] = raw_t
                         item["view_count"] = max(int(item.get("view_count") or 0), 1500)
