@@ -221,7 +221,7 @@ async def scrape_and_push_once():
                             continue
 
                         # 신규 게시글 상세 필요 여부 판별 (브릿지 핫딜은 content_html 이미 구비되어 상세 요청 생략)
-                        is_bridge_item = "bridge_id=" in item_url or ("quasarzone.com" in item_url and item.get("content_html"))
+                        is_bridge_item = bool(item.pop("_from_bridge", False)) or "bridge_id=" in item_url or ("quasarzone.com" in item_url and item.get("content_html")) or ("fmkorea.com" in item_url and item.get("content_html"))
                         if is_bridge_item:
                             need_detail = False
                             if not item.get("image_url"):

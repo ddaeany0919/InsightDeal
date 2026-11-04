@@ -546,12 +546,12 @@ class FmkoreaScraper(AsyncBaseScraper):
                         data_post = msg_div.get("data-post", "") if msg_div else ""
                         msg_id = data_post.split("/")[-1] if "/" in data_post else str(abs(hash(full_text)) % 10000000)
 
-                        # 메시지 내 펨코 링크가 있는지 확인 (없으면 normalize_url이 보존하는 고유 bridge_id 부여)
+                        # 메시지 내 펨코 링크가 있는지 확인 (없으면 GCP 백엔드 normalize_url에서도 100% 보존되는 경로형 ID 부여)
                         a_fm = w.select_one('a[href*="fmkorea.com"]')
                         if a_fm:
                             href = a_fm.get("href", "").split("?")[0].strip()
                         else:
-                            href = f"https://www.fmkorea.com/hotdeal?bridge_id={msg_id}"
+                            href = f"https://www.fmkorea.com/{msg_id}"
 
                         if href in seen_keys or full_text[:25] in seen_keys:
                             continue
@@ -642,9 +642,10 @@ class FmkoreaScraper(AsyncBaseScraper):
                             "like_count": 8,
                             "comment_count": 2,
                             "content_html": f"{img_html}<p>{full_text}</p>{link_html}",
+                            "_from_bridge": True,
                         }
                         try:
-                            ScrapedDeal(**{k: v for k, v in item.items() if v != ""})
+                            ScrapedDeal(**{k: v for k, v in item.items() if v != "" and not k.startswith("_")})
                             parsed_items.append(item)
                         except Exception:
                             pass
