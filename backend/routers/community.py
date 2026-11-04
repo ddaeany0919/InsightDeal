@@ -939,6 +939,31 @@ def _clean_ai_summary(raw_summary: str) -> str:
     cleaned = re.sub(r'^\s*\[커뮤니티 인기\]\s*', '[커뮤니티 인증 핫딜] ', cleaned).strip()
     return re.sub(r'\s{2,}', ' ', cleaned)
 
+
+def clean_deal_title(raw_title: str) -> str:
+    """
+    🧹 게시글 제목에서 지름 꼬리표(💰, 🚚, 퀘이사존/지름 등), 울트라 맥스 태그,
+    가격/배송비 절삭 태그 및 미완성 닫히지 않은 괄호(r"\s*\([^)]*$")를 완벽하게 정제합니다.
+    (수원, 강원 등 숫자가 없는 한글 지명 괄호는 안전하게 보존합니다)
+    """
+    if not raw_title:
+        return ""
+    t = str(raw_title).strip()
+    if len(t) > 500:
+        t = t[:500]
+    t = re.sub(r'[\s/]*[￦₩\\💰].*$', '', t)
+    t = re.sub(r'[\s/]*(?:🚚|퀘이사존/지름|지름&할인정보).*$', '', t)
+    t = re.sub(r'\s*\([^)]*울트라\s*맥스[^)]*\)', '', t)
+    # 1. 가격 표기 괄호 절삭: 화폐단위(원, 달러, 불 등) 앞에 반드시 숫자가 존재하는 경우만 정제하여 한글 지명(수원, 강원 등) 보존
+    t = re.sub(r'\s*\([^)]*(?:[0-9,]+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|불|엔|유로|원\s*대|원\s*상당)[^)]*\)\s*$', '', t)
+    # 2. 배송비 및 카드할인 안내 괄호 절삭
+    t = re.sub(r'\s*\([^)]*(?:무료배송|배송비|무배|유배|카드할인)[^)]*\)\s*$', '', t)
+    # 3. 가격 절삭 후 끝에 남은 미완성 열린 괄호 제거
+    t = re.sub(r'\s*\([^)]*$', '', t)
+    t = re.sub(r'[\s\.,\-\/~]+$', '', t).strip()
+    return t or raw_title.strip()
+
+
 def _resolve_best_image_url(deal_obj, base_url: str) -> Optional[str]:
     img = (getattr(deal_obj, "image_url", None) or "").replace("&amp;", "&").strip().rstrip(",)")
     if img.startswith("//"):
@@ -981,8 +1006,23 @@ def _resolve_best_image_url(deal_obj, base_url: str) -> Optional[str]:
             if cand2 and "dot03.gif" not in cand2.lower():
                 return cand2
     title = getattr(deal_obj, "title", None) or ""
-    if any(kw in title for kw in ["네이버페이", "네이버하이", "네이버적립", "일일적립"]):
+    lower_title = title.lower()
+
+    if any(kw in lower_title for kw in ["롯데시네마", "롯시"]):
+        return "https://play-lh.googleusercontent.com/WUVm0Q6FQnqTZ33julTaMJx7oJCqYANWArhv92Sin8Bix4dBvgWxPn1YkCogC6BSihWS2dDz2evjq-FSIhPFIA=s300"
+    if "메가박스" in lower_title:
+        return "https://play-lh.googleusercontent.com/Np5x0-5pstR3-j9DsuIzeMLbCcvvdVAIqwfLlJY2XdJkjQWXUfdJCBF0nTvJr9iBhnSPPxuSJeHK2gJFP68vkac=s300"
+    if any(kw in lower_title for kw in ["cgv", "씨지브이"]):
+        return "https://play-lh.googleusercontent.com/3S9LNVDqVQCm-QRwvpECpJJBKmRhQ9LNuvPAc14occs2d69IM49_OCOyp8i0cTVmH3DUZvXGSYqvm7R7Pbxa7fY=s300"
+    if any(kw in lower_title for kw in ["스타벅스", "스벅"]):
+        return "https://play-lh.googleusercontent.com/vD7K2him82DhJFyfPjw9WbPIXTqLoS8_LoC4GPpfBKKsc2apjowqvcCw2l9zNRrI_YbortUyLhfKW14ePgL0pA=s300"
+    if any(kw in lower_title for kw in ["네이버페이", "네이버하이", "네이버적립", "일일적립"]):
         return "https://campaign-cdn.pstatic.net/0/campaign2/2025/03/click-point/img/npay_og_260x260.png"
+    if any(kw in lower_title for kw in [
+        "기프트카드", "기프트코드", "문화상품권", "해피머니", "컬쳐랜드", 
+        "도서문화상품권", "모바일상품권", "백화점상품권", "금액권", "교환권"
+    ]):
+        return "https://cdn-icons-png.flaticon.com/512/8633/8633496.png"
     return None
 
 @router.get("/top-hot-deals")
@@ -1072,7 +1112,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                         existing["shipping_fee"] = deal.shipping_fee or ""
                         existing["total_price"] = total_price
                         existing["currency"] = resolved_currency
-                        clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:달러|불|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
+                        clean_title = clean_deal_title(deal.title)
                         existing["title"] = clean_title
                         
                         # 더 저렴한 최저가에 유효한 이미지가 있거나 기존 딜에 이미지가 없는 경우에만 덮어씀
@@ -1117,7 +1157,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
             else:
                 ai_sum = _clean_ai_summary(deal.ai_summary)
                 # Clean title for display
-                clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:달러|불|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
+                clean_title = clean_deal_title(deal.title)
                 
                 buy_count = deal.like_count or 0
                 save_count = 0
@@ -1467,7 +1507,7 @@ async def get_hot_deals(
             image_url = _resolve_best_image_url(deal, BASE_URL)
 
             # UI를 위해 제목에서 가격 태그 날리기
-            clean_title = re.sub(r'\s*\([^)]*[가-힣0-9]+(?:달러|불|배송|무배|무료)[^)]*\)\s*$', '', deal.title).strip()
+            clean_title = clean_deal_title(deal.title)
             
             parsed_price_int, resolved_currency = resolve_deal_price_and_currency(deal)
             parsed_shipping_fee = extract_shipping_fee(deal.shipping_fee)

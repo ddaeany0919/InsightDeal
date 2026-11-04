@@ -415,9 +415,12 @@ class QuasarzoneScraper(AsyncBaseScraper):
                                 if digits:
                                     price = int(digits)
 
-                        clean_title = re.sub(r"[￦₩\\💰]\s*[0-9,]+.*$", "", clean_text).strip()
-                        clean_title = re.sub(r"\s*(?:🚚|퀘이사존/지름).*$", "", clean_title).strip()
-                        clean_title = re.sub(r"\s*\([0-9,]+원.*$", "", clean_title).strip()
+                        clean_title = re.sub(r"[\s/]*[￦₩\\💰].*$", "", clean_text).strip()
+                        clean_title = re.sub(r"[\s/]*(?:🚚|퀘이사존/지름|지름&할인정보).*$", "", clean_title).strip()
+                        clean_title = re.sub(r"\s*\([^)]*(?:[0-9,]+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|불|엔|유로|원\s*대|원\s*상당)[^)]*\)\s*$", "", clean_title).strip()
+                        clean_title = re.sub(r"\s*\([^)]*(?:무료배송|배송비|무배|유배|카드할인)[^)]*\)\s*$", "", clean_title).strip()
+                        clean_title = re.sub(r"\s*\([^)]*$", "", clean_title).strip()
+                        clean_title = re.sub(r"[\s\.,\-\/~]+$", "", clean_title).strip()
                         if not clean_title:
                             clean_title = full_text
 

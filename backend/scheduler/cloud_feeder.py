@@ -22,7 +22,63 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("CloudFeeder")
+
+
+def _rotate_cron_log_if_needed(log_path: str = None, max_bytes: int = 3 * 1024 * 1024, keep_lines: int = 1500):
+    """
+    🧹 크론 실행 누적으로 인해 로그 파일이 max_bytes(기본 3MB)를 초과할 경우,
+    파일 끝에서 역방향으로 64KB 청크씩 읽어 마지막 keep_lines(기본 1500줄)만 남기고
+    기존 Inode를 보존(In-place Truncate)하며 축소합니다.
+    """
+    if log_path is None:
+        log_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "logs",
+            "cloud_feeder_cron.log"
+        )
+    if not os.path.exists(log_path):
+        return
+    try:
+        size = os.path.getsize(log_path)
+        if size <= max_bytes:
+            return
+
+        chunk_size = 64 * 1024
+        chunks = []
+        lines_count = 0
+
+        with open(log_path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            file_len = f.tell()
+            cur_pos = file_len
+
+            while cur_pos > 0:
+                read_size = min(chunk_size, cur_pos)
+                cur_pos -= read_size
+                f.seek(cur_pos)
+                chunk = f.read(read_size)
+                chunks.append(chunk)
+                lines_count += chunk.count(b"\n")
+                if lines_count > keep_lines:
+                    break
+
+        if chunks:
+            data = b"".join(reversed(chunks))
+            split_lines = data.splitlines(keepends=True)
+            kept_data = b"".join(split_lines[-keep_lines:])
+
+            # In-place Truncate (기존 Inode 및 >> 쉘 리다이렉션 디스크립터 보존)
+            with open(log_path, "r+b") as f:
+                f.seek(0)
+                f.write(kept_data)
+                f.truncate()
+            logger.info(f"🔄 로그 로테이션 완료: {log_path} ({size} bytes -> {len(kept_data)} bytes, 최근 {keep_lines}줄 보존)")
+    except Exception as e:
+        logger.warning(f"로그 파일 로테이션 실패: {e}")
+
 
 CLOUD_API = os.environ.get("CLOUD_API_URL", "https://34.59.208.14.sslip.io/api/community/ingest-batch")
 CLOUD_DEALS_API = os.environ.get("CLOUD_DEALS_API_URL", "https://34.59.208.14.sslip.io/api/community/hot-deals")
@@ -34,6 +90,7 @@ _CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 
 def _load_local_seen_cache():
     import json, os
+    from backend.core.url_utils import is_search_or_community_url
     if os.path.exists(_CACHE_FILE):
         try:
             with open(_CACHE_FILE, "r", encoding="utf-8") as f:
@@ -41,6 +98,8 @@ def _load_local_seen_cache():
             for k_str, val in raw.items():
                 if "::" in k_str and isinstance(val, dict):
                     pf, u = k_str.split("::", 1)
+                    if is_search_or_community_url(val.get("ecommerce_link", "")):
+                        val["ecommerce_link"] = ""
                     _SEEN_DETAIL_CACHE[(pf, u)] = val
         except Exception:
             pass
@@ -62,7 +121,7 @@ async def _preload_existing_urls(http_client: httpx.AsyncClient):
         return
     _load_local_seen_cache()
     try:
-        from backend.core.url_utils import normalize_url
+        from backend.core.url_utils import normalize_url, is_search_or_community_url
         platforms = ("펨코", "뽐뿌", "퀘이사존", "알리뽐뿌", "루리웹", "클리앙", "빠삭국내", "빠삭해외", "빠삭육아")
         for pf in platforms:
             for off in (0, 100, 200):
@@ -80,12 +139,14 @@ async def _preload_existing_urls(http_client: httpx.AsyncClient):
                             u = normalize_url(raw_u)
                             honey = int(d.get("honey_score") or 0)
                             is_hot = bool(d.get("is_super_hotdeal") or honey >= 100)
+                            raw_ecom = d.get("ecommerce_url") or d.get("ecommerce_link") or ""
+                            clean_ecom = "" if is_search_or_community_url(raw_ecom) else raw_ecom
                             _SEEN_DETAIL_CACHE[(pf, u)] = {
                                 "title": d.get("title") or "",
                                 "price": int(d.get("price") or 0),
                                 "currency": d.get("currency") or "KRW",
                                 "content_html": d.get("content_html") or "",
-                                "ecommerce_link": d.get("ecommerce_url") or d.get("ecommerce_link") or "",
+                                "ecommerce_link": clean_ecom,
                                 "image_url": d.get("image_url") or "",
                                 "shipping_fee": d.get("shipping_fee") or "",
                                 "is_closed": bool(d.get("is_closed", False)),
@@ -228,6 +289,7 @@ async def _fetch_jsmon_and_hotgusa_enrichment(http_client: httpx.AsyncClient) ->
 
 
 async def scrape_and_push_once():
+    _rotate_cron_log_if_needed()
     from datetime import datetime, timedelta, timezone
     from backend.core.url_utils import normalize_url
     from backend.scrapers.ppomppu_scraper import PpomppuScraper
@@ -454,30 +516,42 @@ async def scrape_and_push_once():
                                 # 1) 마감 상태 변경(False->True), 2) 포텐/인기 핫딜 승격(False->True),
                                 # 3) 추천수 유의미 증가(+3 이상 또는 8개 돌파), 4) 신규 쇼핑몰 직접 링크 확보 시에만
                                 # 상세 페이지 재요청(0-RTT) 없이 캐시된 본문과 합쳐 서버로 차등 업데이트 전송!
+                                from backend.core.url_utils import is_search_or_community_url
+
                                 is_old_ecom_empty_or_search = (
                                     not old_ecom
-                                    or any(sk in old_ecom.lower() for sk in ("search?keyword=", "search/all?query=", "total-search?kwd=", "np/search?q=", "wholesale-", "letsearch?searchterm="))
+                                    or is_search_or_community_url(old_ecom)
                                 )
+                                is_new_ecom_valid_direct = bool(new_ecom) and not is_search_or_community_url(new_ecom)
+
                                 status_changed = (
                                     (new_closed and not old_closed)
                                     or (new_hot and not old_hot)
                                     or (new_likes >= 8 and old_likes < 8)
                                     or (new_likes - old_likes >= 3)
-                                    or (bool(new_ecom) and is_old_ecom_empty_or_search)
+                                    or (is_new_ecom_valid_direct and is_old_ecom_empty_or_search)
                                 )
                                 if not status_changed:
                                     skipped_count += 1
                                     continue
 
-                                for k in ("content_html", "ecommerce_link", "image_url", "shipping_fee"):
+                                for k in ("content_html", "image_url", "shipping_fee"):
                                     v = cached_detail.get(k)
                                     if v and not item.get(k):
                                         item[k] = v
+
+                                # 직링크 캐시 갱신 및 오염 방지 (검색 링크/커뮤니티 링크 역복사 차단)
+                                if is_new_ecom_valid_direct:
+                                    item["ecommerce_link"] = new_ecom
+                                    cached_detail["ecommerce_link"] = new_ecom
+                                elif not item.get("ecommerce_link") and not is_search_or_community_url(old_ecom):
+                                    item["ecommerce_link"] = old_ecom
+                                elif is_search_or_community_url(item.get("ecommerce_link", "")):
+                                    item["ecommerce_link"] = ""
+
                                 cached_detail["is_closed"] = new_closed
                                 cached_detail["is_super_hotdeal"] = new_hot or old_hot or (new_likes >= 8)
                                 cached_detail["like_count"] = max(new_likes, old_likes)
-                                if new_ecom:
-                                    cached_detail["ecommerce_link"] = new_ecom
                                 enriched.append(item)
                                 continue
 
@@ -605,15 +679,19 @@ async def scrape_and_push_once():
         # 10개 커뮤니티 타겟을 asyncio.Semaphore(4) 기반 asyncio.gather 병렬 수집
         await asyncio.gather(*[process_single_target(t) for t in targets], return_exceptions=True)
         _save_local_seen_cache()
+        _rotate_cron_log_if_needed()
 
 
 async def main():
     one_shot = "--one-shot" in sys.argv
-    while True:
-        await scrape_and_push_once()
-        if one_shot:
-            break
-        await asyncio.sleep(60)
+    try:
+        while True:
+            await scrape_and_push_once()
+            if one_shot:
+                break
+            await asyncio.sleep(60)
+    finally:
+        _rotate_cron_log_if_needed()
 
 
 if __name__ == "__main__":

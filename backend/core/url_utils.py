@@ -1,3 +1,4 @@
+import html
 import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
@@ -12,7 +13,7 @@ def normalize_url(url: str) -> str:
     if not url:
         return ""
     
-    url = url.strip()
+    url = html.unescape(str(url)).replace("&amp;", "&").strip()
     
     # 1. 프로토콜 강제 일원화
     if url.startswith("//"):
@@ -262,3 +263,89 @@ def extract_canonical_product_key(url: str) -> str:
 
     return ""
 
+
+def is_search_or_community_url(url: str) -> bool:
+    """
+    🔍 주어진 URL이 쇼핑몰 검색 결과 페이지이거나 커뮤니티 내부 링크인지 감지합니다.
+    - True: 쇼핑몰 검색 폴백 URL(/search, /wholesale- 등) 또는 커뮤니티(뽐뿌, 펨코, 퀘이사존 등) 게시글 주소
+    - False: 실제 단일 상품 상세 직링크 (쿠팡, 네이버 스마트스토어, 지마켓, 11번가, 옥션 등)
+    """
+    if not url:
+        return False
+    
+    u = str(url).strip().lower()
+    if not u.startswith("http"):
+        return False
+
+    # 1. 커뮤니티 내부 글 주소 및 리다이렉트 도메인 감지 (최우선 차단)
+    community_domains = (
+        "ppomppu.co.kr",
+        "fmkorea.com",
+        "fmkorea.org",
+        "quasarzone.com",
+        "ruliweb.com",
+        "clien.net",
+        "bbasak.com",
+    )
+    if any(cd in u for cd in community_domains):
+        return True
+
+    # 2. 실제 이커머스 단일 상품 직링크 고유 식별 패턴 우선 감지
+    # (검색 전용 도메인이 아닌 이상, 직링크 식별자가 포함되어 있으면 즉시 False 반환)
+    dedicated_search_domains = (
+        "search.shopping.naver.com",
+        "search.naver.com",
+        "search.daum.net",
+        "google.com/search",
+        "browse.gmarket.co.kr",
+    )
+    is_dedicated_search_domain = any(dsd in u for dsd in dedicated_search_domains)
+
+    if not is_dedicated_search_domain:
+        direct_product_indicators = (
+            "/products/",
+            "/vp/products/",
+            "/item/",
+            "/items/",
+            "goodscode=",
+            "itemno=",
+            "item_no=",
+            "itemid=",
+            "productid=",
+            "product_id=",
+            "prodcode=",
+            "productno=",
+            "product_no=",
+            "prd_no=",
+        )
+        if any(dpi in u for dpi in direct_product_indicators):
+            return False
+
+    # 3. 쇼핑몰 검색 폴백 URL 및 검색 엔진 패턴 감지 (경로 경계 및 쿼리 정밀 매칭)
+    search_indicators = (
+        "/wholesale-",
+        "search.shopping.naver.com",
+        "search.naver.com",
+        "coupang.com/np/search",
+        "gmarket.co.kr/n/search",
+        "browse.gmarket.co.kr",
+        "browse.auction.co.kr/search",
+        "11st.co.kr/browsing/search",
+        "search?keyword=",
+        "search/all?query=",
+        "total-search?kwd=",
+        "np/search?q=",
+        "letsearch?searchterm=",
+        "letsearch",
+        "search?q=",
+        "search.daum.net",
+        "google.com/search",
+        "/search?",
+        "/search/",
+        "/search&",
+        "/search#",
+    )
+    if any(si in u for si in search_indicators) or u.endswith("/search"):
+        return True
+
+    return False
