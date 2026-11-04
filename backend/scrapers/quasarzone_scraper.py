@@ -187,7 +187,7 @@ class QuasarzoneScraper(AsyncBaseScraper):
             for b_el in row.select('.label, .v2-badge, .v2-badge--hot'):
                 if '인기' in b_el.get_text(strip=True):
                     is_super_hotdeal = True
-            if like_count >= 10:
+            if like_count >= 8 or view_count >= 2500:
                 is_super_hotdeal = True
 
             return {
@@ -217,6 +217,8 @@ class QuasarzoneScraper(AsyncBaseScraper):
         """상세 페이지 데이터 파싱 로직"""
         html = await self.fetch_html(url)
         if not html: return {}
+        if any(k in html for k in ("존재하지 않는 게시물", "삭제된 게시물", "블라인드 처리된", "해당 게시물이 존재하지 않습니다")):
+            return {"is_closed": True}
         soup = BeautifulSoup(html, 'html.parser')
         
         ecommerce_link = ""
@@ -418,6 +420,14 @@ class QuasarzoneScraper(AsyncBaseScraper):
                         if not clean_title:
                             clean_title = full_text
 
+                        # 외부 쇼핑몰 직접 링크 추출 (퀘이사존 내부 도메인 제외)
+                        ecommerce_link = ""
+                        for a_tag in w.select("a[href]"):
+                            cand_href = a_tag.get("href", "").strip()
+                            if cand_href.startswith("http") and "quasarzone.com" not in cand_href and "t.me" not in cand_href and "telegram.org" not in cand_href:
+                                ecommerce_link = cand_href
+                                break
+
                         item = {
                             "category": category,
                             "title": clean_title,
@@ -426,8 +436,8 @@ class QuasarzoneScraper(AsyncBaseScraper):
                             "currency": currency,
                             "shop_name": shop_name,
                             "image_url": img_url,
-                            "ecommerce_link": "",
-                            "is_closed": False,
+                            "ecommerce_link": ecommerce_link,
+                            "is_closed": any(k in full_text for k in ("종료", "마감", "품절")),
                             "shipping_fee": shipping_fee,
                             "is_super_hotdeal": False,
                             "posted_at": posted_at,

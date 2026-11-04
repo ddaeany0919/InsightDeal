@@ -89,7 +89,7 @@ class RuliwebScraper(AsyncBaseScraper):
                     view_count = int(h_txt)
 
             is_super_hotdeal = False
-            if 'best' in row.get('class', []) or like_count >= 10:
+            if 'best' in row.get('class', []) or like_count >= 5 or view_count >= 2500:
                 is_super_hotdeal = True
 
             # 실제 게시글 작성 시간 추출
@@ -159,6 +159,8 @@ class RuliwebScraper(AsyncBaseScraper):
         """상세 페이지 데이터 파싱 로직"""
         html = await self.fetch_html(url)
         if not html: return {}
+        if any(k in html for k in ("삭제된 게시물", "존재하지 않는 게시물", "권한이 없거나 존재하지 않는")):
+            return {"is_closed": True}
         soup = BeautifulSoup(html, 'html.parser')
 
         from urllib.parse import urlparse, parse_qs, unquote

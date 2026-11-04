@@ -110,6 +110,8 @@ class ClienScraper(AsyncBaseScraper):
                 if fb_img:
                     return {"image_url": fb_img}
             return {}
+        if any(k in html for k in ("삭제되었거나 존재하지 않는", "존재하지 않는 게시물", "삭제된 게시물")):
+            return {"is_closed": True}
         soup = BeautifulSoup(html, 'html.parser')
         
         image_url = ""

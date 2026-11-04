@@ -178,10 +178,12 @@ class FmkoreaScraper(AsyncBaseScraper):
                 l_txt = voted_el.get_text(strip=True).replace('추천', '').replace(',', '').strip()
                 if l_txt.isdigit(): like_count = int(l_txt)
                 
-            # 펨코 핫딜 게시판 목록 자체에 '포텐' 뱃지가 있는 경우 우선 반영 (포텐 뱃지독점)
-            is_poten = False
+            # 펨코 핫딜 게시판 목록 자체에 '포텐' 뱃지가 있거나 추천 8개/조회수 3000 이상인 경우 슈퍼핫딜 인정
+            is_poten = bool(getattr(self, "parsing_pop", False))
             poten_span = row.select_one('span.STAR-BEST')
             if poten_span and '포텐' in poten_span.get_text(strip=True):
+                is_poten = True
+            if like_count >= 8 or view_count >= 3000:
                 is_poten = True
 
             # 실제 게시글 작성 시간 추출 (KST 기준을 UTC로 변환하여 저장)

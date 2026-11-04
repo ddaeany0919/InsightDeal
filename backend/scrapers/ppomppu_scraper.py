@@ -76,7 +76,7 @@ class PpomppuScraper(AsyncBaseScraper):
                     "content_html": f"<p>{desc_txt}</p>" if desc_txt else "",
                     "is_closed": any(k in full_title for k in ("종료", "마감", "품절")),
                     "shipping_fee": "무료배송" if any(k in full_title for k in ("무배", "무료")) else "",
-                    "is_super_hotdeal": like_count >= 10,
+                    "is_super_hotdeal": like_count >= 8 or view_count >= 2500,
                     "posted_at": None,
                     "view_count": view_count,
                     "like_count": like_count,
@@ -256,8 +256,8 @@ class PpomppuScraper(AsyncBaseScraper):
                 elif txt.isdigit(): # 조회수 (게시글 번호를 제외한 숫자)
                     view_count = int(txt)
 
-            # 뽐뿌 공식 인기/핫 아이콘(pop_icon2.jpg / hot_icon2.jpg) 또는 추천 10개 이상 시 슈퍼핫딜 인정
-            if hot_icon or like_count >= 10:
+            # 뽐뿌 공식 인기/핫 아이콘(pop_icon2.jpg / hot_icon2.jpg) 또는 추천 8개 이상 시 슈퍼핫딜 인정
+            if hot_icon or like_count >= 8 or view_count >= 2500:
                 is_super_hotdeal = True
 
             # 인기/HOT 여부(is_super_hotdeal)는 프론트엔드 UI의 뱃지(마크) 표시용으로 사용됨
@@ -518,7 +518,9 @@ class PpomppuScraper(AsyncBaseScraper):
                 shipping_fee = "무료배송"
         
         is_closed = False
-        if "종결" in body_text and "취소된 게시물" in body_text:
+        if ("종결" in body_text and "취소된 게시물" in body_text) or any(
+            k in body_text for k in ("존재하지 않는 게시물", "삭제된 게시물", "게시물이 존재하지 않습니다", "블라인드 처리된")
+        ):
             is_closed = True
             
         posted_at_iso = None

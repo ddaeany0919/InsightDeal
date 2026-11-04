@@ -159,6 +159,8 @@ class BbasakBaseScraper(AsyncBaseScraper):
         """상세 페이지 데이터 파싱 로직 (추후 고도화)"""
         html = await self.fetch_html(url)
         if not html: return {}
+        if any(k in html for k in ("글이 존재하지 않습니다", "삭제되었거나 이동된", "존재하지 않는 게시물")):
+            return {"is_closed": True}
         soup = BeautifulSoup(html, 'html.parser')
         
         import re

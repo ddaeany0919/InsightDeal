@@ -14,6 +14,8 @@ def _decode_and_clean_shop_url(u: str) -> str:
     if not u:
         return ""
     u = u.strip().rstrip(".,;)>]")
+    # URL 끝단에 실수로 붙은 한글 텍스트나 달러 가격 태그($27.28 등) 절단
+    u = re.split(r'[가-힣\s"\'<>]|(?:\$\d)', u)[0].strip().rstrip(".,;)>]")
     if "s.ppomppu.co.kr" in u:
         m = re.search(r"target=([^&]+)", u)
         if m:
@@ -38,6 +40,7 @@ def _decode_and_clean_shop_url(u: str) -> str:
                     u = dec
             except Exception:
                 pass
+    u = re.split(r'[가-힣\s"\'<>]|(?:\$\d)', u)[0].strip().rstrip(".,;)>]")
     u = u.replace("/./", "/")
     return u
 
@@ -270,7 +273,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
 
     cleaned_default_url = _decode_and_clean_shop_url(default_url)
     if any(h in cleaned_default_url.lower() for h in community_hosts):
-        cleaned_default_url = body_shop_urls[0][1] if body_shop_urls else (default_url or "")
+        cleaned_default_url = body_shop_urls[0][1] if body_shop_urls else ""
 
     # 1단계: 제목 내 다중 괄호 가격 패턴 추출
     title_no_mall = re.sub(r'^\s*\[[^\]]+\]\s*', '', raw_title or '').strip()
@@ -609,7 +612,7 @@ class AggregatorService:
             raw_title=raw_title,
             content_html=content_html_for_opts,
             default_currency=currency,
-            default_url=scraped_data.get("ecommerce_link") or url
+            default_url=scraped_data.get("ecommerce_link") or ""
         )
         if structured_opts and len(structured_opts) >= 2:
             scraped_data["options_data"] = structured_opts
@@ -1021,9 +1024,14 @@ class AggregatorService:
                  if comment_count > (existing_deal.comment_count or 0):
                      existing_deal.comment_count = comment_count
                  
-                 # 동적 꿀딜 점수 갱신
+                 # 동적 꿀딜 점수 갱신 (추천수 급증 및 포텐 승격 즉시 반영)
+                 is_promoted_hotdeal = bool(
+                     scraped_data.get("is_super_hotdeal")
+                     or existing_deal.like_count >= 8
+                     or (existing_deal.view_count or 0) >= 3500
+                 )
                  calc_score = int((existing_deal.view_count / 100) + (existing_deal.like_count * 10) + (existing_deal.comment_count * 5))
-                 if scraped_data.get("is_super_hotdeal"):
+                 if is_promoted_hotdeal:
                      calc_score = 100
                      if not existing_deal.ai_summary:
                          existing_deal.ai_summary = "🔥 [커뮤니티 인증 핫딜] "
@@ -1033,17 +1041,17 @@ class AggregatorService:
                      calc_score = min(99, calc_score)
                      # 기존에 100점이었지만 더 이상 핫딜이 아니면 99점으로 강등 (단, 직접 지정된 경우 제외 가능하나 여기선 스크래퍼 동기화 우선)
                      
-                 if scraped_data.get("is_super_hotdeal") or existing_deal.honey_score is None:
+                 if is_promoted_hotdeal or existing_deal.honey_score is None:
                      existing_deal.honey_score = calc_score
                  else:
                      # 슈퍼핫딜이 아닐 때는 일반적인 갱신(기존 점수가 100이었다면 99로 하락 가능)
-                     if existing_deal.honey_score == 100 and not scraped_data.get("is_super_hotdeal"):
+                     if existing_deal.honey_score == 100 and not is_promoted_hotdeal:
                          existing_deal.honey_score = calc_score
                      else:
                          existing_deal.honey_score = max(calc_score, existing_deal.honey_score)
                  
                  # 🎯 [is_super_hotdeal 필드 동기화 추가]
-                 existing_deal.is_super_hotdeal = bool(scraped_data.get("is_super_hotdeal"))
+                 existing_deal.is_super_hotdeal = is_promoted_hotdeal
                  
                  if price_changed and price > 0:
                      self._insert_price_history(existing_deal.id, price)
@@ -1131,9 +1139,11 @@ class AggregatorService:
         honey_score = min(99, max(0, honey_score))
 
         # 커뮤니티 추천수/조회수/인기마크 기반 슈퍼 핫딜 판별
-        if scraped_data.get("is_super_hotdeal"):
+        is_initial_hotdeal = bool(scraped_data.get("is_super_hotdeal") or like_count >= 8 or view_count >= 3500)
+        if is_initial_hotdeal:
             # 🎯 [CEO 정책 결정]: 커뮤니티 100% 핫딜 판별 기준 충족 시 가격 감점 무시하고 무조건 100점 부여!
             honey_score = 100
+            scraped_data["is_super_hotdeal"] = True
                 
             if ai_summary is None:
                 ai_summary = "🔥 [커뮤니티 인기] "

@@ -43,6 +43,79 @@ def get_community_display_name_by_id(cid: int, db=None) -> Optional[str]:
     }
     return fallback_id_map.get(cid)
 
+def _build_direct_mall_search_url(shop_name: str, raw_title: str, post_url: str = "", comp_name: str = "") -> str:
+    """
+    뽐뿌 등 커뮤니티 본문 내 외부 링크가 누락되었거나 모음전으로 생략되었을 때,
+    제목의 [쇼핑몰] 태그 및 상품명을 기반으로 해당 쇼핑몰의 다이렉트 상품 페이지로 즉시 연결합니다.
+    (사용자가 '쇼핑몰 바로가기'나 카드를 눌렀을 때 다시 커뮤니티 게시글로 튕기는 현상 원천 차단!)
+    """
+    import urllib.parse
+    from backend.services.aggregator_service import infer_shop_name
+
+    inferred_shop = infer_shop_name(raw_title or "", "", shop_name or "")
+    if not inferred_shop:
+        if "id=ppomppu8" in (post_url or "") or comp_name == "알리뽐뿌" or (raw_title and any(k in raw_title.lower() for k in ("$", "달러", "알리", "코인", "초이스", "광군제"))):
+            inferred_shop = "알리익스프레스"
+        elif "id=ppomppu4" in (post_url or ""):
+            inferred_shop = "아마존"
+        elif raw_title:
+            m_b = re.match(r"^\s*\[([^\]]+)\]", raw_title)
+            if m_b:
+                b_txt = m_b.group(1).strip().lower()
+                if "지그재그" in b_txt or "zigzag" in b_txt:
+                    inferred_shop = "지그재그"
+                elif "kream" in b_txt or "크림" in b_txt:
+                    inferred_shop = "KREAM"
+    if not inferred_shop:
+        return ""
+
+    # 상품명에서 대괄호 쇼핑몰명, 가격/배송비 괄호, 노이즈 제거 후 핵심 모델/상품명 추출
+    clean_q = re.sub(r"^\s*\[[^\]]+\]\s*", "", raw_title or "").strip()
+    clean_q = re.sub(r"^\s*\[[^\]]+\]\s*", "", clean_q).strip()
+    clean_q = re.sub(r"\([^)]*(?:원|무료|무배|배송|쿠폰|할인|적립|최대|\$|달러|불|유로|€)[^)]*\)", " ", clean_q)
+    clean_q = re.sub(r"(?:\$\s*[0-9,.]+|[0-9,.]+\s*(?:원|만원|만|달러|불|유로|€)|무료배송|무배|택배비|특가|할인|핫딜|끌올|역대급)", " ", clean_q, flags=re.IGNORECASE)
+    clean_q = re.sub(r"[/|·~()]+", " ", clean_q)
+    clean_q = re.sub(r"\s+", " ", clean_q).strip(" -.,()")
+    if len(clean_q) < 2:
+        return ""
+    tokens = clean_q.split()
+    query_str = " ".join(tokens[:6])
+    q_enc = urllib.parse.quote(query_str)
+
+    mall_search_templates = {
+        "G마켓": f"https://www.gmarket.co.kr/n/search?keyword={q_enc}",
+        "옥션": f"https://browse.auction.co.kr/search?keyword={q_enc}",
+        "11번가": f"https://search.11st.co.kr/pc/total-search?kwd={q_enc}",
+        "쿠팡": f"https://www.coupang.com/np/search?q={q_enc}",
+        "롯데온": f"https://www.lotteon.com/search/search/search.ecn?render=search&platform=pc&q={q_enc}",
+        "네이버": f"https://search.shopping.naver.com/search/all?query={q_enc}",
+        "SSG": f"https://www.ssg.com/search.ssg?target=all&query={q_enc}",
+        "신세계몰": f"https://www.ssg.com/search.ssg?target=all&query={q_enc}",
+        "이마트몰": f"https://emart.ssg.com/search.ssg?target=all&query={q_enc}",
+        "오늘의집": f"https://ohou.se/productions/feed?query={q_enc}",
+        "무신사": f"https://www.musinsa.com/search/goods?keyword={q_enc}",
+        "29CM": f"https://search.29cm.co.kr/?keyword={q_enc}",
+        "지그재그": f"https://zigzag.kr/search?keyword={q_enc}",
+        "KREAM": f"https://kream.co.kr/search?keyword={q_enc}",
+        "톡딜": f"https://store.kakao.com/search/result/product?q={q_enc}",
+        "카카오": f"https://store.kakao.com/search/result/product?q={q_enc}",
+        "알리익스프레스": f"https://ko.aliexpress.com/w/wholesale-{urllib.parse.quote(query_str.replace(' ', '-'))}.html?SearchText={q_enc}",
+        "우체국쇼핑": f"https://mall.epost.go.kr/fo/search/search.do?searchTerm={q_enc}",
+        "하이마트": f"https://www.e-himart.co.kr/app/search/totalSearch?query={q_enc}",
+        "CJ온스타일": f"https://display.cjonstyle.com/p/search/searchAllList?k={q_enc}",
+        "GS샵": f"https://www.gsshop.com/shop/search/main.gs?tq={q_enc}",
+        "현대Hmall": f"https://www.hmall.com/md/pde/search.do?searchTerm={q_enc}",
+        "컬리": f"https://www.kurly.com/search?sword={q_enc}",
+        "아마존": f"https://www.amazon.com/s?k={q_enc}",
+        "큐텐": f"https://www.qoo10.com/s/?keyword={q_enc}",
+        "스팀": f"https://store.steampowered.com/search/?term={q_enc}",
+        "올리브영": f"https://www.oliveyoung.co.kr/store/search/getSearchMain.do?query={q_enc}",
+        "다이소몰": f"https://www.daisomall.co.kr/ds/search?searchTerm={q_enc}",
+        "홈플러스": f"https://front.homeplus.co.kr/search?entry=direct&keyword={q_enc}",
+    }
+    return mall_search_templates.get(inferred_shop, "")
+
+
 def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
     deal_sources = []
     currency = getattr(deal, 'currency', 'KRW') or 'KRW'
@@ -55,24 +128,30 @@ def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
     post_link = getattr(deal, 'post_link', None)
     title = getattr(deal, 'title', '') or ''
     ai_summary = getattr(deal, 'ai_summary', '') or ''
+    shop_name = getattr(deal, 'shop_name', '') or ''
     
     # 핫딜 복원 실패 시의 동일 주소 매칭 조건은 모음전 판단에서 전격 배제함!
     if (title and ("," in title or "모음" in title or "선택" in title or "외/" in title or "($86)" in title or "($26)" in title or "($195)" in title or "($324)" in title)) or ("[모음전]" in ai_summary):
         is_multi = True
         
     cleaned_ecom_url = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", content_html, deal_id, db, is_multi_item=is_multi)
+    if not cleaned_ecom_url:
+        cleaned_ecom_url = _build_direct_mall_search_url(shop_name, title, post_link or "", comp_name)
 
     if hasattr(deal, 'options_data') and deal.options_data:
         try:
             options = json.loads(deal.options_data)
             for opt in options:
                 opt_url = opt.get("url")
+                opt_name = opt.get("name", "옵션")
                 if opt_url:
-                    opt_ecom_url = get_clean_ecommerce_url(opt_url, "", deal_id, None, is_multi_item=False) or opt_url
+                    opt_ecom_url = get_clean_ecommerce_url(opt_url, "", deal_id, None, is_multi_item=False)
                 else:
-                    opt_ecom_url = cleaned_ecom_url
+                    opt_ecom_url = ""
+                if not opt_ecom_url:
+                    opt_ecom_url = _build_direct_mall_search_url(shop_name, f"[{shop_name}] {opt_name}" if shop_name else opt_name, post_link or "", comp_name) or cleaned_ecom_url
                 deal_sources.append({
-                    "site_name": f"{comp_name} - {opt.get('name', '옵션')}",
+                    "site_name": f"{comp_name} - {opt_name}",
                     "post_url": deal.post_link or "",
                     "ecommerce_url": opt_ecom_url,
                     "price": int(opt.get("price", parsed_price_int)),
@@ -147,16 +226,22 @@ async def proxy_image(url: str):
 def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = None, db = None, is_multi_item: bool = False) -> str:
     if not url:
         return ""
+    url = re.split(r'[가-힣\s"\'<>]|(?:\$\d)', str(url).strip())[0].strip().rstrip(".,;)>]")
+    if not url:
+        return ""
         
     # [보증 가드]: 이미 진짜 쇼핑몰 아웃링크로 온전하게 변환/복원 완료된 주소라면 커뮤니티 경유 디코딩을 생략함
     if url.startswith("http") and not any(x in url.lower() for x in ["ppomppu.co.kr", "fmkorea.com", "fmkorea.org", "quasarzone.com", "ruliweb.com", "ruliweb.daum.net", "bbasak.com", "clien.net"]):
-        return url
+        from backend.core.url_utils import apply_affiliate_monetization
+        return apply_affiliate_monetization(url)
     
     if is_multi_item:
-        # 모음전이거나 여러 개가 묶인 상품은 상세 아웃링크 복원을 바이패스하되, 순수 커뮤니티 글 주소가 아웃링크로 노출되는 것은 차단
+        # 모음전이거나 여러 개가 묶인 상품이라도 이미 외부 쇼핑몰 주소라면 그대로 반환하고, 커뮤니티 글 주소라면 본문에서 첫 번째 쇼핑몰 링크를 추출 시도!
         if any(x in url.lower() for x in ["ppomppu.co.kr", "fmkorea.com", "fmkorea.org", "quasarzone.com", "ruliweb.com", "ruliweb.daum.net", "bbasak.com", "clien.net"]) and not any(k in url.lower() for k in ["s.ppomppu.co.kr", "out_link.php", "view_gourl_show.php", "link.php", "popup/outlink"]):
-            return ""
-        return url
+            if not content_html:
+                return ""
+        else:
+            return url
     
     import urllib.parse
     import base64
@@ -1395,6 +1480,8 @@ async def get_hot_deals(
                             
                         existing["title"] = clean_title
                         new_ecom_url = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
+                        if not new_ecom_url:
+                            new_ecom_url = _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
                         if new_ecom_url or not existing.get("ecommerce_url"):
                             existing["ecommerce_url"] = new_ecom_url
                         
@@ -1454,6 +1541,12 @@ async def get_hot_deals(
                         except:
                             pass
 
+                resolved_ecom_url = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
+                if not resolved_ecom_url:
+                    resolved_ecom_url = _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
+                is_hot = bool(getattr(deal, 'is_super_hotdeal', False) or (deal.honey_score or 0) >= 100 or (buy_count >= 8))
+                final_honey_score = 100 if is_hot else (deal.honey_score or 0)
+
                 deal_dict = {
                     "id": deal.id,
                     "title": clean_title,
@@ -1462,13 +1555,14 @@ async def get_hot_deals(
                     "total_price": total_price,
                     "currency": resolved_currency,
                     "image_url": image_url,
-                    "ecommerce_url": get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi),
+                    "ecommerce_url": resolved_ecom_url,
                     "post_url": deal.post_link or "",
                     "site_name": ", ".join(site_names_list),
                     "site_names": site_names_list,
                     "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
                     "category": deal.category or "기타",
-                    "honey_score": deal.honey_score or 0,
+                    "honey_score": final_honey_score,
+                    "is_super_hotdeal": is_hot,
                     "ai_summary": _clean_ai_summary(deal.ai_summary or ""),
                     "content_html": _clean_content_text(deal.content_html or "", clean_title),
                     "is_closed": getattr(deal, 'is_closed', False),
@@ -1807,23 +1901,27 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
     
     curr = getattr(best_deal, 'currency', 'KRW') or 'KRW'
                      
+    detail_ecom_url = get_clean_ecommerce_url(
+        best_deal.ecommerce_link or best_deal.post_link, 
+        getattr(best_deal, "content_html", "") or "", 
+        best_deal.id, 
+        db, 
+        is_multi_item=(
+            (getattr(best_deal, 'ecommerce_link', None) == getattr(best_deal, 'post_link', None)) or 
+            (getattr(best_deal, 'title', '') and ("," in best_deal.title or "모음" in best_deal.title or "선택" in best_deal.title or "외/" in best_deal.title or "($86)" in best_deal.title or "($26)" in best_deal.title)) or 
+            ("[모음전]" in (getattr(best_deal, 'ai_summary', '') or ''))
+        )
+    )
+    if not detail_ecom_url:
+        detail_ecom_url = _build_direct_mall_search_url(getattr(best_deal, "shop_name", "") or "", getattr(best_deal, "title", "") or deal.title or "", getattr(best_deal, "post_link", "") or "", community_name)
+
     return {
         "id": deal.id,
         "title": deal.title, # 본래 사용자가 클릭한 딜의 제목 유지
         "price": final_price_int,
         "shipping_fee": getattr(best_deal, "shipping_fee", None),
         "post_url": best_deal.post_link,
-        "ecommerce_url": get_clean_ecommerce_url(
-            best_deal.ecommerce_link or best_deal.post_link, 
-            getattr(best_deal, "content_html", "") or "", 
-            best_deal.id, 
-            db, 
-            is_multi_item=(
-                (getattr(best_deal, 'ecommerce_link', None) == getattr(best_deal, 'post_link', None)) or 
-                (getattr(best_deal, 'title', '') and ("," in best_deal.title or "모음" in best_deal.title or "선택" in best_deal.title or "외/" in best_deal.title or "($86)" in best_deal.title or "($26)" in best_deal.title)) or 
-                ("[모음전]" in (getattr(best_deal, 'ai_summary', '') or ''))
-            )
-        ),
+        "ecommerce_url": detail_ecom_url,
         "image_url": _resolve_best_image_url(best_deal, BASE_URL) or _resolve_best_image_url(deal, BASE_URL),
         "site_name": community_name,
         "site_names": site_names,

@@ -50,7 +50,7 @@ def _save_local_seen_cache():
     import json, os
     try:
         os.makedirs(os.path.dirname(_CACHE_FILE), exist_ok=True)
-        serializable = {f"{pf}::{u}": v for (pf, u), v in list(_SEEN_DETAIL_CACHE.items())[-3000:]}
+        serializable = {f"{pf}::{u}": v for (pf, u), v in list(_SEEN_DETAIL_CACHE.items())[-4000:]}
         with open(_CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(serializable, f, ensure_ascii=False)
     except Exception:
@@ -78,20 +78,150 @@ async def _preload_existing_urls(http_client: httpx.AsyncClient):
                         raw_u = d.get("post_url") or d.get("post_link") or d.get("source_url") or d.get("url")
                         if raw_u:
                             u = normalize_url(raw_u)
+                            honey = int(d.get("honey_score") or 0)
+                            is_hot = bool(d.get("is_super_hotdeal") or honey >= 100)
                             _SEEN_DETAIL_CACHE[(pf, u)] = {
+                                "title": d.get("title") or "",
+                                "price": int(d.get("price") or 0),
+                                "currency": d.get("currency") or "KRW",
                                 "content_html": d.get("content_html") or "",
                                 "ecommerce_link": d.get("ecommerce_url") or d.get("ecommerce_link") or "",
                                 "image_url": d.get("image_url") or "",
                                 "shipping_fee": d.get("shipping_fee") or "",
                                 "is_closed": bool(d.get("is_closed", False)),
+                                "is_super_hotdeal": is_hot,
                                 "like_count": int(d.get("like_count") or 0),
+                                "view_count": int(d.get("view_count") or 0),
                                 "comment_count": int(d.get("comment_count") or 0),
+                                "created_at": d.get("created_at") or "",
                             }
                     if len(deals) < 100:
                         break
-        logger.info(f"📦 기존 DB 게시글 {len(_SEEN_DETAIL_CACHE)}건 상세 캐시 로드 완료 (이미 파싱된 게시글 스킵 활성화)")
+        logger.info(f"📦 기존 DB 게시글 {len(_SEEN_DETAIL_CACHE)}건 상세 캐시 로드 완료 (차등 업데이트 및 스킵 활성화)")
     except Exception as e:
         logger.warning(f"기존 DB URL 프리로드 생략: {e}")
+
+
+async def _fetch_jsmon_and_hotgusa_enrichment(http_client: httpx.AsyncClient) -> dict[str, dict]:
+    """
+    🌐 [클라우드 Zero-403 초고속 아웃링크 & 상태 브릿지]
+    1) https://t.me/s/jsmon (0.2s, 200 OK): 뽐뿌(id=ppomppu) 및 퀘이사존(qb_saleinfo)의
+       실제 디코딩된 쇼핑몰 직접 링크(ecommerce_link), 본문 텍스트, 쇼핑몰명 추출
+    2) https://www.hotgusa.com/api/products (0.2s, 200 OK): 뽐뿌(0_) 및 퀘이사존(3_)의
+       실시간 마감 상태(is_end), 추천수(recm_cnt), 조회수(view_cnt), 댓글수(cmt_cnt), 고화질 썸네일 추출
+    """
+    from bs4 import BeautifulSoup
+    from backend.core.url_utils import normalize_url
+
+    enrichment_map: dict[str, dict] = {}
+
+    # 1. t.me/s/jsmon 파싱 (최근 3페이지)
+    try:
+        jsmon_urls = ["https://t.me/s/jsmon"]
+        r0 = await http_client.get(jsmon_urls[0], headers={"User-Agent": "Mozilla/5.0"}, timeout=8.0)
+        if r0.status_code == 200:
+            befores = re.findall(r'href="(/s/jsmon\?before=\d+)"', r0.text)
+            for bp in befores[-2:]:
+                jsmon_urls.append(f"https://t.me{bp}")
+
+        for idx_u, j_url in enumerate(jsmon_urls):
+            html_txt = r0.text if idx_u == 0 and r0.status_code == 200 else None
+            if html_txt is None:
+                rj = await http_client.get(j_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8.0)
+                if rj.status_code == 200:
+                    html_txt = rj.text
+            if not html_txt:
+                continue
+
+            soup = BeautifulSoup(html_txt, "html.parser")
+            for w in soup.select(".tgme_widget_message_wrap"):
+                text_el = w.select_one(".tgme_widget_message_text")
+                links = [
+                    a.get("href", "").strip()
+                    for a in w.select("a[href]")
+                    if a.get("href") and a.get("href").startswith("http") and "t.me/" not in a.get("href") and "telegram.org" not in a.get("href")
+                ]
+                post_url = ""
+                ecom_url = ""
+                for lk in links:
+                    if "ppomppu.co.kr" in lk or "quasarzone.com" in lk:
+                        post_url = normalize_url(lk)
+                    elif lk.startswith("http"):
+                        ecom_url = lk
+
+                if not post_url:
+                    continue
+
+                full_txt = text_el.get_text(" ", strip=True) if text_el else w.get_text(" ", strip=True)
+                photo_el = w.select_one(".tgme_widget_message_photo_wrap")
+                img_u = ""
+                if photo_el and photo_el.get("style"):
+                    m_img = re.search(r"background-image:url\('([^']+)'\)", photo_el["style"])
+                    if m_img:
+                        img_u = m_img.group(1)
+
+                entry = enrichment_map.setdefault(post_url, {})
+                if ecom_url and not entry.get("ecommerce_link"):
+                    entry["ecommerce_link"] = ecom_url
+                if img_u and not entry.get("image_url"):
+                    entry["image_url"] = img_u
+                if full_txt and not entry.get("content_html"):
+                    entry["content_html"] = f"<p>{full_txt}</p>"
+    except Exception as je:
+        logger.warning(f"⚠️ [jsmon 브릿지] 보강 데이터 페칭 경고: {je}")
+
+    # 2. hotgusa API 파싱 (뽐뿌 0_, 퀘이사존 3_ 실시간 마감/추천/조회수/썸네일 동기화)
+    try:
+        hg_url = (
+            "https://www.hotgusa.com/api/products?communities=0,3&isOutOfStock=true"
+            "&category=&sort=date&shop=all&timeRange=24h&hiddenKeywords="
+            "&lastId=9_99999999999&lastValue=2099-12-31T23:59:59%2B09:00"
+        )
+        rh = await http_client.get(hg_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8.0)
+        if rh.status_code == 200:
+            payload = rh.json()
+            rows = payload.get("products", []) if isinstance(payload, dict) else (payload if isinstance(payload, list) else [])
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    cid = row.get("community_id")
+                    pno = row.get("product_no")
+                    if cid is None or not pno:
+                        raw_id = str(row.get("id") or "")
+                        if "_" in raw_id:
+                            p_cid, p_no = raw_id.split("_", 1)
+                            cid = int(p_cid) if p_cid.isdigit() else cid
+                            pno = p_no or pno
+                    if cid == 0 and pno:
+                        p_url = normalize_url(f"https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no={pno}")
+                    elif cid == 3 and pno:
+                        p_url = normalize_url(f"https://quasarzone.com/bbs/qb_saleinfo/views/{pno}")
+                    else:
+                        continue
+
+                    entry = enrichment_map.setdefault(p_url, {})
+                    if row.get("is_end"):
+                        entry["is_closed"] = True
+                    recm = int(row.get("recm_cnt") or 0)
+                    vcnt = int(row.get("view_cnt") or 0)
+                    ccnt = int(row.get("cmt_cnt") or 0)
+                    if recm > int(entry.get("like_count") or 0):
+                        entry["like_count"] = recm
+                    if vcnt > int(entry.get("view_count") or 0):
+                        entry["view_count"] = vcnt
+                    if ccnt > int(entry.get("comment_count") or 0):
+                        entry["comment_count"] = ccnt
+                    if recm >= 8 or vcnt >= 2500:
+                        entry["is_super_hotdeal"] = True
+                    if row.get("mall_name") and not entry.get("shop_name"):
+                        entry["shop_name"] = str(row["mall_name"]).strip()
+                    if row.get("has_thumb") and not entry.get("image_url"):
+                        entry["image_url"] = f"https://d2w999htn2iva3.cloudfront.net/thumbs/{cid}/{pno}.jpg"
+    except Exception as he:
+        logger.warning(f"⚠️ [hotgusa API] 보강 데이터 페칭 경고: {he}")
+
+    return enrichment_map
 
 
 async def scrape_and_push_once():
@@ -108,8 +238,9 @@ async def scrape_and_push_once():
     from backend.scrapers.bbasak_overseas_scraper import BbasakOverseasScraper
     from backend.scrapers.bbasak_parenting_scraper import BbasakParentingScraper
 
-    # KST 기준 오늘 00:00:00의 UTC ISO 문자열 계산 (공백 시간대 다중 페이지 자동 백필 기준선)
+    # KST 기준 오늘 00:00:00의 UTC ISO 문자열 계산
     kst = timezone(timedelta(hours=9))
+    now_utc = datetime.now(timezone.utc)
     today_start_kst = datetime.now(kst).replace(hour=0, minute=0, second=0, microsecond=0)
     today_start_utc_iso = today_start_kst.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -119,8 +250,8 @@ async def scrape_and_push_once():
         ("quasarzone", "퀘이사존", "https://quasarzone.com/bbs/qb_saleinfo", QuasarzoneScraper, 5, 1 if IS_CLOUD_ENV else 3),
         ("ali_ppomppu", "알리뽐뿌", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu8", AlippomppuScraper, 4, 1 if IS_CLOUD_ENV else 5),
         ("ppomppu_overseas", "뽐뿌해외", "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu4", PpomppuOverseasScraper, 10, 1 if IS_CLOUD_ENV else 2),
-        ("ruliweb", "루리웹", "https://bbs.ruliweb.com/market/board/1020", RuliwebScraper, 2, 2),
-        ("clien", "클리앙", "https://www.clien.net/service/board/jirum", ClienScraper, 3, 2),
+        ("ruliweb", "루리웹", "https://bbs.ruliweb.com/market/board/1020", RuliwebScraper, 2, 1 if IS_CLOUD_ENV else 2),
+        ("clien", "클리앙", "https://www.clien.net/service/board/jirum", ClienScraper, 3, 1 if IS_CLOUD_ENV else 2),
         ("bbasak_domestic", "빠삭국내", "https://bbasak.com/bbs/board.php?bo_table=bbasak1", BbasakDomesticScraper, 7, 1 if IS_CLOUD_ENV else 2),
         ("bbasak_overseas", "빠삭해외", "https://bbasak.com/bbs/board.php?bo_table=bbasak2", BbasakOverseasScraper, 8, 1),
         ("bbasak_parenting", "빠삭육아", "https://bbasak.com/bbs/board.php?bo_table=bbasak3", BbasakParentingScraper, 9, 1),
@@ -128,208 +259,305 @@ async def scrape_and_push_once():
 
     community_sem = asyncio.Semaphore(4)
 
-    async def process_single_target(target, http_client: httpx.AsyncClient):
-        name, display_name, base_url, scraper_cls, concurrency, max_pages = target
-        async with community_sem:
-            try:
-                sc = scraper_cls(concurrency)
-                async with sc:
-                    cache_pf = "알리뽐뿌" if display_name == "뽐뿌해외" else display_name
-                    items = []
-                    seen_page_urls = set()
-
-                    # 1. 뽐뿌 계열 클라우드 모드 시 Vercel 서울 릴레이 RSS 1-RTT 일괄 수집
-                    if "ppomppu" in name and IS_CLOUD_ENV:
-                        board_id = "ppomppu8" if name == "ali_ppomppu" else ("ppomppu4" if name == "ppomppu_overseas" else "ppomppu")
-                        rss_target = f"https://www.ppomppu.co.kr/rss.php?id={board_id}"
-                        rss_relay_url = f"https://insightdeal.vercel.app/api/scraper-relay?url={urllib.parse.quote(rss_target, safe='')}"
-                        try:
-                            res = await http_client.get(rss_relay_url, timeout=10.0)
-                            if res.status_code == 200 and "<item>" in res.text:
-                                rss_items = await sc.parse_list(res.text)
-                                if rss_items:
-                                    logger.info(f"⚡ [{display_name}] 클라우드 RSS 릴레이로 {len(rss_items)}건 초고속 1-RTT 수집 완료 (0.5s)")
-                                    for pit in rss_items:
-                                        norm_u = normalize_url(pit["url"])
-                                        if norm_u not in seen_page_urls:
-                                            seen_page_urls.add(norm_u)
-                                            pit["url"] = norm_u
-                                            pit["_page_no"] = 1
-                                            items.append(pit)
-                        except Exception as rss_err:
-                            logger.warning(f"⚠️ [{display_name}] 클라우드 RSS 수집 실패 ({rss_err}), 웹 크롤링 폴백")
-
-                    # 2. 일반 목록 페이지네이션 수집 (RSS로 수집되지 않았거나 타 커뮤니티인 경우)
-                    if not items:
-                        for page_no in range(1, max_pages + 1):
-                            if page_no == 1:
-                                page_url = sc.list_url
-                            elif "clien" in name:
-                                sep = "&" if "?" in sc.list_url else "?"
-                                page_url = f"{sc.list_url}{sep}po={page_no - 1}"
-                            else:
-                                sep = "&" if "?" in sc.list_url else "?"
-                                page_url = f"{sc.list_url}{sep}page={page_no}"
-
-                            page_items = await sc.run(page_url)
-                            if not page_items:
-                                break
-
-                            unseen_today_on_page = 0
-                            today_on_page = 0
-                            for pit in page_items:
-                                norm_u = normalize_url(pit["url"])
-                                if norm_u in seen_page_urls:
-                                    continue
-                                seen_page_urls.add(norm_u)
-                                pit["url"] = norm_u
-                                pit["_page_no"] = page_no
-                                items.append(pit)
-                                posted_iso = pit.get("posted_at") or ""
-                                is_today = (not posted_iso) or (posted_iso >= today_start_utc_iso)
-                                if is_today:
-                                    today_on_page += 1
-                                    if (cache_pf, norm_u) not in _SEEN_DETAIL_CACHE:
-                                        unseen_today_on_page += 1
-
-                            if page_no >= 1 and (unseen_today_on_page == 0 or today_on_page == 0):
-                                break
-
-                    enriched = []
-                    skipped_count = 0
-                    items_needing_detail = []
-
-                    for item in items:
-                        item_url = normalize_url(item["url"])
-                        item["url"] = item_url
-                        item_page_no = item.pop("_page_no", 1)
-                        cache_key = (cache_pf, item_url)
-
-                        if cache_key in _SEEN_DETAIL_CACHE:
-                            cached_detail = _SEEN_DETAIL_CACHE[cache_key]
-                            # 이미 파싱된 글이고 마감 여부(is_closed)가 그대로라면 상세 파싱 및 재전송 모두 완전히 스킵!
-                            if bool(item.get("is_closed", False)) == bool(cached_detail.get("is_closed", False)):
-                                skipped_count += 1
-                                continue
-                            for k in ("content_html", "ecommerce_link", "image_url", "shipping_fee"):
-                                v = cached_detail.get(k)
-                                if v and not item.get(k):
-                                    item[k] = v
-                            cached_detail["is_closed"] = bool(item.get("is_closed", False))
-                            enriched.append(item)
-                            continue
-
-                        # 신규 게시글 상세 필요 여부 판별 (브릿지 핫딜은 content_html 이미 구비되어 상세 요청 생략)
-                        is_bridge_item = bool(item.pop("_from_bridge", False)) or "bridge_id=" in item_url or ("quasarzone.com" in item_url and item.get("content_html")) or ("fmkorea.com" in item_url and item.get("content_html"))
-                        if is_bridge_item:
-                            need_detail = False
-                            if not item.get("image_url"):
-                                try:
-                                    img_fb = await sc.fetch_og_image(item.get("ecommerce_link", ""), item.get("title", ""))
-                                    if img_fb:
-                                        item["image_url"] = img_fb
-                                except Exception:
-                                    pass
-                        else:
-                            need_detail = (item_page_no == 1) or (not item.get("image_url"))
-                            if item.get("content_html") and item.get("image_url"):
-                                need_detail = False
-
-                        if need_detail:
-                            items_needing_detail.append(item)
-                        else:
-                            enriched.append(item)
-
-                    # 3. 비동기 병렬 상세 페칭 (빠삭 등 18분 병목 -> 수 초 내 해결)
-                    if items_needing_detail:
-                        target_details = items_needing_detail[:10] if IS_CLOUD_ENV else items_needing_detail
-                        detail_sem = asyncio.Semaphore(5)
-
-                        async def fetch_one_detail(it):
-                            async with detail_sem:
-                                try:
-                                    det = await sc.get_detail(it["url"], it.get("title", ""))
-                                    if det:
-                                        for k, v in det.items():
-                                            if k == "price" and (not v or v == 0) and it.get("price", 0) > 0:
-                                                continue
-                                            if v is not None and v != "":
-                                                it[k] = v
-                                except Exception as de:
-                                    logger.warning(f"[{display_name}] detail warning: {de}")
-                            return it
-
-                        detail_results = await asyncio.gather(*[fetch_one_detail(it) for it in target_details], return_exceptions=True)
-                        for r in detail_results:
-                            if isinstance(r, dict):
-                                enriched.append(r)
-                        for it in items_needing_detail[len(target_details):]:
-                            enriched.append(it)
-
-                    # 4. 내용 및 메타데이터 정규화, 캐시 등록
-                    final_enriched = []
-                    for item in enriched:
-                        cache_key = (cache_pf, item["url"])
-                        if not item.get("content_html"):
-                            shop_txt = item.get("shop_name") or display_name
-                            ship_txt = item.get("shipping_fee") or ""
-                            img_tag = f'<p><img src="{item["image_url"]}" alt="thumbnail" /></p>' if item.get("image_url") else ""
-                            item["content_html"] = f"{img_tag}<p><strong>{item.get('title', '')}</strong></p><p>출처: {shop_txt} {ship_txt}</p>"
-
-                        _SEEN_DETAIL_CACHE[cache_key] = {
-                            "content_html": item.get("content_html") or "",
-                            "ecommerce_link": item.get("ecommerce_link") or "",
-                            "image_url": item.get("image_url") or "",
-                            "shipping_fee": item.get("shipping_fee") or "",
-                            "is_closed": bool(item.get("is_closed", False)),
-                            "like_count": int(item.get("like_count") or 0),
-                            "comment_count": int(item.get("comment_count") or 0),
-                        }
-
-                        # 실상품 핫딜([슈퍼적립]/[즉시적립]/캐시적립 등)이 단순 포인트 클릭글 필터('%적립%')나 honey_score<10 필터에 누락되지 않도록 보정
-                        raw_t = item.get("title") or ""
-                        p_val = int(item.get("price") or 0)
-                        if "적립" in raw_t and (p_val > 100 or any(k in raw_t for k in ("슈퍼적립", "즉시적립", "캐시적립", "만 적립", "만원 적립"))):
-                            raw_t = raw_t.replace("슈퍼적립", "슈퍼혜택").replace("즉시적립", "즉시페이백").replace("캐시적립", "캐시백").replace("적립", "페이백")
-
-                        item["title"] = raw_t
-                        item["view_count"] = max(int(item.get("view_count") or 0), 1500)
-                        final_enriched.append(item)
-
-                    if skipped_count > 0 and not final_enriched:
-                        logger.info(f"⏭️ [{display_name}] 신규/변경 게시글 없음 (기존 파싱 완료 {skipped_count}건 전체 스킵)")
-
-                    # 5. 클라우드 서버 전송
-                    if final_enriched:
-                        chunk_size = 5
-                        total_processed = 0
-                        for idx in range(0, len(final_enriched), chunk_size):
-                            chunk = final_enriched[idx:idx + chunk_size]
-                            for attempt in range(2):
-                                try:
-                                    res = await http_client.post(
-                                        CLOUD_API,
-                                        json={
-                                            "community_name": name,
-                                            "display_name": display_name,
-                                            "base_url": base_url,
-                                            "deals": chunk,
-                                        },
-                                    )
-                                    if res.status_code == 200:
-                                        total_processed += res.json().get("processed", len(chunk))
-                                        break
-                                except Exception:
-                                    pass
-                                await asyncio.sleep(0.5 if IS_CLOUD_ENV else 1.5)
-                        logger.info(f"✅ [{display_name}] 클라우드 서버 전송 완료 (신규/갱신 {len(final_enriched)}건 중 {total_processed}건 반영)")
-            except Exception as e:
-                logger.error(f"❌ [{display_name}] 수집/전송 오류: {e}")
-
     async with httpx.AsyncClient(timeout=30.0 if IS_CLOUD_ENV else 60.0) as http_client:
         await _preload_existing_urls(http_client)
+        enrichment_map = await _fetch_jsmon_and_hotgusa_enrichment(http_client)
+
+        async def process_single_target(target):
+            name, display_name, base_url, scraper_cls, concurrency, max_pages = target
+            async with community_sem:
+                try:
+                    sc = scraper_cls(concurrency)
+                    async with sc:
+                        cache_pf = "알리뽐뿌" if display_name == "뽐뿌해외" else display_name
+                        items = []
+                        seen_page_urls = set()
+
+                        # 1. 뽐뿌 계열 클라우드 모드 시 Vercel 서울 릴레이 RSS 1-RTT 일괄 수집
+                        if "ppomppu" in name and IS_CLOUD_ENV:
+                            board_id = "ppomppu8" if name == "ali_ppomppu" else ("ppomppu4" if name == "ppomppu_overseas" else "ppomppu")
+                            rss_target = f"https://www.ppomppu.co.kr/rss.php?id={board_id}"
+                            rss_relay_url = f"https://insightdeal.vercel.app/api/scraper-relay?url={urllib.parse.quote(rss_target, safe='')}"
+                            try:
+                                res = await http_client.get(rss_relay_url, timeout=10.0)
+                                if res.status_code == 200 and "<item>" in res.text:
+                                    rss_items = await sc.parse_list(res.text)
+                                    if rss_items:
+                                        logger.info(f"⚡ [{display_name}] 클라우드 RSS 릴레이로 {len(rss_items)}건 초고속 1-RTT 수집 완료 (0.5s)")
+                                        for pit in rss_items:
+                                            norm_u = normalize_url(pit["url"])
+                                            if norm_u not in seen_page_urls:
+                                                seen_page_urls.add(norm_u)
+                                                pit["url"] = norm_u
+                                                pit["_page_no"] = 1
+                                                items.append(pit)
+                            except Exception as rss_err:
+                                logger.warning(f"⚠️ [{display_name}] 클라우드 RSS 수집 실패 ({rss_err}), 웹 크롤링 폴백")
+
+                        # 2. 일반 목록 페이지네이션 수집 (RSS로 수집되지 않았거나 타 커뮤니티인 경우)
+                        if not items:
+                            for page_no in range(1, max_pages + 1):
+                                if page_no == 1:
+                                    page_url = sc.list_url
+                                elif "clien" in name:
+                                    sep = "&" if "?" in sc.list_url else "?"
+                                    page_url = f"{sc.list_url}{sep}po={page_no - 1}"
+                                else:
+                                    sep = "&" if "?" in sc.list_url else "?"
+                                    page_url = f"{sc.list_url}{sep}page={page_no}"
+
+                                page_items = await sc.run(page_url)
+                                if not page_items:
+                                    break
+
+                                unseen_today_on_page = 0
+                                today_on_page = 0
+                                for pit in page_items:
+                                    norm_u = normalize_url(pit["url"])
+                                    if norm_u in seen_page_urls:
+                                        continue
+                                    seen_page_urls.add(norm_u)
+                                    pit["url"] = norm_u
+                                    pit["_page_no"] = page_no
+                                    items.append(pit)
+                                    posted_iso = pit.get("posted_at") or ""
+                                    is_today = (not posted_iso) or (posted_iso >= today_start_utc_iso)
+                                    if is_today:
+                                        today_on_page += 1
+                                        if (cache_pf, norm_u) not in _SEEN_DETAIL_CACHE:
+                                            unseen_today_on_page += 1
+
+                                if page_no >= 1 and (unseen_today_on_page == 0 or today_on_page == 0):
+                                    break
+
+                        # 2.5 외부 브릿지(jsmon + hotgusa) 보강 데이터 즉시 병합
+                        for pit in items:
+                            norm_u = normalize_url(pit["url"])
+                            ext = enrichment_map.get(norm_u)
+                            if ext:
+                                if ext.get("ecommerce_link") and not pit.get("ecommerce_link"):
+                                    pit["ecommerce_link"] = ext["ecommerce_link"]
+                                if ext.get("image_url") and not pit.get("image_url"):
+                                    pit["image_url"] = ext["image_url"]
+                                if ext.get("shop_name") and not pit.get("shop_name"):
+                                    pit["shop_name"] = ext["shop_name"]
+                                if ext.get("content_html") and (not pit.get("content_html") or len(pit.get("content_html", "")) < 40):
+                                    pit["content_html"] = ext["content_html"]
+                                if ext.get("is_closed"):
+                                    pit["is_closed"] = True
+                                if ext.get("is_super_hotdeal"):
+                                    pit["is_super_hotdeal"] = True
+                                if int(ext.get("like_count") or 0) > int(pit.get("like_count") or 0):
+                                    pit["like_count"] = int(ext["like_count"])
+                                if int(ext.get("view_count") or 0) > int(pit.get("view_count") or 0):
+                                    pit["view_count"] = int(ext["view_count"])
+                                if int(ext.get("comment_count") or 0) > int(pit.get("comment_count") or 0):
+                                    pit["comment_count"] = int(ext["comment_count"])
+
+                        # 2.6 [게시글 삭제(Post Vanished) 감지]:
+                        # 최근 45분 내에 수집된 활성 게시글(is_closed=False)이 1페이지 최신 목록 범위(최소 15건 이상 수집된 정상 목록)에서
+                        # 완전히 증발(작성자 자진 삭제 또는 관리자 삭제)했다면 상세 페이지 404/삭제 여부를 확인하거나 즉시 마감 처리!
+                        if len(seen_page_urls) >= 12 and display_name != "뽐뿌해외":
+                            recent_cutoff_iso = (now_utc - timedelta(minutes=45)).strftime("%Y-%m-%dT%H:%M:%S")
+                            oldest_on_page_iso = min(
+                                [it.get("posted_at") for it in items if it.get("posted_at")],
+                                default=recent_cutoff_iso,
+                            )
+                            check_floor_iso = max(recent_cutoff_iso, oldest_on_page_iso)
+                            for (c_pf, c_url), c_val in list(_SEEN_DETAIL_CACHE.items()):
+                                if c_pf != cache_pf or c_val.get("is_closed"):
+                                    continue
+                                c_created = c_val.get("created_at") or ""
+                                if c_created and c_created >= check_floor_iso and c_url not in seen_page_urls and c_val.get("title"):
+                                    logger.info(f"🗑️ [{display_name}] 최근 게시글 목록 증발(삭제 추정) 감지 -> 자동 마감 처리: {c_val.get('title')} ({c_url})")
+                                    c_val["is_closed"] = True
+                                    items.append({
+                                        "title": c_val["title"],
+                                        "url": c_url,
+                                        "price": int(c_val.get("price") or 0),
+                                        "currency": c_val.get("currency") or "KRW",
+                                        "content_html": c_val.get("content_html") or "",
+                                        "ecommerce_link": c_val.get("ecommerce_link") or "",
+                                        "image_url": c_val.get("image_url") or "",
+                                        "shipping_fee": c_val.get("shipping_fee") or "",
+                                        "is_closed": True,
+                                        "is_super_hotdeal": bool(c_val.get("is_super_hotdeal", False)),
+                                        "like_count": int(c_val.get("like_count") or 0),
+                                        "view_count": int(c_val.get("view_count") or 1500),
+                                        "comment_count": int(c_val.get("comment_count") or 0),
+                                        "_page_no": 1,
+                                    })
+
+                        enriched = []
+                        skipped_count = 0
+                        items_needing_detail = []
+
+                        for item in items:
+                            item_url = normalize_url(item["url"])
+                            item["url"] = item_url
+                            item_page_no = item.pop("_page_no", 1)
+                            cache_key = (cache_pf, item_url)
+
+                            if cache_key in _SEEN_DETAIL_CACHE:
+                                cached_detail = _SEEN_DETAIL_CACHE[cache_key]
+                                new_closed = bool(item.get("is_closed", False))
+                                old_closed = bool(cached_detail.get("is_closed", False))
+                                new_hot = bool(item.get("is_super_hotdeal", False))
+                                old_hot = bool(cached_detail.get("is_super_hotdeal", False))
+                                new_likes = int(item.get("like_count") or 0)
+                                old_likes = int(cached_detail.get("like_count") or 0)
+                                new_ecom = item.get("ecommerce_link") or ""
+                                old_ecom = cached_detail.get("ecommerce_link") or ""
+
+                                # 1) 마감 상태 변경(False->True), 2) 포텐/인기 핫딜 승격(False->True),
+                                # 3) 추천수 유의미 증가(+3 이상 또는 8개 돌파), 4) 신규 쇼핑몰 직접 링크 확보 시에만
+                                # 상세 페이지 재요청(0-RTT) 없이 캐시된 본문과 합쳐 서버로 차등 업데이트 전송!
+                                status_changed = (
+                                    (new_closed != old_closed)
+                                    or (new_hot and not old_hot)
+                                    or (new_likes >= 8 and old_likes < 8)
+                                    or (new_likes - old_likes >= 3)
+                                    or (bool(new_ecom) and not bool(old_ecom))
+                                )
+                                if not status_changed:
+                                    skipped_count += 1
+                                    continue
+
+                                for k in ("content_html", "ecommerce_link", "image_url", "shipping_fee"):
+                                    v = cached_detail.get(k)
+                                    if v and not item.get(k):
+                                        item[k] = v
+                                cached_detail["is_closed"] = new_closed
+                                cached_detail["is_super_hotdeal"] = new_hot or old_hot or (new_likes >= 8)
+                                cached_detail["like_count"] = max(new_likes, old_likes)
+                                if new_ecom:
+                                    cached_detail["ecommerce_link"] = new_ecom
+                                enriched.append(item)
+                                continue
+
+                            # 신규 게시글 상세 필요 여부 판별
+                            # 클라우드에서 뽐뿌(ppomppu.co.kr) 상세 페이지는 해외/AWS IP를 차단(403/Timeout)하므로
+                            # 상세 페이지 직접 요청을 생략하고 jsmon/hotgusa 브릿지 및 og:image 폴백으로 0.5초 내 처리!
+                            is_ppomppu_cloud = IS_CLOUD_ENV and "ppomppu.co.kr" in item_url
+                            is_bridge_item = (
+                                is_ppomppu_cloud
+                                or bool(item.pop("_from_bridge", False))
+                                or "bridge_id=" in item_url
+                                or ("quasarzone.com" in item_url and item.get("content_html"))
+                                or ("fmkorea.com" in item_url and item.get("content_html"))
+                            )
+                            if is_bridge_item:
+                                need_detail = False
+                                if not item.get("image_url"):
+                                    try:
+                                        img_fb = await sc.fetch_og_image(item.get("ecommerce_link", ""), item.get("title", ""))
+                                        if img_fb:
+                                            item["image_url"] = img_fb
+                                    except Exception:
+                                        pass
+                            else:
+                                need_detail = (item_page_no == 1) or (not item.get("image_url"))
+                                if item.get("content_html") and item.get("image_url"):
+                                    need_detail = False
+
+                            if need_detail:
+                                items_needing_detail.append(item)
+                            else:
+                                enriched.append(item)
+
+                        # 3. 비동기 병렬 상세 페칭 (신규 게시글만 대상)
+                        if items_needing_detail:
+                            target_details = items_needing_detail[:10] if IS_CLOUD_ENV else items_needing_detail
+                            detail_sem = asyncio.Semaphore(5)
+
+                            async def fetch_one_detail(it):
+                                async with detail_sem:
+                                    try:
+                                        det = await sc.get_detail(it["url"], it.get("title", ""))
+                                        if det:
+                                            for k, v in det.items():
+                                                if k == "price" and (not v or v == 0) and it.get("price", 0) > 0:
+                                                    continue
+                                                if v is not None and v != "":
+                                                    it[k] = v
+                                    except Exception as de:
+                                        logger.warning(f"[{display_name}] detail warning: {de}")
+                                return it
+
+                            detail_results = await asyncio.gather(*[fetch_one_detail(it) for it in target_details], return_exceptions=True)
+                            for r in detail_results:
+                                if isinstance(r, dict):
+                                    enriched.append(r)
+                            for it in items_needing_detail[len(target_details):]:
+                                enriched.append(it)
+
+                        # 4. 내용 및 메타데이터 정규화, 캐시 등록
+                        final_enriched = []
+                        for item in enriched:
+                            cache_key = (cache_pf, item["url"])
+                            if not item.get("content_html"):
+                                shop_txt = item.get("shop_name") or display_name
+                                ship_txt = item.get("shipping_fee") or ""
+                                img_tag = f'<p><img src="{item["image_url"]}" alt="thumbnail" /></p>' if item.get("image_url") else ""
+                                item["content_html"] = f"{img_tag}<p><strong>{item.get('title', '')}</strong></p><p>출처: {shop_txt} {ship_txt}</p>"
+
+                            raw_t = item.get("title") or ""
+                            p_val = int(item.get("price") or 0)
+                            if "적립" in raw_t and (p_val > 100 or any(k in raw_t for k in ("슈퍼적립", "즉시적립", "캐시적립", "만 적립", "만원 적립"))):
+                                raw_t = raw_t.replace("슈퍼적립", "슈퍼혜택").replace("즉시적립", "즉시페이백").replace("캐시적립", "캐시백").replace("적립", "페이백")
+
+                            item["title"] = raw_t
+                            item["view_count"] = max(int(item.get("view_count") or 0), 1500)
+
+                            _SEEN_DETAIL_CACHE[cache_key] = {
+                                "title": item["title"],
+                                "price": p_val,
+                                "currency": item.get("currency") or "KRW",
+                                "content_html": item.get("content_html") or "",
+                                "ecommerce_link": item.get("ecommerce_link") or "",
+                                "image_url": item.get("image_url") or "",
+                                "shipping_fee": item.get("shipping_fee") or "",
+                                "is_closed": bool(item.get("is_closed", False)),
+                                "is_super_hotdeal": bool(item.get("is_super_hotdeal", False)),
+                                "like_count": int(item.get("like_count") or 0),
+                                "view_count": int(item.get("view_count") or 1500),
+                                "comment_count": int(item.get("comment_count") or 0),
+                                "created_at": item.get("posted_at") or now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                            }
+                            final_enriched.append(item)
+
+                        if skipped_count > 0 and not final_enriched:
+                            logger.info(f"⏭️ [{display_name}] 신규/상태변경 게시글 없음 (기존 캐시 {skipped_count}건 전체 스킵)")
+
+                        # 5. 클라우드 서버 전송
+                        if final_enriched:
+                            chunk_size = 5
+                            total_processed = 0
+                            for idx in range(0, len(final_enriched), chunk_size):
+                                chunk = final_enriched[idx:idx + chunk_size]
+                                for attempt in range(2):
+                                    try:
+                                        res = await http_client.post(
+                                            CLOUD_API,
+                                            json={
+                                                "community_name": name,
+                                                "display_name": display_name,
+                                                "base_url": base_url,
+                                                "deals": chunk,
+                                            },
+                                        )
+                                        if res.status_code == 200:
+                                            total_processed += res.json().get("processed", len(chunk))
+                                            break
+                                    except Exception:
+                                        pass
+                                    await asyncio.sleep(0.5 if IS_CLOUD_ENV else 1.5)
+                            logger.info(f"✅ [{display_name}] 클라우드 서버 전송 완료 (신규/상태갱신 {len(final_enriched)}건 중 {total_processed}건 반영)")
+                except Exception as e:
+                    logger.error(f"❌ [{display_name}] 수집/전송 오류: {e}")
+
         # 10개 커뮤니티 타겟을 asyncio.Semaphore(4) 기반 asyncio.gather 병렬 수집
-        await asyncio.gather(*[process_single_target(t, http_client) for t in targets], return_exceptions=True)
+        await asyncio.gather(*[process_single_target(t) for t in targets], return_exceptions=True)
         _save_local_seen_cache()
 
 
@@ -339,7 +567,7 @@ async def main():
         await scrape_and_push_once()
         if one_shot:
             break
-        await asyncio.sleep(300)
+        await asyncio.sleep(60)
 
 
 if __name__ == "__main__":
