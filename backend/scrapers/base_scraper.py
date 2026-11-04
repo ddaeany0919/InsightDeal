@@ -170,21 +170,33 @@ class AsyncBaseScraper(ABC):
                     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
                 from playwright.sync_api import sync_playwright
                 with sync_playwright() as p:
+                    # X11 가상 디스플레이(xvfb) 또는 헤드리스 환경 최적화
+                    is_linux_display = bool(os.environ.get("DISPLAY"))
+                    use_headless = not is_linux_display
+
                     browser = p.chromium.launch(
-                        headless=True,
+                        headless=use_headless,
                         args=[
                             '--no-sandbox',
                             '--disable-setuid-sandbox',
                             '--disable-dev-shm-usage',
                             '--disable-blink-features=AutomationControlled',
+                            '--disable-infobars',
+                            '--window-size=1920,1080',
                         ]
                     )
                     context = browser.new_context(
                         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                         locale="ko-KR",
+                        viewport={"width": 1920, "height": 1080},
                     )
                     page = context.new_page()
-                    page.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
+                    page.add_init_script("""
+                        delete Object.getPrototypeOf(navigator).webdriver;
+                        window.chrome = { runtime: {} };
+                        Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR', 'ko', 'en-US', 'en'] });
+                        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                    """)
 
                     response = page.goto(target_url, wait_until="domcontentloaded", timeout=20000)
                     status_code = response.status if response else 0
@@ -231,15 +243,27 @@ class AsyncBaseScraper(ABC):
                     except Exception:
                         pass
 
+            # Cloudflare 차단 안내문 시그니처 검사 (403/Turnstile 방어 페이지 오인 원천 차단)
+            cf_blocked_signals = ["Attention Required! | Cloudflare", "Just a moment...", "cf-browser-verification", "Ray ID:", "Cloudflare Ray ID"]
+            is_cf_blocked = html and any(sig in html for sig in cf_blocked_signals)
+
             if "quasarzone.com" in url:
-                if html and ("qb_saleinfo" in html or "v2-list-row" in html or "market-info" in html or "view-content" in html or status == 200):
+                has_qz_items = html and any(sel in html for sel in [".v2-list-row", "v2-list-row", "market-info-type-list", "tr.default_list", "market-info-view-table", "view-content"])
+                if status == 200 and not is_cf_blocked and has_qz_items:
                     logger.info(f"✅ [{self.platform_name}] 퀘이사존 Stealth 우회 성공! (HTML: {len(html):,} bytes, status: {status})")
                     return html
+                else:
+                    logger.warning(f"⚠️ [{self.platform_name}] 퀘이사존 응답이 차단 페이지이거나 유효하지 않음 (status={status}, cf_blocked={is_cf_blocked}, has_items={has_qz_items})")
+                    return None
             elif "fmkorea.com" in url:
-                if html and ("hotdeal_info" in html or "bd_lst" in html or "rd_body" in html or "li.li" in html or len(html) > 50000):
+                has_fm_items = html and any(sel in html for sel in ["hotdeal_info", "bd_lst", "rd_body", "li.li"])
+                if status == 200 and not is_cf_blocked and (has_fm_items or len(html) > 50000):
                     logger.info(f"✅ [{self.platform_name}] 펨코 Stealth 우회 성공! (HTML: {len(html):,} bytes)")
                     return html
-            elif html and len(html) > 1000:
+                else:
+                    logger.warning(f"⚠️ [{self.platform_name}] 펨코 응답이 430/차단 페이지임 (status={status}, cf_blocked={is_cf_blocked}, has_items={has_fm_items})")
+                    return None
+            elif html and len(html) > 1000 and status == 200 and not is_cf_blocked:
                 return html
         except Exception as pw_err:
             logger.warning(f"⚠️ [{self.platform_name}] Playwright Stealth 우회 실패 ({url}): {pw_err}")
@@ -255,8 +279,13 @@ class AsyncBaseScraper(ABC):
             async with httpx.AsyncClient(timeout=relay_timeout, follow_redirects=True) as client:
                 res = await client.get(relay_url)
                 if res.status_code == 200 and len(res.text) > 500:
-                    logger.info(f"🌐 [{self.platform_name}] 서울 리전 릴레이 우회 페칭 성공: {url}")
-                    return res.text
+                    cf_blocked_signals = ["Attention Required! | Cloudflare", "Just a moment...", "cf-browser-verification", "Ray ID:", "Cloudflare Ray ID", "cf-turnstile"]
+                    is_cf_blocked = any(sig in res.text for sig in cf_blocked_signals)
+                    if not is_cf_blocked:
+                        logger.info(f"🌐 [{self.platform_name}] 서울 리전 릴레이 우회 페칭 성공: {url}")
+                        return res.text
+                    else:
+                        logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 릴레이 응답에 Cloudflare 차단 시그니처 감지: {url}")
                 if "ppomppu.co.kr/zboard/zboard.php" in url and "page=" not in url:
                     m_id = re.search(r"id=([a-zA-Z0-9_]+)", url)
                     board_id = m_id.group(1) if m_id else "ppomppu"

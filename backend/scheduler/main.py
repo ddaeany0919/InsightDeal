@@ -596,11 +596,43 @@ def db_maintenance_job():
     except Exception as e:
         logger.error(f"DB 일일 안전 백업 및 최적화 작업 중 오류: {e}")
 
+async def dispatch_github_cloud_feeder_job():
+    """
+    ⏰ [24/7 클라우드 무정지 스케줄러]
+    GHA 내장 cron의 드롭 및 지연을 방지하기 위해 24시간 가동 중인 백엔드 스케줄러가
+    매 10분마다 GitHub Actions workflow_dispatch API를 호출하여 클라우드 피더를 정각에 격발합니다.
+    """
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not token:
+        logger.warning("⚠️ [Cloud Scheduler] GITHUB_TOKEN 환경변수가 설정되지 않아 GHA 격발을 건너뜁니다.")
+        return
+    repo = "ddaeany0919/InsightDeal"
+    url = f"https://api.github.com/repos/{repo}/actions/workflows/cloud-feeder.yml/dispatches"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "InsightDeal-Scheduler"
+    }
+    payload = {"ref": "master"}
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.post(url, headers=headers, json=payload)
+            if res.status_code in (200, 204):
+                logger.info("🚀 [Cloud Scheduler] GitHub Actions cloud-feeder.yml 워크플로우 정시 격발 성공 (HTTP 204)")
+            else:
+                logger.warning(f"⚠️ [Cloud Scheduler] GitHub Actions 격발 응답: {res.status_code} - {res.text[:100]}")
+    except Exception as e:
+        logger.warning(f"⚠️ [Cloud Scheduler] GitHub Actions 격발 실패: {e}")
+
 def start_scheduler():
     db_manager.init_database()
     scheduler = AsyncIOScheduler()
     # 핫딜 수집 데몬 (3분 주기 - 알구몬급 실시간 반영)
     scheduler.add_job(run_pipeline_job, 'interval', minutes=3, id='hotdeal_pipeline')
+    # 24/7 GitHub Actions 클라우드 피더 정시 디스패처 (10분 주기)
+    scheduler.add_job(dispatch_github_cloud_feeder_job, 'interval', minutes=10, id='github_cloud_feeder_dispatcher')
     # 과거 딜 품절/종료 검증 데몬 (10분 주기)
     scheduler.add_job(validate_closed_deals, 'interval', minutes=10, id='hotdeal_validator')
     # 펨코 실시간 급상승 검색어 수집 (1시간 주기, 정각 실행)
@@ -609,7 +641,7 @@ def start_scheduler():
     scheduler.add_job(purge_cache_job, 'cron', hour=3, minute=30, id='cache_purger')
     scheduler.add_job(db_maintenance_job, 'cron', hour=4, minute=0, id='db_maintenance')
     scheduler.start()
-    logger.info("⏰ [System] 투트랙 스케줄러(3분 수집 / 10분 품절검증) 시동 완료")
+    logger.info("⏰ [System] 투트랙 스케줄러(3분 수집 / 10분 GHA디스패치 / 10분 품절검증) 시동 완료")
     return scheduler
 
 if __name__ == "__main__":

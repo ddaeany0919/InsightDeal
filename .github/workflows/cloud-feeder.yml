@@ -19,8 +19,9 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install Python dependencies and Playwright Chromium
+      - name: Install Python dependencies and Playwright Chromium with Xvfb
         run: |
+          sudo apt-get update && sudo apt-get install -y xvfb
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt playwright
           playwright install chromium --with-deps
@@ -31,4 +32,4 @@ jobs:
           GITHUB_ACTIONS: "true"
           IS_CLOUD: "true"
         run: |
-          python -m backend.scheduler.cloud_feeder --one-shot
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python -m backend.scheduler.cloud_feeder --one-shot

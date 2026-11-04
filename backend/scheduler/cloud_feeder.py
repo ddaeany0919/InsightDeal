@@ -220,10 +220,21 @@ async def scrape_and_push_once():
                             enriched.append(item)
                             continue
 
-                        # 신규 게시글 상세 필요 여부 판별
-                        need_detail = (item_page_no == 1) or (not item.get("image_url"))
-                        if item.get("content_html") and item.get("image_url"):
+                        # 신규 게시글 상세 필요 여부 판별 (브릿지 핫딜은 content_html 이미 구비되어 상세 요청 생략)
+                        is_bridge_item = "bridge_id=" in item_url or ("quasarzone.com" in item_url and item.get("content_html"))
+                        if is_bridge_item:
                             need_detail = False
+                            if not item.get("image_url"):
+                                try:
+                                    img_fb = await sc.fetch_og_image(item.get("ecommerce_link", ""), item.get("title", ""))
+                                    if img_fb:
+                                        item["image_url"] = img_fb
+                                except Exception:
+                                    pass
+                        else:
+                            need_detail = (item_page_no == 1) or (not item.get("image_url"))
+                            if item.get("content_html") and item.get("image_url"):
+                                need_detail = False
 
                         if need_detail:
                             items_needing_detail.append(item)

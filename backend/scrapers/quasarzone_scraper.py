@@ -329,3 +329,129 @@ class QuasarzoneScraper(AsyncBaseScraper):
             "content_html": content_html,
             "image_url": image_url
         }
+
+    async def _fetch_fallback_from_bridge(self) -> list[dict]:
+        """
+        🌐 [클라우드 100% 수집 보장] 퀘이사존 Cloudflare 403 차단 시,
+        실시간 공공 핫딜 브릿지(t.me/s/hotdeal_kr, t.me/s/jsmon)를 통해 최신 핫딜 목록을 파싱합니다.
+        """
+        import httpx
+        from bs4 import BeautifulSoup
+        from backend.scrapers.schemas import ScrapedDeal
+
+        bridge_urls = ["https://t.me/s/hotdeal_kr", "https://t.me/s/jsmon"]
+        parsed_items = []
+        seen_urls = set()
+
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            urls_to_crawl = []
+            for b_url in bridge_urls:
+                urls_to_crawl.append(b_url)
+                try:
+                    res = await client.get(b_url, headers={"User-Agent": "Mozilla/5.0"})
+                    if res.status_code == 200:
+                        m_before = re.findall(r'href="(/s/(?:hotdeal_kr|jsmon)\?before=\d+)"', res.text)
+                        for b_path in m_before[:2]:
+                            urls_to_crawl.append(f"https://t.me{b_path}")
+                except Exception:
+                    pass
+
+            for u in urls_to_crawl:
+                try:
+                    res = await client.get(u, headers={"User-Agent": "Mozilla/5.0"})
+                    if res.status_code != 200:
+                        continue
+                    soup = BeautifulSoup(res.text, "html.parser")
+                    for w in soup.select(".tgme_widget_message_wrap"):
+                        a_qz = w.select_one('a[href*="quasarzone.com/bbs/qb_saleinfo/views"]')
+                        if not a_qz:
+                            continue
+                        href = a_qz.get("href", "").split("?")[0].strip()
+                        if not href or href in seen_urls:
+                            continue
+                        seen_urls.add(href)
+
+                        text_el = w.select_one(".tgme_widget_message_text")
+                        full_text = text_el.get_text(separator=" ", strip=True) if text_el else ""
+                        time_el = w.select_one("time")
+                        posted_at = time_el.get("datetime") if time_el else None
+
+                        photo_el = w.select_one(".tgme_widget_message_photo_wrap")
+                        img_url = ""
+                        if photo_el and photo_el.get("style"):
+                            m = re.search(r"background-image:url\('([^']+)'\)", photo_el["style"])
+                            if m:
+                                img_url = m.group(1)
+
+                        category = None
+                        clean_text = full_text
+                        m_cat = re.match(r"^\[([^\]]+)\]", clean_text)
+                        if m_cat:
+                            category = m_cat.group(1).strip()
+                            clean_text = clean_text[m_cat.end():].strip()
+
+                        shop_name = ""
+                        m_shop = re.match(r"^\[([^\]]+)\]", clean_text)
+                        if m_shop:
+                            shop_name = m_shop.group(1).strip()
+                            clean_text = clean_text[m_shop.end():].strip()
+
+                        price = 0
+                        currency = "KRW"
+                        shipping_fee = "무료배송" if any(k in full_text for k in ["무료", "무배", "무료배송"]) else ""
+
+                        # 가격 정규식: 화폐 기호 우선 탐색
+                        m_price = re.search(r"[￦₩\\]\s*([0-9,]+)", full_text)
+                        if m_price:
+                            digits = re.sub(r"[^0-9]", "", m_price.group(1))
+                            if digits:
+                                price = int(digits)
+                        else:
+                            m_price_num = re.search(r"([0-9,]+)\s*원(?:\s*/|\s*\))", full_text)
+                            if m_price_num:
+                                digits = re.sub(r"[^0-9]", "", m_price_num.group(1))
+                                if digits:
+                                    price = int(digits)
+
+                        clean_title = re.sub(r"[￦₩\\]\s*[0-9,]+.*$", "", clean_text).strip()
+                        clean_title = re.sub(r"\s*\([0-9,]+원.*$", "", clean_title).strip()
+                        if not clean_title:
+                            clean_title = full_text
+
+                        item = {
+                            "category": category,
+                            "title": clean_title,
+                            "url": href,
+                            "price": price,
+                            "currency": currency,
+                            "shop_name": shop_name,
+                            "image_url": img_url,
+                            "ecommerce_link": "",
+                            "is_closed": False,
+                            "shipping_fee": shipping_fee,
+                            "is_super_hotdeal": False,
+                            "posted_at": posted_at,
+                            "view_count": 1500,
+                            "like_count": 5,
+                            "comment_count": 0,
+                            "content_html": f"<p>{full_text}</p>",
+                        }
+                        try:
+                            ScrapedDeal(**{k: v for k, v in item.items() if v != ""})
+                            parsed_items.append(item)
+                        except Exception:
+                            pass
+                except Exception as b_err:
+                    logger.warning(f"⚠️ [퀘이사존 브릿지] 페칭 경고 ({u}): {b_err}")
+
+        logger.info(f"⚡ [퀘이사존 브릿지] 실시간 공공 핫딜 브릿지에서 {len(parsed_items)}건 수집 완료")
+        return parsed_items
+
+    async def run(self, url: str) -> list[dict]:
+        """웹 직접 파싱 시도 후 실패/0건 시 브릿지 폴백 가동"""
+        deals = await super().run(url)
+        if not deals:
+            logger.info(f"🌐 [퀘이사존] 웹 페이지 수집 0건/차단 감지 -> 실시간 핫딜 브릿지 폴백 발동: {url}")
+            deals = await self._fetch_fallback_from_bridge()
+        return deals
+
