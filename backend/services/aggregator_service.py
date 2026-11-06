@@ -1116,7 +1116,11 @@ class AggregatorService:
         # 단위당 가격(예: 100g당 990원)의 단위 숫자가 대표 가격(100원)으로 오인되는 현상 및 날짜 괄호((11/2), (11/2~30)) 오인 차단
         title_for_price = re.sub(r'\d+(?:\.\d+)?\s*(?:kg|g|ml|l|개|입|봉|팩|포|장|매|구|미|알|병|캔|통|박스)\s*당', ' ', raw_title, flags=re.IGNORECASE)
         title_for_price = re.sub(r'\(\s*(?:0?[1-9]|1[0-2])\s*[/\.]\s*(?:0?[1-9]|[12]\d|3[01])(?:\s*~\s*[^\)]*)?\s*\)', ' ', title_for_price)
-        is_explicit_free_deal = bool(re.search(r'\(\s*(?:무료|0\s*원|free)\s*\)|무료\s*배포|한정\s*무료|무료\s*\(유료', raw_title, re.IGNORECASE))
+        has_nonzero_price_in_title = bool(re.search(r'[1-9][\d,.]*\s*(?:만\s*원?|원|달러|불|유로|€|\$)|\$\s*[1-9][\d,.]*', title_for_price))
+        is_explicit_free_deal = bool(
+            re.search(r'\(\s*0\s*원\s*\)|무료\s*배포|한정\s*무료|일시\s*무료|무료\s*\(유료', raw_title, re.IGNORECASE)
+            or (re.search(r'\(\s*(?:무료|free)\s*\)', raw_title, re.IGNORECASE) and not has_nonzero_price_in_title)
+        )
         
         # 1. 괄호/대괄호 속 달러/유로/원 우선 파싱 (예: (53,475원 외/무료), (129,000원 무료배송), ($7.66/$4.4), (46638/무), [899,000])
         match = re.search(
@@ -1170,10 +1174,10 @@ class AggregatorService:
                 if match_won:
                     title_price = int(match_won.group(1).replace(',', ''))
                 else:
-                    match_slash = re.search(r'(?<!\d)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\s*원?\s*(?:외|부터|~)?\s*[/,]\s*(무배|무료|무료배송|무|유료|택배|와우|배송비|[0-9,]{3,5}\s*원?)', title_for_price)
+                    match_slash = re.search(r'(?<!\d)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\s*원?\s*(?:외|부터|~)?\s*(?:[/,]\s*(무배|무료|무료배송|무|유료|택배|와우|배송비|[0-9,]{3,5}\s*원?)|\s+(무배|무료배송))', title_for_price)
                     if match_slash:
                         title_price = int(match_slash.group(1).replace(',', ''))
-                        if match_slash.group(2) in ('무배', '무료', '무료배송', '무', '와우'):
+                        if (match_slash.group(2) or match_slash.group(3)) in ('무배', '무료', '무료배송', '무', '와우'):
                             shipping_fee = "무료배송"
                     else:
                         match_bracket = re.search(r'\[\s*(?:[가-힣a-zA-Z]+\s+)?([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\s*원?\s*\]', title_for_price)
