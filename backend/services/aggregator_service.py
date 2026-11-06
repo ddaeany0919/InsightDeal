@@ -47,7 +47,7 @@ def _decode_and_clean_shop_url(u: str) -> str:
 
 
 _FAKE_OPTION_NAME_RE = re.compile(
-    r"^(?:앱?기본가(?:격)?|최종가(?:격)?|최종혜택가|체감가(?:격)?|할인가(?:격)?|쿠폰가(?:격)?|정상가(?:격)?|판매가(?:격)?|행사가(?:격)?|앱사용가|판매자할인|스토어쿠폰|코인할인|장바구니|결제시?|무료배송|배송비|택배비|합계|총\s*금액|kg|g|ml|l|개|입|미|팩|박스)$",
+    r"^(?:[▪▫•◆◇★☆※#]+\s*)?(?:앱?기본가(?:격)?|최종가(?:격)?|최종혜택가|체감가(?:격)?|할인가(?:격)?|쿠폰가(?:격)?|정상가(?:격)?|판매가(?:격)?|행사가(?:격)?|앱사용가|판매자할인|스토어쿠폰|코인할인|장바구니|결제시?|무료배송|배송비|택배비|합계|총\s*금액|스토어|채널|코드|할인코드|링크|선착순|선착순\s*최대|멤버십|멤버십\s*할인|전체보기|바로가기|0원|무료|kg|g|ml|l|개|입|미|팩|박스)$",
     re.IGNORECASE,
 )
 
@@ -60,7 +60,12 @@ _PROSE_NOISE_SUBSTRINGS = (
     "기본가", "앱기본가", "최종가", "기본가격", "앱사용가", "판매자할인", "스토어쿠폰", "코인할인",
     "리뷰 작성", "텍스트 리뷰", "포토/동영상", "네이버페이 포인트", "받으시고", "받으세요",
     "추천릴레이", "무료배송", "감사제", "기대는 안되긴", "미당 약", "종류들은", "제품이고",
-    "(링크", "링크:", "결제 시", "할인코드", "장바구니 담고", "가격이 좋은데", "돈없어서", "작년에 똑같은거"
+    "(링크", "링크:", "결제 시", "할인코드", "장바구니 담고", "가격이 좋은데", "돈없어서", "작년에 똑같은거",
+    "즉시 할인", "즉시할인", "카드 할인", "카드할인", "청구할인", "청구 할인", "추가 할인", "추가할인",
+    "다운로드 쿠폰", "중복쿠폰", "기존가 대비", "댓글 달아놓으시면", "업데이트 해 드릴", "업데이트 확인하시면",
+    "유튜버 코드", "채널 할인코드", "스토어 할인코드", "와드하시면", "미리 장바구니에",
+    "순수하게", "결제기준", "스마일캐시", "신세계 상품권", "꼭멤버십", "파는데 프리미엄은",
+    "맞는거 있으면", "탑승하시길", "금액대였던걸로", "나눠 볼 수", "쿠폰팩데이", "멤버십데이", "쿠폰 링크",
 )
 
 
@@ -150,14 +155,16 @@ def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str 
 def _is_valid_option_name(name: str) -> bool:
     if not name:
         return False
-    n = name.strip()
+    n = re.sub(r"^[▪▫•◆◇★☆※#]+\s*", "", name.strip()).strip()
     if len(n) < 2 or len(n) > 65:
+        return False
+    if re.match(r"^\d+(?:\.\d+)?$", n):
         return False
     if _FAKE_OPTION_NAME_RE.match(n):
         return False
     if any(sub in n for sub in _PROSE_NOISE_SUBSTRINGS):
         return False
-    if re.search(r"(?:은|는|이|가|약|가격이|대비|같아요|네요|입니다|합니다|세요|군요|더라고요|드려요|드립니다|공동구매|총정리|기획전|모음전|못감|헤헷)[.!?~]*\s*$", n):
+    if re.search(r"(?:은|는|이|가|약|에서|으론|기억|시길|가격이|대비|같아요|네요|입니다|합니다|습니다|세요|군요|더라고요|드려요|드립니다|공동구매|총정리|기획전|모음전|못감|헤헷)[.!?~]*\s*$", n):
         return False
     if any(k in n for k in ("가능성이 높지만", "변동될 수", "공개됩니다", "참고만하세요", "해결방법", "똑같은거탔었는데")):
         return False
@@ -227,27 +234,41 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
           1 = 앱판매가 / 정상가 / 기본가 / 출고가 (폴백)
         """
         s = normalize_price_str(line)
-        # 1) 카드 조건문 ($150 이상 -$22, 10만원 이상 1만원 할인 등) 제거
-        s = re.sub(r'(?:[$₩￦€]?\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|천\s*원?|원|\$|달러|불|유로|€)?\s*(?:이상|이하)\s*(?:구매\s*시|결제\s*시)?\s*[-－—~]?\s*[$₩￦€]?\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|천\s*원?|원|\$|달러|불|유로|€)?)', ' ', s)
+        # 0) '166,800 > 98,200원' / '94,800원 > 66,000원' 같은 화살표(>, →, ->) 앞의 취소선 정가 제거
+        s = re.sub(r'(?:[₩￦$]?\s*[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,8})\s*원?\s*(?:>|→|->)\s*(?=[₩￦$]?[0-9])', ' ', s)
+        # 1) 카드 조건문 ($150 이상 -$22, $150↑ -$22, 10만원 이상 1만원 할인 등) 제거
+        s = re.sub(r'(?:[$₩￦€]?\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|천\s*원?|원|\$|달러|불|유로|€)?\s*(?:이상|이하|↑)\s*(?:구매\s*시|결제\s*시)?\s*[-－—~]?\s*[$₩￦€]?\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|천\s*원?|원|\$|달러|불|유로|€)?)', ' ', s)
         # 2) 음수 할인 차감액 (-₩37,229, -$13.50, -$36.49, 할인 -10,000원 등) 제거
         s = re.sub(r'(?:(?<!\w)[-－—]|할인\s*[-:－]?|차감\s*[-:－]?)\s*(?:[$₩￦\\€]|KRW|USD)?\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|천\s*원?|원|\$|달러|불|유로|€)?', ' ', s, flags=re.IGNORECASE)
         # 3) 단위당 가격 (100g당 1,200원, 개당 500원 등) 제거
         s = re.sub(r'\([^\)]*(?:당|개당|병당|포당|통당|박스당|팩당|캔당|g당|ml당|알당|캡슐당)[^\)]*\)', ' ', s)
         s = re.sub(r'(?:개당|병당|포당|통당|박스당|팩당|캔당|100g당|10g당|미당)\s*약?\s*[₩￦$]?\s*[\d,]+\s*원?', ' ', s)
+        # 4) 쿠폰/코인/적립금/결제할인 단독 할인 금액 문구 ($4 할인쿠폰, 코인 할인 : $1.96, 결제할인 (최대 $22), 유튜버 코드 할인 $42, 스토어 할인코드 $5 등) 제거
+        s = re.sub(
+            r'(?:코인\s*할인[^\n:]*:\s*[$₩￦]?\s*[0-9,.]+|\$\s*[0-9,.]+\s*(?:할인\s*)?쿠폰|[0-9,.]+\s*(?:만\s*원?|원|달러|\$)\s*(?:할인|중복|다운로드|스토어|선착순)?\s*쿠폰|스토어\s*(?:코드\s*)?할인\s*[$₩￦]?\s*[0-9,.]+\s*(?:달러|원|\$)?|[0-9,.]+\s*(?:달러|원|\$)\s*기준|[0-9,]+\s*원?\s*(?:적립|줘서)|(?:결제\s*할인|유튜버\s*코드\s*할인|스토어\s*중복\s*할인|중복\s*카드\s*할인|스토어\s*할인\s*코드|채널\s*할인\s*코드|추가)\s*(?:\([^\)]*\)\s*)?(?:최대\s*)?[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|최대\s*[$₩￦]\s*[0-9,.]+)',
+            ' ',
+            s,
+            flags=re.IGNORECASE,
+        )
 
         # 달러 가격과 같은 줄에 병기된 (약 ₩90,915) 환산 참고가는 달러 가격이 있을 때 제외
         if re.search(r'(?:\$\s*[0-9]+|[0-9]+(?:\.[0-9]+)?\s*(?:\$|달러|불))', s):
-            s = re.sub(r'\(\s*약\s*[₩￦\\]?\s*[0-9,]+\s*원?\s*\)', ' ', s)
+            s = re.sub(r'\(\s*₩?\s*약\s*[₩￦\\]?\s*[0-9,]+\s*원?\s*\)', ' ', s)
 
         results: list[tuple[int, str, int]] = []
         # 슬래시(/)로 '공구가 ₩151,382 / 우리 VISA 카드 시 최저 ₩122,382'가 나뉘어 있으면 파트별로 점수 부여
         parts = [p.strip() for p in re.split(r'\s+/\s+', s) if p.strip()]
         for part in parts:
-            if any(k in part for k in ('공구가', '체감가', '최종가', '실구매', '혜택가', '쿠폰가', '결제가')) and '카드 시' not in part:
+            if (
+                any(k in part for k in ('공구가', '체감가', '최종가', '역대 최저가', '실구매', '혜택가', '쿠폰가', '결제가', '할인 가격', '할인가격', '코드+코인샵', '코인샵+코드'))
+                and '카드 시' not in part
+                and '최대카할' not in part
+                and not any(sub_k in part for sub_k in ('그래픽카드 체감가', '그래픽 체감가', 'CPU 체감가'))
+            ) or bool(re.search(r'(?:→|->)\s*[$₩￦]?\s*[0-9]', part)):
                 score = 4
-            elif any(k in part for k in ('카드할인', '카드 할인', '할인가', '카드 시', '최저')):
+            elif any(k in part for k in ('카드할인', '카드 할인', '할인가', '카드 시', '최대카할', '최저')):
                 score = 3
-            elif any(k in part for k in ('앱판매가', '앱기본가', '기본가', '정상가', '출고가', '정가')):
+            elif any(k in part for k in ('상세페이지 가격', '앱판매가', '앱기본가', '기본가', '정상가', '출고가', '정가')):
                 score = 1
             else:
                 score = 2
@@ -259,12 +280,15 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 if 500 <= pv <= 15000000:
                     results.append((pv, "KRW", score))
 
-            # 만원 단위 (57.6만원 등)
+            # 만원 단위 (57.6만원, 16만, 11만원대, 194.6만 등 - 단, '22.5W 1만', '45W 2만' 같은 보조배터리 용량 표기는 제외)
             if not any(r[1] == "KRW" for r in results):
-                for m_man in re.finditer(r'([0-9]+(?:\.[0-9]+)?)\s*만\s*원?(?:대|\s*중반|\s*초반|\s*후반)?', part):
-                    mv = int(float(m_man.group(1)) * 10000)
-                    if 5000 <= mv <= 15000000:
-                        results.append((mv, "KRW", max(1, score - 1)))
+                for m_man in re.finditer(r'(?<!W\s)(?<!w\s)([0-9]+(?:\.[0-9]+)?)\s*만\s*(?:원(?:대|\s*중반|\s*초반|\s*후반)?|대|정도|가량|\s*중반|\s*초반|\s*후반)?(?!\s*(?:mAh|mah|개|명|장|번|회|점))', part):
+                    m_float = float(m_man.group(1))
+                    has_man_suffix = bool(re.search(r'만\s*(?:원|대|정도|가량|중반|초반|후반)', m_man.group(0)))
+                    if has_man_suffix or m_float >= 6:
+                        mv = int(m_float * 10000)
+                        if 5000 <= mv <= 15000000:
+                            results.append((mv, "KRW", max(1, score - 1)))
 
             # 달러 ($62.70 또는 62.70$ 또는 62.70달러)
             for m_usd in re.finditer(r'(?:\$\s*([0-9]+(?:\.[0-9]+)?)|([0-9]+(?:\.[0-9]+)?)\s*(?:\$|달러|불)(?:대)?)', part, re.IGNORECASE):
@@ -316,7 +340,9 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             '사파리에서 링크', '링크 꾹 눌러', '알리앱 꾹 눌러서', '예열기간:', '세일기간:', '사용기간:',
             '주요 페이지 바로가기', '메인 기획전', '알리가 차 쏜다', '쿠폰 센터', '쿠폰센터 바로가기', '선착순, 앱전용',
             '전상품 적용 가능', '해외직구 상품 전용', '한국발송 상품 전용', '슈퍼 브랜드 위크',
-            '공구 채널이 공개한 전용코드', '카드 결제할인(해외직구)',
+            '공구 채널이 공개한 전용코드', '카드 결제할인(해외직구)', '카드 결제할인:', '↑ -$',
+            '할인 코드는 결제화면', '코인몰으로 이동', '코인몰에서 안보이는', '쿠폰팩데이', '멤버십데이 쿠폰',
+            '개별 가격이', '계산상 약', '비교해 볼', '비슷한 금액대', '네페 2만 받으면', '네페 4만 받으면', '네페 5만 받으면', '체감가 3만 더',
             '이상 구매 시', '이상 결제 시', '이상 -$', '이상 -1만', '이상 -2만', '이상 -8천', '이상 -7천', '이상 -2800',
             '포토 리뷰 1,000원 차이', '체감가는 천원 더 높습니다', '가격은 대략적인 예상치', '환율 변동에 따라', '표기된 가격은 예상가'
         )):
@@ -333,9 +359,12 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             cu = _decode_and_clean_shop_url(u)
             if not cu:
                 continue
-            if any(h in cu.lower() for h in community_hosts):
+            cu_low = cu.lower()
+            if any(h in cu_low for h in community_hosts):
                 continue
-            if cu.lower().split('?')[0].endswith(image_exts):
+            if any(p in cu_low for p in ('campaign2.naver.com', 'ofw.adison.co', 'campaign-cdn.pstatic.net', 'shopping.naver.com/event', 'event.naver.com', 'rpp.gmarket.co.kr/?exhib=', 'store.ohou.se/exhibitions/', 'ko.aliexpress.com/item/1005010123406060.html')):
+                continue
+            if cu_low.split('?')[0].endswith(image_exts):
                 continue
             if cu not in found:
                 found.append(cu)
@@ -351,14 +380,15 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         cleaned_default_url = body_shop_urls[0][1] if body_shop_urls else ""
 
     # =========================================================================
-    # 1단계: 본문 내 '번호형 세그먼트(1. / 2. / 1번｜ / ① / [1])' 스마트 파서
+    # 1단계: 본문 내 '번호형 세그먼트(1. / 2. / 1번｜ / ① / [1])' 및 명시적 구분자('바로가기 >>', '방금 AliExpress에서 찾은 상품이에요:') 스마트 파서
     # - 링크가 제목 줄(Top-Link)에 있든 하단(Bottom-Link)에 있든 단일 링크(Type-B)이든
-    #   번호 경계 기준으로 정확히 분할하며, 각 번호 직전/내부의 [상품이미지: URL]을 1:1 매칭합니다.
+    #   상품 경계 기준으로 정확히 분할하며, 각 상품 직전/내부의 [상품이미지: URL]을 1:1 매칭합니다.
     # =========================================================================
     circle_map = {c: i for i, c in enumerate("①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳", 1)}
     num_header_re = re.compile(
-        r'^\s*(?:(\d{1,2})\s*(?:\.|번\s*[｜|:\-]?|\))\s+|\[(\d{1,2})\]\s*|([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])\s*)(.+)$'
+        r'^\s*(?:(\d{1,2})\s*(?:\.\s+|번\s*(?:[｜|:\-]\s*|\s+)|\)\s+)|\[(\d{1,2})\]\s*|([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])\s*)(.+)$'
     )
+    ali_found_re = re.compile(r'^\s*방금\s*AliExpress에서\s*찾은\s*상품이에요\s*:?\s*(.*)$', re.IGNORECASE)
     img_marker_re = re.compile(r'^\[상품이미지:\s*(https?://[^\]]+)\]$')
     code_stop_words = {
         "HTTP", "HTTPS", "HTML", "VISA", "MASTER", "MASTERCARD", "FREE", "NONE", "NULL",
@@ -366,13 +396,31 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         "UGREEN", "BASEUS", "ANKER", "ASOMETECH", "QOOVI", "ESSAGER", "TOOCKI", "VENTION",
     }
 
+    def is_non_product_numbered_header(txt: str) -> bool:
+        t = txt.strip()
+        # (1) 선착순/할인코드 번호 나열 (예: '① WLRRN114 (선착순 100장) → $37.63', '1. BALPUM003 (선착순 250장)')
+        if re.match(r'^[A-Z0-9_]{4,16}\s*(?:\(|→|->|\||적용|할인|선착순|$)', t):
+            return True
+        # (2) 앱 설정/장바구니/쿠폰 혜택 안내 문구
+        if re.search(
+            r'(?:결제\s*방법|알리\s*쿠폰|쿠폰\s*안내|주의사항|참고사항|적용\s*방법|구매\s*방법|장바구니\s*담기|장바구니담기|최근\s*본\s*상품|최근본상품|장바구니\s*탭|장바구니탭|바로\s*구매|바로구매|링크\s*꾹|알리앱\s*꾹|새\s*창에서\s*열기|지원되는\s*링크|지원되는링크|상단에\s*앱\s*연결|다운로드\s*쿠폰|할인\s*쿠폰|할인쿠폰|중복\s*쿠폰|중복쿠폰|청구\s*할인|청구할인|즉시\s*할인|즉시할인|추가\s*할인|추가할인|슈퍼\s*적립|슈퍼적립|한정\s*예산\s*소진|조기\s*종료|시간\s*동안만\s*진행|상세페이지에서\s*다운로드|적용됩니다|받으실\s*수\s*있습니다|진행됩니다|토스페이\s*앱|최저가\s*보상제|모든\s*할인)',
+            t,
+        ):
+            return True
+        return False
+
     numbered_segments: list[dict] = []
     pending_next_img: str = ""
     current_seg: dict | None = None
+    in_guide_section = False
 
     for ln in raw_lines:
         if ln.startswith('[첨부된 이미지'):
             break
+        if re.match(r'^(?:코인딜\s*코인샵\s*할인법|※\s*이벤트\s*및\s*결제\s*유의사항|링크\s*오류\s*시|링크\s*오류\s*해결\s*방법)', ln):
+            in_guide_section = True
+            continue
+
         m_img = img_marker_re.match(ln)
         if m_img:
             img_u = m_img.group(1).strip()
@@ -382,12 +430,27 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 pending_next_img = img_u
             continue
 
+        m_af = ali_found_re.match(ln)
+        if m_af:
+            in_guide_section = False
+            rest_text = m_af.group(1).strip()
+            if current_seg is not None:
+                numbered_segments.append(current_seg)
+            current_seg = {
+                "num": None,
+                "header_raw": rest_text,
+                "lines": [rest_text] if rest_text else [],
+                "image_url": pending_next_img,
+                "has_seen_price": bool(extract_scored_prices_from_line(rest_text)) if rest_text else False,
+            }
+            pending_next_img = ""
+            continue
+
         m_num = num_header_re.match(ln)
         if m_num:
             num_val = int(m_num.group(1) or m_num.group(2) or circle_map.get(m_num.group(3), 0))
             rest_text = m_num.group(4).strip()
-            # "1. 결제 방법", "2. 알리 쿠폰 안내" 같은 안내 문구는 번호형 상품에서 제외
-            if not re.match(r'^(?:결제|알리\s*쿠폰|쿠폰\s*안내|주의사항|참고사항|적용\s*방법|구매\s*방법)', rest_text):
+            if not in_guide_section and not is_non_product_numbered_header(rest_text):
                 if current_seg is not None:
                     numbered_segments.append(current_seg)
                 current_seg = {
@@ -400,7 +463,11 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 pending_next_img = ""
                 continue
 
-        if current_seg is not None:
+        if current_seg is not None and not in_guide_section:
+            if is_noise_line(ln):
+                continue
+            if not current_seg["header_raw"] and not extract_clean_urls_from_line(ln):
+                current_seg["header_raw"] = ln
             current_seg["lines"].append(ln)
             if extract_scored_prices_from_line(ln) or "후기" in ln:
                 current_seg["has_seen_price"] = True
@@ -416,6 +483,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             seg_prices: list[tuple[int, str, int]] = []
             seg_codes: list[str] = []
             expect_code_next_line = False
+            expect_high_priority_price = False
 
             for idx_s, s_ln in enumerate(seg["lines"]):
                 for cu in extract_clean_urls_from_line(s_ln):
@@ -426,7 +494,10 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 if not s_ln_no_url:
                     continue
 
-                # 할인코드 추출: (1) '공구코드'/'코드' 단독 줄 다음 줄, (2) '공구코드: QSZONE14' 또는 '코드: PC7540' 인라인
+                # 할인코드 추출:
+                # (1) '공구코드'/'코드' 단독 줄 다음 줄
+                # (2) '공구코드: QSZONE14' / '$4 할인쿠폰 : FMKR04' / '$5 쿠폰 : 11FKO5' 인라인
+                # (3) '① WLRRN114 (선착순 100장)' / '11FHG7 적용 ->' 패턴
                 if re.match(r'^(?:공구|할인|쿠폰|프로모션|스토어|전용)?\s*코드\s*:?\s*$', s_ln_no_url):
                     expect_code_next_line = True
                     continue
@@ -438,14 +509,36 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                             seg_codes.append(m_c.group(1))
                         continue
 
-                for m_inl in re.finditer(r'(?:(?:공구|할인|쿠폰|프로모션|스토어|전용)\s*)?코드\s*[:\-]?\s*([A-Z0-9_]{4,16})\b', s_ln_no_url):
+                for m_inl in re.finditer(
+                    r'(?:(?:공구|할인|쿠폰|프로모션|스토어|전용|단독\s*할인)\s*(?:코드|쿠폰)|코드|쿠폰)\s*[:\-]?\s*([A-Z0-9_]{4,16})\b',
+                    s_ln_no_url,
+                ):
                     c_tok = m_inl.group(1)
                     if c_tok.upper() not in code_stop_words and any(ch.isdigit() for ch in c_tok):
                         if c_tok not in seg_codes:
                             seg_codes.append(c_tok)
 
-                for p_tup in extract_scored_prices_from_line(s_ln_no_url):
-                    seg_prices.append(p_tup)
+                for m_num_code in re.finditer(r'(?:[①-⑳]|\b\d{1,2}[\.\)])\s*([A-Z0-9_]{4,16})\s*(?:\(|→|->|\|)', s_ln_no_url):
+                    c_tok = m_num_code.group(1)
+                    if c_tok.upper() not in code_stop_words and any(ch.isdigit() for ch in c_tok):
+                        if c_tok not in seg_codes:
+                            seg_codes.append(c_tok)
+
+                for m_app_code in re.finditer(r'\b([A-Z0-9_]{4,16})\s*적용\b', s_ln_no_url):
+                    c_tok = m_app_code.group(1)
+                    if c_tok.upper() not in code_stop_words and any(ch.isdigit() for ch in c_tok):
+                        if c_tok not in seg_codes:
+                            seg_codes.append(c_tok)
+
+                line_prices = extract_scored_prices_from_line(s_ln_no_url)
+                if line_prices:
+                    for p_val, p_curr, p_sc in line_prices:
+                        seg_prices.append((p_val, p_curr, 4 if expect_high_priority_price else p_sc))
+                    expect_high_priority_price = False
+                else:
+                    expect_high_priority_price = any(
+                        k in s_ln_no_url for k in ('공구가', '체감가', '최종가', '혜택가', '구매가', '실구매', '쿠폰가', '할인 가격')
+                    )
 
             # 상품명 정제 (첫 줄 header_raw 기준)
             raw_head = url_pattern.sub('', seg["header_raw"]).replace('(링크:', '').replace('(링크 :', '').strip()
@@ -484,6 +577,9 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             primary_url = seg_urls[0] if seg_urls else cleaned_default_url
             sub_urls = seg_urls[1:4] if len(seg_urls) > 1 else []
 
+            if chosen_price == 0 and any("품절" in l for l in seg["lines"]):
+                continue
+
             if chosen_price > 0 or primary_url:
                 norm_k = (head_clean[:30].lower(), chosen_price, primary_url)
                 if norm_k not in seen_num_keys:
@@ -499,36 +595,151 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     opt_obj["sub_urls"] = sub_urls
                     numbered_options.append(opt_obj)
 
-        if len(numbered_options) >= 2:
+        if len(numbered_options) >= 2 and any(o["price"] > 0 for o in numbered_options):
             return numbered_options[:35]
 
     # =========================================================================
-    # 2단계: 비번호형 다중 직링크 블록(Multi-Link Block) 파서
+    # 1.5단계: 퀘이사존/파트너사 다중 상품 카드 블록 ('🛒 <모델명> 특가 구매하러 가기') 파서
+    # =========================================================================
+    cart_btn_re = re.compile(r'🛒\s*(.+?)\s*(?:특가\s*)?구매하러\s*가기')
+    if raw_lines and sum(1 for ln in raw_lines if cart_btn_re.search(ln)) >= 2:
+        card_options: list[dict] = []
+        card_lines: list[str] = []
+        card_img = ""
+        for ln in raw_lines:
+            m_img = img_marker_re.match(ln)
+            if m_img:
+                card_img = m_img.group(1).strip()
+                continue
+            m_cart = cart_btn_re.search(ln)
+            if m_cart:
+                model_hint = m_cart.group(1).strip()
+                c_urls = extract_clean_urls_from_line(ln)
+                for cl in card_lines:
+                    for cu in extract_clean_urls_from_line(cl):
+                        if cu not in c_urls:
+                            c_urls.append(cu)
+                c_prices: list[tuple[int, str, int]] = []
+                expect_hp = False
+                full_model_name = model_hint
+                for cl in card_lines:
+                    if model_hint.lower() in cl.lower() and len(cl) <= 45 and not extract_scored_prices_from_line(cl):
+                        full_model_name = cl.strip()
+                    lp = extract_scored_prices_from_line(cl)
+                    if lp:
+                        for pv, pc, psc in lp:
+                            c_prices.append((pv, pc, 4 if expect_hp else psc))
+                        expect_hp = False
+                    else:
+                        expect_hp = any(k in cl for k in ('공구가', '체감가', '최종가', '혜택가', '구매가', '실구매'))
+                if c_prices:
+                    max_sc = max(x[2] for x in c_prices)
+                    cp_val, cp_curr, _ = [x for x in c_prices if x[2] == max_sc][-1]
+                    card_options.append({
+                        "name": full_model_name[:60],
+                        "price": cp_val,
+                        "currency": cp_curr,
+                        "url": c_urls[0] if c_urls else cleaned_default_url,
+                        "code": "",
+                        "image_url": card_img,
+                        "sub_urls": [],
+                    })
+                card_lines = []
+                card_img = ""
+            else:
+                card_lines.append(ln)
+        if len(card_options) >= 2:
+            return card_options[:25]
+
+    # =========================================================================
+    # 2단계: 비번호형 다중 직링크 블록(Multi-Link Block) 파서 (Top-Link / Bottom-Link 양방향 지원)
     # - 번호(1., 2.) 없이 상품명 + 쇼핑몰 직링크가 여러 개 나열된 게시글(루리웹 반다이몰 30종, 알리 모음전 등) 처리
     # =========================================================================
     if raw_lines:
         current_lines: list[str] = []
         pending_blk_img = ""
+        open_top_blk: dict | None = None
+
+        def _is_price_or_code_meta_line(t: str) -> bool:
+            if extract_scored_prices_from_line(t):
+                return True
+            if re.search(
+                r'(?:기본가|공구가|체감가|최종가|최종가격|최저가|할인가|쿠폰|코드|할인|코인|옵션|선택|상세|스토어|멤버십|적립|체감|자동\s*적용|직접\s*수령|선착순|예상|참고|결제\s*할인|카드\s*할인|중복\s*할인|주문\s*시|결제\s*시|관부가세|부가세\s*포함|배터리\s*\d+개|구성\b|^→|^->|^⭕|^✅|^🎟|^🔗)',
+                t,
+                re.IGNORECASE,
+            ):
+                return True
+            if re.match(r'^[A-Z0-9_]{4,16}$', t.strip()) and any(ch.isdigit() for ch in t):
+                return True
+            return False
+
         for idx_ln, ln in enumerate(raw_lines):
             if ln.startswith('[첨부된 이미지'):
                 break
             m_img = img_marker_re.match(ln)
             if m_img:
+                if open_top_blk is not None:
+                    blocks.append((open_top_blk["lines"], open_top_blk["url"], open_top_blk["img"]))
+                    open_top_blk = None
                 pending_blk_img = m_img.group(1).strip()
                 continue
             cleaned_urls = extract_clean_urls_from_line(ln)
-            text_only = url_pattern.sub('', ln).replace('(링크:', '').replace('()', '').strip(' -·:[]>')
+            text_only = url_pattern.sub('', ln).replace('(링크:', '').replace('()', '').strip(' -·:[]>🔗')
             while text_only.endswith(')') and text_only.count(')') > text_only.count('('):
                 text_only = text_only[:-1].strip()
+            if text_only == "링크":
+                text_only = ""
 
             if idx_ln == 0 and not text_only and cleaned_urls:
                 continue
-            if text_only and not is_noise_line(text_only):
-                current_lines.append(text_only)
+
             if cleaned_urls:
-                blocks.append((list(current_lines), cleaned_urls[0], pending_blk_img))
+                if open_top_blk is not None:
+                    blocks.append((open_top_blk["lines"], open_top_blk["url"], open_top_blk["img"]))
+                    open_top_blk = None
+                # 쿠폰 다운로드 전용 링크('선착순20%쿠폰', '쿠폰 링크')는 상품 블록에서 제외
+                prev_label = text_only or (current_lines[-1] if current_lines else "")
+                if re.search(r'^(?:선착순\s*\d*%?\s*쿠폰|.*쿠폰\s*링크|.*쿠폰\s*받기)\s*:?\s*$', prev_label):
+                    current_lines = []
+                    pending_blk_img = ""
+                    continue
+                has_price_before_url = any(bool(extract_scored_prices_from_line(cl)) for cl in current_lines)
+                if has_price_before_url:
+                    # Bottom-Link 구조: 이미 제목과 가격이 위쪽에 등장했고 하단 링크로 블록이 닫히는 경우
+                    if text_only and not is_noise_line(text_only):
+                        current_lines.append(text_only)
+                    blocks.append((list(current_lines), cleaned_urls[0], pending_blk_img))
+                else:
+                    # Top-Link 구조: 제목 + 링크가 먼저 등장하고 아래쪽에 가격/할인코드가 이어지는 경우
+                    top_init_lines = [text_only] if (text_only and not is_noise_line(text_only)) else list(current_lines[-2:])
+                    open_top_blk = {
+                        "lines": top_init_lines,
+                        "url": cleaned_urls[0],
+                        "img": pending_blk_img,
+                        "seen_price": False,
+                    }
                 current_lines = []
                 pending_blk_img = ""
+                continue
+
+            if not text_only or is_noise_line(text_only):
+                continue
+
+            if open_top_blk is not None:
+                if _is_price_or_code_meta_line(text_only):
+                    open_top_blk["lines"].append(text_only)
+                    if extract_scored_prices_from_line(text_only):
+                        open_top_blk["seen_price"] = True
+                else:
+                    # 가격/코드 메타 줄이 아닌 새로운 상품명 줄이 등장하면 이전 Top-Link 블록 마감
+                    blocks.append((open_top_blk["lines"], open_top_blk["url"], open_top_blk["img"]))
+                    open_top_blk = None
+                    current_lines.append(text_only)
+            else:
+                current_lines.append(text_only)
+
+        if open_top_blk is not None:
+            blocks.append((open_top_blk["lines"], open_top_blk["url"], open_top_blk["img"]))
 
     if len(blocks) >= 2:
         block_options: list[dict] = []
@@ -538,17 +749,46 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 continue
             cand_name = ""
             cand_prices: list[tuple[int, str, int]] = []
+            blk_codes: list[str] = []
+            expect_blk_code = False
             for bl in blk_lines:
+                if re.match(r'^(?:[$₩￦]?\s*[0-9,.]+\s*(?:원|달러|\$)?\s*)?(?:(?:공구|할인|쿠폰|프로모션|스토어|채널|전용)\s*코드|코드\s*할인|코드|쿠폰)\s*:?\s*$', bl):
+                    expect_blk_code = True
+                    continue
+                if expect_blk_code:
+                    expect_blk_code = False
+                    m_bc = re.match(r'^([A-Z0-9_]{4,16})\b', bl.strip())
+                    if m_bc and m_bc.group(1).upper() not in code_stop_words and any(ch.isdigit() for ch in m_bc.group(1)):
+                        if m_bc.group(1) not in blk_codes:
+                            blk_codes.append(m_bc.group(1))
+                        continue
+                for m_inl in re.finditer(
+                    r'(?:(?:(?:공구|할인|쿠폰|프로모션|스토어|채널|전용|단독\s*할인)\s*(?:코드|쿠폰)(?:\s*\$?[0-9,.]+)?|코드\s*할인(?:\s*\$?[0-9,.]+)?|코드|쿠폰)\s*[:\-]?\s*|(?:🎟|→|->)[^\n:]*:\s*)([A-Z0-9_]{4,16})\b',
+                    bl,
+                ):
+                    c_tok = m_inl.group(1)
+                    if c_tok.upper() not in code_stop_words and any(ch.isdigit() for ch in c_tok):
+                        if c_tok not in blk_codes:
+                            blk_codes.append(c_tok)
+                for m_num_code in re.finditer(r'(?:[①-⑳]|\b\d{1,2}[\.\)])\s*([A-Z0-9_]{4,16})\s*(?:\(|→|->|\|)', bl):
+                    c_tok = m_num_code.group(1)
+                    if c_tok.upper() not in code_stop_words and any(ch.isdigit() for ch in c_tok):
+                        if c_tok not in blk_codes:
+                            blk_codes.append(c_tok)
+
                 for p_tup in extract_scored_prices_from_line(bl):
                     cand_prices.append(p_tup)
 
+                if _is_price_or_code_meta_line(bl) and cand_name:
+                    continue
+
                 cleaned_candidate = re.sub(
-                    r'(?:[₩￦]\s*[0-9,]+|(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\s*원.*|(?:[0-9]+(?:\.[0-9]+)?)\s*만\s*원?(?:대|\s*중반|\s*초반|\s*후반)?.*|\$\s*[0-9]+(?:\.[0-9]+)?.*|[0-9]+(?:\.[0-9]+)?\s*(?:\$|달러|불)(?:대)?.*)',
+                    r'(?:\(\s*[0-9,]+(?:\s*원)?\s*(?:>|→|->).*|[₩￦]\s*[0-9,]+|(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\s*원.*|(?:[0-9]+(?:\.[0-9]+)?)\s*만\s*원?(?:대|\s*중반|\s*초반|\s*후반)?.*|\$\s*[0-9]+(?:\.[0-9]+)?.*|[0-9]+(?:\.[0-9]+)?\s*(?:\$|달러|불)(?:대)?.*)',
                     '',
                     bl,
                 )
-                cleaned_candidate = re.sub(r'바로가기\s*>*\s*', '', cleaned_candidate)
-                cleaned_candidate = re.sub(r'^>+\s*', '', cleaned_candidate)
+                cleaned_candidate = re.sub(r'(?:바로가기|보기|링크)\s*>*\s*', '', cleaned_candidate)
+                cleaned_candidate = re.sub(r'^(?:>+|→|->|⭕️?|✅|🎟️?)\s*', '', cleaned_candidate)
                 cleaned_candidate = re.sub(
                     r'\s*(?:[\d,]+\s*(?:포인트|원|p|%|프로)\s*[\+\-/]?\s*)*(?:금액대별\s*쿠폰|중복\s*쿠폰|장바구니\s*쿠폰|쿠폰|할인|적립|토스|네이버|카카오|카드|페이|적용시|감안시|결제시|체감가?|최종가?|앱기본가?|기본가?).*$',
                     '',
@@ -589,13 +829,17 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                             "currency": chosen_curr,
                             "url": blk_url,
                         }
-                        opt_d["code"] = ""
+                        opt_d["code"] = blk_codes[0] if blk_codes else ""
                         opt_d["image_url"] = blk_img or ""
                         opt_d["sub_urls"] = []
                         block_options.append(opt_d)
 
+        if sum(1 for o in block_options if o["price"] > 0) >= 2:
+            block_options = [o for o in block_options if o["price"] > 0]
         distinct_names = {o["name"].lower() for o in block_options}
-        if len(block_options) >= 2 and len(distinct_names) >= 2:
+        has_priced_blk = any(o["price"] > 0 for o in block_options)
+        is_multi_list_title = bool(re.search(r'(?:모음|재판|입고|예약|총정리|\d+\s*종)', raw_title or ''))
+        if len(block_options) >= 2 and len(distinct_names) >= 2 and (has_priced_blk or is_multi_list_title):
             return block_options[:35]
 
     # =========================================================================
@@ -628,11 +872,16 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                             "price": p_val,
                             "currency": p_curr,
                             "url": matched_url,
+                            "code": "",
+                            "image_url": "",
+                            "sub_urls": [],
                         })
             if len(slash_opts) >= 2:
                 return slash_opts
 
     # 패턴 B: 개별 괄호 나열형
+    seen_keys: set = set()
+    options: list[dict] = []
     title_matches = list(re.finditer(
         r'([^,\(\)/]+?)\s*\(\s*(\$?\s*(?:[\d,]+(?:\.\d+)?)\s*(?:만\s*원?|원|달러|불|유로|€|\$)?)\s*(?:외|부터|~)?\s*(?:/[^\)]*)?\)',
         title_no_mall
@@ -642,6 +891,8 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         for idx_m, m in enumerate(title_matches):
             opt_name = m.group(1).strip(' ,/·-~')
             opt_name = re.sub(r'^\s*\[[^\]]+\]\s*', '', opt_name).strip()
+            if re.match(r'^\d{1,2}(?:\.\d+)?$', opt_name) and '샤오신' in (raw_title or ''):
+                opt_name = f"샤오신 패드 {opt_name}"
             if _PURE_QTY_OPTION_RE.match(opt_name) and (first_valid_prefix or base_title_prefix):
                 prefix_to_use = first_valid_prefix or base_title_prefix
                 opt_name = f"{prefix_to_use[:30]} ({opt_name})"
@@ -669,7 +920,10 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                         "name": opt_name[:60],
                         "price": p_val,
                         "currency": p_curr,
-                        "url": matched_url
+                        "url": matched_url,
+                        "code": "",
+                        "image_url": "",
+                        "sub_urls": [],
                     })
         if len(options) >= 2:
             return options
@@ -705,7 +959,10 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                         "name": opt_name[:60],
                         "price": p_val,
                         "currency": p_curr,
-                        "url": cleaned_default_url
+                        "url": cleaned_default_url,
+                        "code": "",
+                        "image_url": "",
+                        "sub_urls": [],
                     })
 
     distinct_line_names = {o["name"].lower() for o in line_options}
@@ -977,6 +1234,15 @@ class AggregatorService:
                     first_opt = valid_opts[0]
                     final_price = int(first_opt["price"])
                     currency = first_opt.get("currency", currency or "KRW")
+            if not image_url:
+                opts_with_img = [o for o in structured_opts if o.get("image_url")]
+                if opts_with_img:
+                    image_url = opts_with_img[0]["image_url"]
+                    scraped_data["image_url"] = image_url
+            if not scraped_data.get("ecommerce_link"):
+                opts_with_url = [o for o in structured_opts if o.get("url")]
+                if opts_with_url:
+                    scraped_data["ecommerce_link"] = opts_with_url[0]["url"]
 
         if "무배" in raw_title or "무료배송" in raw_title or "무료" in raw_title or "/무)" in raw_title: 
             shipping_fee = "무료배송"
