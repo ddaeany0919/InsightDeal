@@ -4,6 +4,9 @@ export interface DealSource {
   ecommerce_url?: string;
   price?: number;
   currency?: string;
+  code?: string;
+  image_url?: string;
+  sub_urls?: string[];
 }
 
 export interface Deal {
@@ -25,6 +28,8 @@ export interface Deal {
   contentHtml?: string;
   sources?: DealSource[];
   tags?: string[];
+  has_options?: boolean;
+  options_count?: number;
 }
 
 export interface AIDemoResult {

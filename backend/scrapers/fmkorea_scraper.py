@@ -410,6 +410,22 @@ class FmkoreaScraper(AsyncBaseScraper):
             
         body_parts = []
         for area in content_areas:
+            for img in area.find_all('img'):
+                src = (img.get('data-original') or img.get('data-src') or img.get('src') or '').strip()
+                if not src or src.startswith('data:') or 'base64' in src.lower():
+                    continue
+                if any(x in src.lower() for x in ['emoticon', 'sticker', 'transparent', 'logo', 'icon', 'reply', 'blank', 'avatar', 'profile']):
+                    continue
+                if src.startswith('//'):
+                    src = "https:" + src
+                elif not src.startswith('http'):
+                    src = urljoin("https://www.fmkorea.com/", src)
+                parent_a = img.find_parent('a')
+                if parent_a is not None:
+                    parent_a.insert_before(f"\n[상품이미지: {src}]\n")
+                    img.decompose()
+                else:
+                    img.replace_with(f"\n[상품이미지: {src}]\n")
             # a 태그 내용을 "[텍스트](링크)" 형태로 변경하여 내용과 링크 모두 추출
             for a in area.select('a'):
                 href = a.get('href', '')

@@ -27,6 +27,7 @@ import {
   resolveOutboundUrl,
   getOrCreateWebDeviceUuid,
   ensureWebPushSubscribed,
+  getOptionSources,
 } from "./lib/utils";
 
 // 리팩토링된 컴포넌트 import
@@ -367,6 +368,8 @@ export default function Home() {
           contentHtml: d.content_html || d.contentHtml || "",
           sources: d.sources || [],
           tags: Array.isArray(d.tags) ? d.tags : [],
+          has_options: Boolean(d.has_options ?? d.hasOptions),
+          options_count: d.options_count ?? (Array.isArray(d.options_data) ? d.options_data.length : undefined),
         };
       });
 
@@ -1510,6 +1513,11 @@ export default function Home() {
                   deal.ecommerce_url !== "#" &&
                   String(deal.ecommerce_url).trim() !== "";
 
+                const optionSources = getOptionSources(deal.sources);
+                const optionCount = deal.options_count || optionSources.length;
+                const isMultiDeal = Boolean(deal.has_options || optionCount >= 2);
+                const displayCount = optionCount >= 2 ? optionCount : (deal.has_options ? 2 : 0);
+
                 return (
                   <a
                     key={deal.id}
@@ -1559,6 +1567,32 @@ export default function Home() {
                           }}
                         >
                           이미지 없음
+                        </div>
+                      )}
+
+                      {/* 📦 N종 모음 플로팅 배지 */}
+                      {isMultiDeal && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            bottom: "8px",
+                            left: "8px",
+                            background: "rgba(15, 23, 42, 0.8)",
+                            backdropFilter: "blur(6px)",
+                            color: "#F3E8FF",
+                            border: "1px solid rgba(168, 85, 247, 0.4)",
+                            padding: "3px 8px",
+                            borderRadius: "8px",
+                            fontSize: "0.72rem",
+                            fontWeight: 800,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            zIndex: 2,
+                            boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+                          }}
+                        >
+                          <span>📦 {displayCount >= 2 ? `${displayCount}종 모음` : "모음전"}</span>
                         </div>
                       )}
                     </div>
@@ -1643,14 +1677,34 @@ export default function Home() {
                             <span className="deal-tag" style={{ background: "var(--badge-bg)", color: "var(--text-muted)" }}>
                               종료
                             </span>
-                          ) : (deal.honeyScore || 0) >= 100 ? (
-                            <span
-                              className="deal-tag"
-                              style={{ background: "var(--deal-orange-bg)", color: "var(--deal-orange)", fontWeight: 800 }}
-                            >
-                              인기
-                            </span>
-                          ) : null}
+                          ) : (
+                            <>
+                              {isMultiDeal && (
+                                <span
+                                  className="deal-tag"
+                                  style={{
+                                    background: "rgba(147, 51, 234, 0.12)",
+                                    color: "#9333EA",
+                                    border: "1px solid rgba(147, 51, 234, 0.28)",
+                                    fontWeight: 800,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "3px",
+                                  }}
+                                >
+                                  📦 {displayCount >= 2 ? `${displayCount}종 모음` : "모음전"}
+                                </span>
+                              )}
+                              {(deal.honeyScore || 0) >= 100 ? (
+                                <span
+                                  className="deal-tag"
+                                  style={{ background: "var(--deal-orange-bg)", color: "var(--deal-orange)", fontWeight: 800 }}
+                                >
+                                  인기
+                                </span>
+                              ) : null}
+                            </>
+                          )}
                           {deal.shipping_fee && !deal.isClosed && (
                             <span
                               className="deal-tag"

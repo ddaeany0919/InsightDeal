@@ -427,6 +427,29 @@ class PpomppuScraper(AsyncBaseScraper):
             for scrap in content_element.select('a.scrap_bx_href, div.scrap_bx'):
                 scrap.decompose()
 
+            # 본문 내 이미지 태그의 DOM 위치를 [상품이미지: URL] 마커로 보존 (모음전 각 번호 상품과 1:1 이미지 매칭 보장)
+            for img in content_element.find_all('img'):
+                src = (img.get('data-original') or img.get('data-src') or img.get('src') or '').strip()
+                if src.startswith('//'):
+                    src = 'https:' + src
+                if src and 'http' in src:
+                    src_lower = src.lower()
+                    if any(x in src_lower for x in [
+                        'emoticon', 'sticker', 'transparent', 'logo', 'icon', 'reply',
+                        'blank', 'avatar', 'profile', 'lazyloading', '/t.gif', 'drag_img'
+                    ]):
+                        continue
+                    if "ppomppu" in src:
+                        src = src.replace("_thumb/", "").replace("thumb/", "")
+                        src = src.replace("/small_", "/").replace("small_", "")
+                        src = src.replace("_thumb.", ".")
+                    parent_a = img.find_parent('a')
+                    if parent_a is not None:
+                        parent_a.insert_before(f"\n[상품이미지: {src}]\n")
+                        img.decompose()
+                    else:
+                        img.replace_with(f"\n[상품이미지: {src}]\n")
+
             # 링크 보존 및 본문 내 실제 구매 링크 추출 (상단 더미 링크 오탐 방어)
             body_outlinks = []
             for a in content_element.find_all('a'):

@@ -535,7 +535,7 @@ async def scrape_and_push_once():
                                     skipped_count += 1
                                     continue
 
-                                for k in ("content_html", "image_url", "shipping_fee"):
+                                for k in ("content_html", "image_url", "shipping_fee", "options_data", "has_options"):
                                     v = cached_detail.get(k)
                                     if v and not item.get(k):
                                         item[k] = v
@@ -579,6 +579,16 @@ async def scrape_and_push_once():
                                 need_detail = (item_page_no == 1) or (not item.get("image_url"))
                                 if item.get("content_html") and item.get("image_url"):
                                     need_detail = False
+
+                            # 다중 상품/모음전 패턴 게시글 감지 (모음, 골라담기, 외 \d+, 공구, 총정리, \d+종 등)
+                            # 모음전의 경우 본문 내부의 [상품이미지: URL] 및 번호별 옵션을 온전히 수집하기 위해 상세 페칭 강제 활성화
+                            item_title = item.get("title", "") or ""
+                            is_multi_title = bool(
+                                re.search(r'(?:외\s*\d+|골라담기|모음|선택|공구|총정리|\d+\s*종|다양|특가\s*모음)', item_title)
+                                or re.search(r'\([^)]+/[^)]+\)', item_title)
+                            )
+                            if is_multi_title:
+                                need_detail = True
 
                             if need_detail:
                                 items_needing_detail.append(item)
@@ -643,6 +653,8 @@ async def scrape_and_push_once():
                                 "view_count": int(item.get("view_count") or 1500),
                                 "comment_count": int(item.get("comment_count") or 0),
                                 "created_at": item.get("posted_at") or now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                "options_data": item.get("options_data"),
+                                "has_options": bool(item.get("has_options", False)),
                             }
                             final_enriched.append(item)
 

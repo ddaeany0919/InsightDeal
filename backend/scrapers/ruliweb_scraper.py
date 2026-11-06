@@ -221,6 +221,22 @@ class RuliwebScraper(AsyncBaseScraper):
         if content_area:
             for tag in content_area.select('script, style'):
                 tag.decompose()
+            for img in content_area.find_all('img'):
+                src = (img.get('src') or img.get('data-src') or '').strip()
+                if not src:
+                    continue
+                if src.startswith('//'):
+                    src = "https:" + src
+                elif not src.startswith('http'):
+                    src = urljoin("https://bbs.ruliweb.com", src)
+                if any(bad in src.lower() for bad in ('icon', 'emoticon', 'btn_', 'logo', '.gif')):
+                    continue
+                parent_a = img.find_parent('a')
+                if parent_a is not None:
+                    parent_a.insert_before(f"\n[상품이미지: {src}]\n")
+                    img.decompose()
+                else:
+                    img.replace_with(f"\n[상품이미지: {src}]\n")
             for a_tag in content_area.find_all('a', href=True):
                 real_href = unwrap_ruliweb_link(a_tag['href'])
                 if real_href.startswith('http') and 'ruliweb.com' not in real_href:

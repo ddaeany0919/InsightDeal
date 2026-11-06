@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { ThumbsUp, ThumbsDown, Share2, MessageSquare, Send, Bell, Copy, ExternalLink } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Share2, MessageSquare, Send, Bell, Copy, ExternalLink, Check } from "lucide-react";
 import type { Deal, DealSource } from "../lib/types";
 import {
   formatPrice,
@@ -12,6 +12,7 @@ import {
   extractPromoCodes,
   getOrCreateWebDeviceUuid,
   ensureWebPushSubscribed,
+  getOptionSources,
 } from "../lib/utils";
 import PriceTrendChart, { type PriceTrendStats } from "./PriceTrendChart";
 
@@ -43,6 +44,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
   const [comments, setComments] = useState<DealCommentItem[]>([]);
   const [commentInput, setCommentInput] = useState<string>("");
   const [submittingComment, setSubmittingComment] = useState<boolean>(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const getBrowserUserId = () => getOrCreateWebDeviceUuid();
 
@@ -56,6 +58,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
     setUserVote(null);
     setComments([]);
     setCommentInput("");
+    setCopiedCode(null);
 
     if (!deal) return;
 
@@ -135,19 +138,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
   // HTML 태그 제거 + 공구 다중 상품 구분선 및 깨진 쿠폰 코드 줄바꿈 자동 다듬기
   const cleanBodyText = polishDealBodyText(detailHtml);
   const promoCodes = extractPromoCodes(cleanBodyText, deal.title);
-  const optionSources = (() => {
-    const seen = new Set<string>();
-    const result: DealSource[] = [];
-    for (const src of detailSources || []) {
-      if (!src.site_name || !src.site_name.includes(" - ") || !src.ecommerce_url) continue;
-      const optTitle = src.site_name.split(" - ").slice(1).join(" - ").trim();
-      const normKey = optTitle.toLowerCase().replace(/\s+/g, "");
-      if (!normKey || seen.has(normKey)) continue;
-      seen.add(normKey);
-      result.push(src);
-    }
-    return result;
-  })();
+  const optionSources = getOptionSources(detailSources);
 
   const handleVote = async (voteType: "buy" | "save") => {
     try {
@@ -500,65 +491,211 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
             <div
               style={{
                 borderTop: "1px solid var(--card-border)",
-                paddingTop: "12px",
+                paddingTop: "14px",
                 display: "flex",
                 flexDirection: "column",
-                gap: "8px",
+                gap: "10px",
               }}
             >
-              <div style={{ fontSize: "0.78rem", color: "var(--accent)", fontWeight: 800 }}>
-                구성 상품 선택 및 바로가기 ({optionSources.length}종)
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: "0.84rem", color: "var(--accent)", fontWeight: 800 }}>
+                  📦 구성 상품 선택 및 바로가기 ({optionSources.length}종)
+                </div>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-sub)", fontWeight: 600 }}>
+                  개별 상품 링크 & 전용 할인코드
+                </span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "170px", overflowY: "auto" }}>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                  maxHeight: "320px",
+                  overflowY: "auto",
+                  paddingRight: "4px",
+                }}
+              >
                 {optionSources.map((src, idx) => {
                   const optionTitle = src.site_name.split(" - ").slice(1).join(" - ").trim() || src.site_name;
                   const optionCurrency = src.currency || deal.currency || "KRW";
+                  const itemUrl = resolveOutboundUrl(src.ecommerce_url || deal.ecommerce_url || deal.post_link);
+                  const isCopied = copiedCode === src.code;
+
                   return (
-                    <a
+                    <div
                       key={`${src.site_name}-${idx}`}
-                      href={resolveOutboundUrl(src.ecommerce_url || deal.post_link)}
-                      target="_blank"
-                      rel="noopener"
-                      className="bounce-click"
                       style={{
                         display: "flex",
-                        justifyContent: "space-between",
                         alignItems: "center",
-                        gap: "10px",
-                        padding: "9px 12px",
-                        borderRadius: "10px",
+                        justifyContent: "space-between",
+                        gap: "12px",
+                        padding: "10px 12px",
+                        borderRadius: "12px",
                         background: "var(--card-bg)",
                         border: "1px solid var(--card-border)",
-                        textDecoration: "none",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                        transition: "border-color 0.2s ease",
                       }}
                     >
-                      <span
+                      {/* 1:1 개별 상품 썸네일 (50x50) */}
+                      <div
                         style={{
-                          fontSize: "0.83rem",
-                          fontWeight: 700,
-                          color: "var(--text-main)",
+                          width: "50px",
+                          height: "50px",
+                          borderRadius: "10px",
                           overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
+                          flexShrink: 0,
+                          background: "var(--surface-subtle)",
+                          border: "1px solid var(--card-border)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
                         }}
                       >
-                        {optionTitle}
-                      </span>
-                      <span
+                        {src.image_url ? (
+                          <img
+                            src={getProxyImageUrl(src.image_url)}
+                            alt={optionTitle}
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                            referrerPolicy="no-referrer"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <span style={{ fontSize: "0.75rem", color: "var(--text-sub)", fontWeight: 700 }}>
+                            #{idx + 1}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* 상품 정보 (명칭, 가격, 할인코드 복사 칩, 보조링크) */}
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "4px" }}>
+                        <div
+                          title={optionTitle}
+                          style={{
+                            fontSize: "0.84rem",
+                            fontWeight: 700,
+                            color: "var(--text-main)",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {optionTitle}
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                          <span
+                            style={{
+                              fontSize: "0.85rem",
+                              fontWeight: 800,
+                              color: "var(--deal-orange)",
+                              fontVariantNumeric: "tabular-nums",
+                            }}
+                          >
+                            {src.price && src.price > 0 ? formatPrice(src.price, optionCurrency) : "가격 확인"}
+                          </span>
+
+                          {/* 원클릭 할인코드 복사 칩 */}
+                          {src.code && (
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                try {
+                                  if (typeof navigator !== "undefined" && navigator.clipboard) {
+                                    await navigator.clipboard.writeText(src.code!);
+                                  } else {
+                                    const textarea = document.createElement("textarea");
+                                    textarea.value = src.code!;
+                                    document.body.appendChild(textarea);
+                                    textarea.select();
+                                    document.execCommand("copy");
+                                    document.body.removeChild(textarea);
+                                  }
+                                  setCopiedCode(src.code!);
+                                  setTimeout(() => {
+                                    setCopiedCode((prev) => (prev === src.code ? null : prev));
+                                  }, 2000);
+                                  showToast(`할인코드 '${src.code}'가 복사되었습니다.`);
+                                } catch {
+                                  showToast("할인코드 복사에 실패했습니다.");
+                                }
+                              }}
+                              className="bounce-click"
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                                padding: "2px 8px",
+                                borderRadius: "6px",
+                                background: isCopied ? "rgba(16, 185, 129, 0.15)" : "rgba(var(--accent-rgb), 0.1)",
+                                border: isCopied ? "1px solid #10B981" : "1px dashed rgba(var(--accent-rgb), 0.4)",
+                                color: isCopied ? "#10B981" : "var(--accent)",
+                                fontSize: "0.72rem",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                              }}
+                              title="클릭하여 할인코드 복사"
+                            >
+                              {isCopied ? <Check size={11} /> : <Copy size={11} />}
+                              <span>{isCopied ? "✓ 복사됨!" : `📋 ${src.code}`}</span>
+                            </button>
+                          )}
+
+                          {/* 보조 링크들 (sub_urls) */}
+                          {Array.isArray(src.sub_urls) && src.sub_urls.length > 0 && (
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                              {src.sub_urls.map((sUrl, sIdx) => (
+                                <a
+                                  key={sIdx}
+                                  href={resolveOutboundUrl(sUrl)}
+                                  target="_blank"
+                                  rel="noopener"
+                                  style={{
+                                    fontSize: "0.7rem",
+                                    color: "var(--text-sub)",
+                                    textDecoration: "underline",
+                                    fontWeight: 600,
+                                  }}
+                                  title={`보조 링크 ${sIdx + 1}`}
+                                >
+                                  [링크{sIdx + 2}]
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 개별 쇼핑몰 직접 구매 버튼 */}
+                      <a
+                        href={itemUrl}
+                        target="_blank"
+                        rel="noopener"
+                        className="bounce-click"
                         style={{
                           display: "inline-flex",
                           alignItems: "center",
-                          gap: "6px",
+                          gap: "4px",
+                          padding: "7px 12px",
+                          borderRadius: "8px",
+                          background: "var(--primary-gradient)",
+                          color: "#fff",
+                          fontSize: "0.78rem",
+                          fontWeight: 700,
+                          textDecoration: "none",
                           flexShrink: 0,
-                          fontSize: "0.84rem",
-                          fontWeight: 800,
-                          color: "var(--deal-orange)",
+                          boxShadow: "0 2px 8px rgba(var(--accent-rgb), 0.22)",
                         }}
+                        title="쇼핑몰 바로가기"
                       >
-                        <span>{src.price && src.price > 0 ? formatPrice(src.price, optionCurrency) : "상세보기"}</span>
-                        <ExternalLink size={13} color="var(--accent)" />
-                      </span>
-                    </a>
+                        <span>구매</span>
+                        <ExternalLink size={12} color="#fff" />
+                      </a>
+                    </div>
                   );
                 })}
               </div>

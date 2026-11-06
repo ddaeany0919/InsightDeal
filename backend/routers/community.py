@@ -162,7 +162,10 @@ def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
                     "post_url": deal.post_link or "",
                     "ecommerce_url": opt_ecom_url,
                     "price": int(opt.get("price", parsed_price_int)),
-                    "currency": opt.get("currency", currency)
+                    "currency": opt.get("currency", currency),
+                    "code": opt.get("code") or "",
+                    "image_url": opt.get("image_url") or "",
+                    "sub_urls": opt.get("sub_urls") or opt.get("urls") or [],
                 })
         except Exception:
             deal_sources.append({
@@ -170,7 +173,10 @@ def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
                 "post_url": deal.post_link or "",
                 "ecommerce_url": cleaned_ecom_url,
                 "price": parsed_price_int,
-                "currency": currency
+                "currency": currency,
+                "code": "",
+                "image_url": getattr(deal, 'image_url', '') or "",
+                "sub_urls": [],
             })
     else:
         deal_sources.append({
@@ -178,7 +184,10 @@ def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
             "post_url": deal.post_link or "",
             "ecommerce_url": cleaned_ecom_url,
             "price": parsed_price_int,
-            "currency": currency
+            "currency": currency,
+            "code": "",
+            "image_url": getattr(deal, 'image_url', '') or "",
+            "sub_urls": [],
         })
         
     # [백그라운드 병합 딜(merged_communities) 소스 복원 로직 추가 - 인메모리 캐시로 N+1 DB 쿼리 완전 제거]
@@ -206,7 +215,10 @@ def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
                         "post_url": merge_post_url or "",
                         "ecommerce_url": cleaned_ecom_url,
                         "price": parsed_price_int,
-                        "currency": currency
+                        "currency": currency,
+                        "code": "",
+                        "image_url": getattr(deal, 'image_url', '') or "",
+                        "sub_urls": [],
                     })
     
     return deal_sources
@@ -890,6 +902,8 @@ def _clean_content_text(raw_text: str, title: str = "") -> str:
     text = re.sub(r'//<!\[CDATA\[[\s\S]*?//\]\]>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'댓글\s*작성\s*하려면\s*로그인이\s*필요합니다[\s\S]*$', '', text, flags=re.IGNORECASE)
     text = re.sub(r'추천수\s*/\s*비추천수[\s\S]*$', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\[상품이미지\s*:\s*https?://[^\]]+\]', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\[상품이미지\s*:[^\]]*\]', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\(\s*링크\s*:\s*https?://[^\)]+\)', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\[첨부된 이미지 링크들\]\s*:?[\s\S]*$', '', text, flags=re.IGNORECASE)
     text = re.sub(r'Your browser does not support the video tag\.?', '', text, flags=re.IGNORECASE)
@@ -1145,6 +1159,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                 
                 # 하나라도 살아있다면 전체 딜을 진행중인 것으로 처리
                 existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
+                existing["has_options"] = existing.get("has_options", False) or bool(getattr(deal, "has_options", False))
                     
                 # 다수의 중복 딜 중 하나라도 핫딜이면 핫딜 상태 병합
                 if getattr(deal, 'honey_score', 0) >= 100:
@@ -1192,6 +1207,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     "honey_score": deal.honey_score or 0,
                     "ai_summary": ai_sum,
                     "content_html": _clean_content_text(deal.content_html or "", clean_title),
+                    "has_options": bool(getattr(deal, "has_options", False)),
                 }
                 cluster_map[cluster_key] = deal_dict
                 grouped_result.append(deal_dict)
@@ -1384,11 +1400,12 @@ async def get_hot_deals(
             for pt in positive_tokens:
                 pt_like = f"%{pt}%"
                 if len(pt) == 1:
-                    # 1글자 완성형 한글(예: 쌀, 꿀, 배)은 제목(title) 및 기본 상품명에서만 검색
+                    # 1글자 완성형 한글(예: 쌀, 꿀, 배)은 제목(title) 및 기본 상품명, 다중 옵션 데이터에서 검색
                     query = query.filter(
                         or_(
                             models.Deal.title.ilike(pt_like),
-                            models.Deal.base_product_name.ilike(pt_like)
+                            models.Deal.base_product_name.ilike(pt_like),
+                            models.Deal.options_data.ilike(pt_like)
                         )
                     )
                 else:
@@ -1396,7 +1413,8 @@ async def get_hot_deals(
                         or_(
                             models.Deal.title.ilike(pt_like),
                             models.Deal.search_keywords.ilike(pt_like),
-                            models.Deal.base_product_name.ilike(pt_like)
+                            models.Deal.base_product_name.ilike(pt_like),
+                            models.Deal.options_data.ilike(pt_like)
                         )
                     )
             for et in exclude_tokens:
@@ -1561,6 +1579,7 @@ async def get_hot_deals(
                             
                 # 하나라도 살아있다면 전체 딜을 진행중인 것으로 처리
                 existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
+                existing["has_options"] = existing.get("has_options", False) or bool(getattr(deal, "has_options", False))
                 
                 # 다수의 중복 딜 중 하나라도 핫딜이면 핫딜 상태 병합
                 if getattr(deal, 'honey_score', 0) >= 100:
@@ -1620,7 +1639,8 @@ async def get_hot_deals(
                     "comment_count": deal.comment_count or 0,
                     "like_count": buy_count,
                     "dislike_count": save_count,
-                    "tags": extract_deal_benefit_tags(deal.title, deal.content_html)
+                    "tags": extract_deal_benefit_tags(deal.title, deal.content_html),
+                    "has_options": bool(getattr(deal, "has_options", False)),
                 }
                 cluster_map[cluster_key] = deal_dict
                 grouped_result.append(deal_dict)
@@ -1985,7 +2005,8 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
         "is_closed": is_closed,
         "score": getattr(best_deal, "honey_score", 0) or getattr(deal, "honey_score", 0),
         "ai_summary": _clean_ai_summary(getattr(best_deal, "ai_summary", "") or getattr(deal, "ai_summary", "") or ""),
-        "content_html": _clean_content_text(getattr(best_deal, "content_html", "") or getattr(deal, "content_html", "") or "", deal.title or "")
+        "content_html": _clean_content_text(getattr(best_deal, "content_html", "") or getattr(deal, "content_html", "") or "", deal.title or ""),
+        "has_options": bool(getattr(best_deal, "has_options", False) or getattr(deal, "has_options", False)),
     }
 
 @router.get("/deals/{deal_id}/history")

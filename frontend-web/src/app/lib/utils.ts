@@ -1,3 +1,5 @@
+import type { DealSource } from "./types";
+
 // 제목에서 가격/통화 보조 추출 (예: "11.6불", "$13.93", "8500원", "9천원")
 export const extractPriceFromTitle = (title?: string | null): { price: string; currency: string } | null => {
   if (!title) return null;
@@ -188,6 +190,24 @@ export const resolveOutboundUrl = (rawUrl: string | undefined | null): string =>
   return url;
 };
 
+/**
+ * 딜의 sources 배열에서 다중 상품(공구/모음전) 옵션 목록만 추출하고 정규화합니다.
+ */
+export const getOptionSources = (sources?: DealSource[] | null): DealSource[] => {
+  if (!Array.isArray(sources) || sources.length === 0) return [];
+  const seen = new Set<string>();
+  const result: DealSource[] = [];
+  for (const src of sources) {
+    if (!src.site_name || !src.site_name.includes(" - ")) continue;
+    const optTitle = src.site_name.split(" - ").slice(1).join(" - ").trim();
+    const normKey = optTitle.toLowerCase().replace(/\s+/g, "");
+    if (!normKey || seen.has(normKey)) continue;
+    seen.add(normKey);
+    result.push(src);
+  }
+  return result;
+};
+
 // 본문 HTML/텍스트 자동 정돈 (공구 다중 상품 구분선, 깨진 할인코드 줄바꿈 병합, 불필요한 화살표 링크 노이즈 제거)
 export const polishDealBodyText = (rawHtml: string | undefined | null): string => {
   if (!rawHtml) return "";
@@ -203,6 +223,11 @@ export const polishDealBodyText = (rawHtml: string | undefined | null): string =
     .replace(/&#39;/g, "'")
     .replace(/\uFFFD/g, "");
 
+  // 스크래퍼 파싱용 상품 이미지 마커 및 첨부 이미지 안내문 완전 제거
+  text = text
+    .replace(/\[상품이미지\s*:\s*https?:\/\/[^\]]+\]/gi, "")
+    .replace(/\[첨부된\s*이미지[^\]]*\]/gi, "");
+
   // 한 줄로 뭉쳐진 본문(퀘이사존/클리앙 등) 자동 줄바꿈 복원
   text = text
     .replace(/\s+(?=[📱📶💰📦🎁⚠️✅🎟️🔥👉ⒶⒷ①②③④⑤])/g, "\n")
@@ -217,6 +242,8 @@ export const polishDealBodyText = (rawHtml: string | undefined | null): string =
     .map((l) => l.replace(/\s+최근\s*본\s*상품\s*>\s*$/i, ""))
     .filter((l) => {
       if (!l || l === "▪") return false;
+      if (/^\[상품이미지\s*:\s*https?:\/\/[^\]]+\]$/i.test(l)) return false;
+      if (/^\[첨부된\s*이미지/i.test(l)) return false;
       if (/^(?:링크|바로가기|보기)\s*>{0,}$/i.test(l)) return false;
       if (/^(?:링크|구매\s*링크)\s*>{2,}/i.test(l)) return false;
       if (/^>{2,}/.test(l)) return false;
