@@ -47,7 +47,7 @@ def _decode_and_clean_shop_url(u: str) -> str:
 
 
 _FAKE_OPTION_NAME_RE = re.compile(
-    r"^(?:[▪▫•◆◇★☆※#]+\s*)?(?:앱?기본가(?:격)?|최종가(?:격)?|최종혜택가|체감가(?:격)?|할인가(?:격)?|쿠폰가(?:격)?|정상가(?:격)?|판매가(?:격)?|행사가(?:격)?|앱사용가|판매자할인|스토어쿠폰|코인할인|장바구니|결제시?|무료배송|배송비|택배비|합계|총\s*금액|스토어|채널|코드|할인코드|링크|선착순|선착순\s*최대|멤버십|멤버십\s*할인|전체보기|바로가기|0원|무료|kg|g|ml|l|개|입|미|팩|박스)$",
+    r"^(?:[▪▫•◆◇★☆※#]+\s*)?(?:앱?기본가(?:격)?|최종가(?:격)?|최종혜택가|체감가(?:격)?|할인가(?:격)?|쿠폰가(?:격)?|정상가(?:격)?|판매가(?:격)?|행사가(?:격)?|앱사용가|판매자할인|스토어쿠폰|코인|코인할인|공구\s*코드|특가\s*코드|프로모션\s*코드|쿠폰\s*코드|할인\s*코드|스토어\s*코드|전용\s*코드|장바구니|결제시?|무료배송|배송비|택배비|합계|총\s*금액|스토어|채널|코드|링크|선착순|선착순\s*최대|멤버십|멤버십\s*할인|전체보기|바로가기|가게\s*리스트.*|오프라인\s*매장.*|0원|무료|kg|g|ml|l|개|입|미|팩|박스)$",
     re.IGNORECASE,
 )
 
@@ -156,7 +156,7 @@ def _is_valid_option_name(name: str) -> bool:
     if not name:
         return False
     n = re.sub(r"^[▪▫•◆◇★☆※#]+\s*", "", name.strip()).strip()
-    if len(n) < 2 or len(n) > 65:
+    if len(n) < 2 or len(n) > 130:
         return False
     if re.match(r"^\d+(?:\.\d+)?$", n):
         return False
@@ -401,9 +401,9 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         # (1) 선착순/할인코드 번호 나열 (예: '① WLRRN114 (선착순 100장) → $37.63', '1. BALPUM003 (선착순 250장)')
         if re.match(r'^[A-Z0-9_]{4,16}\s*(?:\(|→|->|\||적용|할인|선착순|$)', t):
             return True
-        # (2) 앱 설정/장바구니/쿠폰 혜택 안내 문구
+        # (2) 앱 설정/장바구니/쿠폰 혜택 안내 문구 및 음향/제품 리뷰 섹션 헤더
         if re.search(
-            r'(?:결제\s*방법|알리\s*쿠폰|쿠폰\s*안내|주의사항|참고사항|적용\s*방법|구매\s*방법|장바구니\s*담기|장바구니담기|최근\s*본\s*상품|최근본상품|장바구니\s*탭|장바구니탭|바로\s*구매|바로구매|링크\s*꾹|알리앱\s*꾹|새\s*창에서\s*열기|지원되는\s*링크|지원되는링크|상단에\s*앱\s*연결|다운로드\s*쿠폰|할인\s*쿠폰|할인쿠폰|중복\s*쿠폰|중복쿠폰|청구\s*할인|청구할인|즉시\s*할인|즉시할인|추가\s*할인|추가할인|슈퍼\s*적립|슈퍼적립|한정\s*예산\s*소진|조기\s*종료|시간\s*동안만\s*진행|상세페이지에서\s*다운로드|적용됩니다|받으실\s*수\s*있습니다|진행됩니다|토스페이\s*앱|최저가\s*보상제|모든\s*할인)',
+            r'(?:결제\s*방법|알리\s*쿠폰|쿠폰\s*안내|주의사항|참고사항|적용\s*방법|구매\s*방법|장바구니\s*담기|장바구니담기|최근\s*본\s*상품|최근본상품|장바구니\s*탭|장바구니탭|바로\s*구매|바로구매|링크\s*꾹|알리앱\s*꾹|새\s*창에서\s*열기|지원되는\s*링크|지원되는링크|상단에\s*앱\s*연결|다운로드\s*쿠폰|할인\s*쿠폰|할인쿠폰|중복\s*쿠폰|중복쿠폰|청구\s*할인|청구할인|즉시\s*할인|즉시할인|추가\s*할인|추가할인|슈퍼\s*적립|슈퍼적립|한정\s*예산\s*소진|조기\s*종료|시간\s*동안만\s*진행|상세페이지에서\s*다운로드|적용됩니다|받으실\s*수\s*있습니다|진행됩니다|토스페이\s*앱|최저가\s*보상제|모든\s*할인|프로모션\s*코드|프로모션\s*할인코드|결제\s*할인\s*혜택|전용\s*공동구매|전반적인\s*사운드|구동력과\s*다이내믹스|이런\s*분에게\s*추천|이런\s*분은\s*피하셔야|저음\s*\(|중음\s*\(|고음\s*\(|음감\s*모드|하드웨어\s*모드)',
             t,
         ):
             return True
@@ -595,8 +595,9 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     opt_obj["sub_urls"] = sub_urls
                     numbered_options.append(opt_obj)
 
-        if len(numbered_options) >= 2 and any(o["price"] > 0 for o in numbered_options):
-            return numbered_options[:35]
+        priced_num_opts = [o for o in numbered_options if int(o.get("price", 0)) > 0]
+        if len(priced_num_opts) >= 2:
+            return priced_num_opts[:35]
 
     # =========================================================================
     # 1.5단계: 퀘이사존/파트너사 다중 상품 카드 블록 ('🛒 <모델명> 특가 구매하러 가기') 파서
@@ -834,12 +835,9 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                         opt_d["sub_urls"] = []
                         block_options.append(opt_d)
 
-        if sum(1 for o in block_options if o["price"] > 0) >= 2:
-            block_options = [o for o in block_options if o["price"] > 0]
+        block_options = [o for o in block_options if int(o.get("price", 0)) > 0]
         distinct_names = {o["name"].lower() for o in block_options}
-        has_priced_blk = any(o["price"] > 0 for o in block_options)
-        is_multi_list_title = bool(re.search(r'(?:모음|재판|입고|예약|총정리|\d+\s*종)', raw_title or ''))
-        if len(block_options) >= 2 and len(distinct_names) >= 2 and (has_priced_blk or is_multi_list_title):
+        if len(block_options) >= 2 and len(distinct_names) >= 2:
             return block_options[:35]
 
     # =========================================================================
@@ -1120,9 +1118,9 @@ class AggregatorService:
         title_for_price = re.sub(r'\(\s*(?:0?[1-9]|1[0-2])\s*[/\.]\s*(?:0?[1-9]|[12]\d|3[01])(?:\s*~\s*[^\)]*)?\s*\)', ' ', title_for_price)
         is_explicit_free_deal = bool(re.search(r'\(\s*(?:무료|0\s*원|free)\s*\)|무료\s*배포|한정\s*무료|무료\s*\(유료', raw_title, re.IGNORECASE))
         
-        # 1. 괄호/대괄호 속 달러/유로/원 우선 파싱 (예: (53,475원 외/무료), (11.6불/무배), (3,920원~ / 무배), (46638/무), [899,000], [롯데온 18000])
+        # 1. 괄호/대괄호 속 달러/유로/원 우선 파싱 (예: (53,475원 외/무료), (129,000원 무료배송), ($7.66/$4.4), (46638/무), [899,000])
         match = re.search(
-            r'[\(\[]\s*(?:최저가?\s*|체감가?\s*|쿠폰가?\s*|할인가?\s*|약\s*)*\$?\s*((?:[\d,]+|[\d,]*\.[\d]+)\s*(?:만\s*원?|원|달러|불|유로|€|\$)?)\s*(?:외|부터|~|각|이상|이하|전후)?\s*(?:[/,]\s*([^\)\]]*))?[\)\]]',
+            r'[\(\[]\s*(?:최저가?\s*|체감가?\s*|쿠폰가?\s*|할인가?\s*|약\s*)*\$?\s*((?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?!\s*,\s*\d{3})\s*(?:만\s*원?|원|달러|불|유로|€|\$)?)\s*(?:외|부터|~|각|이상|이하|전후)?\s*(?:[/,\s]\s*([^\)\]]*))?[\)\]]',
             title_for_price
         )
         if match:
@@ -1156,11 +1154,19 @@ class AggregatorService:
         # 2. 괄호 외 만/원/달러/유로 및 슬래시(5980/무배), 대괄호([롯데온 18000]) 파싱
         if title_price == 0 and not is_explicit_free_deal:
             title_currency = "KRW"
-            match_man = re.search(r'([\d,]*\.[\d]+|[\d,]+)만(?!\s*(원\s*)?(할인|적립|쿠폰|캐시백|이상|권))', title_for_price)
+            match_man = re.search(
+                r'(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)([\d,]*\.[\d]+|[\d,]+)만(?!\s*(?:원\s*)?(?:할인|적립|쿠폰|캐시백|페이백|이상|권|mAh|mah|암페어))',
+                title_for_price
+            )
+            if match_man and ('$' in title_for_price and '만원' not in title_for_price and '만 원' not in title_for_price):
+                match_man = None
             if match_man:
                 title_price = int(float(match_man.group(1).replace(',', '')) * 10000)
             else:
-                match_won = re.search(r'(?<![+\-])(?<!\d\s~\s)(?<!~\s)([0-9,]{3,})\s*원(?!\s*(할인|적립|쿠폰|캐시백|이상|권))', title_for_price)
+                match_won = re.search(
+                    r'(?<![+\-\d,])(?<!\d\s~\s)(?<!~\s)([0-9,]{3,})\s*원(?!\s*(?:할인|적립|쿠폰|캐시백|페이백|청구|즉시|추가|이상|권))',
+                    title_for_price
+                )
                 if match_won:
                     title_price = int(match_won.group(1).replace(',', ''))
                 else:
@@ -1228,12 +1234,20 @@ class AggregatorService:
             except Exception as e:
                 logger.error(f"Error enriching option images safely: {e}")
             scraped_data["options_data"] = structured_opts
-            if final_price == 0 or title_price == 0:
-                valid_opts = [o for o in structured_opts if int(o.get("price", 0)) > 0]
-                if valid_opts:
-                    first_opt = valid_opts[0]
+            valid_opts = [o for o in structured_opts if int(o.get("price", 0)) > 0]
+            if valid_opts:
+                first_opt = valid_opts[0]
+                opt_currencies = {o.get("currency", "KRW") for o in valid_opts}
+                has_explicit_krw_title = bool(re.search(r'(?:[0-9,]+\s*원|[0-9.]+\s*만)', raw_title)) and '$' not in raw_title
+                if final_price == 0 or title_price == 0:
                     final_price = int(first_opt["price"])
                     currency = first_opt.get("currency", currency or "KRW")
+                elif opt_currencies == {"USD"} and currency == "KRW" and not has_explicit_krw_title:
+                    final_price = int(first_opt["price"])
+                    currency = "USD"
+                elif has_explicit_krw_title and currency == "KRW" and opt_currencies == {"USD"}:
+                    # 제목에 명확한 원화(만/원)가 있는데 본문 옵션이 전부 달러인 경우 제목 통화(KRW) 유지
+                    pass
             if not image_url:
                 opts_with_img = [o for o in structured_opts if o.get("image_url")]
                 if opts_with_img:
@@ -1588,7 +1602,7 @@ class AggregatorService:
                  if shop_name and not existing_deal.shop_name:
                      existing_deal.shop_name = shop_name
 
-                 if content_html and not existing_deal.content_html:
+                 if content_html and (not existing_deal.content_html or len(content_html) > len(existing_deal.content_html) + 40):
                      existing_deal.content_html = content_html
                   
                  # [가격분석] 브랜드 및 모델명 메타 정보 보완 (기존에 비어있던 경우 업데이트)

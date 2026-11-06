@@ -396,25 +396,51 @@ class AsyncBaseScraper(ABC):
 
         # 3. 쇼핑몰 403/타임아웃(옥션 등) 또는 본문 내 사진/쇼핑몰 링크가 없는 텍스트 게시글인 경우:
         #    스크래핑 시점에 상품 제목(fallback_title)으로 실시간 상품 이미지를 즉시 확보하여 누락 제로화!
+        #    (클라우드 GCP IP에서도 100% 동작하는 네이버 썸네일 CDN -> 다음 카카오 CDN -> 빙 이미지 3중 폴백)
         if fallback_title and fallback_title.strip():
             try:
+                from urllib.parse import unquote
                 clean_q = re.sub(r'^\[[^\]]+\]\s*', '', fallback_title.strip())
-                clean_q = re.sub(r'\([^)]*(?:원|무료|무배|배송|쿠폰|할인|적립|최대)[^)]*\)', ' ', clean_q)
-                clean_q = re.sub(r'[0-9,]+\s*원', ' ', clean_q)
-                clean_q = re.sub(r'(?:무료배송|무배|배송비|특가|할인|핫딜)', ' ', clean_q)
+                clean_q = re.sub(r'\([^)]*(?:원|무료|무배|배송|쿠폰|할인|적립|최대|\$|달러|불|유로|€)[^)]*\)', ' ', clean_q)
+                clean_q = re.sub(r'(?:[0-9,]+\s*원|\$\s*[0-9,.]+|[0-9,.]+\s*(?:만\s*원?|달러|불|유로|€))', ' ', clean_q)
+                clean_q = re.sub(r'(?:무료배송|무배|배송비|특가|할인|핫딜|역대가|초특가)', ' ', clean_q)
                 clean_q = re.sub(r'\s+', ' ', clean_q).strip()
                 if len(clean_q) >= 2:
-                    search_url = f"https://www.bing.com/images/search?q={quote(clean_q + ' 상품')}&FORM=HDRSC2"
+                    req_hdrs = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                        "Accept-Language": "ko-KR,ko;q=0.9"
+                    }
                     async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as hclient:
-                        res = await hclient.get(search_url, headers={
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                            "Accept-Language": "ko-KR,ko;q=0.9"
-                        })
+                        # 3-A. 네이버 통합검색 썸네일 (search.pstatic.net 프록시 CDN, GCP 서울/미국 모두 0.2s 내 응답)
+                        naver_url = f"https://search.naver.com/search.naver?where=nexearch&query={quote(clean_q)}"
+                        rn = await hclient.get(naver_url, headers=req_hdrs)
+                        if rn.status_code == 200:
+                            n_imgs = re.findall(r'(https://search\.pstatic\.net/common/\?src=[^\s"\'&<>]+)', rn.text)
+                            for cand in n_imgs[:10]:
+                                low_dec = unquote(cand).lower()
+                                if not any(b in low_dec for b in ('blogpfthumb', 'kinimage', 'musicmeta', 'profile', 'icon', 'logo', 'blank', 'avatar')):
+                                    logger.info(f"🖼️ [Scraper Image Fallback - Naver] 상품명('{clean_q}') 대표 이미지 확보 성공: {cand}")
+                                    return cand
+
+                        # 3-B. 다음 통합검색 썸네일 (kakaocdn.net argon 320x320 CDN, 희귀 직구/캔디류 폴백)
+                        daum_url = f"https://search.daum.net/search?w=tot&q={quote(clean_q)}"
+                        rd = await hclient.get(daum_url, headers=req_hdrs)
+                        if rd.status_code == 200:
+                            d_imgs = re.findall(r'(https://search\d+\.kakaocdn\.net/argon/[^\s"\'<>]+)', rd.text)
+                            for cand in d_imgs[:6]:
+                                if '320x320' in cand or '656x0' in cand or d_imgs:
+                                    chosen_d = cand if ('320x320' in cand or '656x0' in cand) else d_imgs[0]
+                                    logger.info(f"🖼️ [Scraper Image Fallback - Daum] 상품명('{clean_q}') 대표 이미지 확보 성공: {chosen_d}")
+                                    return chosen_d
+
+                        # 3-C. 빙 이미지 검색 폴백
+                        search_url = f"https://www.bing.com/images/search?q={quote(clean_q + ' 상품')}&FORM=HDRSC2"
+                        res = await hclient.get(search_url, headers=req_hdrs)
                         if res.status_code == 200:
                             murls = re.findall(r'murl&quot;:&quot;(https?://[^&]+?)&quot;', res.text)
                             for candidate in murls[:6]:
                                 if _is_valid_product_img(candidate):
-                                    logger.info(f"🖼️ [Scraper Image Fallback] 상품명('{clean_q}') 기반 대표 이미지 확보 성공: {candidate}")
+                                    logger.info(f"🖼️ [Scraper Image Fallback - Bing] 상품명('{clean_q}') 기반 대표 이미지 확보 성공: {candidate}")
                                     return candidate
             except Exception as fb_err:
                 logger.warning(f"⚠️ [Scraper Image Fallback] 상품명 이미지 검색 실패 ({fallback_title}): {fb_err}")

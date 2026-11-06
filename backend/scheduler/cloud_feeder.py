@@ -524,12 +524,14 @@ async def scrape_and_push_once():
                                 )
                                 is_new_ecom_valid_direct = bool(new_ecom) and not is_search_or_community_url(new_ecom)
 
+                                is_missing_cached_img = not (cached_detail.get("image_url") or item.get("image_url"))
                                 status_changed = (
                                     (new_closed and not old_closed)
                                     or (new_hot and not old_hot)
                                     or (new_likes >= 8 and old_likes < 8)
                                     or (new_likes - old_likes >= 3)
                                     or (is_new_ecom_valid_direct and is_old_ecom_empty_or_search)
+                                    or is_missing_cached_img
                                 )
                                 if not status_changed:
                                     skipped_count += 1
@@ -539,6 +541,15 @@ async def scrape_and_push_once():
                                     v = cached_detail.get(k)
                                     if v and not item.get(k):
                                         item[k] = v
+
+                                if not item.get("image_url"):
+                                    try:
+                                        img_fb = await sc.fetch_og_image(item.get("ecommerce_link", ""), item.get("title", ""))
+                                        if img_fb:
+                                            item["image_url"] = img_fb
+                                            cached_detail["image_url"] = img_fb
+                                    except Exception:
+                                        pass
 
                                 # 직링크 캐시 갱신 및 오염 방지 (검색 링크/커뮤니티 링크 역복사 차단)
                                 if is_new_ecom_valid_direct:
@@ -585,9 +596,8 @@ async def scrape_and_push_once():
                             item_title = item.get("title", "") or ""
                             is_multi_title = bool(
                                 re.search(r'(?:외\s*\d+|골라담기|모음|선택|공구|총정리|\d+\s*종|다양|특가\s*모음)', item_title)
-                                or re.search(r'\([^)]+/[^)]+\)', item_title)
                             )
-                            if is_multi_title:
+                            if is_multi_title and not is_ppomppu_cloud:
                                 need_detail = True
 
                             if need_detail:
