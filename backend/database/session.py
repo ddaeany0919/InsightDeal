@@ -117,13 +117,21 @@ class DatabaseManager:
                 logger.warning(f"복합 인덱스 생성 스킵 ({stmt}): {e}")
         logger.info(f"고속 조회용 복합 인덱스({created_count}/{len(index_statements)}종) 점검 및 적용 완료")
 
-    def perform_maintenance_and_backup(self, max_backups: int = 3, slim_days: int = 180) -> dict:
+    def perform_maintenance_and_backup(
+        self, 
+        max_backups: int = 3, 
+        slim_days: int = 180,
+        clean_image_cache: bool = True,
+        cache_max_age_days: int = 7,
+        cache_max_mb: int = 500
+    ) -> dict:
         """
         1) 180일(6개월) 경과 딜의 무거운 HTML 본문(content_html) 슬림화 (가격/시세/제목은 영구 보존)
         2) SQLite WAL 체크포인트 병합
         3) 온라인 무중단 백업 (backend/backups/ 폴더에 최근 3일치 유지)
+        4) 이미지 캐시 7일 만료 및 500MB 상한선 LRU 자동 정제 (GCP 디스크 용량 영구 방어)
         """
-        summary = {"slimmed_deals": 0, "backup_path": None}
+        summary = {"slimmed_deals": 0, "backup_path": None, "cache_summary": None}
         session = self.get_session()
         try:
             cutoff_date = datetime.utcnow() - timedelta(days=slim_days)
@@ -178,6 +186,20 @@ class DatabaseManager:
                 logger.info(f"DB 안전 백업 및 최적화 완료: {backup_file} (슬림화: {summary['slimmed_deals']}건)")
             except Exception as e:
                 logger.warning(f"SQLite 온라인 백업 중 경고: {e}")
+
+        # 4) 이미지 캐시 자동 청소 및 LRU 용량 관리
+        if clean_image_cache:
+            try:
+                from backend.services.cache_purger import purge_image_cache_lru
+                backend_dir = os.path.dirname(self.db_file_path) if self.db_file_path else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                cache_dir = os.path.join(backend_dir, "image_cache")
+                summary["cache_summary"] = purge_image_cache_lru(
+                    cache_dir=cache_dir,
+                    max_age_days=cache_max_age_days,
+                    max_size_mb=cache_max_mb
+                )
+            except Exception as e:
+                logger.warning(f"이미지 캐시 자동 유지보수 연동 중 경고: {e}")
 
         return summary
     

@@ -680,19 +680,24 @@ fun HomeScreen(
                                         ) { index ->
                                             val pick = topPicks[index]
 
-                                            // 스크롤 시 문자열 가공 오버헤드 방지를 위한 캐싱
-                                            val proxiedPickUrl = remember(pick.id, pick.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
+                                            // 2중 하이브리드 CDN/프록시 및 로드 실패 시 Fallback URL 캐싱
+                                            val primaryPickUrl = remember(pick.id, pick.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
                                                 val fallbackPickImg = "https://placehold.co/400x300/E2E8F0/A0AEC0?text=Deal"
                                                 val rawPickUrl = pick.imageUrl.takeIf { !it.isNullOrBlank() } ?: fallbackPickImg
-                                                if (!rawPickUrl.isNullOrBlank() && rawPickUrl.startsWith("http")) {
-                                                    val baseUrl = com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl().removeSuffix("/")
-                                                    "$baseUrl/api/proxy-image?url=${java.net.URLEncoder.encode(rawPickUrl, "UTF-8")}&v=5"
-                                                } else rawPickUrl
+                                                com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(rawPickUrl, targetWidth = 400)
                                             }
 
-                                            val imageRequest = remember(proxiedPickUrl, pick.postUrl) {
+                                            val fallbackPickUrl = remember(pick.id, pick.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
+                                                val fallbackPickImg = "https://placehold.co/400x300/E2E8F0/A0AEC0?text=Deal"
+                                                val rawPickUrl = pick.imageUrl.takeIf { !it.isNullOrBlank() } ?: fallbackPickImg
+                                                com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(rawPickUrl)
+                                            }
+
+                                            var activePickUrl by remember(primaryPickUrl) { mutableStateOf(primaryPickUrl) }
+
+                                            val imageRequest = remember(activePickUrl, pick.postUrl) {
                                                 coil.request.ImageRequest.Builder(context)
-                                                    .data(proxiedPickUrl)
+                                                    .data(activePickUrl)
                                                     .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
                                                     .setHeader("Referer", pick.postUrl ?: "https://insightdeal.com/")
                                                     .crossfade(true)
@@ -767,14 +772,19 @@ fun HomeScreen(
                                                          )
                                                      } else {
                                                          SubcomposeAsyncImage(
-                                                             model = imageRequest,
-                                                             contentDescription = "Carousel Image",
+                                                              model = imageRequest,
+                                                              contentDescription = "Carousel Image",
                                                              modifier = Modifier
                                                                  .height(100.dp)
                                                                  .fillMaxWidth()
                                                                  .background(if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White)
                                                                  .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
                                                              contentScale = ContentScale.Crop,
+                                                              onError = {
+                                                                  if (fallbackPickUrl != null && activePickUrl != fallbackPickUrl) {
+                                                                      activePickUrl = fallbackPickUrl
+                                                                  }
+                                                              },
                                                              error = {
                                                                  BrandPlaceholder(
                                                                      siteName = pick.siteName,
@@ -1950,26 +1960,22 @@ fun DealCardComposable(
                 && deal.honeyScore >= 100
     }
 
-    // 2. 이미지 URL을 백엔드 프록시를 통해 안전하고 쨍하게 100% 로딩 (디스크 캐싱 및 헤더 우회 탑재)
-    val proxiedUrl = remember(deal.id, deal.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
-        val rawUrl = deal.imageUrl
-        if (rawUrl.isNullOrBlank()) null
-        else if (rawUrl.startsWith("http")) {
-            try {
-                val baseUrl = com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl().removeSuffix("/")
-                "$baseUrl/api/proxy-image?url=${java.net.URLEncoder.encode(rawUrl, "UTF-8")}&v=5"
-            } catch (e: Exception) {
-                rawUrl
-            }
-        } else rawUrl
+    // 2. 2중 하이브리드 CDN / 프록시 및 로드 실패 시 Fallback URL 캐싱
+    val primaryImageUrl = remember(deal.id, deal.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
+        com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(deal.imageUrl, targetWidth = 400)
+    }
+    val fallbackProxyUrl = remember(deal.id, deal.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
+        com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(deal.imageUrl)
     }
 
+    var activeImageUrl by remember(primaryImageUrl) { mutableStateOf(primaryImageUrl) }
+
     // 3. 이미지 Request 캐싱
-    val imageRequest = remember(proxiedUrl, deal.postUrl) {
-        if (proxiedUrl == null) null
+    val imageRequest = remember(activeImageUrl, deal.postUrl) {
+        if (activeImageUrl == null) null
         else {
             coil.request.ImageRequest.Builder(context)
-                .data(proxiedUrl)
+                .data(activeImageUrl)
                 .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
                 .setHeader("Referer", deal.postUrl ?: "https://insightdeal.com/")
                 .crossfade(true)
@@ -2081,6 +2087,11 @@ fun DealCardComposable(
                                     .clip(RoundedCornerShape(8.dp)),
                                 colorFilter = if (deal.isClosed) CLOSED_DEAL_COLOR_FILTER else null,
                                 contentScale = ContentScale.Crop,
+                                onError = {
+                                    if (fallbackProxyUrl != null && activeImageUrl != fallbackProxyUrl) {
+                                        activeImageUrl = fallbackProxyUrl
+                                    }
+                                },
                                 error = {
                                     BrandPlaceholder(
                                         siteName = deal.siteName,

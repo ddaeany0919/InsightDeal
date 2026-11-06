@@ -419,11 +419,25 @@ fun WritePostScreen(
                         ) {
                             if (!deal.imageUrl.isNullOrBlank()) {
                                 val proxySelectedUrl = remember(deal.imageUrl) {
-                                    val raw = deal.imageUrl ?: ""
-                                    if (raw.startsWith("http")) "${com.ddaeany0919.insightdeal.BuildConfig.BASE_URL.trimEnd('/') + "/"}api/proxy-image?url=${java.net.URLEncoder.encode(raw, "UTF-8")}&v=5" else raw
+                                    com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(deal.imageUrl, targetWidth = 200)
+                                }
+                                val fallbackSelectedUrl = remember(deal.imageUrl) {
+                                    com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(deal.imageUrl)
+                                }
+                                var activeSelectedUrl by remember(proxySelectedUrl) { mutableStateOf(proxySelectedUrl) }
+                                val imageRequest = remember(activeSelectedUrl) {
+                                    coil.request.ImageRequest.Builder(context)
+                                        .data(activeSelectedUrl)
+                                        .crossfade(true)
+                                        .build()
                                 }
                                 AsyncImage(
-                                    model = proxySelectedUrl,
+                                    model = imageRequest,
+                                    onError = {
+                                        if (fallbackSelectedUrl != null && activeSelectedUrl != fallbackSelectedUrl) {
+                                            activeSelectedUrl = fallbackSelectedUrl
+                                        }
+                                    },
                                     contentDescription = null,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
@@ -654,11 +668,25 @@ fun WritePostScreen(
                             ) {
                                 if (!deal.imageUrl.isNullOrBlank()) {
                                     val proxySheetUrl = remember(deal.imageUrl) {
-                                        val raw = deal.imageUrl ?: ""
-                                        if (raw.startsWith("http")) "${com.ddaeany0919.insightdeal.BuildConfig.BASE_URL.trimEnd('/') + "/"}api/proxy-image?url=${java.net.URLEncoder.encode(raw, "UTF-8")}&v=5" else raw
+                                        com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(deal.imageUrl, targetWidth = 200)
+                                    }
+                                    val fallbackSheetUrl = remember(deal.imageUrl) {
+                                        com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(deal.imageUrl)
+                                    }
+                                    var activeSheetUrl by remember(proxySheetUrl) { mutableStateOf(proxySheetUrl) }
+                                    val imageRequest = remember(activeSheetUrl) {
+                                        coil.request.ImageRequest.Builder(context)
+                                            .data(activeSheetUrl)
+                                            .crossfade(true)
+                                            .build()
                                     }
                                     AsyncImage(
-                                        model = proxySheetUrl,
+                                        model = imageRequest,
+                                        onError = {
+                                            if (fallbackSheetUrl != null && activeSheetUrl != fallbackSheetUrl) {
+                                                activeSheetUrl = fallbackSheetUrl
+                                            }
+                                        },
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier

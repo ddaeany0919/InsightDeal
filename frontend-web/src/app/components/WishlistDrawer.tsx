@@ -3,7 +3,7 @@
 import React, { useEffect } from "react";
 import { Heart, Smartphone, Download, Trash2 } from "lucide-react";
 import type { Deal } from "../lib/types";
-import { formatPrice, getProxyImageUrl } from "../lib/utils";
+import { formatPrice, getProxyImageUrl, getFallbackProxyImageUrl } from "../lib/utils";
 
 interface WishlistDrawerProps {
   isOpen: boolean;
@@ -108,7 +108,18 @@ export default function WishlistDrawer({
               >
                 <div style={{ width: '50px', height: '50px', borderRadius: '8px', overflow: 'hidden', flexShrink: 0, background: 'var(--badge-bg)', border: '1px solid var(--card-border)' }}>
                   {deal.image_url ? (
-                    <img src={getProxyImageUrl(deal.image_url)} alt={deal.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img
+                      src={getProxyImageUrl(deal.image_url, { width: 120 })}
+                      alt={deal.title}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        const fallback = getFallbackProxyImageUrl(deal.image_url);
+                        if (fallback && e.currentTarget.src !== fallback) {
+                          e.currentTarget.src = fallback;
+                        }
+                      }}
+                    />
                   ) : (
                     <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem' }}>No Img</div>
                   )}

@@ -23,6 +23,7 @@ import {
   extractPriceFromTitle,
   categorizeDeal,
   getProxyImageUrl,
+  getFallbackProxyImageUrl,
   apiUrl,
   resolveOutboundUrl,
   getOrCreateWebDeviceUuid,
@@ -1546,11 +1547,17 @@ export default function Home() {
                     <div className="deal-image-wrapper">
                       {deal.image_url ? (
                         <img
-                          src={getProxyImageUrl(deal.image_url)}
+                          src={getProxyImageUrl(deal.image_url, { width: 400 })}
                           alt={deal.title}
                           className="deal-image"
                           loading="lazy"
                           referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            const fallback = getFallbackProxyImageUrl(deal.image_url);
+                            if (fallback && e.currentTarget.src !== fallback) {
+                              e.currentTarget.src = fallback;
+                            }
+                          }}
                         />
                       ) : (
                         <div

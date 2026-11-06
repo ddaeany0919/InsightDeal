@@ -47,15 +47,12 @@ import com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
 
-private fun buildProxiedThumbUrl(rawUrl: String?): String? {
-    if (rawUrl.isNullOrBlank()) return null
-    if (!rawUrl.startsWith("http")) return rawUrl
-    return try {
-        val base = NetworkConfig.getActiveServerUrl().removeSuffix("/")
-        "$base/api/proxy-image?url=${URLEncoder.encode(rawUrl, "UTF-8")}&v=5"
-    } catch (_: Exception) {
-        rawUrl
-    }
+private fun buildProxiedThumbUrl(rawUrl: String?, targetWidth: Int = 200): String? {
+    return com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(rawUrl, targetWidth = targetWidth)
+}
+
+private fun buildFallbackThumbUrl(rawUrl: String?): String? {
+    return com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(rawUrl)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -376,8 +373,12 @@ fun MyPageScreen(
                                 contentType = { "recent_deal_card" }
                             ) { deal ->
                                 val proxiedUrl = remember(deal.id, deal.imageUrl) {
-                                    buildProxiedThumbUrl(deal.imageUrl)
+                                    buildProxiedThumbUrl(deal.imageUrl, 200)
                                 }
+                                val fallbackUrl = remember(deal.id, deal.imageUrl) {
+                                    buildFallbackThumbUrl(deal.imageUrl)
+                                }
+                                var activeRecentUrl by remember(proxiedUrl) { mutableStateOf(proxiedUrl) }
                                 Card(
                                     modifier = Modifier
                                         .width(136.dp)
@@ -398,9 +399,14 @@ fun MyPageScreen(
                                             if (!proxiedUrl.isNullOrBlank()) {
                                                 AsyncImage(
                                                     model = ImageRequest.Builder(context)
-                                                        .data(proxiedUrl)
+                                                        .data(activeRecentUrl)
                                                         .crossfade(true)
                                                         .build(),
+                                                    onError = {
+                                                        if (fallbackUrl != null && activeRecentUrl != fallbackUrl) {
+                                                            activeRecentUrl = fallbackUrl
+                                                        }
+                                                    },
                                                     contentDescription = deal.title,
                                                     modifier = Modifier.fillMaxSize(),
                                                     contentScale = ContentScale.Crop
@@ -457,8 +463,12 @@ fun MyPageScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             recommendedDeals.forEach { deal ->
                                 val proxiedUrl = remember(deal.id, deal.imageUrl) {
-                                    buildProxiedThumbUrl(deal.imageUrl)
+                                    buildProxiedThumbUrl(deal.imageUrl, 200)
                                 }
+                                val fallbackUrl = remember(deal.id, deal.imageUrl) {
+                                    buildFallbackThumbUrl(deal.imageUrl)
+                                }
+                                var activeRecUrl by remember(proxiedUrl) { mutableStateOf(proxiedUrl) }
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -481,9 +491,14 @@ fun MyPageScreen(
                                             if (!proxiedUrl.isNullOrBlank()) {
                                                 AsyncImage(
                                                     model = ImageRequest.Builder(context)
-                                                        .data(proxiedUrl)
+                                                        .data(activeRecUrl)
                                                         .crossfade(true)
                                                         .build(),
+                                                    onError = {
+                                                        if (fallbackUrl != null && activeRecUrl != fallbackUrl) {
+                                                            activeRecUrl = fallbackUrl
+                                                        }
+                                                    },
                                                     contentDescription = deal.title,
                                                     modifier = Modifier.fillMaxSize(),
                                                     contentScale = ContentScale.Crop

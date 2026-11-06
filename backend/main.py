@@ -191,6 +191,12 @@ async def proxy_image(url: str):
             raise ValueError("Known placeholder image URL")
 
         if os.path.exists(cache_file_path):
+            # [LRU 수명 연장] 최근 조회 시 mtime을 현재 시각으로 갱신하여 7일 청소 데몬으로부터 보호
+            try:
+                os.utime(cache_file_path, None)
+            except OSError:
+                pass
+
             with open(cache_file_path, "rb") as f:
                 cached_content = f.read()
             detected_mime = _detect_image_mime(cached_content)

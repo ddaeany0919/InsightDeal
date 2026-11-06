@@ -6,6 +6,7 @@ import type { Deal, DealSource } from "../lib/types";
 import {
   formatPrice,
   getProxyImageUrl,
+  getFallbackProxyImageUrl,
   apiUrl,
   resolveOutboundUrl,
   polishDealBodyText,
@@ -258,10 +259,16 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                 }}
               >
                 <img
-                  src={getProxyImageUrl(deal.image_url)}
+                  src={getProxyImageUrl(deal.image_url, { width: 400 })}
                   alt={deal.title}
                   style={{ width: "100%", height: "100%", objectFit: "cover" }}
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const fallback = getFallbackProxyImageUrl(deal.image_url);
+                    if (fallback && e.currentTarget.src !== fallback) {
+                      e.currentTarget.src = fallback;
+                    }
+                  }}
                 />
               </div>
             )}
@@ -555,11 +562,17 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                       >
                         {src.image_url ? (
                           <img
-                            src={getProxyImageUrl(src.image_url)}
+                            src={getProxyImageUrl(src.image_url, { width: 120 })}
                             alt={optionTitle}
                             style={{ width: "100%", height: "100%", objectFit: "cover" }}
                             referrerPolicy="no-referrer"
                             loading="lazy"
+                            onError={(e) => {
+                              const fallback = getFallbackProxyImageUrl(src.image_url);
+                              if (fallback && e.currentTarget.src !== fallback) {
+                                e.currentTarget.src = fallback;
+                              }
+                            }}
                           />
                         ) : (
                           <span style={{ fontSize: "0.75rem", color: "var(--text-sub)", fontWeight: 700 }}>

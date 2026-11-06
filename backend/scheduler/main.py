@@ -583,18 +583,24 @@ async def run_pipeline_job():
         SCHEDULER_STATE["last_status"] = f"Error: {e}"
         logger.error(f"❌ 전체 파이프라인 사이클 붕괴 에러: {e}")
 
-from backend.services.cache_purger import purge_old_image_cache
-
-def purge_cache_job():
-    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    cache_dir = os.path.join(backend_dir, "image_cache")
-    purge_old_image_cache(cache_dir, max_age_days=14)
-
 def db_maintenance_job():
+    """
+    🧹 [새벽 4시 통합 일일 유지보수]
+    1) 180일 경과 딜 본문 슬림화
+    2) SQLite WAL 체크포인트 & 온라인 백업 (최근 3일치 유지)
+    3) 이미지 캐시 7일 만료 및 500MB 상한선 LRU 자동 정제 (GCP 디스크 용량 영구 방어)
+    """
     try:
-        db_manager.perform_maintenance_and_backup(max_backups=3, slim_days=180)
+        summary = db_manager.perform_maintenance_and_backup(
+            max_backups=3, 
+            slim_days=180,
+            clean_image_cache=True,
+            cache_max_age_days=7,
+            cache_max_mb=500
+        )
+        logger.info(f"✅ [새벽 4시 통합 유지보수 성공] {summary}")
     except Exception as e:
-        logger.error(f"DB 일일 안전 백업 및 최적화 작업 중 오류: {e}")
+        logger.error(f"❌ DB 일일 안전 백업 및 최적화 작업 중 오류: {e}")
 
 async def dispatch_github_cloud_feeder_job():
     """
@@ -636,9 +642,7 @@ def start_scheduler():
     # 과거 딜 품절/종료 검증 데몬 (10분 주기)
     scheduler.add_job(validate_closed_deals, 'interval', minutes=10, id='hotdeal_validator')
     # 펨코 실시간 급상승 검색어 수집 (1시간 주기, 정각 실행)
-    scheduler.add_job(update_fmkorea_trending_keywords, 'cron', minute=0, id='fmkorea_trending')
-    # 🧹 이미지 캐시 7일/14일 자동 정제 배치 (매일 새벽 3시 30분 실행 - On-demand 재생성 보장)
-    scheduler.add_job(purge_cache_job, 'cron', hour=3, minute=30, id='cache_purger')
+    # 🧹 DB 유지보수 및 이미지 캐시 LRU 정제 통합 배치 (매일 새벽 4시 실행)
     scheduler.add_job(db_maintenance_job, 'cron', hour=4, minute=0, id='db_maintenance')
     scheduler.start()
     logger.info("⏰ [System] 투트랙 스케줄러(3분 수집 / 10분 GHA디스패치 / 10분 품절검증) 시동 완료")

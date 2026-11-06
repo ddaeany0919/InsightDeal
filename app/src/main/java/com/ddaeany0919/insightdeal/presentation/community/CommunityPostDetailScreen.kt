@@ -548,11 +548,25 @@ fun CommunityPostDetailScreen(
                                 ) {
                                     if (!deal.imageUrl.isNullOrBlank()) {
                                         val proxyDealThumbUrl = remember(deal.imageUrl) {
-                                            val raw = deal.imageUrl ?: ""
-                                            if (raw.startsWith("http")) "${com.ddaeany0919.insightdeal.BuildConfig.BASE_URL.trimEnd('/') + "/"}api/proxy-image?url=${java.net.URLEncoder.encode(raw, "UTF-8")}&v=5" else raw
+                                            com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(deal.imageUrl, targetWidth = 200)
+                                        }
+                                        val fallbackDealThumbUrl = remember(deal.imageUrl) {
+                                            com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(deal.imageUrl)
+                                        }
+                                        var activeDealThumbUrl by remember(proxyDealThumbUrl) { mutableStateOf(proxyDealThumbUrl) }
+                                        val imageRequest = remember(activeDealThumbUrl) {
+                                            coil.request.ImageRequest.Builder(context)
+                                                .data(activeDealThumbUrl)
+                                                .crossfade(true)
+                                                .build()
                                         }
                                         AsyncImage(
-                                            model = proxyDealThumbUrl,
+                                            model = imageRequest,
+                                            onError = {
+                                                if (fallbackDealThumbUrl != null && activeDealThumbUrl != fallbackDealThumbUrl) {
+                                                    activeDealThumbUrl = fallbackDealThumbUrl
+                                                }
+                                            },
                                             contentDescription = null,
                                             contentScale = ContentScale.Crop,
                                             modifier = Modifier

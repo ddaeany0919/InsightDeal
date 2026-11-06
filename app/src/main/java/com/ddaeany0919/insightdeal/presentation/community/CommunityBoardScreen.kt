@@ -533,12 +533,25 @@ fun ShouldIBuyVoteCard(
                     ) {
                         if (!deal.imageUrl.isNullOrBlank()) {
                             val proxyThumbUrl = remember(deal.imageUrl) {
-                                val raw = deal.imageUrl ?: ""
-                                val baseUrl = com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl().trimEnd('/')
-                                if (raw.startsWith("http")) "$baseUrl/api/proxy-image?url=${java.net.URLEncoder.encode(raw, "UTF-8")}&v=5" else raw
+                                com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(deal.imageUrl, targetWidth = 100)
+                            }
+                            val fallbackThumbUrl = remember(deal.imageUrl) {
+                                com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(deal.imageUrl)
+                            }
+                            var activeThumbUrl by remember(proxyThumbUrl) { mutableStateOf(proxyThumbUrl) }
+                            val imageRequest = remember(activeThumbUrl) {
+                                coil.request.ImageRequest.Builder(context)
+                                    .data(activeThumbUrl)
+                                    .crossfade(true)
+                                    .build()
                             }
                             AsyncImage(
-                                model = proxyThumbUrl,
+                                model = imageRequest,
+                                onError = {
+                                    if (fallbackThumbUrl != null && activeThumbUrl != fallbackThumbUrl) {
+                                        activeThumbUrl = fallbackThumbUrl
+                                    }
+                                },
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier

@@ -1573,29 +1573,24 @@ fun DealHeader(deal: DealItem, onOpenOrigin: (String) -> Unit) {
     val context = LocalContext.current
     Column(modifier = Modifier.fillMaxWidth()) {
         if (!deal.imageUrl.isNullOrEmpty()) {
-            val proxiedHeaderUrl = remember(deal.id, deal.imageUrl) {
-                val rawUrl = deal.imageUrl
-                if (rawUrl.isNullOrBlank()) null
-                else if (rawUrl.startsWith("http")) {
-                    try {
-                        val baseUrl = com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl().removeSuffix("/")
-                        "$baseUrl/api/proxy-image?url=${java.net.URLEncoder.encode(rawUrl, "UTF-8")}&v=5"
-                    } catch (e: Exception) {
-                        rawUrl
-                    }
-                } else rawUrl
+            val primaryHeaderUrl = remember(deal.id, deal.imageUrl) {
+                com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(deal.imageUrl, targetWidth = 600)
             }
-            var imageLoadFailed by remember(proxiedHeaderUrl) { mutableStateOf(false) }
-            val headerImageRequest = remember(proxiedHeaderUrl, deal.postUrl) {
+            val fallbackHeaderUrl = remember(deal.id, deal.imageUrl) {
+                com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(deal.imageUrl)
+            }
+            var activeHeaderUrl by remember(primaryHeaderUrl) { mutableStateOf(primaryHeaderUrl) }
+            var imageLoadFailed by remember(primaryHeaderUrl) { mutableStateOf(false) }
+            val headerImageRequest = remember(activeHeaderUrl, deal.postUrl) {
                 coil.request.ImageRequest.Builder(context)
-                    .data(proxiedHeaderUrl)
+                    .data(activeHeaderUrl)
                     .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
                     .setHeader("Referer", deal.postUrl ?: "https://insightdeal.com/")
                     .crossfade(true)
                     .precision(coil.size.Precision.EXACT)
                     .build()
             }
-            if (!imageLoadFailed && !proxiedHeaderUrl.isNullOrBlank()) {
+            if (!imageLoadFailed && !primaryHeaderUrl.isNullOrBlank()) {
                 Card(
                     shape = RoundedCornerShape(20.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
@@ -1612,7 +1607,13 @@ fun DealHeader(deal: DealItem, onOpenOrigin: (String) -> Unit) {
                     AsyncImage(
                         model = headerImageRequest,
                         contentDescription = deal.title,
-                        onError = { imageLoadFailed = true },
+                        onError = {
+                            if (fallbackHeaderUrl != null && activeHeaderUrl != fallbackHeaderUrl) {
+                                activeHeaderUrl = fallbackHeaderUrl
+                            } else {
+                                imageLoadFailed = true
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 120.dp, max = 280.dp)

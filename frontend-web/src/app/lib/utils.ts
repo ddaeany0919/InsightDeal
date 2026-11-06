@@ -97,25 +97,81 @@ export const apiUrl = (path: string): string => {
   return API_BASE_URL ? `${API_BASE_URL}${normalized}` : normalized;
 };
 
-// 이미지 프록시 URL 생성 (핫링크 차단 커뮤니티 이미지 및 http 혼합 콘텐츠 전체 방어)
-export const getProxyImageUrl = (url: string | null): string => {
+// 차단 커뮤니티 도메인 목록 (외부 핫링크 차단으로 인해 wsrv.nl CDN 직접 조회가 불가능하고 자체 백엔드 프록시가 필수인 도메인)
+export const BLOCKED_COMMUNITY_DOMAINS = [
+  "ppomppu.co.kr",
+  "fmkorea.com",
+  "fmkorea.org",
+  "quasarzone.com",
+  "ruliweb.com",
+  "bbasak.com",
+  "clien.net",
+  "coolenjoy.net",
+  "damoang.net",
+];
+
+export const isBlockedCommunityUrl = (url: string): boolean => {
+  const lower = url.toLowerCase();
+  return BLOCKED_COMMUNITY_DOMAINS.some((domain) => lower.includes(domain));
+};
+
+/**
+ * 2중 하이브리드 이미지 프록시/CDN URL 변환기
+ * 1. 뽐뿌 등 핫링크 차단 커뮤니티 및 http:// -> 자체 백엔드 프록시 (GCP)
+ * 2. 일반 쇼핑몰/포털(네이버, 쿠팡, 지마켓 등) -> 무료 글로벌 CDN (wsrv.nl WebP 변환)
+ */
+export const getProxyImageUrl = (
+  url: string | null | undefined,
+  options?: { width?: number; quality?: number }
+): string => {
   if (!url) return "";
-  if (url.startsWith("/api/proxy-image") || url.startsWith("/images/")) {
-    return apiUrl(url);
-  }
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+
+  // 이미 백엔드 프록시 경로이거나 로컬 이미지인 경우
   if (
-    url.startsWith("http://") ||
-    url.includes("bbasak.com") ||
-    url.includes("ppomppu.co.kr") ||
-    url.includes("fmkorea.com") ||
-    url.includes("fmkorea.org") ||
-    url.includes("quasarzone.com") ||
-    url.includes("ruliweb.com") ||
-    url.includes("clien.net")
+    trimmed.startsWith("/api/proxy-image") ||
+    trimmed.startsWith("/api/image-proxy") ||
+    trimmed.startsWith("/images/")
   ) {
-    return apiUrl(`/api/proxy-image?url=${encodeURIComponent(url)}`);
+    return apiUrl(trimmed);
   }
-  return url;
+
+  // data URI이거나 이미 wsrv.nl인 경우
+  if (trimmed.startsWith("data:") || trimmed.includes("wsrv.nl")) {
+    return trimmed;
+  }
+
+  // 1. 외부 핫링크 차단 커뮤니티 또는 비보안 http:// -> 자체 백엔드 프록시
+  if (trimmed.startsWith("http://") || isBlockedCommunityUrl(trimmed)) {
+    return apiUrl(`/api/proxy-image?url=${encodeURIComponent(trimmed)}`);
+  }
+
+  // 2. 외부 접근이 허용되는 일반 쇼핑몰/포털 https:// 이미지 -> wsrv.nl 무료 글로벌 CDN (WebP 최적화)
+  if (trimmed.startsWith("https://")) {
+    const widthParam = options?.width ? `&w=${options.width}` : "";
+    const qualityParam = options?.quality ? `&q=${options.quality}` : "";
+    return `https://wsrv.nl/?url=${encodeURIComponent(trimmed)}&output=webp${widthParam}${qualityParam}&we=1`;
+  }
+
+  return trimmed;
+};
+
+/**
+ * CDN 실패 시 100% 안전하게 자체 백엔드 프록시로 폴백하기 위한 헬퍼
+ */
+export const getFallbackProxyImageUrl = (rawUrl: string | null | undefined): string => {
+  if (!rawUrl) return "";
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return "";
+  if (
+    trimmed.startsWith("/api/proxy-image") ||
+    trimmed.startsWith("/api/image-proxy") ||
+    trimmed.startsWith("/images/")
+  ) {
+    return apiUrl(trimmed);
+  }
+  return apiUrl(`/api/proxy-image?url=${encodeURIComponent(trimmed)}`);
 };
 
 // 기기 환경(모바일 vs PC)에 맞춰 쇼핑몰 봇 차단 방지 및 커뮤니티 본문 직행 URL로 변환
