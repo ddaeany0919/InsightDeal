@@ -1763,12 +1763,42 @@ class AggregatorService:
                      existing_deal.shipping_fee = shipping_fee or "정보 없음"
                  
                  import json
-                 if scraped_data.get("options_data"):
-                     existing_deal.options_data = json.dumps(scraped_data.get("options_data"), ensure_ascii=False)
+                 new_opts_list = scraped_data.get("options_data") or []
+                 if not content_html and existing_deal.content_html:
+                     re_extracted = extract_structured_multi_options(
+                         raw_title=existing_deal.title or raw_title,
+                         content_html=existing_deal.content_html,
+                         default_currency=getattr(existing_deal, "currency", None) or currency,
+                         default_url=existing_deal.ecommerce_link or scraped_data.get("ecommerce_link") or "",
+                     )
+                     if len(re_extracted) > len(new_opts_list):
+                         new_opts_list = re_extracted
+                 if existing_deal.options_data:
+                     try:
+                         old_opts_list = json.loads(existing_deal.options_data)
+                         if isinstance(old_opts_list, list) and old_opts_list:
+                             old_by_name = {str(o.get("name", "")).strip().lower(): o for o in old_opts_list if isinstance(o, dict)}
+                             for idx_o, no in enumerate(new_opts_list):
+                                 match_old = old_by_name.get(str(no.get("name", "")).strip().lower())
+                                 if not match_old and idx_o < len(old_opts_list):
+                                     match_old = old_opts_list[idx_o]
+                                 if isinstance(match_old, dict):
+                                     for k_preserve in ("url", "code", "image_url", "sub_urls"):
+                                         if not no.get(k_preserve) and match_old.get(k_preserve):
+                                             no[k_preserve] = match_old[k_preserve]
+                             old_url_cnt = sum(1 for o in old_opts_list if isinstance(o, dict) and o.get("url"))
+                             new_url_cnt = sum(1 for o in new_opts_list if isinstance(o, dict) and o.get("url"))
+                             if len(old_opts_list) > len(new_opts_list) or old_url_cnt > new_url_cnt:
+                                 new_opts_list = old_opts_list
+                     except Exception:
+                         pass
+                 if new_opts_list:
+                     scraped_data["options_data"] = new_opts_list
+                     existing_deal.options_data = json.dumps(new_opts_list, ensure_ascii=False)
                      existing_deal.has_options = True
-                     if len(scraped_data["options_data"]) >= 2:
+                     if len(new_opts_list) >= 2:
                          multi_summary = format_multi_options_summary(
-                             scraped_data["options_data"],
+                             new_opts_list,
                              prefix_hot=bool(scraped_data.get("is_super_hotdeal"))
                          )
                          if multi_summary and (not existing_deal.ai_summary or "여러 상품이 포함된 핫딜" in existing_deal.ai_summary or existing_deal.ai_summary.strip() in ("🔥 [커뮤니티 인기]", "🔥 [커뮤니티 인증 핫딜]")):
