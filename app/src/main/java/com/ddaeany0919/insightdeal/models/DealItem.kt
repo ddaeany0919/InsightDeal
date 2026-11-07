@@ -12,7 +12,10 @@ data class DealSource(
     @SerializedName("post_url") val postUrl: String,
     @SerializedName("ecommerce_url") val ecommerceUrl: String? = null,
     @SerializedName("price") val price: Long? = null,
-    @SerializedName("currency") val currency: String? = null
+    @SerializedName("currency") val currency: String? = null,
+    @SerializedName("code") val code: String? = null,
+    @SerializedName("image_url") val imageUrl: String? = null,
+    @SerializedName("sub_urls") val subUrls: List<String>? = emptyList()
 )
 
 @Stable

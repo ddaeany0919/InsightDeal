@@ -926,6 +926,62 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         if len(options) >= 2:
             return options
 
+    # 패턴 C: 괄호 밖 슬래시(/) 분할형, 예: 뷰몬트 15.6 모니터 $34.56/경동나비엔 EME550S 24만
+    paren_tokens = {}
+    def _mask_paren(m):
+        key = f"__PAREN_{len(paren_tokens)}__"
+        paren_tokens[key] = m.group(0)
+        return key
+
+    # 대괄호와 소괄호 임시 마스킹 (괄호 내부의 슬래시 및 배송비 오탐 방지)
+    masked_title = re.sub(r'\[[^\]]*\]', _mask_paren, title_no_mall)
+    masked_title = re.sub(r'\([^\)]*\)', _mask_paren, masked_title)
+
+    if '/' in masked_title:
+        slash_segments = [s.strip() for s in masked_title.split('/') if s.strip()]
+        if len(slash_segments) >= 2:
+            slash_options = []
+            for idx_seg, raw_seg in enumerate(slash_segments):
+                # 마스킹 복원
+                seg = raw_seg
+                for pk, pv in paren_tokens.items():
+                    seg = seg.replace(pk, pv)
+
+                # 가격 및 통화 추출
+                seg_prices = extract_scored_prices_from_line(seg)
+                if not seg_prices:
+                    m_p = re.search(r'(\$?\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|원|달러|불|유로|€|\$)|[₩￦]\s*[0-9,]+)', seg)
+                    if m_p:
+                        p_val, p_curr = parse_price_token(m_p.group(1), default_currency)
+                    else:
+                        continue
+                else:
+                    p_val, p_curr, _ = max(seg_prices, key=lambda x: x[2])
+
+                # 상품명 정제 (가격 문자열 및 배송비/수식어 제거)
+                name_cand = re.sub(
+                    r'(?:[₩￦]\s*[0-9,]+|[0-9]{1,3}(?:,[0-9]{3})+\s*원|[0-9]+(?:\.[0-9]+)?\s*만\s*원?|\$\s*[0-9,.]+|[0-9,.]+\s*(?:\$|달러|불|유로|€)).*$',
+                    '',
+                    seg,
+                ).strip(' -·:,/~+[]()')
+                name_cand = re.sub(r'^\s*\[[^\]]+\]\s*', '', name_cand).strip()
+                name_cand = re.sub(r'(?:무배|무료배송|배송비무료|무료|네멤무배)$', '', name_cand).strip(' -·:,/~+[]()')
+
+                if _is_valid_option_name(name_cand) and p_val >= 100:
+                    matched_u = body_shop_urls[idx_seg][1] if idx_seg < len(body_shop_urls) else cleaned_default_url
+                    slash_options.append({
+                        "name": name_cand[:60],
+                        "price": p_val,
+                        "currency": p_curr,
+                        "url": matched_u,
+                        "code": "",
+                        "image_url": "",
+                        "sub_urls": [],
+                    })
+
+            if len(slash_options) >= 2:
+                return slash_options
+
     # =========================================================================
     # 4단계: 단일 링크 모음전/골라담기 게시글의 본문 라인별 '상품명 + 가격' 추출
     # =========================================================================
@@ -1028,49 +1084,105 @@ class AggregatorService:
             if opt.get("image_url"):
                 return  # 이미 1:1 매칭된 본문 이미지가 있으면 보존
             u = (opt.get("url") or "").strip()
-            if not u or not u.startswith("http") or any(h in u.lower() for h in community_hosts):
-                return  # 커뮤니티 내부 링크이거나 유효하지 않으면 폴백 생략 (오염 차단)
+            if u and u.startswith("http") and not any(h in u.lower() for h in community_hosts):
+                # 1. 지마켓 초고속 CDN 이미지 우회 조립
+                if "gmarket.co.kr" in u:
+                    m_g = re.search(r'goodscode=([0-9]+)', u)
+                    if m_g:
+                        opt["image_url"] = f"https://gdimg.gmarket.co.kr/{m_g.group(1)}/still/600"
+                        return
 
-            # 1. 지마켓 초고속 CDN 이미지 우회 조립
-            if "gmarket.co.kr" in u:
-                m_g = re.search(r'goodscode=([0-9]+)', u)
-                if m_g:
-                    opt["image_url"] = f"https://gdimg.gmarket.co.kr/{m_g.group(1)}/still/600"
-                    return
+                # 2. 옥션 초고속 CDN 이미지 우회 조립
+                if "auction.co.kr" in u:
+                    m_a = re.search(r'itemno=([a-zA-Z0-9]+)', u, re.IGNORECASE)
+                    if m_a:
+                        opt["image_url"] = f"https://itemimage.auction.co.kr/itemimage/{m_a.group(1)}.jpg"
+                        return
 
-            # 2. 옥션 초고속 CDN 이미지 우회 조립
-            if "auction.co.kr" in u:
-                m_a = re.search(r'itemno=([a-zA-Z0-9]+)', u, re.IGNORECASE)
-                if m_a:
-                    opt["image_url"] = f"https://itemimage.auction.co.kr/itemimage/{m_a.group(1)}.jpg"
-                    return
+                # 3. 외부 쇼핑몰 메타태그(og:image / twitter:image) 비동기 타격 (타임아웃 2.5초)
+                try:
+                    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+                    res = await client.get(u, headers=headers, timeout=2.5, follow_redirects=True)
+                    if res.status_code == 200 and res.text:
+                        soup = BeautifulSoup(res.text, "html.parser")
+                        meta_img = (
+                            soup.find("meta", property="og:image")
+                            or soup.find("meta", attrs={"name": "twitter:image"})
+                            or soup.find("meta", property="twitter:image")
+                            or soup.find("meta", property="image")
+                        )
+                        if meta_img and meta_img.get("content"):
+                            img_cand = meta_img["content"].strip()
+                            if img_cand.startswith("//"):
+                                img_cand = "https:" + img_cand
+                            elif not img_cand.startswith("http"):
+                                img_cand = urljoin(str(res.url), img_cand)
+                            
+                            low_img = img_cand.lower().split("?")[0]
+                            if not any(bad in low_img for bad in ("logo", "icon", "blank", "noimage", "transparent", "avatar")) and not low_img.endswith((".svg", ".ico")):
+                                opt["image_url"] = img_cand
+                                return
+                except Exception:
+                    pass
 
-            # 3. 외부 쇼핑몰 메타태그(og:image / twitter:image) 비동기 타격 (타임아웃 2.5초)
-            try:
-                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-                res = await client.get(u, headers=headers, timeout=2.5, follow_redirects=True)
-                if res.status_code == 200 and res.text:
-                    soup = BeautifulSoup(res.text, "html.parser")
-                    meta_img = (
-                        soup.find("meta", property="og:image")
-                        or soup.find("meta", attrs={"name": "twitter:image"})
-                        or soup.find("meta", property="twitter:image")
-                        or soup.find("meta", property="image")
+            # 4. 옵션 상품명 기반 네이버/다음 쇼핑 썸네일 초고속 검색 폴백 (외부 링크 부재 또는 og:image 실패 시)
+            opt_name = (opt.get("name") or "").strip()
+            clean_q = re.sub(r'^(?:[#\d]+[\.\)\s]+|[①-⑳]\s*)', '', opt_name).strip()
+            clean_q = re.sub(r'[\d,.]+\s*(?:만\s*원?|원|달러|불|유로|€|\$)', '', clean_q).strip(' -·:,/~+[]()')
+            clean_q = re.sub(r'\([^\)]*\)', '', clean_q).strip()
+
+            if len(clean_q) >= 2:
+                try:
+                    from urllib.parse import quote, unquote
+                    req_hdrs = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                        "Accept-Language": "ko-KR,ko;q=0.9"
+                    }
+                    # 1) 네이버 검색 썸네일 (search.pstatic.net)
+                    rn = await client.get(
+                        f"https://search.naver.com/search.naver?where=nexearch&query={quote(clean_q)}",
+                        headers=req_hdrs,
+                        timeout=3.0
                     )
-                    if meta_img and meta_img.get("content"):
-                        img_cand = meta_img["content"].strip()
-                        if img_cand.startswith("//"):
-                            img_cand = "https:" + img_cand
-                        elif not img_cand.startswith("http"):
-                            img_cand = urljoin(str(res.url), img_cand)
-                        
-                        low_img = img_cand.lower().split("?")[0]
-                        if not any(bad in low_img for bad in ("logo", "icon", "blank", "noimage", "transparent", "avatar")) and not low_img.endswith((".svg", ".ico")):
-                            opt["image_url"] = img_cand
-            except Exception:
-                pass  # 실패 시 빈 상태를 유지하여 타 옵션 이미지 혼입 원천 차단
+                    if rn.status_code == 200 and rn.text:
+                        n_imgs = re.findall(r'(https://search\.pstatic\.net/common/\?src=[^\s"\'&<>]+)', rn.text)
+                        for cand in n_imgs[:6]:
+                            low_dec = unquote(cand).lower()
+                            if not any(b in low_dec for b in ('blogpfthumb', 'kinimage', 'musicmeta', 'profile', 'icon', 'logo', 'blank', 'avatar', 'default')):
+                                opt["image_url"] = cand
+                                return
 
-        targets = [o for o in options if not o.get("image_url") and o.get("url")][:8]
+                    # 2) 다음 카카오 CDN (kakaocdn.net)
+                    rd = await client.get(
+                        f"https://search.daum.net/search?w=tot&q={quote(clean_q)}",
+                        headers=req_hdrs,
+                        timeout=3.0
+                    )
+                    if rd.status_code == 200 and rd.text:
+                        d_imgs = re.findall(r'(https://search\d+\.kakaocdn\.net/argon/[^\s"\'<>]+)', rd.text)
+                        for cand in d_imgs[:4]:
+                            low_cand = cand.lower()
+                            if not any(b in low_cand for b in ('profile', 'icon', 'logo', 'blank', 'avatar')):
+                                opt["image_url"] = cand
+                                return
+
+                    # 3) 빙 이미지 검색 폴백 (희귀 직구/단종 모델)
+                    res_b = await client.get(
+                        f"https://www.bing.com/images/search?q={quote(clean_q + ' 상품')}&FORM=HDRSC2",
+                        headers=req_hdrs,
+                        timeout=3.0
+                    )
+                    if res_b.status_code == 200 and res_b.text:
+                        murls = re.findall(r'murl&quot;:&quot;(https?://[^&]+?)&quot;', res_b.text)
+                        for candidate in murls[:6]:
+                            low_c = candidate.lower()
+                            if not any(b in low_c for b in ('logo', 'icon', 'blank', 'avatar', 'profile')) and not low_c.endswith(('.svg', '.ico')):
+                                opt["image_url"] = candidate
+                                return
+                except Exception as e:
+                    logger.debug(f"Option image search fallback failed for '{clean_q}': {e}")
+
+        targets = [o for o in options if not o.get("image_url")][:8]
         if not targets:
             return
 
@@ -1571,8 +1683,13 @@ class AggregatorService:
                          existing_deal.price = str(price)
                          price_changed = True
                      elif price != old_price:
-                         # 대표 최저가는 유지하되, 시세 그래프의 등락 포인트 보존을 위해 PriceHistory 기록 활성화
-                         price_changed = True
+                         # 단순 다른 글 병합 시 가격이 다르다고 해서 무조건 price_changed를 켜지 않고,
+                         # 해당 딜의 직전 PriceHistory와 실제 다른 가격일 때만 플래그 활성화
+                         last_ph_check = self.db.query(PriceHistory).filter(
+                             PriceHistory.deal_id == existing_deal.id
+                         ).order_by(PriceHistory.checked_at.desc(), PriceHistory.id.desc()).first()
+                         if not last_ph_check or str(last_ph_check.price) != str(price):
+                             price_changed = True
                      
                  # 📸 [고화질 이미지 덮어쓰기 가드]
                  # 기존에 이미지가 없거나, 기존 이미지가 찌그러진 저화질 썸네일이고 새 이미지는 고화질 원본인 경우 강제 갱신!
@@ -2111,11 +2228,33 @@ class AggregatorService:
         return inserted_deals[0] if inserted_deals else None
 
     def _insert_price_history(self, deal_id: int, price: int):
-        """특정 Deal의 가격 변동(골든타임)을 추적합니다."""
+        """특정 Deal의 가격 변동(골든타임)을 추적합니다 (동일 가격 중복 인서트 및 10분 쿨다운 가드)."""
+        if price <= 0:
+            return
+
+        # 직전 최신 히스토리 조회
+        last_ph = self.db.query(PriceHistory).filter(
+            PriceHistory.deal_id == deal_id
+        ).order_by(PriceHistory.checked_at.desc(), PriceHistory.id.desc()).first()
+
+        # 동일한 가격이 이미 최신 레코드에 존재하면 인서트 생략!
+        if last_ph and str(last_ph.price) == str(price):
+            return
+
+        # 동일 가격이 아니더라도 10분 이내의 미세 진동(< 5%)은 방어
+        from datetime import datetime, timedelta
+        if last_ph and last_ph.checked_at:
+            last_dt = last_ph.checked_at.replace(tzinfo=None) if hasattr(last_ph.checked_at, 'replace') else last_ph.checked_at
+            if (datetime.utcnow() - last_dt) < timedelta(minutes=10):
+                old_p_str = re.sub(r'[^\d]', '', str(last_ph.price))
+                old_p = int(old_p_str) if old_p_str.isdigit() else 0
+                if old_p > 0 and abs(price - old_p) / old_p < 0.05:
+                    return
+
         history = PriceHistory(
             deal_id=deal_id,
             price=str(price)
         )
         self.db.add(history)
         self.db.commit()
-        logger.info(f"[Price History] 최저가 역사 기록! Deal ID {deal_id} -> {price:,}원")
+        logger.info(f"[Price History] 가격 변동 확정 기록: Deal ID {deal_id} -> {price:,}원")

@@ -24,8 +24,22 @@ fun formatPrice(price: Long?, currency: String? = "KRW", titleHint: String? = nu
             else -> if (rawCurr.isNotEmpty()) rawCurr else "KRW"
         }
         when (effectiveCurrency) {
-            "USD" -> String.format(Locale.US, "$%.2f", price / 100.0)
-            "EUR" -> String.format(Locale.US, "€%.2f", price / 100.0)
+            "USD" -> {
+                if (price >= 100L) {
+                    val dollars = price / 100.0
+                    if (price % 100L == 0L) "$${price / 100L}" else String.format(Locale.US, "$%.2f", dollars)
+                } else {
+                    "$$price"
+                }
+            }
+            "EUR" -> {
+                if (price >= 100L) {
+                    val euros = price / 100.0
+                    if (price % 100L == 0L) "€${price / 100L}" else String.format(Locale.US, "€%.2f", euros)
+                } else {
+                    "€$price"
+                }
+            }
             else -> String.format(Locale.getDefault(), "%,d원", price)
         }
     } else {

@@ -22,7 +22,9 @@ import java.util.UUID
 data class DealDetailUiState(
     val isLoading: Boolean = true,
     val deal: DealItem? = null,
+    val selectedOptionIndex: Int = 0,
     val priceHistory: List<PriceHistoryPoint> = emptyList(),
+    val isHistoryLoading: Boolean = false,
     val error: String? = null,
     val isRecordLow: Boolean = false,
     val comments: List<ApiDealComment> = emptyList(),
@@ -39,6 +41,7 @@ class DealDetailViewModel : ViewModel() {
     private val apiService = com.ddaeany0919.insightdeal.network.NetworkModule.createService<ApiService>()
     
     private var currentDealId: Int? = null
+    private val historyCache = java.util.concurrent.ConcurrentHashMap<String, List<PriceHistoryPoint>>()
 
     fun setPeriod(period: String) {
         if (_selectedPeriod.value != period) {
@@ -47,30 +50,61 @@ class DealDetailViewModel : ViewModel() {
         }
     }
 
+    fun selectOption(index: Int) {
+        if (_uiState.value.deal == null) return
+        if (_uiState.value.selectedOptionIndex == index) return
+        _uiState.value = _uiState.value.copy(selectedOptionIndex = index)
+        currentDealId?.let { dealId ->
+            loadHistoryData(dealId, _selectedPeriod.value)
+        }
+    }
+
     private fun loadHistoryData(dealId: Int, period: String) {
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isHistoryLoading = true)
             try {
-                val historyResponse = apiService.getDealPriceHistory(dealId, period)
+                val deal = _uiState.value.deal
+                val multiOptions = deal?.sources?.filter { it.siteName.contains(" - ") && (it.price ?: 0L) > 0L } ?: emptyList()
+                val selectedOpt = multiOptions.getOrNull(_uiState.value.selectedOptionIndex)
+                val optQuery = selectedOpt?.siteName?.substringAfter(" - ")?.trim()
+                val optCurrency = selectedOpt?.currency ?: deal?.currency
+
+                val cacheKey = "${dealId}_${optQuery ?: "default"}_${optCurrency}_$period"
+                val cached = historyCache[cacheKey]
+                if (cached != null) {
+                    val currentPrice = selectedOpt?.price ?: deal?.price ?: 0L
+                    val minPrice = cached.minOfOrNull { it.price } ?: Int.MAX_VALUE
+                    val isLow = currentPrice > 0 && currentPrice <= minPrice
+                    _uiState.value = _uiState.value.copy(
+                        priceHistory = cached,
+                        isRecordLow = isLow,
+                        isHistoryLoading = false
+                    )
+                    return@launch
+                }
+
+                val historyResponse = apiService.getDealPriceHistory(
+                    dealId = dealId,
+                    period = period,
+                    query = optQuery,
+                    currency = optCurrency
+                )
                 if (historyResponse.isSuccessful) {
                     val history = historyResponse.body() ?: emptyList()
-                    val deal = _uiState.value.deal
-                    
-                    var isLow = false
-                    if (history.isNotEmpty() && deal != null) {
-                        val currentPrice = deal.price
-                        val minPrice = history.minOfOrNull { it.price } ?: Int.MAX_VALUE
-                        if (currentPrice > 0 && currentPrice <= minPrice) {
-                            isLow = true
-                        }
-                    }
-
+                    historyCache[cacheKey] = history
+                    val currentPrice = selectedOpt?.price ?: deal?.price ?: 0L
+                    val minPrice = history.minOfOrNull { it.price } ?: Int.MAX_VALUE
+                    val isLow = currentPrice > 0 && currentPrice <= minPrice
                     _uiState.value = _uiState.value.copy(
                         priceHistory = history,
-                        isRecordLow = isLow
+                        isRecordLow = isLow,
+                        isHistoryLoading = false
                     )
+                } else {
+                    _uiState.value = _uiState.value.copy(isHistoryLoading = false)
                 }
             } catch (e: Exception) {
-                // 오류 처리 생략 (기존 상태 유지)
+                _uiState.value = _uiState.value.copy(isHistoryLoading = false)
             }
         }
     }
@@ -126,7 +160,9 @@ class DealDetailViewModel : ViewModel() {
                         _uiState.value = DealDetailUiState(
                             isLoading = false,
                             deal = deal,
+                            selectedOptionIndex = 0,
                             priceHistory = history,
+                            isHistoryLoading = false,
                             error = null,
                             isRecordLow = isLow,
                             comments = comments,

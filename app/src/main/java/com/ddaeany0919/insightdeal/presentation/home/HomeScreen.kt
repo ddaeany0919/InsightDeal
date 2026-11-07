@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -330,28 +331,23 @@ fun HomeScreen(
         CoupangSettingsDialog(onDismiss = { showCoupangDialog = false })
     }
 
-    // ✨ Pull-to-refresh 및 커스텀 새로고침 상태 통합 관리 (무한 새로고침 원천 방어 가드)
+    val hasNewDeals by viewModel.hasNewDeals.collectAsState()
+    val newDealsCount by viewModel.newDealsCount.collectAsState()
+
     val pullRefreshState = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
-    var isCustomRefreshing by remember { mutableStateOf(false) }
 
     LaunchedEffect(pullRefreshState.isRefreshing) {
         if (pullRefreshState.isRefreshing) {
-            isCustomRefreshing = true
             dealsPagingItems.refresh()
             viewModel.fetchTopHotDeals()
-            // [무한 새로고침 방어]: 최대 2초 내 강제 종료 보장
-            kotlinx.coroutines.delay(2000)
+            viewModel.onRefreshNewDeals()
+            kotlinx.coroutines.delay(1200)
             pullRefreshState.endRefresh()
-            isCustomRefreshing = false
         }
     }
-    LaunchedEffect(dealsPagingItems.loadState.refresh, isCustomRefreshing) {
+    LaunchedEffect(dealsPagingItems.loadState.refresh) {
         if (dealsPagingItems.loadState.refresh !is LoadState.Loading) {
             pullRefreshState.endRefresh()
-            if (isCustomRefreshing) {
-                kotlinx.coroutines.delay(250)
-                isCustomRefreshing = false
-            }
         }
     }
 
@@ -410,7 +406,6 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.bounceClick {
                             haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            isCustomRefreshing = true
                             scope.launch {
                                 try {
                                     viewModel.selectCategory("전체")
@@ -420,10 +415,8 @@ fun HomeScreen(
                                     }
                                     dealsPagingItems.refresh()
                                     viewModel.fetchTopHotDeals()
-                                    kotlinx.coroutines.delay(1800)
-                                    isCustomRefreshing = false
+                                    viewModel.onRefreshNewDeals()
                                 } catch (_: Exception) {
-                                    isCustomRefreshing = false
                                 }
                             }
                         }
@@ -1385,14 +1378,62 @@ fun HomeScreen(
         }
     }
 
-        // ✨ PullToRefresh Indicator - 기본 동그라미 스피너는 비주얼 노이즈이므로 제거하고,
-        // 🧡 대표님 피드백에 따라 오직 귀여운 불꽃 애니메이션 오버레이만 노출하도록 단일화합니다.
-        /*
+        // M3 공식 PullToRefresh 스피너 (군더더기 없는 깔끔한 네이티브 원형 인디케이터)
         androidx.compose.material3.pulltorefresh.PullToRefreshContainer(
             modifier = Modifier.align(Alignment.TopCenter),
             state = pullRefreshState,
         )
-        */
+
+        // ↻ 실시간 새 핫딜 감지 플로팅 캡슐 배너 (미니멀 M3 Surface)
+        AnimatedVisibility(
+            visible = hasNewDeals,
+            enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(300)) + androidx.compose.animation.slideInVertically(animationSpec = androidx.compose.animation.core.tween(300)) { -it },
+            exit = androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(200)) + androidx.compose.animation.slideOutVertically(animationSpec = androidx.compose.animation.core.tween(200)) { -it },
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 76.dp)
+        ) {
+            androidx.compose.material3.Surface(
+                modifier = Modifier
+                    .bounceClick {
+                        dealsPagingItems.refresh()
+                        viewModel.onRefreshNewDeals()
+                        scope.launch {
+                            listState.animateScrollToItem(0)
+                        }
+                    },
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                shadowElevation = 8.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = "새 핫딜 새로고침",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = if (newDealsCount > 0) "새 핫딜 ${newDealsCount}건" else "새 핫딜",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.ArrowUpward,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
 
         // 💡 [법적 필수] 제휴 마케팅 수수료 우아한 고지 BottomSheet UI
         if (showCommissionSheet) {
@@ -1794,116 +1835,7 @@ fun HomeScreen(
             )
         }
 
-        // 🧡 대표님 헌정: 귀여운 불꽃 캐릭터 펄싱 애니메이션 새로고침 오버레이 뷰
-        AnimatedVisibility(
-            visible = isCustomRefreshing,
-            enter = androidx.compose.animation.fadeIn(animationSpec = tween(300)),
-            exit = androidx.compose.animation.fadeOut(animationSpec = tween(300))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.18f)) // 🧡 대표님 피드백: 개방성과 시원함을 주기 위해 대폭 투명하게 딤 완화!
-                    .pointerInput(Unit) {}, // 뒷배경 클릭/스크롤 전면 차단 가드
-                contentAlignment = Alignment.Center
-            ) {
-                // 무한 펄싱 바운싱 애니메이션 정의
-                val infiniteTransition = rememberInfiniteTransition(label = "flame_pulse")
-                val scale by infiniteTransition.animateFloat(
-                    initialValue = 0.9f,
-                    targetValue = 1.2f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(650, easing = FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "flame_scale"
-                )
-                val alpha by infiniteTransition.animateFloat(
-                    initialValue = 0.7f,
-                    targetValue = 1.0f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(650, easing = FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "flame_alpha"
-                )
 
-                Card(
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        // 🧡 대표님 피드백: 카드 자체에도 은은한 투명도를 적용하여 유리(Glassmorphism) 같은 품격 극대화
-                        containerColor = if (isDark) Color(0xFF1E1E1E).copy(alpha = 0.88f) else Color.White.copy(alpha = 0.92f)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
-                    modifier = Modifier
-                        .width(260.dp)
-                        .padding(16.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 32.dp, horizontal = 20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        // 세련된 벡터 스피너 및 브랜드 배지
-                        Box(
-                            modifier = Modifier.size(64.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.fillMaxSize(),
-                                color = Color(0xFFFF453A),
-                                strokeWidth = 3.5.dp
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        brush = Brush.linearGradient(
-                                            colors = listOf(Color(0xFFFF6B35), Color(0xFFFF3B30))
-                                        )
-                                    )
-                                    .graphicsLayer(
-                                        scaleX = scale * 0.9f,
-                                        scaleY = scale * 0.9f,
-                                        alpha = alpha
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.LocalOffer,
-                                    contentDescription = "새로고침 아이콘",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        Text(
-                            text = "새로고침 중입니다...",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isDark) Color.White else Color(0xFF191F28),
-                            textAlign = TextAlign.Center
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Text(
-                            text = "잠시만 기다려주세요",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = if (isDark) Color(0xFF9E9E9E) else Color(0xFF6B7684),
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -1949,7 +1881,6 @@ fun DealCardComposable(
     onMoreClick: (() -> Unit)? = null
 ) {
     var isExpanded by remember { mutableStateOf(false) }
-    val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
     val isDark = MaterialTheme.colorScheme.background.red < 0.2f
 

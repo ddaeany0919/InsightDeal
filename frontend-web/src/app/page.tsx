@@ -48,6 +48,10 @@ export default function Home() {
   const [activePlatform, setActivePlatform] = useState("전체");
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pullOffset, setPullOffset] = useState<number>(0);
+  const [newDealsCount, setNewDealsCount] = useState<number>(0);
+  const touchStartYRef = useRef<number>(0);
+  const isPullingRef = useRef<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [wishlist, setWishlist] = useState<number[]>([]);
@@ -426,6 +430,7 @@ export default function Home() {
   const handleRefresh = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
+    setNewDealsCount(0);
     try {
       await fetch(apiUrl("/api/community/force-scrape"), { method: "POST" });
     } catch (e) {}
@@ -434,8 +439,20 @@ export default function Home() {
     showToast("최신 핫딜 목록을 불러왔습니다.");
   };
 
+  const handleScrollToTopAndRefresh = async () => {
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    setNewDealsCount(0);
+    setIsRefreshing(true);
+    await fetchLiveDeals(false, 0, activeTab, activePlatform);
+    setIsRefreshing(false);
+    showToast("최신 핫딜이 반영되었습니다.");
+  };
+
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
+    setNewDealsCount(0);
     setLoading(true);
     setDeals([]);
     setHasMore(true);
@@ -443,6 +460,7 @@ export default function Home() {
 
   const handlePlatformChange = (platform: string) => {
     setActivePlatform(platform);
+    setNewDealsCount(0);
     setLoading(true);
     setDeals([]);
     setHasMore(true);
@@ -720,6 +738,113 @@ export default function Home() {
     return () => observer.disconnect();
   }, [isMounted, hasMore, deals.length, activeTab, activePlatform, loading, isRefreshing, isFetchingMore]);
 
+  // 모바일 터치 기반 당겨서 새로고침 (Pull-to-Refresh) 인터랙션
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (window.scrollY <= 0 && e.touches.length === 1) {
+        touchStartYRef.current = e.touches[0].clientY;
+        isPullingRef.current = true;
+      } else {
+        isPullingRef.current = false;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isPullingRef.current || isRefreshing) return;
+      if (window.scrollY > 0) {
+        isPullingRef.current = false;
+        setPullOffset(0);
+        return;
+      }
+      const currentY = e.touches[0].clientY;
+      const diff = currentY - touchStartYRef.current;
+      if (diff > 0) {
+        // 비선형 감쇠 공식 (Damping)
+        const damped = Math.min(75, Math.pow(diff, 0.82) * 1.2);
+        setPullOffset(damped);
+      } else {
+        setPullOffset(0);
+      }
+    };
+
+    const handleTouchEnd = async () => {
+      if (!isPullingRef.current) return;
+      isPullingRef.current = false;
+      if (pullOffset >= 50 && !isRefreshing) {
+        setPullOffset(46);
+        setIsRefreshing(true);
+        setNewDealsCount(0);
+        try {
+          await fetch(apiUrl("/api/community/force-scrape"), { method: "POST" }).catch(() => {});
+          await fetchLiveDeals(false, 0, activeTab, activePlatform);
+          showToast("최신 핫딜 목록을 불러왔습니다.");
+        } finally {
+          setIsRefreshing(false);
+          setPullOffset(0);
+        }
+      } else {
+        setPullOffset(0);
+      }
+    };
+
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: true });
+    window.addEventListener("touchend", handleTouchEnd);
+
+    return () => {
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [isRefreshing, activeTab, activePlatform, pullOffset]);
+
+  // 50초 주기 백그라운드 새 핫딜 감지 (스크롤 위치를 방해하지 않고 상단 캡슐 알림 노출)
+  useEffect(() => {
+    if (!isMounted || deals.length === 0) return;
+
+    const checkInterval = setInterval(async () => {
+      if (document.hidden) return; // 탭 비활성화 시 네트워크 절약
+
+      try {
+        const CATEGORY_MAP: Record<string, string> = {
+          "PC/하드웨어": "PC용품",
+          "가전/TV": "가전제품",
+          "식품/건강": "음식",
+          "의류/뷰티": "패션",
+          "육아/유아용품": "육아/유아용품",
+          "모바일/상품권": "모바일/기프티콘",
+          "해외직구": "여행.해외핫딜",
+          "기타": "기타",
+        };
+        const apiCategory = CATEGORY_MAP[activeTab] || "";
+        const platformParam =
+          activePlatform && activePlatform !== "전체"
+            ? `&platform=${encodeURIComponent(activePlatform)}`
+            : "";
+        const queryParam = searchQuery.trim() ? `&keyword=${encodeURIComponent(searchQuery.trim())}` : "";
+        const checkUrl = apiUrl(`/api/community/hot-deals?limit=8&offset=0${
+          apiCategory ? `&category=${encodeURIComponent(apiCategory)}` : ""
+        }${platformParam}${queryParam}`);
+
+        const res = await fetch(checkUrl);
+        if (!res.ok) return;
+        const data = await res.json();
+        const incomingDeals: any[] = Array.isArray(data) ? data : data.deals || data.items || [];
+        if (incomingDeals.length > 0 && deals.length > 0) {
+          const latestKnownId = deals[0]?.id || 0;
+          const freshCount = incomingDeals.filter((d: any) => d.id > latestKnownId).length;
+          if (freshCount > 0) {
+            setNewDealsCount(freshCount);
+          }
+        }
+      } catch {}
+    }, 50000);
+
+    return () => clearInterval(checkInterval);
+  }, [isMounted, deals, activeTab, activePlatform, searchQuery]);
+
   // 실시간 시간 포맷팅
   const getLiveTimeAgo = (dateStr?: string, fallback?: string) => {
     if (!isMounted) return fallback || "최근";
@@ -807,6 +932,71 @@ export default function Home() {
     <>
       <div className="bg-ornament bg-ornament-1"></div>
       <div className="bg-ornament bg-ornament-2"></div>
+
+      {/* 모바일 당겨서 새로고침(Pull-to-Refresh) 미니멀 원형 스피너 (Clean Toss style) */}
+      {(pullOffset > 0 || isRefreshing) && (
+        <div
+          style={{
+            position: "fixed",
+            top: `${Math.max(12, Math.min(84, pullOffset + 12))}px`,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 3000,
+            width: "38px",
+            height: "38px",
+            borderRadius: "50%",
+            background: "var(--card-bg)",
+            border: "1px solid var(--card-border)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            transition: isPullingRef.current ? "none" : "top 0.25s ease, opacity 0.25s ease",
+            opacity: isRefreshing ? 1 : Math.min(1, pullOffset / 40),
+            pointerEvents: "none",
+          }}
+        >
+          <RefreshCw
+            size={16}
+            color="var(--accent)"
+            className={isRefreshing ? "animate-spin" : ""}
+            style={{
+              transform: isRefreshing ? undefined : `rotate(${pullOffset * 6}deg)`,
+              transition: isRefreshing ? undefined : "transform 0.05s linear",
+            }}
+          />
+        </div>
+      )}
+
+      {/* 45~60초 주기 백그라운드 새 핫딜 감지 플로팅 캡슐 (Clean Toss/Kream style, No AI Emojis) */}
+      {newDealsCount > 0 && (
+        <div
+          onClick={handleScrollToTopAndRefresh}
+          className="bounce-click"
+          style={{
+            position: "fixed",
+            top: "76px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 2500,
+            background: "var(--accent)",
+            color: "#ffffff",
+            padding: "8px 16px",
+            borderRadius: "999px",
+            boxShadow: "0 4px 16px rgba(49, 130, 246, 0.38)",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            cursor: "pointer",
+            fontSize: "0.82rem",
+            fontWeight: 800,
+            animation: "slideUp 0.25s ease",
+          }}
+        >
+          <RefreshCw size={13} className="animate-spin" style={{ animationDuration: "3s" }} />
+          <span>새 핫딜{newDealsCount > 1 ? ` ${newDealsCount}` : ""}</span>
+        </div>
+      )}
 
       {/* 상단 네비게이션 헤더 */}
       <header className="navbar glass-panel">
@@ -1577,14 +1767,14 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* 📦 N종 모음 플로팅 배지 */}
+                      {/* N종 옵션 플로팅 배지 (No AI Emojis) */}
                       {isMultiDeal && (
                         <div
                           style={{
                             position: "absolute",
                             bottom: "8px",
                             left: "8px",
-                            background: "rgba(15, 23, 42, 0.8)",
+                            background: "rgba(15, 23, 42, 0.82)",
                             backdropFilter: "blur(6px)",
                             color: "#F3E8FF",
                             border: "1px solid rgba(168, 85, 247, 0.4)",
@@ -1599,7 +1789,7 @@ export default function Home() {
                             boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
                           }}
                         >
-                          <span>📦 {displayCount >= 2 ? `${displayCount}종 모음` : "모음전"}</span>
+                          <span>{displayCount >= 2 ? `${displayCount}종 옵션` : "옵션 상품"}</span>
                         </div>
                       )}
                     </div>
@@ -1699,7 +1889,7 @@ export default function Home() {
                                     gap: "3px",
                                   }}
                                 >
-                                  📦 {displayCount >= 2 ? `${displayCount}종 모음` : "모음전"}
+                                  {displayCount >= 2 ? `${displayCount}종 옵션` : "옵션 상품"}
                                 </span>
                               )}
                               {(deal.honeyScore || 0) >= 100 ? (

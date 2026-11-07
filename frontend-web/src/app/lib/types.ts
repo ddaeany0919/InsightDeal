@@ -9,6 +9,16 @@ export interface DealSource {
   sub_urls?: string[];
 }
 
+export interface DealOptionItem {
+  name: string;
+  price?: number;
+  currency?: string;
+  code?: string;
+  url?: string;
+  image_url?: string;
+  sub_urls?: string[];
+}
+
 export interface Deal {
   id: number;
   community_name: string;
@@ -30,6 +40,7 @@ export interface Deal {
   tags?: string[];
   has_options?: boolean;
   options_count?: number;
+  options_data?: DealOptionItem[];
 }
 
 export interface AIDemoResult {

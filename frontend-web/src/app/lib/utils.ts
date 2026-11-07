@@ -247,20 +247,54 @@ export const resolveOutboundUrl = (rawUrl: string | undefined | null): string =>
 };
 
 /**
- * 딜의 sources 배열에서 다중 상품(공구/모음전) 옵션 목록만 추출하고 정규화합니다.
+ * 옵션 타이틀 추출 헬퍼 ("알리뽐뿌 - UWANT V600" -> "UWANT V600")
  */
-export const getOptionSources = (sources?: DealSource[] | null): DealSource[] => {
-  if (!Array.isArray(sources) || sources.length === 0) return [];
+export const extractOptionTitle = (siteName: string): string => {
+  if (!siteName) return "";
+  if (!siteName.includes(" - ")) return siteName.trim();
+  return siteName.split(" - ").slice(1).join(" - ").trim() || siteName.trim();
+};
+
+/**
+ * 딜의 sources 배열 또는 fallback 옵션에서 다중 상품(공구/모음전) 옵션 목록만 추출하고 정규화합니다.
+ */
+export const getOptionSources = (
+  sources?: DealSource[] | null,
+  fallbackOptions?: any[] | null
+): DealSource[] => {
   const seen = new Set<string>();
   const result: DealSource[] = [];
-  for (const src of sources) {
-    if (!src.site_name || !src.site_name.includes(" - ")) continue;
-    const optTitle = src.site_name.split(" - ").slice(1).join(" - ").trim();
-    const normKey = optTitle.toLowerCase().replace(/\s+/g, "");
-    if (!normKey || seen.has(normKey)) continue;
-    seen.add(normKey);
-    result.push(src);
+
+  if (Array.isArray(sources) && sources.length > 0) {
+    for (const src of sources) {
+      if (!src.site_name || !src.site_name.includes(" - ")) continue;
+      const optTitle = extractOptionTitle(src.site_name);
+      const normKey = optTitle.toLowerCase().replace(/\s+/g, "");
+      if (!normKey || seen.has(normKey)) continue;
+      seen.add(normKey);
+      result.push(src);
+    }
   }
+
+  if (result.length === 0 && Array.isArray(fallbackOptions) && fallbackOptions.length > 0) {
+    for (const opt of fallbackOptions) {
+      const optName = opt.name || opt.site_name || "";
+      const normKey = optName.toLowerCase().replace(/\s+/g, "");
+      if (!normKey || seen.has(normKey)) continue;
+      seen.add(normKey);
+      result.push({
+        site_name: `옵션 - ${optName}`,
+        post_url: opt.url || opt.post_url || "",
+        ecommerce_url: opt.url || opt.ecommerce_url || "",
+        price: opt.price,
+        currency: opt.currency,
+        code: opt.code,
+        image_url: opt.image_url,
+        sub_urls: opt.sub_urls,
+      });
+    }
+  }
+
   return result;
 };
 

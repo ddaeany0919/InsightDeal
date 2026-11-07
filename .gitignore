@@ -37,6 +37,8 @@ Thumbs.db
 
 # 6. [Security] 추가 보안 파일 및 데이터베이스
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 firebase-service-account.json

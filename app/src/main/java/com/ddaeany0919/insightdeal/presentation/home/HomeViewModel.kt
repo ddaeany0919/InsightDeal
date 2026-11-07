@@ -45,9 +45,62 @@ class HomeViewModel : ViewModel() {
     private val _topHotDeals = MutableStateFlow<List<DealItem>>(emptyList())
     val topHotDeals: StateFlow<List<DealItem>> = _topHotDeals.asStateFlow()
 
+    private val _hasNewDeals = MutableStateFlow(false)
+    val hasNewDeals: StateFlow<Boolean> = _hasNewDeals.asStateFlow()
+
+    private val _newDealsCount = MutableStateFlow(0)
+    val newDealsCount: StateFlow<Int> = _newDealsCount.asStateFlow()
+
+    private var latestKnownDealId: Int = 0
+    private var dealWatcherJob: kotlinx.coroutines.Job? = null
+
     init {
         fetchPopularKeywords()
         fetchTopHotDeals()
+        startRealtimeDealWatcher()
+    }
+
+    private fun startRealtimeDealWatcher() {
+        dealWatcherJob?.cancel()
+        dealWatcherJob = viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(50_000L) // 50초 주기 체크
+                try {
+                    val response = apiService.getCommunityHotDeals(limit = 10, offset = 0)
+                    if (response.isSuccessful) {
+                        val latestDeals = response.body()?.deals ?: emptyList()
+                        if (latestDeals.isNotEmpty()) {
+                            val topId = latestDeals.first().id
+                            if (latestKnownDealId == 0) {
+                                latestKnownDealId = topId
+                            } else if (topId > latestKnownDealId) {
+                                val newCount = latestDeals.count { it.id > latestKnownDealId }
+                                _newDealsCount.value = newCount
+                                _hasNewDeals.value = true
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // 백그라운드 폴링 예외 무시
+                }
+            }
+        }
+    }
+
+    fun onRefreshNewDeals() {
+        _hasNewDeals.value = false
+        _newDealsCount.value = 0
+        viewModelScope.launch {
+            try {
+                val response = apiService.getCommunityHotDeals(limit = 5, offset = 0)
+                if (response.isSuccessful) {
+                    val topDeal = response.body()?.deals?.firstOrNull()
+                    if (topDeal != null) {
+                        latestKnownDealId = topDeal.id
+                    }
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     fun fetchPopularKeywords() {
@@ -74,6 +127,9 @@ class HomeViewModel : ViewModel() {
                     val deals = response.body()?.deals ?: emptyList()
                     android.util.Log.d("HomeViewModel", "getTopHotDeals success, count: ${deals.size}")
                     _topHotDeals.value = deals
+                    if (latestKnownDealId == 0 && deals.isNotEmpty()) {
+                        latestKnownDealId = deals.first().id
+                    }
                 } else {
                     android.util.Log.e("HomeViewModel", "getTopHotDeals failed: ${response.code()}")
                 }

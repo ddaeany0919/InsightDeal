@@ -53,7 +53,9 @@ interface ApiService {
     @GET("api/community/deals/{dealId}/history")
     suspend fun getDealPriceHistory(
         @Path("dealId") dealId: Int,
-        @Query("period") period: String = "7d"
+        @Query("period") period: String = "7d",
+        @Query("query") query: String? = null,
+        @Query("currency") currency: String? = null
     ): Response<List<PriceHistoryPoint>>
     // 🎯 향상된 딜 정보 (임시)
     @GET("api/community/deals/{dealId}")

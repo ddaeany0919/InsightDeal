@@ -596,6 +596,7 @@ async def scrape_and_push_once():
                             item_title = item.get("title", "") or ""
                             is_multi_title = bool(
                                 re.search(r'(?:외\s*\d+|골라담기|모음|선택|공구|총정리|\d+\s*종|다양|특가\s*모음)', item_title)
+                                or (re.search(r'/[^/]+(?:원|만|\$|달러)', item_title) and re.search(r'(?:원|만|\$|달러).*/', item_title))
                             )
                             if is_multi_title and not is_ppomppu_cloud:
                                 need_detail = True

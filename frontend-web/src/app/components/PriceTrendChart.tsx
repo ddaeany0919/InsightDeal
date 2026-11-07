@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { RefreshCw, Sparkles } from "lucide-react";
+import { RefreshCw, BarChart3 } from "lucide-react";
 import type { PriceHistoryItem } from "../lib/types";
 import { apiUrl, formatPrice } from "../lib/utils";
 
@@ -16,6 +16,7 @@ interface PriceTrendChartProps {
   basePrice: any;
   dealId?: number;
   currency?: string;
+  optionName?: string;
   onHistoryStatus?: (hasData: boolean, stats?: PriceTrendStats) => void;
 }
 
@@ -31,7 +32,7 @@ type PeriodKey = (typeof PERIOD_OPTIONS)[number]["key"];
 // [react-patterns] React StrictMode 이중 마운트 및 탭 재전환 시 중복 네트워크 호출 방지용 인플라이트 캐시
 const historyPromiseCache = new Map<string, { ts: number; promise: Promise<PriceHistoryItem[]> }>();
 
-export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", onHistoryStatus }: PriceTrendChartProps) {
+export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", optionName, onHistoryStatus }: PriceTrendChartProps) {
   const [userPeriod, setUserPeriod] = useState<PeriodKey | null>(null);
   const [autoFellBackTo3m, setAutoFellBackTo3m] = useState(false);
   const [chartData, setChartData] = useState<{ price: number; date: string }[]>([]);
@@ -75,14 +76,18 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
 
     // [android-e2e-sequence-audit Gate 2] 최초 진입 시 7d_auto 단일 왕복(1-RTT) API를 호출하여 7d -> 3m 순차 Waterfall 차단
     const queryPeriod = userPeriod ?? "7d_auto";
-    const cacheKey = `${dealId}:${queryPeriod}`;
+    const cleanOpt = optionName ? optionName.trim() : "";
+    const cacheKey = `${dealId}:${queryPeriod}:${cleanOpt}:${currency || ""}`;
 
     (async () => {
       try {
         const now = Date.now();
         let cached = historyPromiseCache.get(cacheKey);
         if (!cached || now - cached.ts > 15000) {
-          const promise = fetch(apiUrl(`/api/community/deals/${dealId}/history?period=${queryPeriod}`)).then((res) => {
+          const optParam = cleanOpt ? `&option_name=${encodeURIComponent(cleanOpt)}` : "";
+          const currParam = currency ? `&currency=${encodeURIComponent(currency)}` : "";
+          const targetUrl = apiUrl(`/api/community/deals/${dealId}/history?period=${queryPeriod}${optParam}${currParam}`);
+          const promise = fetch(targetUrl).then((res) => {
             if (!res.ok) throw new Error("Failed to fetch");
             return res.json() as Promise<PriceHistoryItem[]>;
           });
@@ -140,7 +145,7 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
     return () => {
       isMounted = false;
     };
-  }, [dealId, userPeriod]);
+  }, [dealId, userPeriod, optionName, currency]);
 
   const formatPriceNum = (num: number) => {
     if (currency === "USD" || currency === "EUR") {
@@ -225,11 +230,11 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
             justifyContent: "center",
             color: "var(--accent)"
           }}>
-            <Sparkles size={18} fill="currentColor" />
+            <BarChart3 size={18} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             <span style={{ fontSize: "0.92rem", fontWeight: 900, color: "var(--text-main)" }}>
-              가격 기록을 모으고 있어요
+              {optionName?.trim() ? `"${optionName.trim()}" 핫딜 기록을 모으고 있어요` : "가격 기록을 모으고 있어요"}
             </span>
             <p style={{ fontSize: "0.8rem", color: "var(--text-sub)", lineHeight: "1.5", maxWidth: "340px", margin: "0 auto", fontWeight: 600 }}>
               동일 상품의 핫딜 기록이 2건 이상 쌓이면 가격 변동 추이를 한눈에 볼 수 있어요.

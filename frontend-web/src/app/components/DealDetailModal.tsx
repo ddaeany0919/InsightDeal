@@ -14,6 +14,7 @@ import {
   getOrCreateWebDeviceUuid,
   ensureWebPushSubscribed,
   getOptionSources,
+  extractOptionTitle,
 } from "../lib/utils";
 import PriceTrendChart, { type PriceTrendStats } from "./PriceTrendChart";
 
@@ -32,6 +33,7 @@ interface DealCommentItem {
 }
 
 export default function DealDetailModal({ deal, onClose, showToast }: DealDetailModalProps) {
+  const [selectedOptionIndex, setSelectedOptionIndex] = useState<number>(0);
   const [hasChartData, setHasChartData] = useState(false);
   const [chartStats, setChartStats] = useState<PriceTrendStats | null>(null);
   const [targetPriceInput, setTargetPriceInput] = useState<string>("");
@@ -50,6 +52,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
   const getBrowserUserId = () => getOrCreateWebDeviceUuid();
 
   useEffect(() => {
+    setSelectedOptionIndex(0);
     setHasChartData(false);
     setChartStats(null);
     setDetailHtml(deal?.contentHtml || "");
@@ -139,7 +142,34 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
   // HTML 태그 제거 + 공구 다중 상품 구분선 및 깨진 쿠폰 코드 줄바꿈 자동 다듬기
   const cleanBodyText = polishDealBodyText(detailHtml);
   const promoCodes = extractPromoCodes(cleanBodyText, deal.title);
-  const optionSources = getOptionSources(detailSources);
+  const optionSources = getOptionSources(detailSources, deal.options_data);
+
+  const selectedOption =
+    optionSources.length > 0 && selectedOptionIndex < optionSources.length
+      ? optionSources[selectedOptionIndex]
+      : null;
+
+  const activeOptionTitle = selectedOption ? extractOptionTitle(selectedOption.site_name) : "";
+  const activePrice =
+    selectedOption && selectedOption.price && selectedOption.price > 0
+      ? selectedOption.price
+      : deal.price;
+  const activeCurrency = selectedOption?.currency || deal.currency || "KRW";
+  const activeImageUrl =
+    selectedOption?.image_url && selectedOption.image_url.trim() !== ""
+      ? selectedOption.image_url
+      : deal.image_url;
+
+  const activeEcommerceUrl =
+    selectedOption?.ecommerce_url &&
+    selectedOption.ecommerce_url !== "#" &&
+    selectedOption.ecommerce_url.trim() !== ""
+      ? selectedOption.ecommerce_url
+      : deal.ecommerce_url &&
+        deal.ecommerce_url !== "#" &&
+        String(deal.ecommerce_url).trim() !== ""
+      ? deal.ecommerce_url
+      : deal.post_link;
 
   const handleVote = async (voteType: "buy" | "save") => {
     try {
@@ -246,8 +276,9 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
         {/* 헤더 (상품 썸네일 + 메타 배지 + 상품명 + 액션 버튼) */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "14px" }}>
           <div style={{ display: "flex", gap: "14px", alignItems: "flex-start", flex: 1, minWidth: 0 }}>
-            {deal.image_url && (
+            {activeImageUrl && (
               <div
+                key={activeImageUrl}
                 style={{
                   width: "76px",
                   height: "76px",
@@ -255,21 +286,41 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                   overflow: "hidden",
                   flexShrink: 0,
                   background: "var(--surface-subtle)",
-                  border: "1px solid var(--card-border)",
+                  border: selectedOption ? "1.5px solid var(--accent)" : "1px solid var(--card-border)",
+                  position: "relative",
+                  transition: "border-color 0.2s ease",
                 }}
               >
                 <img
-                  src={getProxyImageUrl(deal.image_url, { width: 400 })}
-                  alt={deal.title}
+                  src={getProxyImageUrl(activeImageUrl, { width: 400 })}
+                  alt={activeOptionTitle || deal.title}
                   style={{ width: "100%", height: "100%", objectFit: "cover" }}
                   referrerPolicy="no-referrer"
                   onError={(e) => {
-                    const fallback = getFallbackProxyImageUrl(deal.image_url);
+                    const fallback = getFallbackProxyImageUrl(activeImageUrl);
                     if (fallback && e.currentTarget.src !== fallback) {
                       e.currentTarget.src = fallback;
                     }
                   }}
                 />
+                {selectedOption && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      bottom: "3px",
+                      right: "3px",
+                      background: "rgba(15, 23, 42, 0.75)",
+                      color: "#fff",
+                      fontSize: "0.62rem",
+                      fontWeight: 800,
+                      padding: "1px 5px",
+                      borderRadius: "4px",
+                      backdropFilter: "blur(4px)",
+                    }}
+                  >
+                    #{selectedOptionIndex + 1}
+                  </span>
+                )}
               </div>
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -359,9 +410,25 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
           }}
         >
           <div>
-            <div style={{ fontSize: "0.78rem", color: "var(--text-sub)", fontWeight: 600 }}>판매 가격</div>
+            <div style={{ fontSize: "0.78rem", color: "var(--text-sub)", fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}>
+              <span>판매 가격</span>
+              {selectedOption && (
+                <span
+                  style={{
+                    fontSize: "0.72rem",
+                    color: "var(--accent)",
+                    fontWeight: 700,
+                    background: "rgba(var(--accent-rgb), 0.1)",
+                    padding: "1px 6px",
+                    borderRadius: "4px",
+                  }}
+                >
+                  옵션 #{selectedOptionIndex + 1} 적용
+                </span>
+              )}
+            </div>
             <div style={{ color: "var(--deal-orange)", fontSize: "1.45rem", fontWeight: 900, marginTop: "2px", fontVariantNumeric: "tabular-nums" }}>
-              {formatPrice(deal.price, deal.currency, deal.title)}
+              {formatPrice(activePrice, activeCurrency, activeOptionTitle || deal.title)}
             </div>
             {deal.shipping_fee && (
               <div style={{ fontSize: "0.8rem", color: "var(--accent)", marginTop: "2px", fontWeight: 700 }}>
@@ -506,10 +573,10 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontSize: "0.84rem", color: "var(--accent)", fontWeight: 800 }}>
-                  📦 구성 상품 선택 및 바로가기 ({optionSources.length}종)
+                  구성 상품 선택 ({optionSources.length}종)
                 </div>
                 <span style={{ fontSize: "0.72rem", color: "var(--text-sub)", fontWeight: 600 }}>
-                  개별 상품 링크 & 전용 할인코드
+                  카드를 누르면 상단 가격과 시세가 바뀌어요
                 </span>
               </div>
 
@@ -524,7 +591,8 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                 }}
               >
                 {optionSources.map((src, idx) => {
-                  const optionTitle = src.site_name.split(" - ").slice(1).join(" - ").trim() || src.site_name;
+                  const isSelected = selectedOptionIndex === idx;
+                  const optionTitle = extractOptionTitle(src.site_name);
                   const optionCurrency = src.currency || deal.currency || "KRW";
                   const itemUrl = resolveOutboundUrl(src.ecommerce_url || deal.ecommerce_url || deal.post_link);
                   const isCopied = copiedCode === src.code;
@@ -532,6 +600,10 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                   return (
                     <div
                       key={`${src.site_name}-${idx}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedOptionIndex(idx)}
+                      className="bounce-click"
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -539,10 +611,12 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                         gap: "12px",
                         padding: "10px 12px",
                         borderRadius: "12px",
-                        background: "var(--card-bg)",
-                        border: "1px solid var(--card-border)",
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-                        transition: "border-color 0.2s ease",
+                        background: isSelected ? "rgba(var(--accent-rgb), 0.08)" : "var(--card-bg)",
+                        border: isSelected ? "2px solid var(--accent)" : "1px solid var(--card-border)",
+                        boxShadow: isSelected ? "0 4px 14px rgba(var(--accent-rgb), 0.16)" : "0 2px 8px rgba(0,0,0,0.04)",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                        position: "relative",
                       }}
                     >
                       {/* 1:1 개별 상품 썸네일 (50x50) */}
@@ -554,10 +628,11 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                           overflow: "hidden",
                           flexShrink: 0,
                           background: "var(--surface-subtle)",
-                          border: "1px solid var(--card-border)",
+                          border: isSelected ? "1.5px solid var(--accent)" : "1px solid var(--card-border)",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
+                          position: "relative",
                         }}
                       >
                         {src.image_url ? (
@@ -574,8 +649,38 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                               }
                             }}
                           />
+                        ) : deal.image_url ? (
+                          <div style={{ position: "relative", width: "100%", height: "100%" }}>
+                            <img
+                              src={getProxyImageUrl(deal.image_url, { width: 120 })}
+                              alt={optionTitle}
+                              style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.55 }}
+                              referrerPolicy="no-referrer"
+                            />
+                            <span
+                              style={{
+                                position: "absolute",
+                                inset: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "0.75rem",
+                                color: isSelected ? "var(--accent)" : "var(--text-main)",
+                                fontWeight: 800,
+                                background: "rgba(0,0,0,0.25)",
+                              }}
+                            >
+                              #{idx + 1}
+                            </span>
+                          </div>
                         ) : (
-                          <span style={{ fontSize: "0.75rem", color: "var(--text-sub)", fontWeight: 700 }}>
+                          <span
+                            style={{
+                              fontSize: "0.75rem",
+                              color: isSelected ? "var(--accent)" : "var(--text-sub)",
+                              fontWeight: 800,
+                            }}
+                          >
                             #{idx + 1}
                           </span>
                         )}
@@ -583,24 +688,46 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
                       {/* 상품 정보 (명칭, 가격, 할인코드 복사 칩, 보조링크) */}
                       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "4px" }}>
-                        <div
-                          title={optionTitle}
-                          style={{
-                            fontSize: "0.84rem",
-                            fontWeight: 700,
-                            color: "var(--text-main)",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {optionTitle}
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span
+                            title={optionTitle}
+                            style={{
+                              fontSize: "0.85rem",
+                              fontWeight: isSelected ? 800 : 700,
+                              color: isSelected ? "var(--accent)" : "var(--text-main)",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              flex: 1,
+                            }}
+                          >
+                            {optionTitle}
+                          </span>
+                          {isSelected && (
+                            <span
+                              style={{
+                                fontSize: "0.68rem",
+                                fontWeight: 800,
+                                color: "var(--accent)",
+                                background: "rgba(var(--accent-rgb), 0.12)",
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "2px",
+                                flexShrink: 0,
+                              }}
+                            >
+                              <Check size={11} strokeWidth={3} />
+                              <span>선택</span>
+                            </span>
+                          )}
                         </div>
 
                         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                           <span
                             style={{
-                              fontSize: "0.85rem",
+                              fontSize: "0.88rem",
                               fontWeight: 800,
                               color: "var(--deal-orange)",
                               fontVariantNumeric: "tabular-nums",
@@ -654,19 +781,23 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                               title="클릭하여 할인코드 복사"
                             >
                               {isCopied ? <Check size={11} /> : <Copy size={11} />}
-                              <span>{isCopied ? "✓ 복사됨!" : `📋 ${src.code}`}</span>
+                              <span>{isCopied ? "✓ 복사됨" : src.code}</span>
                             </button>
                           )}
 
                           {/* 보조 링크들 (sub_urls) */}
                           {Array.isArray(src.sub_urls) && src.sub_urls.length > 0 && (
-                            <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                            <div
+                              style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               {src.sub_urls.map((sUrl, sIdx) => (
                                 <a
                                   key={sIdx}
                                   href={resolveOutboundUrl(sUrl)}
                                   target="_blank"
                                   rel="noopener"
+                                  onClick={(e) => e.stopPropagation()}
                                   style={{
                                     fontSize: "0.7rem",
                                     color: "var(--text-sub)",
@@ -683,11 +814,17 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                         </div>
                       </div>
 
-                      {/* 개별 쇼핑몰 직접 구매 버튼 */}
+                      {/* 개별 쇼핑몰 직접 구매 버튼 (클릭 시에만 외부 이동) */}
                       <a
                         href={itemUrl}
                         target="_blank"
                         rel="noopener"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (src.code && typeof navigator !== "undefined" && navigator.clipboard) {
+                            navigator.clipboard.writeText(src.code).catch(() => {});
+                          }
+                        }}
                         className="bounce-click"
                         style={{
                           display: "inline-flex",
@@ -695,7 +832,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                           gap: "4px",
                           padding: "7px 12px",
                           borderRadius: "8px",
-                          background: "var(--primary-gradient)",
+                          background: isSelected ? "var(--accent)" : "var(--primary-gradient)",
                           color: "#fff",
                           fontSize: "0.78rem",
                           fontWeight: 700,
@@ -726,9 +863,10 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
           }}
         >
           <PriceTrendChart
-            basePrice={deal.price}
+            basePrice={activePrice}
             dealId={deal.id}
-            currency={deal.currency}
+            currency={activeCurrency}
+            optionName={activeOptionTitle}
             onHistoryStatus={(hasData, stats) => {
               setHasChartData(hasData);
               if (stats) setChartStats(stats);
@@ -738,8 +876,8 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
         {/* 목표가 도달 시 알림 설정 카드 */}
         {(() => {
-          const isUsd = deal.currency === "USD";
-          const rawPriceNum = parseInt(String(deal.price || "").replace(/[^0-9]/g, ""), 10) || 0;
+          const isUsd = activeCurrency === "USD";
+          const rawPriceNum = typeof activePrice === "number" ? activePrice : parseInt(String(activePrice || "").replace(/[^0-9]/g, ""), 10) || 0;
           const cleanPriceNum = isUsd ? Math.round(rawPriceNum / 100) : rawPriceNum;
           if ((isUsd && cleanPriceNum < 5) || (!isUsd && cleanPriceNum < 1000)) return null;
 
@@ -1006,25 +1144,72 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
             zIndex: 10,
           }}
         >
+          {/* 선택된 옵션 전용 프로모션 코드 안내 바 */}
+          {selectedOption?.code && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                background: "rgba(var(--accent-rgb), 0.08)",
+                border: "1px solid rgba(var(--accent-rgb), 0.25)",
+                borderRadius: "10px",
+                padding: "7px 12px",
+                fontSize: "0.78rem",
+              }}
+            >
+              <span style={{ color: "var(--text-sub)", fontWeight: 600 }}>
+                선택 옵션 할인코드: <strong style={{ color: "var(--accent)", letterSpacing: "0.02em" }}>{selectedOption.code}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (typeof navigator !== "undefined" && navigator.clipboard) {
+                    await navigator.clipboard.writeText(selectedOption.code!);
+                    showToast(`할인코드 '${selectedOption.code}'가 복사되었습니다.`);
+                  }
+                }}
+                className="bounce-click"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--accent)",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  fontSize: "0.76rem",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "3px",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                }}
+              >
+                <Copy size={12} />
+                <span>코드 복사</span>
+              </button>
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
             <a
               className="btn-primary bounce-click"
-              href={resolveOutboundUrl(
-                deal.ecommerce_url && deal.ecommerce_url !== "#" && String(deal.ecommerce_url).trim() !== ""
-                  ? deal.ecommerce_url
-                  : deal.post_link
-              )}
+              href={resolveOutboundUrl(activeEcommerceUrl)}
               target="_blank"
               rel="noopener"
               onClick={(e) => {
                 const hasValidEcommerceLink =
-                  deal.ecommerce_url &&
-                  deal.ecommerce_url !== "#" &&
-                  String(deal.ecommerce_url).trim() !== "";
-                const targetUrl = resolveOutboundUrl(hasValidEcommerceLink ? deal.ecommerce_url : deal.post_link);
+                  activeEcommerceUrl &&
+                  activeEcommerceUrl !== "#" &&
+                  String(activeEcommerceUrl).trim() !== "";
+                const targetUrl = resolveOutboundUrl(hasValidEcommerceLink ? activeEcommerceUrl : deal.post_link);
                 if (!targetUrl || targetUrl === "#") {
                   e.preventDefault();
                   showToast("이동할 수 있는 링크가 없습니다.");
+                  return;
+                }
+                if (selectedOption?.code && typeof navigator !== "undefined" && navigator.clipboard) {
+                  navigator.clipboard.writeText(selectedOption.code).catch(() => {});
+                  showToast(`할인코드 '${selectedOption.code}' 복사 완료! 쇼핑몰로 이동합니다.`);
                 } else if (!hasValidEcommerceLink) {
                   showToast("쇼핑몰 직접 링크가 없어 원본 게시글로 이동합니다.");
                 }
@@ -1038,9 +1223,15 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                 padding: "14px",
                 borderRadius: "14px",
                 textDecoration: "none",
+                fontSize: "0.92rem",
+                fontWeight: 800,
               }}
             >
-              <span>쇼핑몰 바로가기</span>
+              <span>
+                {selectedOption
+                  ? `${activeOptionTitle ? activeOptionTitle.slice(0, 15) : "옵션"} 구매하기 (${formatPrice(activePrice, activeCurrency)})`
+                  : "쇼핑몰 바로가기"}
+              </span>
             </a>
             {deal.post_link && deal.post_link !== "#" && (
               <a
