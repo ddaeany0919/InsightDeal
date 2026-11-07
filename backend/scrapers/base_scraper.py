@@ -416,11 +416,26 @@ class AsyncBaseScraper(ABC):
                         rn = await hclient.get(naver_url, headers=req_hdrs)
                         if rn.status_code == 200:
                             n_imgs = re.findall(r'(https://search\.pstatic\.net/common/\?src=[^\s"\'&<>]+)', rn.text)
-                            for cand in n_imgs[:10]:
-                                low_dec = unquote(cand).lower()
-                                if not any(b in low_dec for b in ('blogpfthumb', 'kinimage', 'musicmeta', 'profile', 'icon', 'logo', 'blank', 'avatar')):
-                                    logger.info(f"🖼️ [Scraper Image Fallback - Naver] 상품명('{clean_q}') 대표 이미지 확보 성공: {cand}")
-                                    return cand
+                            naver_bad = (
+                                'blogpfthumb', 'kinimage', 'musicmeta', 'profile', 'icon', 'logo',
+                                'blank', 'avatar', 'favicon', '파비콘', '.ico', 'influencer-phinf',
+                                'clip-service-phinf', 'pup-post-phinf', '96x96', '32x32', '64x64',
+                                '192x192', 'cropped-', 'Press', 'news'
+                            )
+                            preferred_naver = []
+                            fallback_naver = []
+                            for cand in n_imgs[:25]:
+                                low_dec = unquote(unquote(cand)).lower()
+                                if any(b.lower() in low_dec for b in naver_bad):
+                                    continue
+                                if any(p in low_dec for p in ('shopping-phinf', 'shop-phinf', 'dthumb-phinf', 'blogfiles.naver', 'postfiles.pstatic', 'mblogthumb-phinf')):
+                                    preferred_naver.append(cand)
+                                else:
+                                    fallback_naver.append(cand)
+                            chosen_naver = (preferred_naver or fallback_naver)
+                            if chosen_naver:
+                                logger.info(f"🖼️ [Scraper Image Fallback - Naver] 상품명('{clean_q}') 대표 이미지 확보 성공: {chosen_naver[0]}")
+                                return chosen_naver[0]
 
                         # 3-B. 다음 통합검색 썸네일 (kakaocdn.net argon 320x320 CDN, 희귀 직구/캔디류 폴백)
                         daum_url = f"https://search.daum.net/search?w=tot&q={quote(clean_q)}"
