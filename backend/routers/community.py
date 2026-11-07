@@ -907,7 +907,12 @@ def _clean_content_text(raw_text: str, title: str = "") -> str:
     text = re.sub(r'\(\s*링크\s*:\s*https?://[^\)]+\)', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\[첨부된 이미지 링크들\]\s*:?[\s\S]*$', '', text, flags=re.IGNORECASE)
     text = re.sub(r'Your browser does not support the video tag\.?', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'<[^>]+>', ' ', text)
+    text = re.sub(
+        r'</?(?:p|div|span|br|a|img|table|thead|tbody|tr|td|th|ul|ol|li|dl|dt|dd|strong|b|i|u|s|strike|del|em|font|center|h[1-6]|blockquote|hr|section|article|header|footer|figure|figcaption|iframe|script|style|input|button|form|label|select|option|textarea|meta|link|video|source)\b[^>]*>',
+        ' ',
+        text,
+        flags=re.IGNORECASE,
+    )
     text = (
         text.replace('&nbsp;', ' ')
         .replace('&amp;', '&')

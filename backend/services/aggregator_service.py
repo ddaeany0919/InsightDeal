@@ -164,7 +164,7 @@ def _is_valid_option_name(name: str) -> bool:
         return False
     if any(sub in n for sub in _PROSE_NOISE_SUBSTRINGS):
         return False
-    if re.search(r"(?:은|는|이|가|약|에서|으론|기억|시길|가격이|대비|같아요|네요|입니다|합니다|습니다|세요|군요|더라고요|드려요|드립니다|공동구매|총정리|기획전|모음전|못감|헤헷)[.!?~]*\s*$", n):
+    if re.search(r"(?:에서|으론|기억|시길|가격이|대비|같아요|네요|입니다|합니다|습니다|세요|군요|더라고요|드려요|드립니다|공동구매|총정리|기획전|모음전|못감|헤헷)[.!?~]*\s*$", n):
         return False
     if any(k in n for k in ("가능성이 높지만", "변동될 수", "공개됩니다", "참고만하세요", "해결방법", "똑같은거탔었는데")):
         return False
@@ -189,8 +189,9 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         if not s:
             return ""
         s = _html.unescape(s)
-        # 62,70$ 같은 유럽식 쉼표 소수점 달러 표기를 62.70$로 정규화 (단, 1,000$ 같은 3자리 천단위는 제외)
+        # 62,70$ 또는 $51,91 같은 유럽식/오타 쉼표 소수점 달러 표기를 62.70$ / $51.91로 정규화 (단, 1,000$ 같은 3자리 천단위는 제외)
         s = re.sub(r'(\d+),(\d{1,2})\s*(\$|달러|불|usd|유로|€)', r'\1.\2\3', s, flags=re.IGNORECASE)
+        s = re.sub(r'(\$\s*\d+),(\d{1,2})(?!\d)', r'\1.\2', s)
         return s
 
     def parse_price_token(token_str: str, fallback_curr: str = "KRW") -> tuple[int, str]:
@@ -234,6 +235,15 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
           1 = 앱판매가 / 정상가 / 기본가 / 출고가 (폴백)
         """
         s = normalize_price_str(line)
+        # 0-a) 순수 할인/차감 안내 불릿 줄('- 코인할인 21,987원', '- 할인 코드: 38,000원', '- 카드할인 14,000원', '판매자 할인 $10', '스토어할인 $5', '코드 할인 $4' 등)은 상품 가격이 아니므로 즉시 배제
+        if re.match(
+            r'^\s*[-－—•]?\s*(?:(?:코인|판매자|스토어|코드|특가\s*코드|공구\s*코드|카드|결제|할인\s*코드|스토어\s*쿠폰|쿠폰)\s*(?:할인|쿠폰|코드)?|할인\s*코드|공구\s*코드|특가\s*코드|코인)\b',
+            s,
+            flags=re.IGNORECASE,
+        ) and not any(k in s for k in ('최종가', '체감가', '공구가', '혜택가', '실구매', '할인가', '적용가', '=', '→', '->')):
+            return []
+        if re.search(r'(?:결제\s*할인|카드\s*할인|코드\s*할인|코인\s*할인)\s*$', s.strip()) and not any(k in s for k in ('최종가', '체감가', '공구가', '할인가', '=', '→', '->')):
+            return []
         # 0) '166,800 > 98,200원' / '94,800원 > 66,000원' 같은 화살표(>, →, ->) 앞의 취소선 정가 제거
         s = re.sub(r'(?:[₩￦$]?\s*[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,8})\s*원?\s*(?:>|→|->)\s*(?=[₩￦$]?[0-9])', ' ', s)
         # 1) 카드 조건문 ($150 이상 -$22, $150↑ -$22, 10만원 이상 1만원 할인 등) 제거
@@ -245,7 +255,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         s = re.sub(r'(?:개당|병당|포당|통당|박스당|팩당|캔당|100g당|10g당|미당)\s*약?\s*[₩￦$]?\s*[\d,]+\s*원?', ' ', s)
         # 4) 쿠폰/코인/적립금/결제할인 단독 할인 금액 문구 ($4 할인쿠폰, 코인 할인 : $1.96, 결제할인 (최대 $22), 유튜버 코드 할인 $42, 스토어 할인코드 $5 등) 제거
         s = re.sub(
-            r'(?:코인\s*할인[^\n:]*:\s*[$₩￦]?\s*[0-9,.]+|\$\s*[0-9,.]+\s*(?:할인\s*)?쿠폰|[0-9,.]+\s*(?:만\s*원?|원|달러|\$)\s*(?:할인|중복|다운로드|스토어|선착순)?\s*쿠폰|스토어\s*(?:코드\s*)?할인\s*[$₩￦]?\s*[0-9,.]+\s*(?:달러|원|\$)?|[0-9,.]+\s*(?:달러|원|\$)\s*기준|[0-9,]+\s*원?\s*(?:적립|줘서)|(?:결제\s*할인|유튜버\s*코드\s*할인|스토어\s*중복\s*할인|중복\s*카드\s*할인|스토어\s*할인\s*코드|채널\s*할인\s*코드|추가)\s*(?:\([^\)]*\)\s*)?(?:최대\s*)?[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|최대\s*[$₩￦]\s*[0-9,.]+)',
+            r'(?:코인\s*할인[^\n:]*:\s*[$₩￦]?\s*[0-9,.]+|\$\s*[0-9,.]+\s*(?:할인\s*)?(?:쿠폰|코드)|[0-9,.]+\s*(?:만\s*원?|원|달러|\$)\s*(?:할인|중복|다운로드|스토어|선착순)?\s*(?:쿠폰|코드)|(?:스토어|판매자|코드|특가\s*코드|공구\s*코드|카드|결제|코인)\s*(?:코드\s*|쿠폰\s*)?할인\s*[:\-]?\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|[0-9,.]+\s*(?:달러|원|\$)\s*기준|[0-9,]+\s*원?\s*(?:적립|줘서)|(?:결제\s*할인|유튜버\s*코드\s*할인|스토어\s*중복\s*할인|중복\s*카드\s*할인|스토어\s*할인\s*코드|채널\s*할인\s*코드|추가)\s*(?:\([^\)]*\)\s*)?(?:최대\s*)?[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|최대\s*[$₩￦]\s*[0-9,.]+)',
             ' ',
             s,
             flags=re.IGNORECASE,
@@ -264,11 +274,11 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 and '카드 시' not in part
                 and '최대카할' not in part
                 and not any(sub_k in part for sub_k in ('그래픽카드 체감가', '그래픽 체감가', 'CPU 체감가'))
-            ) or bool(re.search(r'(?:→|->)\s*[$₩￦]?\s*[0-9]', part)):
+            ) or bool(re.search(r'(?:→|->|^\s*=|\s=\s)\s*[$₩￦]?\s*[0-9]', part)):
                 score = 4
-            elif any(k in part for k in ('카드할인', '카드 할인', '할인가', '카드 시', '최대카할', '최저')):
+            elif any(k in part for k in ('카드할인가', '카드 할인가', '할인가', '카드 시', '최대카할', '최저')):
                 score = 3
-            elif any(k in part for k in ('상세페이지 가격', '앱판매가', '앱기본가', '기본가', '정상가', '출고가', '정가')):
+            elif any(k in part for k in ('상세페이지 가격', '앱판매가', '앱기본가', '기본가', '정상가', '출고가', '정가', '엡 가격', '앱 가격')):
                 score = 1
             else:
                 score = 2
@@ -310,7 +320,13 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
     if content_html:
         from bs4 import BeautifulSoup
         clean_html_source = re.split(r'\[첨부된 이미지|추천수\s*\d+\s*비추천수|\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\)', _html.unescape(content_html))[0]
-        if "<" in clean_html_source and ">" in clean_html_source:
+        # '<WLRRN517>', '<GONS13 , KBTY13>' 같은 꺾쇠 괄호 할인코드가 HTML 태그로 오인되어 증발하는 현상 방지
+        clean_html_source = re.sub(
+            r'<\s*([A-Z0-9_]{4,16}(?:\s*[,/]\s*[A-Z0-9_]{4,16})*)\s*>',
+            r'[\1]',
+            clean_html_source,
+        )
+        if re.search(r'</?(?:p|div|span|br|a|img|table|thead|tbody|tr|td|th|ul|ol|li|strong|b|i|u|em|font|center|h[1-6]|blockquote|hr)\b', clean_html_source, re.I):
             soup = BeautifulSoup(clean_html_source, 'html.parser')
             for cmt_node in soup.select('.fdb_lst_ul, #cmtPosition, .comment_list, .fdb_v2, a.scrap_bx_href, div.scrap_bx'):
                 cmt_node.decompose()
@@ -662,15 +678,18 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         open_top_blk: dict | None = None
 
         def _is_price_or_code_meta_line(t: str) -> bool:
-            if extract_scored_prices_from_line(t):
+            t_strip = t.strip()
+            if t_strip.startswith('='):
+                return True
+            if extract_scored_prices_from_line(t_strip):
                 return True
             if re.search(
-                r'(?:기본가|공구가|체감가|최종가|최종가격|최저가|할인가|쿠폰|코드|할인|코인|옵션|선택|상세|스토어|멤버십|적립|체감|자동\s*적용|직접\s*수령|선착순|예상|참고|결제\s*할인|카드\s*할인|중복\s*할인|주문\s*시|결제\s*시|관부가세|부가세\s*포함|배터리\s*\d+개|구성\b|^→|^->|^⭕|^✅|^🎟|^🔗)',
-                t,
+                r'(?:기본가|공구가|체감가|최종가|최종가격|최저가|할인가|쿠폰|코드|할인|코인|옵션|선택|상세|스토어|멤버십|적립|체감|자동\s*적용|직접\s*수령|선착순|예상|참고|결제\s*할인|카드\s*할인|중복\s*할인|주문\s*시|결제\s*시|관부가세|부가세\s*포함|배터리\s*\d+개|구성\b|카드|비자|마스터|유니온페이|카카오페이|토스페이|토스뱅크|신한|롯데|국민|우리|농협|하나|비씨|IBK|KB|^→|^->|^⭕|^✅|^🎟|^🔗)',
+                t_strip,
                 re.IGNORECASE,
             ):
                 return True
-            if re.match(r'^[A-Z0-9_]{4,16}$', t.strip()) and any(ch.isdigit() for ch in t):
+            if re.match(r'^[A-Z0-9_,\s]{4,40}$', t_strip) and any(ch.isdigit() for ch in t_strip):
                 return True
             return False
 
@@ -682,6 +701,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 if open_top_blk is not None:
                     blocks.append((open_top_blk["lines"], open_top_blk["url"], open_top_blk["img"]))
                     open_top_blk = None
+                current_lines = []
                 pending_blk_img = m_img.group(1).strip()
                 continue
             cleaned_urls = extract_clean_urls_from_line(ln)
@@ -704,8 +724,13 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     current_lines = []
                     pending_blk_img = ""
                     continue
+                is_explicit_bottom_link = bool(
+                    not text_only
+                    or re.match(r'^(?:(?:구매\s*)?링크|바로가기)\b', ln.strip())
+                    or re.match(r'^(?:링크|구매\s*링크|바로가기)$', text_only.strip())
+                )
                 has_price_before_url = any(bool(extract_scored_prices_from_line(cl)) for cl in current_lines)
-                if has_price_before_url:
+                if has_price_before_url and (is_explicit_bottom_link or not pending_blk_img):
                     # Bottom-Link 구조: 이미 제목과 가격이 위쪽에 등장했고 하단 링크로 블록이 닫히는 경우
                     if text_only and not is_noise_line(text_only):
                         current_lines.append(text_only)
@@ -752,19 +777,25 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             cand_prices: list[tuple[int, str, int]] = []
             blk_codes: list[str] = []
             expect_blk_code = False
+            size_variant_hint = ""
             for bl in blk_lines:
-                if re.match(r'^(?:[$₩￦]?\s*[0-9,.]+\s*(?:원|달러|\$)?\s*)?(?:(?:공구|할인|쿠폰|프로모션|스토어|채널|전용)\s*코드|코드\s*할인|코드|쿠폰)\s*:?\s*$', bl):
+                m_sz = re.search(r'\(\s*(싱글|슈퍼싱글|퀸|킹|더블)\b', bl)
+                if m_sz and not size_variant_hint:
+                    size_variant_hint = m_sz.group(1)
+                if re.match(r'^[-－—•\s]*(?:[$₩￦]?\s*[0-9,.]+\s*(?:원|달러|\$)?\s*)?(?:(?:공구|할인|쿠폰|프로모션|스토어|채널|전용|특가)\s*(?:코드|쿠폰)|코드\s*할인|코드|쿠폰)(?:\s*[$₩￦]?\s*[0-9,.]+\s*(?:원|달러|\$)?)?\s*:?\s*$', bl):
                     expect_blk_code = True
                     continue
                 if expect_blk_code:
-                    expect_blk_code = False
-                    m_bc = re.match(r'^([A-Z0-9_]{4,16})\b', bl.strip())
+                    m_bc = re.match(r'^[\[<(\s]*([A-Z0-9_]{4,16})\b', bl.strip())
                     if m_bc and m_bc.group(1).upper() not in code_stop_words and any(ch.isdigit() for ch in m_bc.group(1)):
                         if m_bc.group(1) not in blk_codes:
                             blk_codes.append(m_bc.group(1))
+                        # 줄 끝에 쉼표(,)가 있으면 다음 줄도 코드일 수 있음
+                        expect_blk_code = bl.strip().endswith(',')
                         continue
+                    expect_blk_code = False
                 for m_inl in re.finditer(
-                    r'(?:(?:(?:공구|할인|쿠폰|프로모션|스토어|채널|전용|단독\s*할인)\s*(?:코드|쿠폰)(?:\s*\$?[0-9,.]+)?|코드\s*할인(?:\s*\$?[0-9,.]+)?|코드|쿠폰)\s*[:\-]?\s*|(?:🎟|→|->)[^\n:]*:\s*)([A-Z0-9_]{4,16})\b',
+                    r'(?:(?:(?:공구|할인|쿠폰|프로모션|스토어|채널|전용|특가|단독\s*할인)\s*(?:할인\s*)?(?:코드|쿠폰)(?:\s*[:\-]?\s*\$?[0-9,.]+\s*(?:원|달러|\$)?)?|코드\s*할인(?:\s*[:\-]?\s*\$?[0-9,.]+\s*(?:원|달러|\$)?)?|코드|쿠폰)\s*[:\-<\[\(\s]+\s*|(?:🎟|→|->)[^\n:]*:\s*)([A-Z0-9_]{4,16})\b',
                     bl,
                 ):
                     c_tok = m_inl.group(1)
@@ -791,7 +822,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 cleaned_candidate = re.sub(r'(?:바로가기|보기|링크)\s*>*\s*', '', cleaned_candidate)
                 cleaned_candidate = re.sub(r'^(?:>+|→|->|⭕️?|✅|🎟️?)\s*', '', cleaned_candidate)
                 cleaned_candidate = re.sub(
-                    r'\s*(?:[\d,]+\s*(?:포인트|원|p|%|프로)\s*[\+\-/]?\s*)*(?:금액대별\s*쿠폰|중복\s*쿠폰|장바구니\s*쿠폰|쿠폰|할인|적립|토스|네이버|카카오|카드|페이|적용시|감안시|결제시|체감가?|최종가?|앱기본가?|기본가?).*$',
+                    r'\s*(?:[\d,]+\s*(?:포인트|원|p|프로)\s*[\+\-/]?\s*)*(?:금액대별\s*쿠폰|중복\s*쿠폰|장바구니\s*쿠폰|쿠폰|할인|적립|토스페이|네이버페이|카카오페이|스마일페이|카드할인|적용시|감안시|결제시|체감가?|최종가?|앱기본가?|기본가?).*$',
                     '',
                     cleaned_candidate,
                     flags=re.IGNORECASE,
@@ -814,11 +845,14 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                                 cand_name = f"{cand_name} ({spec_short})"
 
             if cand_name:
+                if size_variant_hint and any(x in cand_name for x in ('싱글/퀸', '싱글/더블', '퀸/킹')):
+                    cand_name = f"{cand_name[:48]} ({size_variant_hint})"
                 chosen_price = 0
                 chosen_curr = default_currency
                 if cand_prices:
                     max_sc = max(x[2] for x in cand_prices)
-                    chosen_price, chosen_curr, _ = [x for x in cand_prices if x[2] == max_sc][0]
+                    top_cands = [x for x in cand_prices if x[2] == max_sc]
+                    chosen_price, chosen_curr, _ = min(top_cands, key=lambda x: x[0]) if max_sc >= 3 else top_cands[0]
                 # 가격이 있는 블록이거나, 루리웹 모음전처럼 서로 다른 외부 쇼핑몰 상품 직링크가 3개 이상 나열된 경우 허용
                 if chosen_price > 0 or (len(blocks) >= 3 and blk_url):
                     key = (cand_name[:30].lower(), chosen_price, blk_url)
