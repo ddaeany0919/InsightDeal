@@ -198,22 +198,22 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             return 0, fallback_curr
         s = normalize_price_str(token_str.strip())
         if any(c in s for c in ('$', '달러', '불', 'usd', 'USD')):
-            m = re.search(r'[\d,]+(?:\.\d+)?', s)
+            m = re.search(r'\d[\d,]*(?:\.\d+)?', s)
             if m:
                 return round(float(m.group(0).replace(',', '')) * 100), "USD"
         if any(c in s for c in ('€', '유로', 'eur', 'EUR')):
-            m = re.search(r'[\d,]+(?:\.\d+)?', s)
+            m = re.search(r'\d[\d,]*(?:\.\d+)?', s)
             if m:
                 return round(float(m.group(0).replace(',', '')) * 100), "EUR"
         if '만' in s:
-            m = re.search(r'[\d,]+(?:\.\d+)?', s)
+            m = re.search(r'\d[\d,]*(?:\.\d+)?', s)
             if m:
                 return int(float(m.group(0).replace(',', '')) * 10000), "KRW"
         if any(c in s for c in ('원', '₩', '￦')):
-            m = re.search(r'[\d,]+', s)
+            m = re.search(r'\d[\d,]*', s)
             if m:
                 return int(m.group(0).replace(',', '')), "KRW"
-        m = re.search(r'[\d,]+(?:\.\d+)?', s)
+        m = re.search(r'\d[\d,]*(?:\.\d+)?', s)
         if m:
             raw_num = m.group(0).replace(',', '')
             if '.' in raw_num:
