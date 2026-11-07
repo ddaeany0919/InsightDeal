@@ -2247,7 +2247,38 @@ def _compute_deal_history(
             return dt_val + timedelta(hours=9)
         return dt_val
 
-    deal_price_map = {d.id: extract_price(getattr(d, "price", 0)) for d in matched_deals}
+    deal_obj_map = {d.id: d for d in matched_deals}
+
+    def resolve_deal_effective_price(d_obj) -> int:
+        if target_opt_name and getattr(d_obj, "options_data", None):
+            try:
+                opts = json.loads(d_obj.options_data) if isinstance(d_obj.options_data, str) else d_obj.options_data
+                if isinstance(opts, list):
+                    for opt in opts:
+                        o_name = (opt.get("name") or "").strip()
+                        if not o_name:
+                            continue
+                        o_curr = opt.get("currency") or getattr(d_obj, "currency", "KRW")
+                        if effective_currency and o_curr != effective_currency:
+                            continue
+                        o_words = set(re.findall(r'[가-힣a-zA-Z0-9]+', o_name))
+                        o_codes = extract_true_model_codes(o_words)
+                        o_core = get_core_product_tokens(o_name)
+                        if (
+                            o_name == target_opt_name
+                            or target_opt_name in o_name
+                            or o_name in target_opt_name
+                            or (curr_true_codes and o_codes and curr_true_codes == o_codes)
+                            or (len(core_tokens) >= 2 and len(core_tokens.intersection(o_core)) >= 2 and not has_model_conflict(curr_all_words, o_words))
+                        ):
+                            p = int(opt.get("price", 0) or 0)
+                            if p > 0:
+                                return p
+            except Exception:
+                pass
+        return extract_price(getattr(d_obj, "price", 0))
+
+    deal_price_map = {d.id: resolve_deal_effective_price(d) for d in matched_deals}
 
     # 2. 커뮤니티 핫딜 가격 히스토리(PriceHistory) 조회
     history = db.query(models.PriceHistory).filter(
@@ -2261,9 +2292,12 @@ def _compute_deal_history(
     community_points = []
     comm_map = {}
 
-    # 2-1. PriceHistory 데이터 반영
+    # 2-1. PriceHistory 데이터 반영 (다중 옵션 딜의 옵션 간 가격 스윙 노이즈는 배제)
     for h in history:
         try:
+            h_deal = deal_obj_map.get(h.deal_id)
+            if h_deal and (getattr(h_deal, "has_options", False) or getattr(h_deal, "options_data", None)):
+                continue
             p_val = int(re.sub(r'[^\d]', '', str(h.price)))
             if p_val > 0:
                 if target_price_val > 0 and (p_val < target_price_val * 0.40 or p_val > target_price_val * 2.20):
