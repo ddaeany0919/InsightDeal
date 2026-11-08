@@ -7,15 +7,16 @@ class PpomppuOverseasScraper(PpomppuScraper):
     def __init__(self, community_id: int):
         super().__init__(community_id)
         self.platform_name = "뽐뿌해외"
-        # 뽐뿌 해외게시판 및 해외직구 게시판 둘 다 관리
+        # 뽐뿌 해외게시판(ppomppu4) 전용 관리 (ppomppu8 알리뽐뿌는 AlippomppuScraper 전담)
         self.list_urls = [
-            "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu4",
-            "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu8"
+            "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu4"
         ]
         self.list_url = self.list_urls[0]
 
     async def run(self, url: str = None) -> list[dict]:
-        """두 해외 게시판(ppomppu4, ppomppu8) 모두를 긁어오도록 run 재정의"""
+        """뽐뿌해외(ppomppu4) 전용 수집 실행 (url 지정 시 해당 url 우선, 미지정 시 self.list_urls 순회)"""
+        if url:
+            return await super().run(url)
         all_deals = []
         for target_url in self.list_urls:
             try:

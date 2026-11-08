@@ -11,6 +11,10 @@ interface Keyword {
   is_active?: boolean;
 }
 
+const DEFAULT_VAPID_PUBLIC_KEY =
+  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
+  'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U';
+
 export default function NotificationSettingsPage() {
   const [isSupported, setIsSupported] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>('default');
@@ -95,15 +99,37 @@ export default function NotificationSettingsPage() {
       const registration = await navigator.serviceWorker.register('/sw.js');
       console.log('Service Worker registered with scope:', registration.scope);
 
-      // 백엔드 VAPID Public Key 가져오기
-      const vapidResponse = await fetch(apiUrl('/api/push-public-key')).catch(() => null);
-      const vapidKey = vapidResponse && vapidResponse.ok 
-        ? await vapidResponse.text() 
-        : 'BEl62i53FC45g9eZTIzMzYyR3N...'; // Fallback VAPID Key
+      // 백엔드 VAPID Public Key 가져오기 (환경 변수 우선, 엔드포인트 응답 확인, 실패 시 유효한 기본 공개키 사용)
+      let vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!vapidKey) {
+        try {
+          const vapidResponse = await fetch(apiUrl('/api/push-public-key')).catch(() => null);
+          if (vapidResponse && vapidResponse.ok) {
+            const fetched = (await vapidResponse.text()).trim();
+            if (fetched && !fetched.includes('...')) {
+              vapidKey = fetched;
+            }
+          }
+        } catch (fetchErr) {
+          console.warn('VAPID 엔드포인트 조회 실패, 기본 공개키를 사용합니다:', fetchErr);
+        }
+      }
+      if (!vapidKey || vapidKey.includes('...')) {
+        vapidKey = DEFAULT_VAPID_PUBLIC_KEY;
+      }
+
+      let appServerKey = urlBase64ToUint8Array(vapidKey);
+      if (!appServerKey) {
+        appServerKey = urlBase64ToUint8Array(DEFAULT_VAPID_PUBLIC_KEY);
+      }
+
+      if (!appServerKey) {
+        throw new Error('유효한 VAPID 공개키를 생성하지 못했습니다.');
+      }
 
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey)
+        applicationServerKey: appServerKey
       });
 
       // 토큰 동기화 API Routes 호출 (브라우저 고유 device_uuid와 함께 전달하여 관심 키워드와 1:1 매핑)
@@ -121,9 +147,9 @@ export default function NotificationSettingsPage() {
       });
 
       setIsPushEnabled(true);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to subscribe to push notification', e);
-      setErrorMsg('푸시 알림 구독 중 오류가 발생했습니다.');
+      setErrorMsg(`푸시 알림 구독 중 오류가 발생했습니다: ${e?.message || e}`);
     }
   };
 
@@ -259,17 +285,25 @@ export default function NotificationSettingsPage() {
     await syncDndToBackend(nextVal, dndStart, dndEnd);
   };
 
-  const urlBase64ToUint8Array = (base64String: string) => {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding)
-      .replace(/\-/g, '+')
-      .replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
+  const urlBase64ToUint8Array = (base64String: string): Uint8Array | null => {
+    try {
+      if (!base64String || typeof base64String !== 'string') return null;
+      // 말줄임표(...) 및 앞뒤 공백 정제
+      const cleanBase64 = base64String.trim().replace(/\.+$/, '');
+      const padding = '='.repeat((4 - (cleanBase64.length % 4)) % 4);
+      const base64 = (cleanBase64 + padding)
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    } catch (e) {
+      console.error('Failed to parse VAPID key to Uint8Array', e);
+      return null;
     }
-    return outputArray;
   };
 
   return (

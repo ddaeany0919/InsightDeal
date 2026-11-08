@@ -247,12 +247,30 @@ export const resolveOutboundUrl = (rawUrl: string | undefined | null): string =>
 };
 
 /**
+ * 옵션명 다중 중첩 접두사 정제 헬퍼 ("옵션 - 알리검색 - 네이버검색 - 상품명" -> "상품명")
+ * '알리검색 - ', '네이버검색 - ', '다나와검색 - ', '쿠팡검색 - ', '옵션 - ' 등 반복되는 접두어를 완전히 제거합니다.
+ */
+export const cleanOptionTitle = (rawName: string): string => {
+  if (!rawName) return "";
+  let name = rawName.trim();
+  // 1단계: "사이트 - ", "옵션 - " 등 최초 1회 분리
+  if (name.includes(" - ")) {
+    name = name.split(" - ").slice(1).join(" - ").trim();
+  }
+  // 2단계: '알리검색 - ', '네이버검색 - ', '옵션 - ', '알리 - ', '다나와검색 - ' 등 불필요한 접두어 반복 제거
+  const prefixRegex = /^(?:옵션|알리검색|네이버검색|다나와검색|쿠팡검색|알리뽐뿌|뽐뿌|클리앙|루리웹|퀘이사존|에펨코리아|빠삭|알리|네이버)\s*[-:·]\s*/i;
+  while (prefixRegex.test(name)) {
+    name = name.replace(prefixRegex, "").trim();
+  }
+  return name || rawName.trim();
+};
+
+/**
  * 옵션 타이틀 추출 헬퍼 ("알리뽐뿌 - UWANT V600" -> "UWANT V600")
+ * cleanOptionTitle을 호출하여 다중 중첩 접두사를 완전히 정제합니다.
  */
 export const extractOptionTitle = (siteName: string): string => {
-  if (!siteName) return "";
-  if (!siteName.includes(" - ")) return siteName.trim();
-  return siteName.split(" - ").slice(1).join(" - ").trim() || siteName.trim();
+  return cleanOptionTitle(siteName);
 };
 
 /**
@@ -268,7 +286,7 @@ export const getOptionSources = (
   if (Array.isArray(sources) && sources.length > 0) {
     for (const src of sources) {
       if (!src.site_name || !src.site_name.includes(" - ")) continue;
-      const optTitle = extractOptionTitle(src.site_name);
+      const optTitle = cleanOptionTitle(src.site_name);
       const normKey = optTitle.toLowerCase().replace(/\s+/g, "");
       if (!normKey || seen.has(normKey)) continue;
       seen.add(normKey);
@@ -278,7 +296,7 @@ export const getOptionSources = (
 
   if (result.length === 0 && Array.isArray(fallbackOptions) && fallbackOptions.length > 0) {
     for (const opt of fallbackOptions) {
-      const optName = opt.name || opt.site_name || "";
+      const optName = cleanOptionTitle(opt.name || opt.site_name || "");
       const normKey = optName.toLowerCase().replace(/\s+/g, "");
       if (!normKey || seen.has(normKey)) continue;
       seen.add(normKey);

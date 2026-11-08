@@ -6,6 +6,12 @@ import sys
 import urllib.parse
 import httpx
 
+_backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_project_root = os.path.dirname(_backend_dir)
+for _p in (_project_root, _backend_dir):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 # 클라우드 실행 환경 감지 (GitHub Actions, Cloud Run, Docker 서버 등)
 IS_CLOUD_ENV = bool(
     os.environ.get("GITHUB_ACTIONS") == "true"
@@ -106,14 +112,17 @@ def _load_local_seen_cache():
 
 
 def _save_local_seen_cache():
-    import json, os
+    import json, os, tempfile
     try:
-        os.makedirs(os.path.dirname(_CACHE_FILE), exist_ok=True)
+        cache_dir = os.path.dirname(_CACHE_FILE)
+        os.makedirs(cache_dir, exist_ok=True)
         serializable = {f"{pf}::{u}": v for (pf, u), v in list(_SEEN_DETAIL_CACHE.items())[-4000:]}
-        with open(_CACHE_FILE, "w", encoding="utf-8") as f:
+        fd, tmp_file = tempfile.mkstemp(dir=cache_dir, prefix="feeder_cache_", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(serializable, f, ensure_ascii=False)
-    except Exception:
-        pass
+        os.replace(tmp_file, _CACHE_FILE)
+    except Exception as e:
+        logger.warning(f"캐시 원자적 저장 실패: {e}")
 
 
 async def _preload_existing_urls(http_client: httpx.AsyncClient):
@@ -122,7 +131,7 @@ async def _preload_existing_urls(http_client: httpx.AsyncClient):
     _load_local_seen_cache()
     try:
         from backend.core.url_utils import normalize_url, is_search_or_community_url
-        platforms = ("펨코", "뽐뿌", "퀘이사존", "알리뽐뿌", "루리웹", "클리앙", "빠삭국내", "빠삭해외", "빠삭육아")
+        platforms = ("펨코", "뽐뿌", "퀘이사존", "알리뽐뿌", "뽐뿌해외", "루리웹", "클리앙", "빠삭국내", "빠삭해외", "빠삭육아")
         for pf in platforms:
             for off in (0, 100, 200):
                 res = await http_client.get(f"{CLOUD_DEALS_API}?limit=100&offset={off}&platform={pf}")
@@ -334,7 +343,7 @@ async def scrape_and_push_once():
                 try:
                     sc = scraper_cls(concurrency)
                     async with sc:
-                        cache_pf = "알리뽐뿌" if display_name == "뽐뿌해외" else display_name
+                        cache_pf = display_name
                         items = []
                         seen_page_urls = set()
 
@@ -567,12 +576,9 @@ async def scrape_and_push_once():
                                 continue
 
                             # 신규 게시글 상세 필요 여부 판별
-                            # 클라우드에서 뽐뿌(ppomppu.co.kr) 상세 페이지는 해외/AWS IP를 차단(403/Timeout)하므로
-                            # 상세 페이지 직접 요청을 생략하고 jsmon/hotgusa 브릿지 및 og:image 폴백으로 0.5초 내 처리!
-                            is_ppomppu_cloud = IS_CLOUD_ENV and "ppomppu.co.kr" in item_url
+                            # 외부 브릿지(Telegram/jsmon 등)에서 이미 완전한 본문과 링크를 확보한 경우에만 상세 페칭 스킵
                             is_bridge_item = (
-                                is_ppomppu_cloud
-                                or bool(item.pop("_from_bridge", False))
+                                bool(item.pop("_from_bridge", False))
                                 or "bridge_id=" in item_url
                                 or ("quasarzone.com" in item_url and item.get("content_html"))
                                 or ("fmkorea.com" in item_url and item.get("content_html"))
@@ -587,9 +593,22 @@ async def scrape_and_push_once():
                                     except Exception:
                                         pass
                             else:
-                                need_detail = (item_page_no == 1) or (not item.get("image_url"))
-                                if item.get("content_html") and item.get("image_url"):
-                                    need_detail = False
+                                is_ppomppu = "ppomppu.co.kr" in item_url
+                                content_txt = item.get("content_html") or ""
+                                # 뽐뿌 계열(ppomppu, ali_ppomppu, ppomppu_overseas)은 클라우드 환경에서도
+                                # Vercel 서울 릴레이(/api/scraper-relay)를 통해 온전한 상세 본문(150자 이상),
+                                # 직링크(ecommerce_link), 옵션 데이터를 정상 수집해야 합니다.
+                                # RSS 피드로 가져온 80~100자 요약문은 본문으로 인정하지 않고 get_detail()을 호출합니다.
+                                has_full_content = bool(content_txt) and len(content_txt) >= 150
+                                from backend.core.url_utils import is_search_or_community_url
+                                has_direct_ecom = bool(item.get("ecommerce_link")) and not is_search_or_community_url(item.get("ecommerce_link", ""))
+
+                                if is_ppomppu:
+                                    need_detail = (item_page_no == 1) or (not has_full_content) or (not has_direct_ecom) or (not item.get("image_url"))
+                                else:
+                                    need_detail = (item_page_no == 1) or (not item.get("image_url"))
+                                    if item.get("content_html") and item.get("image_url"):
+                                        need_detail = False
 
                             # 다중 상품/모음전 패턴 게시글 감지 (모음, 골라담기, 외 \d+, 공구, 총정리, \d+종 등)
                             # 모음전의 경우 본문 내부의 [상품이미지: URL] 및 번호별 옵션을 온전히 수집하기 위해 상세 페칭 강제 활성화
@@ -598,7 +617,7 @@ async def scrape_and_push_once():
                                 re.search(r'(?:외\s*\d+|골라담기|모음|선택|공구|총정리|\d+\s*종|다양|특가\s*모음)', item_title)
                                 or (re.search(r'/[^/]+(?:원|만|\$|달러)', item_title) and re.search(r'(?:원|만|\$|달러).*/', item_title))
                             )
-                            if is_multi_title and not is_ppomppu_cloud:
+                            if is_multi_title:
                                 need_detail = True
 
                             if need_detail:
@@ -606,10 +625,10 @@ async def scrape_and_push_once():
                             else:
                                 enriched.append(item)
 
-                        # 3. 비동기 병렬 상세 페칭 (신규 게시글만 대상)
+                        # 3. 비동기 병렬 상세 페칭 (신규 게시글만 대상, Vercel 릴레이 및 뽐뿌 부하 방지를 위해 클라우드 동시 3개 제한)
                         if items_needing_detail:
                             target_details = items_needing_detail[:10] if IS_CLOUD_ENV else items_needing_detail
-                            detail_sem = asyncio.Semaphore(5)
+                            detail_sem = asyncio.Semaphore(3 if IS_CLOUD_ENV else 5)
 
                             async def fetch_one_detail(it):
                                 async with detail_sem:
@@ -621,6 +640,20 @@ async def scrape_and_push_once():
                                                     continue
                                                 if v is not None and v != "":
                                                     it[k] = v
+                                            # 멀티 옵션 추출 (본문 및 타이틀 기반 정밀 옵션 추출)
+                                            try:
+                                                from backend.services.aggregator_service import extract_structured_multi_options
+                                                opts = extract_structured_multi_options(
+                                                    raw_title=it.get("title", ""),
+                                                    content_html=it.get("content_html", ""),
+                                                    default_currency=it.get("currency") or "KRW",
+                                                    default_url=it.get("ecommerce_link") or ""
+                                                )
+                                                if opts and len(opts) >= 2:
+                                                    it["options_data"] = opts
+                                                    it["has_options"] = True
+                                            except Exception:
+                                                pass
                                     except Exception as de:
                                         logger.warning(f"[{display_name}] detail warning: {de}")
                                 return it

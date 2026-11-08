@@ -55,8 +55,8 @@ class AsyncBaseScraper(ABC):
         if not self.client:
             raise RuntimeError("Scraper must be used within 'async with' context")
 
-        # 1. 클라우드 환경에서 빠삭(bbasak.com) 및 뽐뿌(ppomppu.co.kr) 등 해외 IP 차단 사이트는 지문 로테이션을 건너뛰고 0초 만에 Vercel 서울 릴레이 직행
-        if IS_CLOUD_ENV and ("bbasak.com" in url or "ppomppu.co.kr" in url):
+        # 1. 클라우드 환경에서 빠삭(bbasak.com), 뽐뿌(ppomppu.co.kr), 클리앙(clien.net) 등 해외 IP 차단 사이트는 지문 로테이션을 건너뛰고 0초 만에 Vercel 서울 릴레이 직행
+        if IS_CLOUD_ENV and ("bbasak.com" in url or "ppomppu.co.kr" in url or "clien.net" in url):
             relay_html = await self._fetch_via_seoul_relay(url)
             if relay_html:
                 return relay_html

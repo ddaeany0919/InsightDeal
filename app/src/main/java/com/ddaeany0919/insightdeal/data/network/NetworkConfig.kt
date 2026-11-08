@@ -40,7 +40,7 @@ object NetworkConfig {
             "10.0.2.2",     // Emulator loopback to host PC
             "127.0.0.1",    // ADB reverse port forwarding
             "192.168.0.36", // Current PC IP
-            "3.35.205.24"   // AWS Lightsail Production IP
+            "34.59.208.14"  // GCP Production IP
         )
         
         potentials.forEach { ip ->

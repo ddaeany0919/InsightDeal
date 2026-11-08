@@ -15,6 +15,7 @@ import {
   ensureWebPushSubscribed,
   getOptionSources,
   extractOptionTitle,
+  cleanOptionTitle,
 } from "../lib/utils";
 import PriceTrendChart, { type PriceTrendStats } from "./PriceTrendChart";
 
@@ -149,7 +150,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
       ? optionSources[selectedOptionIndex]
       : null;
 
-  const activeOptionTitle = selectedOption ? extractOptionTitle(selectedOption.site_name) : "";
+  const activeOptionTitle = selectedOption ? cleanOptionTitle(selectedOption.site_name) : "";
   const activePrice =
     selectedOption && selectedOption.price && selectedOption.price > 0
       ? selectedOption.price
@@ -592,7 +593,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
               >
                 {optionSources.map((src, idx) => {
                   const isSelected = selectedOptionIndex === idx;
-                  const optionTitle = extractOptionTitle(src.site_name);
+                  const optionTitle = cleanOptionTitle(src.site_name);
                   const optionCurrency = src.currency || deal.currency || "KRW";
                   const itemUrl = resolveOutboundUrl(src.ecommerce_url || deal.ecommerce_url || deal.post_link);
                   const isCopied = copiedCode === src.code;
@@ -823,6 +824,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                           e.stopPropagation();
                           if (src.code && typeof navigator !== "undefined" && navigator.clipboard) {
                             navigator.clipboard.writeText(src.code).catch(() => {});
+                            showToast(`할인코드 '${src.code}' 복사 완료! 쇼핑몰로 이동합니다.`);
                           }
                         }}
                         className="bounce-click"
@@ -1207,9 +1209,10 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                   showToast("이동할 수 있는 링크가 없습니다.");
                   return;
                 }
-                if (selectedOption?.code && typeof navigator !== "undefined" && navigator.clipboard) {
-                  navigator.clipboard.writeText(selectedOption.code).catch(() => {});
-                  showToast(`할인코드 '${selectedOption.code}' 복사 완료! 쇼핑몰로 이동합니다.`);
+                const codeToCopy = selectedOption?.code || (promoCodes.length > 0 ? promoCodes[0] : null);
+                if (codeToCopy && typeof navigator !== "undefined" && navigator.clipboard) {
+                  navigator.clipboard.writeText(codeToCopy).catch(() => {});
+                  showToast(`할인코드 '${codeToCopy}' 복사 완료! 쇼핑몰로 이동합니다.`);
                 } else if (!hasValidEcommerceLink) {
                   showToast("쇼핑몰 직접 링크가 없어 원본 게시글로 이동합니다.");
                 }

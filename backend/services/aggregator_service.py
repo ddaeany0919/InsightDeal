@@ -214,14 +214,12 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             m = re.search(r'\d[\d,]*', s)
             if m:
                 return int(m.group(0).replace(',', '')), "KRW"
-        m = re.search(r'\d[\d,]*(?:\.\d+)?', s)
-        if m:
-            raw_num = m.group(0).replace(',', '')
-            if '.' in raw_num:
-                return round(float(raw_num) * 100), ("EUR" if fallback_curr == "EUR" else "USD")
-            if raw_num.isdigit():
-                val = int(raw_num)
-                return val, fallback_curr
+        if any(c in s for c in ('엔', '円', '¥', 'jpy', 'JPY')):
+            m = re.search(r'\d[\d,]*', s)
+            if m:
+                return int(m.group(0).replace(',', '')), "JPY"
+        # 통화 기호(₩, $, €, 원, 만, 엔 등)가 없는 순수 숫자(예: 12.7, 2025, 65, 75 등)는
+        # 모델명/연도/화면크기(인치)일 수 있으므로 가격으로 임의 변환하지 않고 0 반환
         return 0, fallback_curr
 
     def extract_scored_prices_from_line(line: str) -> list[tuple[int, str, int]]:
@@ -306,6 +304,13 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 dv = round(float(d_str) * 100)
                 if 100 <= dv <= 1000000:
                     results.append((dv, "USD", score))
+
+            # 유로 (€49.50 또는 49.50€ 또는 49.50유로)
+            for m_eur in re.finditer(r'(?:€\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)|([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:€|유로|eur)(?:대)?)', part, re.IGNORECASE):
+                e_str = (m_eur.group(1) or m_eur.group(2)).replace(',', '')
+                ev = round(float(e_str) * 100)
+                if 100 <= ev <= 1000000:
+                    results.append((ev, "EUR", score))
 
         return results
 
@@ -915,7 +920,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
     seen_keys: set = set()
     options: list[dict] = []
     title_matches = list(re.finditer(
-        r'([^,\(\)/]+?)\s*\(\s*(\$?\s*(?:[\d,]+(?:\.\d+)?)\s*(?:만\s*원?|원|달러|불|유로|€|\$)?)\s*(?:외|부터|~)?\s*(?:/[^\)]*)?\)',
+        r'([^,\(\)/]+?)\s*\(\s*(\$?\s*(?:[\d,]+(?:\.\d+)?)\s*(?:만\s*원?|원|달러|불|유로|€|\$)|[₩￦€¥]\s*[\d,]+(?:\.\d+)?)\s*(?:외|부터|~)?\s*(?:/[^\)]*)?\)',
         title_no_mall
     ))
     if len(title_matches) >= 2:
@@ -1669,35 +1674,176 @@ class AggregatorService:
         if existing_deals:
              # 이미 수집했던 글이거나, 클러스터링으로 묶인 글이라면 가격 등 메타정보 갱신 (Upsert)
              # 만약 AI가 다중 분할한 상품들이라면, 모든 split deal에 대해 종료 상태 등을 일괄 갱신합니다.
-             for existing_deal in existing_deals:
+             for idx_d, existing_deal in enumerate(existing_deals):
                  # 새로 수집된 진짜 작성 시간 정보(posted_dt)가 존재하면, 기존의 잘못된 수집 시간을 진짜 시간으로 강제 갱신/보정
                  if posted_dt:
                      current_idx = existing_deal.indexed_at
                      if not current_idx or current_idx != posted_dt:
                          existing_deal.indexed_at = posted_dt
 
+                 is_same_post_url = (existing_deal.post_link == url)
+                 is_recycled_post = False
+
+                 if is_same_post_url and existing_deal.title != raw_title:
+                     def _extract_title_tokens(t: str) -> set:
+                         cleaned = re.sub(r'\[[^\]]*\]|\([^\)]*\)', ' ', t or '')
+                         cleaned = re.sub(r'[^a-zA-Z0-9가-힣\s]', ' ', cleaned.lower())
+                         stop = {"무료", "무배", "무료배송", "특가", "할인", "쿠폰", "체감가", "역대급", "대박", "추천", "공구", "행사", "마감", "종료", "끌올"}
+                         return {w for w in cleaned.split() if len(w) >= 2 and w not in stop}
+
+                     old_tokens = _extract_title_tokens(existing_deal.title)
+                     new_tokens = _extract_title_tokens(raw_title)
+                     overlap = len(old_tokens.intersection(new_tokens))
+                     min_tokens = min(len(old_tokens), len(new_tokens)) if (old_tokens and new_tokens) else 0
+                     token_sim = (overlap / min_tokens) if min_tokens > 0 else 0.0
+
+                     old_p = int(existing_deal.price) if str(existing_deal.price).isdigit() else 0
+                     price_jump = False
+                     if old_p > 0 and price > 0:
+                         ratio = price / old_p
+                         if ratio >= 2.5 or ratio <= 0.4:
+                             price_jump = True
+
+                     if token_sim < 0.35 or (price_jump and token_sim < 0.6) or (not old_tokens or not new_tokens):
+                         is_recycled_post = True
+                         logger.info(
+                             f"[Recycled Post Detected!] 기존글(ID: {existing_deal.id}): '{existing_deal.title}'({old_p}원) -> "
+                             f"재활용글: '{raw_title}'({price}원) (유사도: {token_sim:.2f}, 가격비율: {price/old_p if old_p else 0:.2f})"
+                         )
+
+                 if is_recycled_post:
+                     import json
+                     # 뽐뿌 끌올/재활용 게시글: 기존 방어 가드를 모두 우회하여 100% 최신 상태로 Full Force Sync
+                     existing_deal.title = raw_title
+                     if normalized.name:
+                         existing_deal.base_product_name = normalized.name
+                     else:
+                         existing_deal.base_product_name = None
+
+                     if price > 0:
+                         existing_deal.price = str(price)
+
+                     # 구매 링크 강제 갱신
+                     new_ecom = (scraped_data.get("ecommerce_link") or "").strip()
+                     if new_ecom:
+                         existing_deal.ecommerce_link = new_ecom
+
+                     # 대표 이미지 강제 갱신
+                     new_img = scraped_data.get("image_url")
+                     if new_img:
+                         existing_deal.image_url = new_img
+
+                     # 본문 강제 갱신 (길이 가드 무시)
+                     if content_html:
+                         existing_deal.content_html = content_html
+
+                     if shop_name:
+                         existing_deal.shop_name = shop_name
+
+                     # 브랜드/모델코드 새 제목으로 재추출
+                     existing_deal.brand = None
+                     existing_deal.model_code = None
+                     try:
+                         brand_info = AIProductNameService.extract_brand_and_model(raw_title)
+                         if brand_info.get("brand"):
+                             existing_deal.brand = brand_info.get("brand")
+                         if brand_info.get("model_code"):
+                             existing_deal.model_code = brand_info.get("model_code")
+                     except Exception as e:
+                         logger.error(f"Error extracting brand/model for recycled deal: {e}")
+
+                     # 카테고리/통화/종료상태 최신화
+                     if final_category:
+                         existing_deal.category = final_category
+                     if getattr(existing_deal, 'currency', None) != currency:
+                         existing_deal.currency = currency
+                     existing_deal.is_closed = is_closed
+                     if shipping_fee:
+                         existing_deal.shipping_fee = shipping_fee
+
+                     # 옵션 데이터: 과거 옵션 역오염 차단 및 최신화
+                     new_opts_list = scraped_data.get("options_data") or []
+                     if not new_opts_list and (raw_title or content_html):
+                         re_extracted = extract_structured_multi_options(
+                             raw_title=raw_title,
+                             content_html=content_html or "",
+                             default_currency=currency,
+                             default_url=existing_deal.ecommerce_link or "",
+                         )
+                         if len(re_extracted) >= 2:
+                             new_opts_list = re_extracted
+
+                     if new_opts_list:
+                         scraped_data["options_data"] = new_opts_list
+                         existing_deal.options_data = json.dumps(new_opts_list, ensure_ascii=False)
+                         existing_deal.has_options = True
+                         existing_deal.ai_summary = format_multi_options_summary(
+                             new_opts_list,
+                             prefix_hot=bool(scraped_data.get("is_super_hotdeal"))
+                         )
+                     else:
+                         scraped_data["options_data"] = []
+                         existing_deal.options_data = None
+                         existing_deal.has_options = False
+                         existing_deal.ai_summary = None
+
+                     # PriceHistory: 과거 이종 상품의 가격 시세 오염 방지를 위해 기존 이력 삭제 후 새 가격 기준점 등록
+                     self.db.query(PriceHistory).filter(PriceHistory.deal_id == existing_deal.id).delete(synchronize_session=False)
+                     if price > 0:
+                         self._insert_price_history(existing_deal.id, price)
+
+                     # 과거 split 딜이 여러 개였을 경우 첫 번째 딜 외 나머지는 닫힘 처리
+                     if idx_d > 0:
+                         existing_deal.is_closed = True
+
+                     # 지표 업데이트
+                     view_count = int(scraped_data.get("view_count", 0))
+                     like_count = int(scraped_data.get("like_count", 0))
+                     comment_count = int(scraped_data.get("comment_count", 0))
+                     if view_count > (existing_deal.view_count or 0):
+                         existing_deal.view_count = view_count
+                     if like_count > (existing_deal.like_count or 0):
+                         existing_deal.like_count = like_count
+                     if comment_count > (existing_deal.comment_count or 0):
+                         existing_deal.comment_count = comment_count
+
+                     is_promoted_hotdeal = bool(
+                         scraped_data.get("is_super_hotdeal")
+                         or existing_deal.like_count >= 8
+                         or (existing_deal.view_count or 0) >= 3500
+                     )
+                     calc_score = int((existing_deal.view_count / 100) + (existing_deal.like_count * 10) + (existing_deal.comment_count * 5))
+                     if is_promoted_hotdeal:
+                         calc_score = 100
+                     existing_deal.honey_score = calc_score
+                     existing_deal.is_super_hotdeal = is_promoted_hotdeal
+
+                     continue
+
                  price_changed = False
                  lowest_price_dropped = False
                  
-                 # 제목 갱신: 단일 상품일 때
+                 # 제목 갱신: 단일 상품이거나 동일 URL일 때
                  # 클러스터링(롤링 윈도우)된 경우, 새 핫딜 가격이 더 싸거나 동일 URL일 때만 원본 제목 갱신
                  old_price = int(existing_deal.price) if str(existing_deal.price).isdigit() else float('inf')
-                 if len(existing_deals) == 1 and existing_deal.title != raw_title:
-                     if existing_deal.post_link == url:
-                         existing_deal.title = raw_title
-                         if normalized.name:
-                             existing_deal.base_product_name = normalized.name
-                     elif price > 0 and price < old_price:
-                         existing_deal.title = raw_title # 더 싼 새로운 게시글의 제목으로 교체
-                         if normalized.name:
-                             existing_deal.base_product_name = normalized.name
-                         if content_html:
-                             existing_deal.content_html = content_html
+                 if is_same_post_url and existing_deal.title != raw_title:
+                     existing_deal.title = raw_title
+                     if normalized.name:
+                         existing_deal.base_product_name = normalized.name
+                 elif len(existing_deals) == 1 and existing_deal.title != raw_title and price > 0 and price < old_price:
+                     existing_deal.title = raw_title # 더 싼 새로운 게시글의 제목으로 교체
+                     if normalized.name:
+                         existing_deal.base_product_name = normalized.name
+                     if content_html:
+                         existing_deal.content_html = content_html
                          
                  # 가격 갱신 및 시세 이력 기록:
                  # 1) 더 저렴한 가격이 등장했을 때 대표 최저가 갱신 + 푸시 트리거 예약
                  # 2) 타 커뮤니티 병합 시 가격이 달라도(소폭 높더라도) 시세 등락 그래프를 위해 PriceHistory에는 기록
-                 if len(existing_deals) == 1 and price > 0:
+                 if is_same_post_url and price > 0 and str(existing_deal.price) != str(price):
+                     existing_deal.price = str(price)
+                     price_changed = True
+                 elif len(existing_deals) == 1 and price > 0:
                      if price < old_price:
                          logger.info(f"[Lowest Price Updated!] 기존 {old_price}원 -> 새 핫딜 {price}원 (URL 교체: {url})")
                          existing_deal.price = str(price)
@@ -1713,9 +1859,6 @@ class AggregatorService:
                          existing_deal.post_link = url # 유저가 구매하러 갈 링크도 더 싼 곳으로 교체
                          price_changed = True
                          lowest_price_dropped = True
-                     elif existing_deal.post_link == url and str(existing_deal.price) != str(price):
-                         existing_deal.price = str(price)
-                         price_changed = True
                      elif price != old_price:
                          # 단순 다른 글 병합 시 가격이 다르다고 해서 무조건 price_changed를 켜지 않고,
                          # 해당 딜의 직전 PriceHistory와 실제 다른 가격일 때만 플래그 활성화
@@ -1754,7 +1897,7 @@ class AggregatorService:
                      if is_old_invalid_or_search:
                          existing_deal.ecommerce_link = new_ecom_cand
                  
-                 if shop_name and not existing_deal.shop_name:
+                 if shop_name and (is_recycled_post or not existing_deal.shop_name):
                      existing_deal.shop_name = shop_name
 
                  if content_html and (not existing_deal.content_html or len(content_html) > len(existing_deal.content_html) + 40):

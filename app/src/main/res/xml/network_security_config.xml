@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- 상용 IP 3.35.205.24 및 로컬 에뮬레이터 HTTP 통신 허용 설정 -->
+    <!-- 상용 GCP IP 34.59.208.14, sslip.io 도메인 및 로컬 에뮬레이터 HTTP 통신 허용 설정 -->
     <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">3.35.205.24</domain>
+        <domain includeSubdomains="true">34.59.208.14</domain>
+        <domain includeSubdomains="true">34.59.208.14.sslip.io</domain>
         <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
         <domain includeSubdomains="true">localhost</domain>
     </domain-config>
     <!-- 기본 네트워크 통신 정책 설정 -->

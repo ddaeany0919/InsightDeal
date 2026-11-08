@@ -70,6 +70,59 @@ private val PERIOD_OPTIONS = listOf(
 private val DETAIL_DATE_FORMATTER: java.time.format.DateTimeFormatter =
     java.time.format.DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm", Locale.getDefault())
 
+// [현안 4] 옵션명 다중 중첩 접두사("알리검색 - ", "네이버검색 - ", "옵션 - " 등) 정제용 정규식
+private val OPTION_PREFIX_REGEX = Regex(
+    "^(?:옵션|알리검색|네이버검색|다나와검색|쿠팡검색|알리뽐뿌|뽐뿌|클리앙|루리웹|퀘이사존|에펨코리아|빠삭|알리|네이버)\\s*[-:·]\\s*",
+    RegexOption.IGNORE_CASE
+)
+
+fun cleanOptionTitle(rawName: String): String {
+    if (rawName.isBlank()) return ""
+    var name = if (rawName.contains(" - ")) rawName.substringAfter(" - ").trim() else rawName.trim()
+    while (OPTION_PREFIX_REGEX.containsMatchIn(name)) {
+        name = name.replaceFirst(OPTION_PREFIX_REGEX, "").trim()
+    }
+    return name.ifBlank { rawName.trim() }
+}
+
+// [현안 4] 핫딜 본문/제목 내 할인 프로모션 코드 추출 헬퍼
+private val PROMO_BLACKLIST = setOf(
+    "HTTP", "HTTPS", "HTML", "UTF8", "ALLDOCUBE", "BIGME", "VIOFO", "VIOFEO",
+    "JONR", "UWANT", "SHOKZ", "IPLAY", "MINI", "PRO", "MAX", "PLUS", "ULTRA",
+    "WIFI", "LTE", "NVME", "DDR4", "DDR5", "HDMI", "USBC", "TYPEC", "PD100W",
+    "PAW3395", "5000IU", "10000MAH", "20000MAH", "PD20W", "IN1200T", "CB3000",
+    "11STREET", "27U411B", "27G411B", "LS32FG810", "S32FG500", "S32FG50", "32U701SB"
+)
+private val PROMO_CODE_REGEX = Regex("\\b[A-Z0-9]{5,14}\\b")
+private val PROMO_UNIT_REGEX = Regex("^[0-9]+(?:GB|TB|MB|MAH|W|HZ|INCH|PACK|P|G|ML|KG|IU)$", RegexOption.IGNORE_CASE)
+private val PROMO_MODEL_REGEX = Regex("^(?:[0-9]{2}[A-Z]{1,3}[0-9]{3,4}[A-Z]{0,2}|LS[0-9]{2}[A-Z]{2}[0-9]{3}|RQ[0-9]{2}[A-Z0-9]{5,})$", RegexOption.IGNORE_CASE)
+private val PROMO_STRICT_REGEX = Regex("^[A-Z]{3,8}[0-9]{2,6}$")
+
+fun extractPromoCodesFromText(text: String, title: String): List<String> {
+    if (text.isBlank()) return emptyList()
+    val titleTokens = title.uppercase()
+        .replace(Regex("[^A-Z0-9]"), " ")
+        .split(Regex("\\s+"))
+        .filter { it.length >= 4 }
+        .toSet()
+    val found = linkedSetOf<String>()
+    for (line in text.lines()) {
+        val hasExplicitCodeLabel = line.contains(Regex("(?:공구\\s*코드|할인\\s*코드|프로모션\\s*코드|쿠폰\\s*코드|소진시\\s*쿠폰|코드\\s*할인|코드\\s*:|코드\\s*\\$|🎟|Ⓐ|Ⓑ)"))
+        val isCodeListLine = line.trim().matches(Regex("^[A-Z0-9,\\s()/\\$-]{5,80}$", RegexOption.IGNORE_CASE)) && line.contains(",")
+        for (m in PROMO_CODE_REGEX.findAll(line)) {
+            val up = m.value.uppercase()
+            if (up in PROMO_BLACKLIST) continue
+            if (up in titleTokens || titleTokens.any { it.contains(up) || up.contains(it) }) continue
+            if (!up.contains(Regex("[A-Z]")) || !up.contains(Regex("[0-9]"))) continue
+            if (up.matches(PROMO_UNIT_REGEX) || up.matches(PROMO_MODEL_REGEX)) continue
+            if (((hasExplicitCodeLabel || isCodeListLine) && up.length >= 5) || (up.length >= 6 && up.matches(PROMO_STRICT_REGEX))) {
+                found.add(up)
+            }
+        }
+    }
+    return found.take(10).toList()
+}
+
 /**
  * 사이트 칩의 메타 정보를 담는 고성능 정적 데이터 클래스
  */
@@ -258,11 +311,12 @@ fun DealDetailScreen(
     onNavigateToCommunity: () -> Unit,
     snackbarHostState: SnackbarHostState
 ) {
+    val context = LocalContext.current
     val multiOptions = remember(deal.id, deal.sources) {
         val rawList = deal.sources?.filter { it.siteName.contains(" - ") && (it.price ?: 0L) > 0L } ?: emptyList()
         val seen = mutableSetOf<String>()
         rawList.filter { src ->
-            val optTitle = src.siteName.substringAfter(" - ").trim().lowercase().replace(" ", "")
+            val optTitle = cleanOptionTitle(src.siteName).lowercase().replace(" ", "")
             optTitle.isNotEmpty() && seen.add(optTitle)
         }
     }
@@ -273,6 +327,9 @@ fun DealDetailScreen(
     }
     val effectivePrice = selectedOption?.price ?: deal.price
     val effectiveCurrency = selectedOption?.currency ?: deal.currency
+    val promoCodes = remember(deal.contentHtml, deal.title) {
+        extractPromoCodesFromText(deal.contentHtml ?: deal.title, deal.title)
+    }
 
     // 🛡️ 제휴 수수료 고지 BottomSheet 상태 관리
     var showAffiliateSheet by remember { mutableStateOf(false) }
@@ -345,6 +402,15 @@ fun DealDetailScreen(
                 Button(
                     onClick = {
                         val url = pendingUrl
+                        val codeToCopy = selectedOption?.code?.takeIf { it.isNotBlank() } ?: promoCodes.firstOrNull()
+                        if (!codeToCopy.isNullOrBlank()) {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("promo_code", codeToCopy))
+                            android.widget.Toast.makeText(context, "할인코드가 복사되었습니다: $codeToCopy", android.widget.Toast.LENGTH_SHORT).show()
+                            affiliateScope.launch {
+                                snackbarHostState.showSnackbar("할인코드가 복사되었습니다: $codeToCopy")
+                            }
+                        }
                         affiliateScope.launch {
                             affiliateSheetState.hide()
                         }.invokeOnCompletion {
@@ -444,7 +510,7 @@ fun DealDetailScreen(
 
                         if (targetUrl != null) {
                             val bottomPriceText = remember(effectivePrice, effectiveCurrency, selectedOption) {
-                                formatPrice(effectivePrice, effectiveCurrency, selectedOption?.siteName?.substringAfter(" - "))
+                                formatPrice(effectivePrice, effectiveCurrency, selectedOption?.let { cleanOptionTitle(it.siteName) })
                             }
                             Box(
                                 modifier = Modifier
@@ -582,11 +648,6 @@ fun DealDetailScreen(
                     votes = votes,
                     onClick = onNavigateToCommunity
                 )
-            }
-            if (mallPrices.size > 1 && mallPrices.none { it.platform.contains(" - ") }) {
-                item(key = "mall_prices", contentType = "price_table") {
-                    MallPriceTable(mallPrices, onOpenOrigin)
-                }
             }
             item(key = "affiliate_notice", contentType = "footer_notice") {
                 Text(
@@ -1508,102 +1569,6 @@ private fun AIBuyerGuide(deal: DealItem, priceHistory: List<PriceHistoryPoint>, 
 }
 
 @Composable
-private fun MallPriceTable(mallPrices: List<MallPrice>, onOpenOrigin: (String) -> Unit) {
-    val isMultiOption = remember(mallPrices) {
-        mallPrices.size > 1 && mallPrices.any { it.platform.contains(" - ") }
-    }
-    Card(
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Text(
-                text = if (isMultiOption) "상품 옵션별 가격 및 바로가기" else "웹 판매처 최저가 비교",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                letterSpacing = (-0.3).sp
-            )
-            Spacer(Modifier.height(14.dp))
-
-            mallPrices.forEachIndexed { index, row ->
-                val priceText = remember(row.price, row.currency) {
-                    when (row.currency?.uppercase()) {
-                        "USD" -> "$${String.format(Locale.US, "%.2f", row.price.toDouble() / 100)}"
-                        "EUR" -> "€${String.format(Locale.US, "%.2f", row.price.toDouble() / 100)}"
-                        else -> "${formatPrice(row.price.toLong(), row.currency ?: "KRW")}"
-                    }
-                }
-                val displayPlatform = remember(row.platform) {
-                    if (row.platform.contains(" - ")) {
-                        row.platform.substringAfter(" - ").trim()
-                    } else {
-                        row.platform
-                    }
-                }
-                val subCaption = remember(row.platform) {
-                    if (row.platform.contains(" - ")) {
-                        "${row.platform.substringBefore(" - ").trim()} · 옵션 구매 링크"
-                    } else {
-                        "실시간 매칭가"
-                    }
-                }
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 10.dp)
-                        .bounceClick { onOpenOrigin(row.url) },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                        Text(
-                            text = displayPlatform,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = subCaption,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            text = priceText,
-                            fontWeight = FontWeight.ExtraBold,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            letterSpacing = (-0.2).sp
-                        )
-
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-
-                if (index < mallPrices.size - 1) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun DealHeader(
     deal: DealItem,
     selectedOption: DealSource? = null,
@@ -1613,6 +1578,9 @@ fun DealHeader(
     onOpenOrigin: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val promoCodes = remember(deal.contentHtml, deal.title) {
+        extractPromoCodesFromText(deal.contentHtml ?: deal.title, deal.title)
+    }
     val effectiveImageUrl = selectedOption?.imageUrl?.takeIf { it.isNotBlank() } ?: deal.imageUrl
     Column(modifier = Modifier.fillMaxWidth()) {
         if (!effectiveImageUrl.isNullOrEmpty()) {
@@ -1780,7 +1748,7 @@ fun DealHeader(
                     modifier = Modifier.padding(bottom = 6.dp)
                 ) {
                     Text(
-                        text = "선택: #${selectedOptionIndex + 1} ${selectedOption.siteName.substringAfter(" - ").trim()}",
+                        text = "선택: #${selectedOptionIndex + 1} ${cleanOptionTitle(selectedOption.siteName)}",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -1805,7 +1773,7 @@ fun DealHeader(
                 }
 
                 val priceText = remember(effectivePrice, effectiveCurrency, deal.title, selectedOption) {
-                    formatPrice(effectivePrice, effectiveCurrency, selectedOption?.siteName?.substringAfter(" - ") ?: deal.title)
+                    formatPrice(effectivePrice, effectiveCurrency, selectedOption?.let { cleanOptionTitle(it.siteName) } ?: deal.title)
                 }
                 Text(
                     text = priceText,
@@ -1911,7 +1879,7 @@ fun DealHeader(
 
                         multiOptions.forEachIndexed { index, opt ->
                             val isSelected = selectedOptionIndex == index
-                            val optName = opt.siteName.substringAfter(" - ").trim()
+                            val optName = cleanOptionTitle(opt.siteName)
                             val optPriceText = formatPrice(opt.price ?: deal.price, opt.currency ?: deal.currency, optName)
                             val optTargetUrl = opt.ecommerceUrl?.takeIf { it.isNotBlank() } ?: opt.postUrl
 
@@ -1992,7 +1960,7 @@ fun DealHeader(
                                                         val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                                         val clip = android.content.ClipData.newPlainText("promo_code", opt.code)
                                                         clipboard.setPrimaryClip(clip)
-                                                        android.widget.Toast.makeText(context, "할인코드 복사: ${opt.code}", android.widget.Toast.LENGTH_SHORT).show()
+                                                        android.widget.Toast.makeText(context, "할인코드가 복사되었습니다: ${opt.code}", android.widget.Toast.LENGTH_SHORT).show()
                                                     }
                                                 ) {
                                                     Text(
@@ -2022,6 +1990,12 @@ fun DealHeader(
                                         if (optTargetUrl.isNotBlank()) {
                                             OutlinedButton(
                                                 onClick = {
+                                                    val codeToCopy = opt.code?.takeIf { it.isNotBlank() } ?: promoCodes.firstOrNull()
+                                                    if (!codeToCopy.isNullOrBlank()) {
+                                                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                                        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("promo_code", codeToCopy))
+                                                        android.widget.Toast.makeText(context, "할인코드가 복사되었습니다: $codeToCopy", android.widget.Toast.LENGTH_SHORT).show()
+                                                    }
                                                     val finalOptUrl = if (optTargetUrl.startsWith("http")) optTargetUrl else "https://$optTargetUrl"
                                                     onOpenOrigin(finalOptUrl)
                                                 },
@@ -2155,44 +2129,6 @@ fun DealHeader(
                 }
             }
 
-            val promoCodes = remember(cleanedBodyText, deal.title) {
-                if (cleanedBodyText.isBlank()) emptyList()
-                else {
-                    val blacklist = setOf(
-                        "HTTP", "HTTPS", "HTML", "UTF8", "ALLDOCUBE", "BIGME", "VIOFO", "VIOFEO",
-                        "JONR", "UWANT", "SHOKZ", "IPLAY", "MINI", "PRO", "MAX", "PLUS", "ULTRA",
-                        "WIFI", "LTE", "NVME", "DDR4", "DDR5", "HDMI", "USBC", "TYPEC", "PD100W",
-                        "PAW3395", "5000IU", "10000MAH", "20000MAH", "PD20W", "IN1200T", "CB3000",
-                        "11STREET", "27U411B", "27G411B", "LS32FG810", "S32FG500", "S32FG50", "32U701SB"
-                    )
-                    val titleTokens = deal.title.uppercase()
-                        .replace(Regex("[^A-Z0-9]"), " ")
-                        .split(Regex("\\s+"))
-                        .filter { it.length >= 4 }
-                        .toSet()
-                    val found = linkedSetOf<String>()
-                    val codeRegex = Regex("\\b[A-Z0-9]{5,14}\\b")
-                    val unitRegex = Regex("^[0-9]+(?:GB|TB|MB|MAH|W|HZ|INCH|PACK|P|G|ML|KG|IU)$", RegexOption.IGNORE_CASE)
-                    val modelRegex = Regex("^(?:[0-9]{2}[A-Z]{1,3}[0-9]{3,4}[A-Z]{0,2}|LS[0-9]{2}[A-Z]{2}[0-9]{3}|RQ[0-9]{2}[A-Z0-9]{5,})$", RegexOption.IGNORE_CASE)
-                    val strictCodeRegex = Regex("^[A-Z]{3,8}[0-9]{2,6}$")
-                    for (line in cleanedBodyText.lines()) {
-                        val hasExplicitCodeLabel = line.contains(Regex("(?:공구\\s*코드|할인\\s*코드|프로모션\\s*코드|쿠폰\\s*코드|소진시\\s*쿠폰|코드\\s*할인|코드\\s*:|코드\\s*\\$|🎟|Ⓐ|Ⓑ)"))
-                        val isCodeListLine = line.trim().matches(Regex("^[A-Z0-9,\\s()/\\$-]{5,80}$", RegexOption.IGNORE_CASE)) && line.contains(",")
-                        for (m in codeRegex.findAll(line)) {
-                            val up = m.value.uppercase()
-                            if (up in blacklist) continue
-                            if (up in titleTokens || titleTokens.any { it.contains(up) || up.contains(it) }) continue
-                            if (!up.contains(Regex("[A-Z]")) || !up.contains(Regex("[0-9]"))) continue
-                            if (up.matches(unitRegex) || up.matches(modelRegex)) continue
-                            if (((hasExplicitCodeLabel || isCodeListLine) && up.length >= 5) || (up.length >= 6 && up.matches(strictCodeRegex))) {
-                                found.add(up)
-                            }
-                        }
-                    }
-                    found.take(10).toList()
-                }
-            }
-
             if (cleanedBodyText.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(20.dp))
                 Row(
@@ -2229,7 +2165,7 @@ fun DealHeader(
                                 modifier = Modifier.clickable {
                                     val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
                                     clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("promo_code", code))
-                                    android.widget.Toast.makeText(context, "할인코드 '$code' 복사 완료", android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(context, "할인코드가 복사되었습니다: $code", android.widget.Toast.LENGTH_SHORT).show()
                                 }
                             ) {
                                 Text(
