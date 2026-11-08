@@ -41,7 +41,7 @@
 | M3 | Community Scrapers Coverage & Resilience (현안 5) | `backend/scrapers/base_scraper.py`, `backend/scrapers/ppomppu_overseas_scraper.py`, `backend/scrapers/bbasak_overseas_scraper.py`, `backend/scheduler/cloud_feeder.py` | none | DONE (worker: 97157b67, 12/12 unit tests passed) |
 | M4 | UI/UX Parity & Promo Code Auto-Copy (현안 4) | `frontend-web/src/app/lib/utils.ts`, `frontend-web/src/app/components/DealDetailModal.tsx`, `app/.../DealDetailScreen.kt` | none | DONE (worker: 00f72ba1, web build & kotlin compile passed) |
 | M5 | Codebase & Infra Latent Defects Hardening (현안 6) | `frontend-web/src/app/notifications/page.tsx`, `app/.../NetworkConfig.kt`, `app/src/main/res/xml/network_security_config.xml`, `backend/services/aggregator_service.py` | none | DONE (worker: 88286c4d) |
-| M6 | E2E Test Suite Pass, GCP Deployment, Backfill & Wiki Sync | Dual-Platform E2E 검증, GCP 실서버 배포, 실서버 백필 실행, Obsidian Wiki 동기화 | M1, M2, M3, M4, M5 | IN_PROGRESS (worker: 14f31b68) |
+| M6 | E2E Test Suite Pass, GCP Deployment, Backfill & Wiki Sync | Dual-Platform E2E 검증, GCP 실서버 배포, 실서버 백필 실행, Obsidian Wiki 동기화 | M1, M2, M3, M4, M5 | DONE (worker: 14f31b68, 48/48 tests passed, deploy & backfill verified, wiki synced) |
 
 ## Interface Contracts
 ### Web/App ↔ Backend Deal Detail & Options Schema
