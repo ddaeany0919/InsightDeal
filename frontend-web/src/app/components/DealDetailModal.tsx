@@ -138,6 +138,49 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  const preOptionSources = deal ? getOptionSources(detailSources, deal.options_data) : [];
+  const preSelectedOption =
+    preOptionSources.length > 0 && selectedOptionIndex < preOptionSources.length
+      ? preOptionSources[selectedOptionIndex]
+      : null;
+  const preActivePrice =
+    preSelectedOption && preSelectedOption.price && preSelectedOption.price > 0
+      ? preSelectedOption.price
+      : deal?.price;
+  const preActiveCurrency = preSelectedOption?.currency || deal?.currency || "KRW";
+
+  useEffect(() => {
+    if (!deal) return;
+    const isUsd = preActiveCurrency === "USD";
+    const rawPriceNum =
+      typeof preActivePrice === "number"
+        ? preActivePrice
+        : parseInt(String(preActivePrice || "").replace(/[^0-9]/g, ""), 10) || 0;
+    const defaultTarget = isUsd
+      ? rawPriceNum >= 500
+        ? Math.max(1, Math.floor((rawPriceNum / 100) * 0.95))
+        : 0
+      : rawPriceNum >= 1000
+        ? Math.round((rawPriceNum * 0.95) / 100) * 100
+        : 0;
+    try {
+      const mapStr = localStorage.getItem("insightdeal_target_prices");
+      const targetMap = mapStr ? JSON.parse(mapStr) : {};
+      const key = preOptionSources.length > 0 ? `${deal.id}_${selectedOptionIndex}` : String(deal.id);
+      const savedVal = targetMap?.[key] ?? (selectedOptionIndex === 0 ? targetMap?.[deal.id] : undefined);
+      if (savedVal) {
+        setSavedTargetPrice(Number(savedVal));
+        setTargetPriceInput(String(savedVal));
+      } else {
+        setSavedTargetPrice(null);
+        setTargetPriceInput(defaultTarget > 0 ? String(defaultTarget) : "");
+      }
+    } catch {
+      setSavedTargetPrice(null);
+      setTargetPriceInput(defaultTarget > 0 ? String(defaultTarget) : "");
+    }
+  }, [deal?.id, selectedOptionIndex, preActivePrice, preActiveCurrency, preOptionSources.length]);
+
   if (!deal) return null;
 
   // HTML 태그 제거 + 공구 다중 상품 구분선 및 깨진 쿠폰 코드 줄바꿈 자동 다듬기
@@ -921,7 +964,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
             setSavingTargetAlert(true);
             try {
               const { deviceUuid, pushGranted } = await ensureWebPushSubscribed();
-              const keywordToTrack = (deal.title || "")
+              const keywordToTrack = (activeOptionTitle || deal.title || "")
                 .replace(/\[[^\]]*\]/g, "")
                 .replace(/\([^)]*\)/g, "")
                 .trim()
@@ -943,7 +986,8 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                 try {
                   const mapStr = localStorage.getItem("insightdeal_target_prices");
                   const targetMap = mapStr ? JSON.parse(mapStr) : {};
-                  targetMap[deal.id] = parsedInput;
+                  const storageKey = optionSources.length > 0 ? `${deal.id}_${selectedOptionIndex}` : String(deal.id);
+                  targetMap[storageKey] = parsedInput;
                   localStorage.setItem("insightdeal_target_prices", JSON.stringify(targetMap));
                 } catch {}
                 showToast(

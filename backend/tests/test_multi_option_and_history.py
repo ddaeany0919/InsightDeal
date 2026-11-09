@@ -50,6 +50,23 @@ def test_slash_multi_option_parser_pattern_c():
     assert opt2["price"] == 240000
     assert opt2["currency"] == "KRW"
 
+    # 모델명/연도 뒤 공백 + $가격 형태에서 $ 기호 가로채기(12.7 $, 2025 $) 방어 검증
+    title2 = "[초특가] 샤오신 프로 12.7 $164.25/SOYO Y5 미니PC $75.2"
+    opts2 = extract_structured_multi_options(raw_title=title2, content_html="", default_currency="USD")
+    assert len(opts2) == 2
+    assert opts2[0]["name"] == "샤오신 프로 12.7"
+    assert opts2[0]["price"] == 16425
+    assert opts2[1]["name"] == "SOYO Y5 미니PC"
+    assert opts2[1]["price"] == 7520
+
+    title3 = "샤오신 2025 $88/[가격인하]버니플라이 캐리어 $50.5"
+    opts3 = extract_structured_multi_options(raw_title=title3, content_html="", default_currency="USD")
+    assert len(opts3) == 2
+    assert opts3[0]["name"] == "샤오신 2025"
+    assert opts3[0]["price"] == 8800
+    assert opts3[1]["name"] == "버니플라이 캐리어"
+    assert opts3[1]["price"] == 5050
+
 
 def test_single_item_with_parenthesis_shipping_not_split():
     """2. 괄호 안의 배송비 슬래시 표기가 멀티옵션으로 오인식되지 않는지 검증"""

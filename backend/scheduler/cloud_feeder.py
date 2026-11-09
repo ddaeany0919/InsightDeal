@@ -534,6 +534,14 @@ async def scrape_and_push_once():
                                 is_new_ecom_valid_direct = bool(new_ecom) and not is_search_or_community_url(new_ecom)
 
                                 is_missing_cached_img = not (cached_detail.get("image_url") or item.get("image_url"))
+                                is_truncated_ppomppu_on_local = (
+                                    (not IS_CLOUD_ENV)
+                                    and ("ppomppu.co.kr" in item_url)
+                                    and len(cached_detail.get("content_html") or "") < 150
+                                )
+                                if is_truncated_ppomppu_on_local:
+                                    items_needing_detail.append(item)
+                                    continue
                                 status_changed = (
                                     (new_closed and not old_closed)
                                     or (new_hot and not old_hot)

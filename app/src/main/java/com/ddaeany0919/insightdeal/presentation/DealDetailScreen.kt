@@ -627,17 +627,29 @@ fun DealDetailScreen(
             }
             item(key = "buyer_guide", contentType = "guide") {
                 if (priceHistory.size > 1 || deal.honeyScore > 0) {
-                    AIBuyerGuide(deal = deal, priceHistory = priceHistory, currentPrice = deal.price.toInt())
+                    AIBuyerGuide(
+                        deal = deal,
+                        priceHistory = priceHistory,
+                        currentPrice = effectivePrice.toInt(),
+                        currencyOverride = effectiveCurrency
+                    )
                 }
             }
             item(key = "alert_register", contentType = "alert_btn") {
-                val minPrice = remember(mallPrices, deal.price) {
-                    mallPrices.minOfOrNull { it.price } ?: deal.price.toInt()
+                val activeAlertPrice = remember(selectedOption, effectivePrice, mallPrices, deal.price) {
+                    if (selectedOption != null && effectivePrice > 0L) {
+                        effectivePrice.toInt()
+                    } else {
+                        mallPrices.minOfOrNull { it.price } ?: deal.price.toInt()
+                    }
+                }
+                val activeAlertTitleHint = remember(selectedOption, deal.title) {
+                    selectedOption?.let { cleanOptionTitle(it.siteName) }?.takeIf { it.isNotBlank() } ?: deal.title
                 }
                 PriceAlertRegistrationButton(
-                    currentPrice = minPrice,
-                    currency = deal.currency,
-                    titleHint = deal.title,
+                    currentPrice = activeAlertPrice,
+                    currency = effectiveCurrency,
+                    titleHint = activeAlertTitleHint,
                     priceHistory = priceHistory,
                     initialTargetPrice = initialTargetPrice,
                     onAlertClick = onTargetPriceAlertRegister
@@ -1383,10 +1395,15 @@ private fun PriceHistoryInteractiveCard(
 }
 
 @Composable
-private fun AIBuyerGuide(deal: DealItem, priceHistory: List<PriceHistoryPoint>, currentPrice: Int) {
+private fun AIBuyerGuide(
+    deal: DealItem,
+    priceHistory: List<PriceHistoryPoint>,
+    currentPrice: Int,
+    currencyOverride: String? = null
+) {
     if (currentPrice == 0) return
 
-    val currency = remember(deal.currency) { deal.currency }
+    val currency = remember(currencyOverride, deal.currency) { currencyOverride ?: deal.currency }
     val minPrice = remember(priceHistory, currentPrice) { priceHistory.minOfOrNull { it.price } ?: currentPrice }
     val maxPrice = remember(priceHistory, currentPrice) { priceHistory.maxOfOrNull { it.price } ?: currentPrice }
     val isRecordLow = remember(currentPrice, minPrice, priceHistory) { currentPrice <= minPrice && priceHistory.size > 1 }

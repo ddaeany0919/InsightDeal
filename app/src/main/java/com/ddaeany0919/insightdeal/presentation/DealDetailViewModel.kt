@@ -59,14 +59,23 @@ class DealDetailViewModel : ViewModel() {
         }
     }
 
+    private fun extractUniqueMultiOptions(deal: DealItem?): List<com.ddaeany0919.insightdeal.models.DealSource> {
+        val rawList = deal?.sources?.filter { it.siteName.contains(" - ") && (it.price ?: 0L) > 0L } ?: emptyList()
+        val seen = mutableSetOf<String>()
+        return rawList.filter { src ->
+            val optTitle = cleanOptionTitle(src.siteName).lowercase().replace(" ", "")
+            optTitle.isNotEmpty() && seen.add(optTitle)
+        }
+    }
+
     private fun loadHistoryData(dealId: Int, period: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isHistoryLoading = true)
             try {
                 val deal = _uiState.value.deal
-                val multiOptions = deal?.sources?.filter { it.siteName.contains(" - ") && (it.price ?: 0L) > 0L } ?: emptyList()
-                val selectedOpt = multiOptions.getOrNull(_uiState.value.selectedOptionIndex)
-                val optQuery = selectedOpt?.siteName?.substringAfter(" - ")?.trim()
+                val multiOptions = extractUniqueMultiOptions(deal)
+                val selectedOpt = if (multiOptions.size > 1) multiOptions.getOrNull(_uiState.value.selectedOptionIndex) else null
+                val optQuery = selectedOpt?.let { cleanOptionTitle(it.siteName) }?.takeIf { it.isNotBlank() }
                 val optCurrency = selectedOpt?.currency ?: deal?.currency
 
                 val cacheKey = "${dealId}_${optQuery ?: "default"}_${optCurrency}_$period"
@@ -132,7 +141,25 @@ class DealDetailViewModel : ViewModel() {
 
                     if (dealResponse.isSuccessful) {
                         val deal = dealResponse.body()
-                        var history = if (historyResponse.isSuccessful) historyResponse.body() ?: emptyList() else emptyList()
+                        val multiOptions = extractUniqueMultiOptions(deal)
+                        val firstOpt = if (multiOptions.size > 1) multiOptions.firstOrNull() else null
+                        val firstOptQuery = firstOpt?.let { cleanOptionTitle(it.siteName) }?.takeIf { it.isNotBlank() }
+                        val firstOptCurrency = firstOpt?.currency ?: deal?.currency
+
+                        var history = if (firstOptQuery != null) {
+                            val optHistoryResp = try {
+                                apiService.getDealPriceHistory(
+                                    dealId = dealId,
+                                    period = requestedPeriod,
+                                    query = firstOptQuery,
+                                    currency = firstOptCurrency
+                                )
+                            } catch (e: Exception) { null }
+                            if (optHistoryResp?.isSuccessful == true) optHistoryResp.body() ?: emptyList() else emptyList()
+                        } else {
+                            if (historyResponse.isSuccessful) historyResponse.body() ?: emptyList() else emptyList()
+                        }
+
                         val comments = if (commentsResponse?.isSuccessful == true) commentsResponse.body() ?: emptyList() else emptyList()
                         val votes = if (votesResponse?.isSuccessful == true) votesResponse.body() else null
 
@@ -140,7 +167,14 @@ class DealDetailViewModel : ViewModel() {
                         if (_selectedPeriod.value == "7d" && history.size >= 2 && history.any { it.date.matches(Regex("^\\d{2}\\.\\d{2}\\.\\d{2}$")) }) {
                             _selectedPeriod.value = "3m"
                         } else if (history.size <= 1 && _selectedPeriod.value == "7d") {
-                            val fallbackResponse = try { apiService.getDealPriceHistory(dealId, "3m") } catch (e: Exception) { null }
+                            val fallbackResponse = try {
+                                apiService.getDealPriceHistory(
+                                    dealId = dealId,
+                                    period = "3m",
+                                    query = firstOptQuery,
+                                    currency = firstOptCurrency
+                                )
+                            } catch (e: Exception) { null }
                             val fallbackHistory = if (fallbackResponse?.isSuccessful == true) fallbackResponse.body() ?: emptyList() else emptyList()
                             if (fallbackHistory.size >= 2) {
                                 history = fallbackHistory
@@ -148,9 +182,12 @@ class DealDetailViewModel : ViewModel() {
                             }
                         }
 
+                        val cacheKey = "${dealId}_${firstOptQuery ?: "default"}_${firstOptCurrency}_${_selectedPeriod.value}"
+                        historyCache[cacheKey] = history
+
                         var isLow = false
                         if (history.isNotEmpty() && deal != null) {
-                            val currentPrice = deal.price
+                            val currentPrice = firstOpt?.price ?: deal.price
                             val minPrice = history.minOfOrNull { it.price } ?: Int.MAX_VALUE
                             if (currentPrice > 0 && currentPrice <= minPrice) {
                                 isLow = true

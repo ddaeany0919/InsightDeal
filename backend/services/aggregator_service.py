@@ -299,14 +299,14 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                             results.append((mv, "KRW", max(1, score - 1)))
 
             # 달러 ($62.70 또는 62.70$ 또는 62.70달러)
-            for m_usd in re.finditer(r'(?:\$\s*([0-9]+(?:\.[0-9]+)?)|([0-9]+(?:\.[0-9]+)?)\s*(?:\$|달러|불)(?:대)?)', part, re.IGNORECASE):
+            for m_usd in re.finditer(r'(?:\$\s*([0-9]+(?:\.[0-9]+)?)|([0-9]+(?:\.[0-9]+)?)\s*(?:\$(?!\s*[0-9])|달러|불)(?:대)?)', part, re.IGNORECASE):
                 d_str = m_usd.group(1) or m_usd.group(2)
                 dv = round(float(d_str) * 100)
                 if 100 <= dv <= 1000000:
                     results.append((dv, "USD", score))
 
             # 유로 (€49.50 또는 49.50€ 또는 49.50유로)
-            for m_eur in re.finditer(r'(?:€\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)|([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:€|유로|eur)(?:대)?)', part, re.IGNORECASE):
+            for m_eur in re.finditer(r'(?:€\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)|([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:€(?!\s*[0-9])|유로|eur)(?:대)?)', part, re.IGNORECASE):
                 e_str = (m_eur.group(1) or m_eur.group(2)).replace(',', '')
                 ev = round(float(e_str) * 100)
                 if 100 <= ev <= 1000000:
@@ -820,7 +820,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     continue
 
                 cleaned_candidate = re.sub(
-                    r'(?:\(\s*[0-9,]+(?:\s*원)?\s*(?:>|→|->).*|[₩￦]\s*[0-9,]+|(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\s*원.*|(?:[0-9]+(?:\.[0-9]+)?)\s*만\s*원?(?:대|\s*중반|\s*초반|\s*후반)?.*|\$\s*[0-9]+(?:\.[0-9]+)?.*|[0-9]+(?:\.[0-9]+)?\s*(?:\$|달러|불)(?:대)?.*)',
+                    r'(?:\(\s*[0-9,]+(?:\s*원)?\s*(?:>|→|->).*|[₩￦]\s*[0-9,]+|(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\s*원.*|(?:[0-9]+(?:\.[0-9]+)?)\s*만\s*원?(?:대|\s*중반|\s*초반|\s*후반)?.*|\$\s*[0-9]+(?:\.[0-9]+)?.*|[0-9]+(?:\.[0-9]+)?\s*(?:\$(?!\s*[0-9])|달러|불)(?:대)?.*)',
                     '',
                     bl,
                 )
@@ -896,7 +896,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             slash_opts: list[dict] = []
             for idx_sp, sp in enumerate(slash_parts):
                 m_sp = re.match(
-                    r'^(.{2,50}?)\s+(\$?\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|원|달러|불|유로|€|\$)|[₩￦]\s*[0-9,]+)\s*$',
+                    r'^(.{2,50}?)\s+(\$\s*[0-9,]+(?:\.[0-9]+)?|[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|원|달러|불|유로|€(?!\s*[0-9])|\$(?!\s*[0-9]))|[₩￦€]\s*[0-9,]+(?:\.[0-9]+)?)\s*$',
                     sp,
                 )
                 if m_sp:
@@ -989,7 +989,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 # 가격 및 통화 추출
                 seg_prices = extract_scored_prices_from_line(seg)
                 if not seg_prices:
-                    m_p = re.search(r'(\$?\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|원|달러|불|유로|€|\$)|[₩￦]\s*[0-9,]+)', seg)
+                    m_p = re.search(r'(\$\s*[0-9,]+(?:\.[0-9]+)?|[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|원|달러|불|유로|€(?!\s*[0-9])|\$(?!\s*[0-9]))|[₩￦€]\s*[0-9,]+(?:\.[0-9]+)?)', seg)
                     if m_p:
                         p_val, p_curr = parse_price_token(m_p.group(1), default_currency)
                     else:
@@ -999,11 +999,11 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
 
                 # 상품명 정제 (가격 문자열 및 배송비/수식어 제거)
                 name_cand = re.sub(
-                    r'(?:[₩￦]\s*[0-9,]+|[0-9]{1,3}(?:,[0-9]{3})+\s*원|[0-9]+(?:\.[0-9]+)?\s*만\s*원?|\$\s*[0-9,.]+|[0-9,.]+\s*(?:\$|달러|불|유로|€)).*$',
+                    r'(?:[₩￦]\s*[0-9,]+|[0-9]{1,3}(?:,[0-9]{3})+\s*원|[0-9]+(?:\.[0-9]+)?\s*만\s*원?|\$\s*[0-9,.]+|[0-9,.]+\s*(?:\$(?!\s*[0-9])|달러|불|유로|€(?!\s*[0-9]))).*$',
                     '',
                     seg,
-                ).strip(' -·:,/~+[]()')
-                name_cand = re.sub(r'^\s*\[[^\]]+\]\s*', '', name_cand).strip()
+                ).strip()
+                name_cand = re.sub(r'^\s*\[[^\]]+\]\s*', '', name_cand).strip(' -·:,/~+[]()')
                 name_cand = re.sub(r'(?:무배|무료배송|배송비무료|무료|네멤무배)$', '', name_cand).strip(' -·:,/~+[]()')
 
                 if _is_valid_option_name(name_cand) and p_val >= 100:
