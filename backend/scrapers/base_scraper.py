@@ -405,51 +405,55 @@ class AsyncBaseScraper(ABC):
                 clean_q = re.sub(r'(?:[0-9,]+\s*원|\$\s*[0-9,.]+|[0-9,.]+\s*(?:만\s*원?|달러|불|유로|€))', ' ', clean_q)
                 clean_q = re.sub(r'(?:무료배송|무배|배송비|특가|할인|핫딜|역대가|초특가)', ' ', clean_q)
                 clean_q = re.sub(r'\s+', ' ', clean_q).strip()
-                if len(clean_q) >= 2:
+                first_part = re.split(r'[,/]', clean_q)[0].strip()
+                short_q = " ".join(first_part.split()[:3]).strip()
+                query_candidates = [q for q in dict.fromkeys([clean_q, first_part, short_q]) if len(q) >= 2]
+                if query_candidates:
                     req_hdrs = {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                         "Accept-Language": "ko-KR,ko;q=0.9"
                     }
                     async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as hclient:
-                        # 3-A. 네이버 통합검색 썸네일 (search.pstatic.net 프록시 CDN, GCP 서울/미국 모두 0.2s 내 응답)
-                        naver_url = f"https://search.naver.com/search.naver?where=nexearch&query={quote(clean_q)}"
-                        rn = await hclient.get(naver_url, headers=req_hdrs)
-                        if rn.status_code == 200:
-                            n_imgs = re.findall(r'(https://search\.pstatic\.net/common/\?src=[^\s"\'&<>]+)', rn.text)
-                            naver_bad = (
-                                'blogpfthumb', 'kinimage', 'musicmeta', 'profile', 'icon', 'logo',
-                                'blank', 'avatar', 'favicon', '파비콘', '.ico', 'influencer-phinf',
-                                'clip-service-phinf', 'pup-post-phinf', '96x96', '32x32', '64x64',
-                                '192x192', 'cropped-', 'Press', 'news'
-                            )
-                            preferred_naver = []
-                            fallback_naver = []
-                            for cand in n_imgs[:25]:
-                                low_dec = unquote(unquote(cand)).lower()
-                                if any(b.lower() in low_dec for b in naver_bad):
-                                    continue
-                                if any(p in low_dec for p in ('shopping-phinf', 'shop-phinf', 'dthumb-phinf', 'blogfiles.naver', 'postfiles.pstatic', 'mblogthumb-phinf')):
-                                    preferred_naver.append(cand)
-                                else:
-                                    fallback_naver.append(cand)
-                            chosen_naver = (preferred_naver or fallback_naver)
-                            if chosen_naver:
-                                logger.info(f"🖼️ [Scraper Image Fallback - Naver] 상품명('{clean_q}') 대표 이미지 확보 성공: {chosen_naver[0]}")
-                                return chosen_naver[0]
+                        for q_cand in query_candidates:
+                            # 3-A. 네이버 통합검색 썸네일 (search.pstatic.net 프록시 CDN, GCP 서울/미국 모두 0.2s 내 응답)
+                            naver_url = f"https://search.naver.com/search.naver?where=nexearch&query={quote(q_cand)}"
+                            rn = await hclient.get(naver_url, headers=req_hdrs)
+                            if rn.status_code == 200:
+                                n_imgs = re.findall(r'(https://search\.pstatic\.net/common/\?src=[^\s"\'&<>]+)', rn.text)
+                                naver_bad = (
+                                    'blogpfthumb', 'kinimage', 'musicmeta', 'profile', 'icon', 'logo',
+                                    'blank', 'avatar', 'favicon', '파비콘', '.ico', 'influencer-phinf',
+                                    'clip-service-phinf', 'pup-post-phinf', '96x96', '32x32', '64x64',
+                                    '192x192', 'cropped-', 'Press', 'news'
+                                )
+                                preferred_naver = []
+                                fallback_naver = []
+                                for cand in n_imgs[:25]:
+                                    low_dec = unquote(unquote(cand)).lower()
+                                    if any(b.lower() in low_dec for b in naver_bad):
+                                        continue
+                                    if any(p in low_dec for p in ('shopping-phinf', 'shop-phinf', 'dthumb-phinf', 'blogfiles.naver', 'postfiles.pstatic', 'mblogthumb-phinf')):
+                                        preferred_naver.append(cand)
+                                    else:
+                                        fallback_naver.append(cand)
+                                chosen_naver = (preferred_naver or fallback_naver)
+                                if chosen_naver:
+                                    logger.info(f"🖼️ [Scraper Image Fallback - Naver] 상품명('{q_cand}') 대표 이미지 확보 성공: {chosen_naver[0]}")
+                                    return chosen_naver[0]
 
-                        # 3-B. 다음 통합검색 썸네일 (kakaocdn.net argon 320x320 CDN, 희귀 직구/캔디류 폴백)
-                        daum_url = f"https://search.daum.net/search?w=tot&q={quote(clean_q)}"
-                        rd = await hclient.get(daum_url, headers=req_hdrs)
-                        if rd.status_code == 200:
-                            d_imgs = re.findall(r'(https://search\d+\.kakaocdn\.net/argon/[^\s"\'<>]+)', rd.text)
-                            for cand in d_imgs[:6]:
-                                if '320x320' in cand or '656x0' in cand or d_imgs:
-                                    chosen_d = cand if ('320x320' in cand or '656x0' in cand) else d_imgs[0]
-                                    logger.info(f"🖼️ [Scraper Image Fallback - Daum] 상품명('{clean_q}') 대표 이미지 확보 성공: {chosen_d}")
-                                    return chosen_d
+                            # 3-B. 다음 통합검색 썸네일 (kakaocdn.net argon 320x320 CDN, 희귀 직구/캔디류 폴백)
+                            daum_url = f"https://search.daum.net/search?w=tot&q={quote(q_cand)}"
+                            rd = await hclient.get(daum_url, headers=req_hdrs)
+                            if rd.status_code == 200:
+                                d_imgs = re.findall(r'(https://search\d+\.kakaocdn\.net/argon/[^\s"\'<>]+)', rd.text)
+                                for cand in d_imgs[:6]:
+                                    if '320x320' in cand or '656x0' in cand or d_imgs:
+                                        chosen_d = cand if ('320x320' in cand or '656x0' in cand) else d_imgs[0]
+                                        logger.info(f"🖼️ [Scraper Image Fallback - Daum] 상품명('{q_cand}') 대표 이미지 확보 성공: {chosen_d}")
+                                        return chosen_d
 
                         # 3-C. 빙 이미지 검색 폴백
-                        search_url = f"https://www.bing.com/images/search?q={quote(clean_q + ' 상품')}&FORM=HDRSC2"
+                        search_url = f"https://www.bing.com/images/search?q={quote(query_candidates[-1] + ' 상품')}&FORM=HDRSC2"
                         res = await hclient.get(search_url, headers=req_hdrs)
                         if res.status_code == 200:
                             murls = re.findall(r'murl&quot;:&quot;(https?://[^&]+?)&quot;', res.text)
