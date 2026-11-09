@@ -164,7 +164,17 @@ export async function GET(req: NextRequest) {
       Accept:
         "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
       "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-      Referer: `${parsed.protocol}//${parsed.host}/`,
+      Referer: parsed.hostname.includes("ppomppu.co.kr")
+        ? "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu"
+        : `${parsed.protocol}//${parsed.host}/`,
+      "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+      "Sec-Ch-Ua-Mobile": "?0",
+      "Sec-Ch-Ua-Platform": '"Windows"',
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-User": "?1",
+      "Upgrade-Insecure-Requests": "1",
     };
     if (parsed.hostname.includes("fmkorea.com") && cachedFmkoreaCookies) {
       baseHeaders["Cookie"] = cachedFmkoreaCookies;

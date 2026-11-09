@@ -534,10 +534,16 @@ async def scrape_and_push_once():
                                 is_new_ecom_valid_direct = bool(new_ecom) and not is_search_or_community_url(new_ecom)
 
                                 is_missing_cached_img = not (cached_detail.get("image_url") or item.get("image_url"))
+                                cached_html_str = str(cached_detail.get("content_html") or "").strip()
                                 is_truncated_ppomppu_on_local = (
                                     (not IS_CLOUD_ENV)
                                     and ("ppomppu.co.kr" in item_url)
-                                    and len(cached_detail.get("content_html") or "") < 150
+                                    and (
+                                        not cached_html_str
+                                        or len(cached_html_str) == 110
+                                        or cached_html_str.endswith("...</p>")
+                                        or cached_html_str.endswith("...")
+                                    )
                                 )
                                 if is_truncated_ppomppu_on_local:
                                     items_needing_detail.append(item)
@@ -747,11 +753,31 @@ async def scrape_and_push_once():
 
 
 async def main():
+    import time
     one_shot = "--one-shot" in sys.argv
+    max_duration_sec = 0.0
+    for idx, arg in enumerate(sys.argv):
+        if arg == "--max-duration-minutes" and idx + 1 < len(sys.argv):
+            try:
+                max_duration_sec = float(sys.argv[idx + 1]) * 60.0
+            except ValueError:
+                pass
+        elif arg.startswith("--max-duration-minutes="):
+            try:
+                max_duration_sec = float(arg.split("=", 1)[1]) * 60.0
+            except ValueError:
+                pass
+
+    start_ts = time.monotonic()
+    cycle_no = 0
     try:
         while True:
+            cycle_no += 1
             await scrape_and_push_once()
             if one_shot:
+                break
+            if max_duration_sec > 0 and (time.monotonic() - start_ts) >= max_duration_sec:
+                logger.info(f"⏰ 지정된 실행 시간({max_duration_sec / 60:.0f}분, 총 {cycle_no}회 사이클)이 완료되어 안전하게 자동 종료합니다.")
                 break
             await asyncio.sleep(60)
     finally:

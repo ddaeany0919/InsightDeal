@@ -277,8 +277,8 @@ async def backfill_remote_api(
                     if not deals:
                         break
                     for d in deals:
-                        c_html = d.get("content_html") or ""
-                        if len(c_html) < min_len or (len(c_html) < 250 and "<img" not in c_html):
+                        c_html = (d.get("content_html") or "").strip()
+                        if not c_html or len(c_html) < min_len or c_html.endswith("...</p>") or c_html.endswith("..."):
                             all_candidates.append((name, display_name, d))
                     if len(deals) < 100:
                         break
