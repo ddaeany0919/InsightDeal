@@ -191,7 +191,7 @@ def _is_valid_option_name(name: str) -> bool:
         return False
     if re.match(r"^[\$\u20A9\uFFE6\u20AC\u00A5]\s*\d", n) or re.search(r"[-\+]\s*[\$\u20A9\uFFE6\u20AC\u00A5]\s*\d", n):
         return False
-    if re.search(r"(?:\uC720\uD6A8\uAE30\uAC04|ID\uB2F9\s*\d+\s*\uAC1C|1\uC778\uB2F9\s*\d+\s*\uAC1C|\uAD6C\uB9E4\s*\uC81C\uD55C|\uAD6C\uB9E4\s*\uACE0\uBBFC)", n, re.IGNORECASE):
+    if re.search(r"(?:\uC720\uD6A8\uAE30\uAC04|ID\uB2F9\s*\d+\s*\uAC1C|1\uC778\uB2F9\s*\d+\s*\uAC1C|\uAD6C\uB9E4\s*\uC81C\uD55C|\uAD6C\uB9E4\s*\uACE0\uBBFC|^\d[\d,]*\s*(?:\uCC9C|\uB9CC|\uBC31)?\s*\uC6D0\s*(?:\uCD08\uBC18|\uC911\uBC18|\uD6C4\uBC18|\uB300|\uBBF8\uB9CC|\uC774\uD558|\uC774\uC0C1)?\s*[:\-])", n, re.IGNORECASE):
         return False
     if re.match(r"^\d+(?:\.\d+)?$", n):
         return False
