@@ -263,7 +263,8 @@ export const cleanOptionTitle = (rawName: string): string => {
     name = name.replace(prefixRegex, "").trim();
   }
   // 3단계: 앞머리 번호('1. '), 여는 괄호 없는 닫는 괄호 머리말('광군제특가] ', '잔여공구코드] ') 및 끝단 미완성 열린 괄호('(옵션') 제거
-  name = name.replace(/^(?:\d{1,2}\s*[.)]|[\u2460-\u2473])\s*/, "").trim();
+  name = name.replace(/^(?:\d{1,2}\s*[.)](?!\d)\s+|[\u2460-\u2473]\s*)/, "").trim();
+  name = name.replace(/^\d{1,2}(?:\.\d+)?%\s*[/\u00B7\-|]\s*/, "").trim();
   name = name.replace(/^[^\[\]\(\)]{1,14}[\]\)]\s*/, "").trim();
   name = name.replace(/\s*[\(\[][^\)\]]*$/, "").trim();
   return name || rawName.trim();

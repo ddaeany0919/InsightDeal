@@ -157,7 +157,8 @@ def _clean_option_display_name(raw_name: str) -> str:
         return ""
     n = re.sub(r"[\xa0\s]+", " ", str(raw_name)).strip()
     n = re.sub(r"^(?:[▪▫•◆◇★☆※#>\-]+\s*)+", "", n).strip()
-    n = re.sub(r"^(?:\d{1,2}\s*[.)]|[\u2460-\u2473])\s*", "", n).strip()
+    n = re.sub(r"^(?:\d{1,2}\s*[.)](?!\d)\s+|[\u2460-\u2473]\s*)", "", n).strip()
+    n = re.sub(r"^\d{1,2}(?:\.\d+)?%\s*[/\u00B7\-|]\s*", "", n).strip()
     n = re.sub(r"^(?:vs\.?)\s+", "", n, flags=re.IGNORECASE).strip()
     while True:
         # 1) 여는 괄호 없이 닫는 대괄호/소괄호만 남은 머리말 (예: '광군제특가] ', '잔여공구코드] ', '알리 잔여코드) ') 제거
@@ -187,6 +188,10 @@ def _is_valid_option_name(name: str) -> bool:
         return False
     n = _clean_option_display_name(name)
     if len(n) < 2 or len(n) > 130:
+        return False
+    if re.match(r"^[\$\u20A9\uFFE6\u20AC\u00A5]\s*\d", n) or re.search(r"[-\+]\s*[\$\u20A9\uFFE6\u20AC\u00A5]\s*\d", n):
+        return False
+    if re.search(r"(?:\uC720\uD6A8\uAE30\uAC04|ID\uB2F9\s*\d+\s*\uAC1C|1\uC778\uB2F9\s*\d+\s*\uAC1C|\uAD6C\uB9E4\s*\uC81C\uD55C)", n, re.IGNORECASE):
         return False
     if re.match(r"^\d+(?:\.\d+)?$", n):
         return False
@@ -451,6 +456,8 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
 
     def is_non_product_numbered_header(txt: str) -> bool:
         t = txt.strip()
+        if re.match(r"^[-+\s]*(?:[\$\u20A9\uFFE6\u20AC\u00A5]\s*\d|\d[\d,.]*\s*(?:\uC6D0|\uB9CC\s*\uC6D0?|\uB2EC\uB7EC|\uBD88|\$|\u20AC|\uC720\uB85C))", t):
+            return True
         # (1) 선착순/할인코드 번호 나열 (예: '① WLRRN114 (선착순 100장) → $37.63', '1. BALPUM003 (선착순 250장)')
         if re.match(r'^[A-Z0-9_]{4,16}\s*(?:\(|→|->|\||적용|할인|선착순|$)', t):
             return True

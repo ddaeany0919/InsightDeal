@@ -148,7 +148,8 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                         is_truncated_ppomppu = (
                             "ppomppu.co.kr" in normalized_url
                             and (
-                                len(existing_html_str) < 160
+                                not existing_html_str
+                                or len(existing_html_str) == 110
                                 or existing_html_str.endswith("...</p>")
                                 or existing_html_str.endswith("...")
                             )

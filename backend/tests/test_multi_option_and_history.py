@@ -283,8 +283,50 @@ def test_comma_and_mixed_slash_multi_options_and_noise_guard():
     assert _is_valid_option_name("삼카시") is False
     assert _is_valid_option_name("신카시") is False
     assert _is_valid_option_name("카할시") is False
+    assert _is_valid_option_name("$70.83 -$1.26 코인") is False
+    assert _is_valid_option_name("$70.83 -$14 롯데카드") is False
+    assert _is_valid_option_name("ID당 10개, 유효기간 27년 2월 16일까지") is False
     assert _clean_option_display_name("2. 한입 닭다리살 30팩 (옵션") == "한입 닭다리살 30팩"
     assert _clean_option_display_name("광군제특가] 로지텍 지슈라2\xa0") == "로지텍 지슈라2"
+    assert _clean_option_display_name("15.6인치 휴대용 모니터") == "15.6인치 휴대용 모니터"
+    assert _clean_option_display_name("48% / (버거킹) 불고기와퍼주니어+콜라R") == "불고기와퍼주니어+콜라R"
+
+
+def test_decimal_inch_preservation_and_price_step_hijack_guard():
+    """11. 소수점 인치(15.6인치) 보존 및 본문 내 1) $70.83 가격 계산 단계가 번호형 옵션으로 오탐되는 현상 방어 검증"""
+    title_inch = "15.6인치 휴대용 모니터($35.36/무료) 레노버 샤오신 11($88.01/무료) 버니플라이 20 알루미늄캐리어($56.19/무료)"
+    opts_inch = extract_structured_multi_options(raw_title=title_inch, content_html="", default_currency="USD")
+    assert len(opts_inch) == 3
+    assert opts_inch[0]["name"] == "15.6인치 휴대용 모니터"
+    assert opts_inch[0]["price"] == 3536
+
+    body_18491 = """
+레노버 샤오신 패드 프로 13인치 2026 (링크: https://s.click.aliexpress.com/e/_c2Raj5cX)
+$288.68
+-$28 KBTY28
+=$237.68
+Anmite 16인치 휴대용 터치 모니터 (링크: https://s.click.aliexpress.com/e/_c4eQyExv)
+옵션 : 터치
+1) $70.83
+-$1.26 코인
+=$61.57
+2) $70.83
+-$14 롯데카드
+=$56.83
+GMKtec M6 Ultra 게이밍 미니 PC (링크: https://s.click.aliexpress.com/e/_c4rUUoKb)
+$191.42
+-$19 KBTY19
+=$149.16
+"""
+    opts_18491 = extract_structured_multi_options(
+        raw_title="샤오신프로13($237.68/무료) 16인치 165Hz 모니터($59.26/무료) GMKtec M6 Ultra 베어본($149.16/무료)",
+        content_html=body_18491,
+        default_currency="USD",
+    )
+    assert len(opts_18491) == 3
+    assert all(not o["name"].startswith("$") for o in opts_18491)
+    assert "레노버 샤오신 패드 프로 13인치 2026" in opts_18491[0]["name"]
+
 
 
 

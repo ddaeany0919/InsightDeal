@@ -75,7 +75,8 @@ private val OPTION_PREFIX_REGEX = Regex(
     "^(?:옵션|알리검색|네이버검색|다나와검색|쿠팡검색|알리뽐뿌|뽐뿌|클리앙|루리웹|퀘이사존|에펨코리아|빠삭|알리|네이버)\\s*[-:·]\\s*",
     RegexOption.IGNORE_CASE
 )
-private val OPTION_LEADING_NUM_REGEX = Regex("^(?:\\d{1,2}\\s*[.)]|[\\u2460-\\u2473])\\s*")
+private val OPTION_LEADING_NUM_REGEX = Regex("^(?:\\d{1,2}\\s*[.)](?!\\d)\\s+|[\\u2460-\\u2473]\\s*)")
+private val OPTION_LEADING_DISCOUNT_REGEX = Regex("^\\d{1,2}(?:\\.\\d+)?%\\s*[/·\\-|]\\s*")
 private val OPTION_UNMATCHED_PREFIX_REGEX = Regex("^[^\\[\\]()]{1,14}[\\])]\\s*")
 private val OPTION_TRAILING_UNCLOSED_REGEX = Regex("\\s*[(\\[][^)\\]]*$")
 
@@ -88,6 +89,7 @@ fun cleanOptionTitle(rawName: String): String {
         name = name.replaceFirst(OPTION_PREFIX_REGEX, "").trim()
     }
     name = name.replaceFirst(OPTION_LEADING_NUM_REGEX, "").trim()
+    name = name.replaceFirst(OPTION_LEADING_DISCOUNT_REGEX, "").trim()
     name = name.replaceFirst(OPTION_UNMATCHED_PREFIX_REGEX, "").trim()
     name = name.replaceFirst(OPTION_TRAILING_UNCLOSED_REGEX, "").trim()
     return name.ifBlank { rawName.trim() }
