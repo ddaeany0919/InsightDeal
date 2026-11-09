@@ -47,7 +47,7 @@ def _decode_and_clean_shop_url(u: str) -> str:
 
 
 _FAKE_OPTION_NAME_RE = re.compile(
-    r"^(?:[▪▫•◆◇★☆※#]+\s*)?(?:앱?기본가(?:격)?|최종가(?:격)?|최종혜택가|체감가(?:격)?|할인가(?:격)?|쿠폰가(?:격)?|정상가(?:격)?|판매가(?:격)?|행사가(?:격)?|앱사용가|판매자할인|스토어쿠폰|코인|코인할인|공구\s*코드|특가\s*코드|프로모션\s*코드|쿠폰\s*코드|할인\s*코드|스토어\s*코드|전용\s*코드|장바구니|결제시?|무료배송|배송비|택배비|합계|총\s*금액|스토어|채널|코드|링크|선착순|선착순\s*최대|멤버십|멤버십\s*할인|전체보기|바로가기|가게\s*리스트.*|오프라인\s*매장.*|0원|무료|kg|g|ml|l|개|입|미|팩|박스)$",
+    r"^(?:[▪▫•◆◇★☆※#]+\s*)?(?:앱?기본가(?:격)?|최종가(?:격)?|최종혜택가|체감가(?:격)?|할인가(?:격)?|쿠폰가(?:격)?|정상가(?:격)?|판매가(?:격)?|행사가(?:격)?|공구가(?:격)?|혜택가(?:격)?|실구매가(?:격)?|앱사용가|판매자할인|스토어쿠폰|코인|코인할인|공구\s*코드|특가\s*코드|프로모션\s*코드|쿠폰\s*코드|할인\s*코드|스토어\s*코드|전용\s*코드|장바구니|결제시?|삼카시|신카시|국카시|현카시|롯카시|농카시|우카시|하카시|비카시|카할시|카드할인시?|청구할인시?|결제할인시?|네멤가?|와우가?|쿠폰적용가?|무료배송|배송비|택배비|합계|총\s*금액|스토어|채널|코드|링크|선착순|선착순\s*최대|멤버십|멤버십\s*할인|전체보기|바로가기|가게\s*리스트.*|오프라인\s*매장.*|0원|무료|kg|g|ml|l|개|입|미|팩|박스)$",
     re.IGNORECASE,
 )
 
@@ -152,15 +152,47 @@ def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str 
     return ""
 
 
+def _clean_option_display_name(raw_name: str) -> str:
+    if not raw_name:
+        return ""
+    n = re.sub(r"[\xa0\s]+", " ", str(raw_name)).strip()
+    n = re.sub(r"^(?:[▪▫•◆◇★☆※#>\-]+\s*)+", "", n).strip()
+    n = re.sub(r"^(?:\d{1,2}\s*[.)]|[\u2460-\u2473])\s*", "", n).strip()
+    n = re.sub(r"^(?:vs\.?)\s+", "", n, flags=re.IGNORECASE).strip()
+    while True:
+        # 1) 여는 괄호 없이 닫는 대괄호/소괄호만 남은 머리말 (예: '광군제특가] ', '잔여공구코드] ', '알리 잔여코드) ') 제거
+        nxt = re.sub(r"^[^\[\]\(\)]{1,14}[\]\)]\s*", "", n).strip()
+        if nxt != n and nxt:
+            n = nxt
+            continue
+        # 2) 수량/용량 스펙이 아닌 일반 머리말 대괄호/소괄호 (예: '[가격인하]', '[초특가]', '[알리]', '(끌올)') 제거
+        m_lead = re.match(r"^(?:\[([^\]]{1,16})\]|\(([^\)]{1,16})\))\s*(.+)$", n)
+        if m_lead:
+            tag_txt = (m_lead.group(1) or m_lead.group(2) or "").strip()
+            if not re.search(r"\d+\s*(?:개|입|팩|박스|세트|병|캔|봉|포|롤|매|kg|g|ml|l|w|인치|세대|년)", tag_txt, re.IGNORECASE):
+                n = m_lead.group(3).strip()
+                continue
+        break
+    # 끝단에 닫히지 않고 잘린 괄호 조각 (예: '(옵션', '[옵션', '(무료') 제거
+    n = re.sub(r"\s*[\(\[][^\)\]]*$", "", n).strip()
+    while n.endswith(")") and n.count(")") > n.count("("):
+        n = n[:-1].strip()
+    while n.endswith("]") and n.count("]") > n.count("["):
+        n = n[:-1].strip()
+    return n.strip(" -·:,/~+>")
+
+
 def _is_valid_option_name(name: str) -> bool:
     if not name:
         return False
-    n = re.sub(r"^[▪▫•◆◇★☆※#]+\s*", "", name.strip()).strip()
+    n = _clean_option_display_name(name)
     if len(n) < 2 or len(n) > 130:
         return False
     if re.match(r"^\d+(?:\.\d+)?$", n):
         return False
     if _FAKE_OPTION_NAME_RE.match(n):
+        return False
+    if re.match(r"^(?:[가-힣a-zA-Z]{1,6}(?:카드|카|페이|멤버십|네멤|와우)\s*(?:결제\s*|할인\s*|적용\s*)?시|카할\s*시|카드\s*할인|청구\s*할인)$", n, re.IGNORECASE):
         return False
     if any(sub in n for sub in _PROSE_NOISE_SUBSTRINGS):
         return False
@@ -582,10 +614,11 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 if second_ln and not extract_scored_prices_from_line(second_ln) and len(second_ln) <= 45:
                     head_clean = f"{head_clean} {second_ln}".strip()
 
-            if not head_clean or len(head_clean) < 2:
+            head_clean = _clean_option_display_name(head_clean)
+            if not head_clean or len(head_clean) < 2 or not _is_valid_option_name(head_clean):
                 continue
 
-            opt_display_name = f"{seg['num']}. {head_clean}" if seg.get("num") else head_clean
+            opt_display_name = head_clean
 
             chosen_price = 0
             chosen_curr = default_currency
@@ -852,6 +885,9 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             if cand_name:
                 if size_variant_hint and any(x in cand_name for x in ('싱글/퀸', '싱글/더블', '퀸/킹')):
                     cand_name = f"{cand_name[:48]} ({size_variant_hint})"
+                cand_name = _clean_option_display_name(cand_name)
+                if not _is_valid_option_name(cand_name):
+                    continue
                 chosen_price = 0
                 chosen_curr = default_currency
                 if cand_prices:
@@ -882,11 +918,12 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
     # =========================================================================
     # 3단계: 제목 내 다중 상품 패턴 추출
     # - 패턴 A: 괄호 안 슬래시(/) 구분형, 예: (UGREEN 300W 151,382원 / Baseus 허브 62,70$ / 유그린 165W 52.00$)
-    # - 패턴 B: 개별 괄호 나열형, 예: 상품A (15,000원), 상품B (20,000원)
+    # - 패턴 B: 개별 괄호 나열형, 예: 상품A (15,000원), 상품B (20,000원), 상품C ($105), 상품D ($82/무료)
+    # - 패턴 C: 괄호 밖 슬래시(/) 또는 쉼표(,) 분할형
     # =========================================================================
     title_norm = normalize_price_str(raw_title or '')
     title_no_mall = re.sub(r'^\s*\[[^\]]+\]\s*', '', title_norm).strip()
-    title_no_mall = re.sub(r'^\s*(?:\([^\)]+\)|[^\s\(\)]{1,6}\))\s*', '', title_no_mall).strip()
+    title_no_mall = re.sub(r'^\s*(?:\[[^\]]+\]|[^\[\]\(\)]{1,14}\]|\([^\)]+\)|[^\[\]\(\)]{1,14}\))\s*', '', title_no_mall).strip()
 
     # 패턴 A: 괄호 내부에 '/'로 구분된 다중 '상품명 + 가격' 추출
     for paren_m in re.finditer(r'\(([^\(\)]{12,})\)', title_no_mall):
@@ -900,7 +937,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     sp,
                 )
                 if m_sp:
-                    sp_name = m_sp.group(1).strip(' ,/·-~')
+                    sp_name = _clean_option_display_name(m_sp.group(1).strip(' ,/·-~'))
                     p_val, p_curr = parse_price_token(m_sp.group(2), default_currency)
                     if _is_valid_option_name(sp_name) and p_val >= 100:
                         matched_url = body_shop_urls[idx_sp][1] if idx_sp < len(body_shop_urls) else cleaned_default_url
@@ -916,19 +953,18 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             if len(slash_opts) >= 2:
                 return slash_opts
 
-    # 패턴 B: 개별 괄호 나열형
+    # 패턴 B: 개별 괄호 나열형 (전위 $105, $237.68/무료 및 후위 15,000원, 11.7만 등 모두 지원)
     seen_keys: set = set()
     options: list[dict] = []
     title_matches = list(re.finditer(
-        r'([^,\(\)/]+?)\s*\(\s*(\$?\s*(?:[\d,]+(?:\.\d+)?)\s*(?:만\s*원?|원|달러|불|유로|€|\$)|[₩￦€¥]\s*[\d,]+(?:\.\d+)?)\s*(?:외|부터|~)?\s*(?:/[^\)]*)?\)',
+        r'([^,\(\)/]+?)\s*\(\s*(?:약\s*)?([\$₩￦€¥]\s*[\d,]+(?:\.\d+)?|\$?\s*(?:[\d,]+(?:\.\d+)?)\s*(?:만\s*원?|천\s*원?|원|달러|불|유로|€(?!\s*[0-9])|\$(?!\s*[0-9])))\s*(?:외|부터|~)?\s*(?:/[^\)]*)?\)',
         title_no_mall
     ))
     if len(title_matches) >= 2:
         first_valid_prefix = ""
         for idx_m, m in enumerate(title_matches):
-            opt_name = m.group(1).strip(' ,/·-~')
-            opt_name = re.sub(r'^\s*\[[^\]]+\]\s*', '', opt_name).strip()
-            if re.match(r'^\d{1,2}(?:\.\d+)?$', opt_name) and '샤오신' in (raw_title or ''):
+            opt_name = _clean_option_display_name(m.group(1).strip(' ,/·-~'))
+            if re.match(r'^(?:프로\s*)?\d{1,4}(?:\.\d+)?$', opt_name) and '샤오신' in (raw_title or ''):
                 opt_name = f"샤오신 패드 {opt_name}"
             if _PURE_QTY_OPTION_RE.match(opt_name) and (first_valid_prefix or base_title_prefix):
                 prefix_to_use = first_valid_prefix or base_title_prefix
@@ -965,19 +1001,23 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         if len(options) >= 2:
             return options
 
-    # 패턴 C: 괄호 밖 슬래시(/) 분할형, 예: 뷰몬트 15.6 모니터 $34.56/경동나비엔 EME550S 24만
+    # 패턴 C: 괄호 밖 슬래시(/) 또는 쉼표(,) 분할형, 예: 뷰몬트 15.6 모니터 $34.56/경동나비엔 EME550S 24만, 상스치 3900원, 오레오 맥플러리 1800원
     paren_tokens = {}
     def _mask_paren(m):
         key = f"__PAREN_{len(paren_tokens)}__"
         paren_tokens[key] = m.group(0)
         return key
 
-    # 대괄호와 소괄호 임시 마스킹 (괄호 내부의 슬래시 및 배송비 오탐 방지)
+    # 대괄호와 소괄호 임시 마스킹 (괄호 내부의 슬래시/쉼표 및 배송비 오탐 방지)
     masked_title = re.sub(r'\[[^\]]*\]', _mask_paren, title_no_mall)
     masked_title = re.sub(r'\([^\)]*\)', _mask_paren, masked_title)
 
-    if '/' in masked_title:
-        slash_segments = [s.strip() for s in masked_title.split('/') if s.strip()]
+    if '/' in masked_title or ',' in masked_title:
+        slash_segments = [
+            s.strip()
+            for s in re.split(r'\s*/\s*|\s*,\s+|(?<=[원만불러\$])\s*,\s*', masked_title)
+            if s and s.strip()
+        ]
         if len(slash_segments) >= 2:
             slash_options = []
             for idx_seg, raw_seg in enumerate(slash_segments):
@@ -989,7 +1029,10 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 # 가격 및 통화 추출
                 seg_prices = extract_scored_prices_from_line(seg)
                 if not seg_prices:
-                    m_p = re.search(r'(\$\s*[0-9,]+(?:\.[0-9]+)?|[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|원|달러|불|유로|€(?!\s*[0-9])|\$(?!\s*[0-9]))|[₩￦€]\s*[0-9,]+(?:\.[0-9]+)?)', seg)
+                    m_p = re.search(
+                        r'(\$\s*[0-9,]+(?:\.[0-9]+)?|[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|원|달러|불|유로|€(?!\s*[0-9])|\$(?!\s*[0-9]))(?!\s*(?:적립|할인|쿠폰|캐시백|페이백|청구|이상|이하|증정|상당))|[₩￦€]\s*[0-9,]+(?:\.[0-9]+)?)',
+                        seg,
+                    )
                     if m_p:
                         p_val, p_curr = parse_price_token(m_p.group(1), default_currency)
                     else:
@@ -999,12 +1042,15 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
 
                 # 상품명 정제 (가격 문자열 및 배송비/수식어 제거)
                 name_cand = re.sub(
-                    r'(?:[₩￦]\s*[0-9,]+|[0-9]{1,3}(?:,[0-9]{3})+\s*원|[0-9]+(?:\.[0-9]+)?\s*만\s*원?|\$\s*[0-9,.]+|[0-9,.]+\s*(?:\$(?!\s*[0-9])|달러|불|유로|€(?!\s*[0-9]))).*$',
+                    r'(?:[₩￦]\s*[0-9,]+|(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7})\s*원|[0-9]+(?:\.[0-9]+)?\s*만\s*원?|\$\s*[0-9,.]+|[0-9,.]+\s*(?:\$(?!\s*[0-9])|달러|불|유로|€(?!\s*[0-9]))).*$',
                     '',
                     seg,
                 ).strip()
                 name_cand = re.sub(r'^\s*\[[^\]]+\]\s*', '', name_cand).strip(' -·:,/~+[]()')
-                name_cand = re.sub(r'(?:무배|무료배송|배송비무료|무료|네멤무배)$', '', name_cand).strip(' -·:,/~+[]()')
+                name_cand = re.sub(r'(?:무배|무료배송|배송비무료|무료|네멤무배|외)$', '', name_cand).strip(' -·:,/~+[]()')
+                name_cand = _clean_option_display_name(name_cand)
+                if re.match(r'^(?:프로\s*)?\d{1,4}(?:\.\d+)?$', name_cand) and '샤오신' in (raw_title or ''):
+                    name_cand = f"샤오신 패드 {name_cand}"
 
                 if _is_valid_option_name(name_cand) and p_val >= 100:
                     matched_u = body_shop_urls[idx_seg][1] if idx_seg < len(body_shop_urls) else cleaned_default_url
@@ -1040,7 +1086,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
 
         m_opt = re.search(r'^(.{2,45}?)\s*[:\-–~·/(\[]+\s*(\$?\s*(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7}|[0-9]+\.[0-9]+)\s*(?:원|달러|불|유로|€|\$)|[₩￦]\s*[0-9,]+)', ln_no_cond)
         if m_opt:
-            opt_name = re.sub(r'^\s*\d+[\.\)]\s*', '', m_opt.group(1)).strip(' -·:()[]')
+            opt_name = _clean_option_display_name(m_opt.group(1))
             if not _is_valid_option_name(opt_name):
                 continue
             p_val, p_curr = parse_price_token(m_opt.group(2), default_currency)

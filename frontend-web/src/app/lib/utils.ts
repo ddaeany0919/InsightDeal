@@ -252,7 +252,7 @@ export const resolveOutboundUrl = (rawUrl: string | undefined | null): string =>
  */
 export const cleanOptionTitle = (rawName: string): string => {
   if (!rawName) return "";
-  let name = rawName.trim();
+  let name = rawName.replace(/\u00A0/g, " ").trim();
   // 1단계: "사이트 - ", "옵션 - " 등 최초 1회 분리
   if (name.includes(" - ")) {
     name = name.split(" - ").slice(1).join(" - ").trim();
@@ -262,6 +262,10 @@ export const cleanOptionTitle = (rawName: string): string => {
   while (prefixRegex.test(name)) {
     name = name.replace(prefixRegex, "").trim();
   }
+  // 3단계: 앞머리 번호('1. '), 여는 괄호 없는 닫는 괄호 머리말('광군제특가] ', '잔여공구코드] ') 및 끝단 미완성 열린 괄호('(옵션') 제거
+  name = name.replace(/^(?:\d{1,2}\s*[.)]|[\u2460-\u2473])\s*/, "").trim();
+  name = name.replace(/^[^\[\]\(\)]{1,14}[\]\)]\s*/, "").trim();
+  name = name.replace(/\s*[\(\[][^\)\]]*$/, "").trim();
   return name || rawName.trim();
 };
 

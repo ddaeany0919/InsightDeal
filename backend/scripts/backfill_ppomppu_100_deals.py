@@ -286,6 +286,8 @@ async def backfill_remote_api(
                     logger.warning(f"[{display_name}] 원격 API 페칭 경고: {fe}")
                     break
 
+        # 최신 ID 순으로 정렬하여 특정 게시판(뽐뿌 국내)만 편중 처리되지 않고 알리뽐뿌/해외뽐뿌 최신 절단 딜도 최우선 복구
+        all_candidates.sort(key=lambda x: int(x[2].get("id") or 0), reverse=True)
         if limit > 0:
             all_candidates = all_candidates[:limit]
         stats["candidates"] = len(all_candidates)

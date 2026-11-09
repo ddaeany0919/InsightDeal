@@ -227,3 +227,64 @@ async def test_enrich_option_images_safely_name_fallback():
         assert img.startswith("http"), f"Image URL must be valid HTTP(S), got {img}"
 
 
+def test_parenthesized_usd_and_unmatched_bracket_multi_options():
+    """9. 괄호 내부 전위 달러(($105), ($237.68/무료)) 및 닫는 괄호 오타 머리말(잔여공구코드], 알리 잔여코드)) 정밀 파싱 검증"""
+    title1 = "잔여공구코드] 빅미 B6 전자책($105), 샥즈 오픈런 프로2($82), 오픈닷2($100), 오픈핏 프로($176) 등"
+    opts1 = extract_structured_multi_options(raw_title=title1, content_html="", default_currency="USD")
+    assert len(opts1) == 4
+    assert opts1[0]["name"] == "빅미 B6 전자책"
+    assert opts1[0]["price"] == 10500
+    assert opts1[1]["name"] == "샥즈 오픈런 프로2"
+    assert opts1[1]["price"] == 8200
+    assert opts1[2]["name"] == "오픈닷2"
+    assert opts1[2]["price"] == 10000
+    assert opts1[3]["name"] == "오픈핏 프로"
+    assert opts1[3]["price"] == 17600
+
+    title2 = "샤오신프로13($237.68/무료) 16인치 165Hz 모니터($59.26/무료) GMKtec M6 Ultra 베어본($149.16/무료)"
+    opts2 = extract_structured_multi_options(raw_title=title2, content_html="", default_currency="USD")
+    assert len(opts2) == 3
+    assert opts2[0]["name"] == "샤오신프로13"
+    assert opts2[0]["price"] == 23768
+    assert opts2[1]["name"] == "16인치 165Hz 모니터"
+    assert opts2[1]["price"] == 5926
+    assert opts2[2]["name"] == "GMKtec M6 Ultra 베어본"
+    assert opts2[2]["price"] == 14916
+
+    title3 = "알리 잔여코드) Etenwolf V3 압축기($22.8) 버니플라이 알루미늄 캐리어 ($48) V500 Ultra 무선청소기($82)"
+    opts3 = extract_structured_multi_options(raw_title=title3, content_html="", default_currency="USD")
+    assert len(opts3) == 3
+    assert opts3[0]["name"] == "Etenwolf V3 압축기"
+    assert opts3[0]["price"] == 2280
+
+
+def test_comma_and_mixed_slash_multi_options_and_noise_guard():
+    """10. 쉼표(,) 및 혼합(,/슬래시) 다중 상품 파싱과 결제조건(삼카시) 가짜 옵션 차단 검증"""
+    from backend.services.aggregator_service import _clean_option_display_name, _is_valid_option_name
+
+    title_mixed = "[샤오신] 프로 12.7 $164.25, 2025 $88/버니플라이 캐리어 $48.9"
+    opts_m = extract_structured_multi_options(raw_title=title_mixed, content_html="", default_currency="USD")
+    assert len(opts_m) == 3
+    assert opts_m[0]["name"] == "샤오신 패드 프로 12.7"
+    assert opts_m[0]["price"] == 16425
+    assert opts_m[1]["name"] == "샤오신 패드 2025"
+    assert opts_m[1]["price"] == 8800
+    assert opts_m[2]["name"] == "버니플라이 캐리어"
+    assert opts_m[2]["price"] == 4890
+
+    title_comma = "[맥도날드앱] 상스치 3900원, 오레오 맥플러리 1800원 외"
+    opts_c = extract_structured_multi_options(raw_title=title_comma, content_html="", default_currency="KRW")
+    assert len(opts_c) == 2
+    assert opts_c[0]["name"] == "상스치"
+    assert opts_c[0]["price"] == 3900
+    assert opts_c[1]["name"] == "오레오 맥플러리"
+    assert opts_c[1]["price"] == 1800
+
+    assert _is_valid_option_name("삼카시") is False
+    assert _is_valid_option_name("신카시") is False
+    assert _is_valid_option_name("카할시") is False
+    assert _clean_option_display_name("2. 한입 닭다리살 30팩 (옵션") == "한입 닭다리살 30팩"
+    assert _clean_option_display_name("광군제특가] 로지텍 지슈라2\xa0") == "로지텍 지슈라2"
+
+
+

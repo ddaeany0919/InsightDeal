@@ -970,6 +970,8 @@ def clean_deal_title(raw_title: str) -> str:
     t = str(raw_title).strip()
     if len(t) > 500:
         t = t[:500]
+    # 여는 괄호 없이 닫는 대괄호/소괄호로 시작하는 오타 머리말 (예: '광군제특가] ', '잔여공구코드] ', '알리 잔여코드) ')을 표준 '[태그] '로 정규화
+    t = re.sub(r'^\s*([^\[\]\(\)\s][^\[\]\(\)]{0,11})[\]\)]\s*', r'[\1] ', t)
     t = re.sub(r'[\s/]*[￦₩\\💰].*$', '', t)
     t = re.sub(r'[\s/]*(?:🚚|퀘이사존/지름|지름&할인정보).*$', '', t)
     t = re.sub(r'\s*\([^)]*울트라\s*맥스[^)]*\)', '', t)
@@ -1968,12 +1970,12 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
                 is_closed = False
                 break
     
-    # 최저가 계산
-    min_price = min([s["price"] for s in sources if s.get("price", 0) > 0], default=0)
-    original_price = extract_price(deal.price) if isinstance(deal.price, str) else (deal.price or 0)
-    final_price_int = min_price if min_price > 0 and min_price < original_price else original_price
-    
+    # 최저가 계산 (이종 통화 혼선 방지를 위해 대표 통화와 동일한 옵션 가격만 비교)
     curr = getattr(best_deal, 'currency', 'KRW') or 'KRW'
+    same_curr_prices = [s["price"] for s in sources if s.get("price", 0) > 0 and (s.get("currency") or curr) == curr]
+    min_price = min(same_curr_prices, default=0)
+    original_price = extract_price(deal.price) if isinstance(deal.price, str) else (deal.price or 0)
+    final_price_int = min_price if min_price > 0 and (original_price == 0 or min_price < original_price) else original_price
                      
     detail_ecom_url = get_clean_ecommerce_url(
         best_deal.ecommerce_link or best_deal.post_link, 
@@ -1991,7 +1993,7 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
 
     return {
         "id": deal.id,
-        "title": deal.title, # 본래 사용자가 클릭한 딜의 제목 유지
+        "title": re.sub(r'^\s*([^\[\]\(\)\s][^\[\]\(\)]{0,11})[\]\)]\s*', r'[\1] ', deal.title or ''), # 본래 사용자가 클릭한 딜의 제목 유지 (앞머리 닫는 괄호 오타만 보정)
         "price": final_price_int,
         "shipping_fee": getattr(best_deal, "shipping_fee", None),
         "post_url": best_deal.post_link,
@@ -2001,6 +2003,7 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
         "site_names": site_names,
         "currency": curr,
         "sources": sources,
+        "options_data": getattr(best_deal, "options_data", None) or getattr(deal, "options_data", None),
         "category": getattr(best_deal, "category", "기타") or "기타",
         "author": getattr(best_deal, "author", "익명") or "익명",
         "views": getattr(best_deal, "view_count", 0) or 0,

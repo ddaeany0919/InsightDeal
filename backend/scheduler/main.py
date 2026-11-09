@@ -144,9 +144,18 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                             now = datetime.now(indexed_time.tzinfo)
                         
                         time_diff = now - indexed_time
+                        existing_html_str = (existing_deal.content_html or "").strip()
+                        is_truncated_ppomppu = (
+                            "ppomppu.co.kr" in normalized_url
+                            and (
+                                len(existing_html_str) < 160
+                                or existing_html_str.endswith("...</p>")
+                                or existing_html_str.endswith("...")
+                            )
+                        )
                         
-                        # 가드 1: 이미 작성된 지 12시간이 경과한 노후 핫딜은 핫딜마크 달성 기한이 끝났으므로 갱신 연산 스킵!
-                        if time_diff > timedelta(hours=12):
+                        # 가드 1: 이미 작성된 지 12시간이 경과한 노후 핫딜은 핫딜마크 달성 기한이 끝났으므로 갱신 연산 스킵! (단, 110자 축약 뽐뿌/알리뽐뿌 딜은 본문 복구 허용)
+                        if time_diff > timedelta(hours=12) and not is_truncated_ppomppu:
                             local_db.close()
                             queue.task_done()
                             continue
@@ -160,14 +169,14 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                                 now = datetime.now(rx_time.tzinfo)
                             rx_diff = now - rx_time
                             
-                            if time_diff > timedelta(hours=3) and rx_diff < timedelta(minutes=20):
+                            if time_diff > timedelta(hours=3) and rx_diff < timedelta(minutes=20) and not is_truncated_ppomppu:
                                 local_db.close()
                                 queue.task_done()
                                 continue
                         
                         # [Lazy-Loading & Zero-Cost Delta Skip 최적화 핵심]:
                         # 상세 정보(본문 및 대표 썸네일 이미지)가 이미 모두 있고, 추천수/댓글수/품절여부/인기여부가 변하지 않았다면 무거운 정규화·병합 연산을 0ms로 즉시 스킵!
-                        if existing_deal.content_html and existing_deal.image_url:
+                        if existing_deal.content_html and existing_deal.image_url and not is_truncated_ppomppu:
                             new_closed = bool(item.get("is_closed", False))
                             new_super = bool(item.get("is_super_hotdeal", False))
                             new_likes = int(item.get("like_count") or 0)
