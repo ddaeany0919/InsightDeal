@@ -332,11 +332,9 @@ class PpomppuScraper(AsyncBaseScraper):
         headers["Referer"] = self.list_url  # 봇 차단 및 로그인 리다이렉트 방지를 위한 Referer 설정
         html = await self.fetch_html(url, headers=headers)
         if not html:
-            if full_title:
-                fb_img = await self.fetch_og_image("", full_title)
-                if fb_img:
-                    return {"image_url": fb_img}
             return {}
+        if any(k in html for k in ("해당 게시물이 존재하지 않거나 삭제", "존재하지 않는 게시물", "삭제된 게시물입니다")):
+            return {"is_closed": True}
         soup = BeautifulSoup(html, 'html.parser')
 
         detail_title = ""

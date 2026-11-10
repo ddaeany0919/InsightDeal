@@ -2525,6 +2525,16 @@ class AggregatorService:
              
              return existing_deals[0]
 
+        init_ch_str = (content_html or "").strip()
+        if "ppomppu.co.kr" in url and (
+            len(init_ch_str) == 110
+            or init_ch_str.endswith("...</p>")
+            or init_ch_str.endswith("...")
+            or "뽐뿌 - 사람이 좋아 함께하는 곳" in init_ch_str
+        ):
+            logger.info(f"[RSS Truncated Stub Skipped] 뽐뿌 상세 본문 미확보(RSS 요약문) 신규 삽입 보류: {raw_title} ({url})")
+            return None
+
         ai_summary = cached_ai_summary
         
         # 동적 꿀딜 점수 초기 계산
