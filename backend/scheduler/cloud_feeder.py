@@ -680,6 +680,13 @@ async def scrape_and_push_once():
                                                     it["has_options"] = True
                                             except Exception:
                                                 pass
+                                        if not it.get("image_url"):
+                                            try:
+                                                img_fb = await sc.fetch_og_image(it.get("ecommerce_link", ""), it.get("title", ""))
+                                                if img_fb:
+                                                    it["image_url"] = img_fb
+                                            except Exception:
+                                                pass
                                     except Exception as de:
                                         logger.warning(f"[{display_name}] detail warning: {de}")
                                 return it

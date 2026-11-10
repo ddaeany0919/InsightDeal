@@ -1960,6 +1960,16 @@ class AggregatorService:
                     if ou and not _is_search_fallback_img(ou):
                         image_url = ou
                         break
+        if not image_url:
+            try:
+                from backend.scrapers.ppomppu_scraper import PpomppuScraper
+                async with PpomppuScraper(1) as _img_sc:
+                    fb_img = await _img_sc.fetch_og_image(ecommerce_url or "", raw_title)
+                    if fb_img:
+                        image_url = fb_img
+                        scraped_data["image_url"] = fb_img
+            except Exception as _img_err:
+                logger.debug(f"Aggregator image fallback error: {_img_err}")
 
         # 2. 중복 및 롤링 윈도우 클러스터링 체크 (Upsert 로직의 핵심)
         existing_deals = self.db.query(Deal).filter(Deal.post_link == url).all()
