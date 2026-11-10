@@ -343,20 +343,24 @@ class AsyncBaseScraper(ABC):
                 g_id = match.group(1)
                 return f"https://gdimg.gmarket.co.kr/{g_id}/still/600"
 
-        # 2. 외부 쇼핑몰 직접 파싱 시도 (타임아웃 8.0초 확장 + 11번가 모바일 폴백)
+        # 2. 외부 쇼핑몰 직접 파싱 시도 (클라우드 미국 IP에서 타임아웃되는 국내 쇼핑몰은 즉시 0.2s 네이버 쇼핑 이미지 검색으로 직행)
         is_community_internal = any(
             x in (url or '') for x in ['ppomppu.co.kr', 'fmkorea.com', 'fmkorea.org', 'quasarzone.com', 'clien.net', 'ruliweb.com', 'bbasak.com']
         )
-        if url and url.startswith('http') and not is_community_internal and self.client:
+        is_kr_mall_blocked_in_cloud = IS_CLOUD_ENV and any(
+            x in (url or '').lower() for x in ['11st.co.kr', 'lotteon.com', 'auction.co.kr', 'hmall.com', 'ssg.com']
+        )
+        if url and url.startswith('http') and not is_community_internal and not is_kr_mall_blocked_in_cloud and self.client:
             candidate_urls = [url]
             st11_m = re.search(r'11st\.co\.kr/products/([0-9]+)', url)
             if st11_m:
                 candidate_urls.append(f"https://m.11st.co.kr/products/m/{st11_m.group(1)}")
 
+            og_timeout = 3.0 if IS_CLOUD_ENV else 8.0
             for target_url in candidate_urls:
                 try:
                     logger.info(f"🔍 [og:image] 외부 쇼핑몰 og:image 탐색 시도: {target_url}")
-                    response = await self.client.get(target_url, timeout=8.0, allow_redirects=True, headers={
+                    response = await self.client.get(target_url, timeout=og_timeout, allow_redirects=True, headers={
                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                     })
