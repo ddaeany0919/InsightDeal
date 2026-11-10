@@ -92,27 +92,12 @@ def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str 
         "lf몰": "LF몰", "lf스퀘어": "LF몰", "하프클럽": "하프클럽", "보리보리": "보리보리"
     }
 
-    if current_shop and current_shop.strip() and current_shop.strip() not in ("정보 없음", "-", "기타", "None"):
-        cs_clean = re.sub(r"\s+", "", current_shop.strip()).lower()
-        if cs_clean in mall_alias_map:
-            return mall_alias_map[cs_clean]
-        for k, v in mall_alias_map.items():
-            if k in cs_clean:
-                return v
-        if cs_clean not in non_mall_brackets:
-            return current_shop.strip()
+    non_mall_substrings = ('특가', '재입고', '광군제', '모음', '공구', '선착순', '최저가', '끌올', '할인', '코드', '쿠폰', '임박', '마감', '종료', '품절', '핫딜', '직구', '무료', '무배', '배터리', '충전', '이어폰', '청소기', '모니터', '비데', '블박', '가습기', '온풍기', '사전예약', '라이브', '라방', '이벤트', '적립', '앱테크', '골라담기', '가격인하')
 
-    if raw_title:
-        m_br = re.match(r"^\s*\[([^\]]{1,16})\]", raw_title)
-        if m_br:
-            cand = m_br.group(1).strip()
-            cand_clean = re.sub(r"\s+", "", cand).lower()
-            if cand_clean not in non_mall_brackets:
-                for k, v in mall_alias_map.items():
-                    if k == cand_clean or k in cand_clean:
-                        return v
-                if len(cand) <= 10 and not any(ch.isdigit() for ch in cand if cand != "11번가" and cand.upper() != "29CM"):
-                    return cand
+    def _is_non_mall_tag(s_clean: str) -> bool:
+        if not s_clean or s_clean in non_mall_brackets:
+            return True
+        return any(sub in s_clean for sub in non_mall_substrings)
 
     u = (ecommerce_link or "").lower()
     domain_map = [
@@ -146,9 +131,42 @@ def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str 
         ("costco.co.kr", "코스트코"),
         ("homeplus.co.kr", "홈플러스"),
     ]
+    if current_shop and current_shop.strip() and current_shop.strip() not in ('정보 없음', '-', '기타', 'None'):
+        cs_clean = re.sub(r"\s+", "", current_shop.strip()).lower()
+        if cs_clean in mall_alias_map:
+            return mall_alias_map[cs_clean]
+        for k, v in mall_alias_map.items():
+            if k in cs_clean:
+                return v
+
+    if raw_title:
+        m_br = re.match(r"^\s*\[([^\]]{1,16})\]", raw_title)
+        if m_br:
+            cand = m_br.group(1).strip()
+            cand_clean = re.sub(r"\s+", "", cand).lower()
+            if not _is_non_mall_tag(cand_clean):
+                for k, v in mall_alias_map.items():
+                    if k == cand_clean or k in cand_clean:
+                        return v
+
     for dom, sname in domain_map:
         if dom in u:
             return sname
+
+    if current_shop and current_shop.strip() and current_shop.strip() not in ('정보 없음', '-', '기타', 'None'):
+        cs_clean = re.sub(r"\s+", "", current_shop.strip()).lower()
+        if not _is_non_mall_tag(cs_clean):
+            return current_shop.strip()
+
+    if raw_title:
+        m_br = re.match(r"^\s*\[([^\]]{1,16})\]", raw_title)
+        if m_br:
+            cand = m_br.group(1).strip()
+            cand_clean = re.sub(r"\s+", "", cand).lower()
+            if not _is_non_mall_tag(cand_clean):
+                if len(cand) <= 10 and not any(ch.isdigit() for ch in cand if cand != '11번가' and cand.upper() != "29CM"):
+                    return cand
+
     return ""
 
 
@@ -1985,7 +2003,7 @@ class AggregatorService:
                      if is_old_invalid_or_search:
                          existing_deal.ecommerce_link = new_ecom_cand
                  
-                 if shop_name and (is_recycled_post or not existing_deal.shop_name):
+                 if shop_name and (is_recycled_post or not existing_deal.shop_name or existing_deal.shop_name != shop_name):
                      existing_deal.shop_name = shop_name
 
                  old_ch_str = (existing_deal.content_html or "").strip()
