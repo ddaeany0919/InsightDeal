@@ -1913,7 +1913,8 @@ class AggregatorService:
                  # 제목 갱신: 단일 상품이거나 동일 URL일 때
                  # 클러스터링(롤링 윈도우)된 경우, 새 핫딜 가격이 더 싸거나 동일 URL일 때만 원본 제목 갱신
                  old_price = int(existing_deal.price) if str(existing_deal.price).isdigit() else float('inf')
-                 if is_same_post_url and existing_deal.title != raw_title:
+                 is_new_title_truncated = raw_title.endswith("...") and not (existing_deal.title or "").endswith("...")
+                 if is_same_post_url and existing_deal.title != raw_title and not is_new_title_truncated:
                      existing_deal.title = raw_title
                      if normalized.name:
                          existing_deal.base_product_name = normalized.name
@@ -1987,7 +1988,15 @@ class AggregatorService:
                  if shop_name and (is_recycled_post or not existing_deal.shop_name):
                      existing_deal.shop_name = shop_name
 
-                 if content_html and (not existing_deal.content_html or len(content_html) > len(existing_deal.content_html) + 40):
+                 old_ch_str = (existing_deal.content_html or "").strip()
+                 new_ch_str = (content_html or "").strip()
+                 is_old_rss_trunc = (len(old_ch_str) == 110 or old_ch_str.endswith("...</p>") or old_ch_str.endswith("..."))
+                 is_new_rss_trunc = (len(new_ch_str) == 110 or new_ch_str.endswith("...</p>") or new_ch_str.endswith("..."))
+                 if new_ch_str and (
+                     not old_ch_str
+                     or (is_old_rss_trunc and not is_new_rss_trunc)
+                     or (not is_new_rss_trunc and len(new_ch_str) > len(old_ch_str) + 40)
+                 ):
                      existing_deal.content_html = content_html
                   
                  # [가격분석] 브랜드 및 모델명 메타 정보 보완 (기존에 비어있던 경우 업데이트)
