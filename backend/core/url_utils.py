@@ -1,10 +1,14 @@
 import html
 import os
 import re
+import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse, unquote, quote
 
 _SHORTLINK_UNWRAP_CACHE: dict[str, str] = {}
 _AFFILIATE_DEEPLINK_CACHE: dict[str, str] = {}
+_LINKPRICE_APPROVAL_CACHE: dict[tuple[str, str], tuple[bool, float]] = {}
+
+DEFAULT_LINKPRICE_AFFILIATE_ID = "A100709825"
 
 LINKPRICE_MERCHANTS = {
     "gmarket.co.kr": ("gmarket", "G마켓"),
@@ -12,17 +16,53 @@ LINKPRICE_MERCHANTS = {
     "11st.co.kr": ("11st", "11번가"),
     "lotteon.com": ("lotteon", "롯데온"),
     "e-himart.co.kr": ("himart", "하이마트"),
-    "ssg.com": ("ssg", "SSG"),
     "emart.ssg.com": ("emart", "이마트몰"),
+    "ssg.com": ("ssg", "SSG"),
     "cjonstyle.com": ("cjonstyle", "CJ온스타일"),
-    "gsshop.com": ("gsshop", "GS샵"),
+    "gsshop.com": ("gseshop", "GS샵"),
     "hmall.com": ("hmall", "현대Hmall"),
     "yes24.com": ("yes24", "예스24"),
-    "kyobobook.co.kr": ("kyobo", "교보문고"),
-    "ohou.se": ("ohou", "오늘의집"),
+    "kyobobook.co.kr": ("kbbook", "교보문고"),
+    "ohou.se": ("ohouse", "오늘의집"),
     "musinsa.com": ("musinsa", "무신사"),
-    "29cm.co.kr": ("29cm", "29CM"),
+    "halfclub.com": ("halfclub", "하프클럽"),
+    "wconcept.co.kr": ("wconcept", "W컨셉"),
+    "kurly.com": ("kurly", "컬리"),
+    "iherb.com": ("iherb", "아이허브"),
+    "aliexpress.com": ("aliexpress", "알리익스프레스"),
 }
+
+
+def is_linkprice_merchant_approved(m_id: str, lp_aff_id: str, ttl_sec: int = 300) -> bool:
+    """
+    🛡️ [링크프라이스 머천트 승인 여부 자동 검증기]
+    아직 '제휴신청([REQ])'을 누르지 않았거나 승인 대기 중인 쇼핑몰 링크를 그대로 내보내면
+    유저가 '/view/error/error.php?msg=승인되지 않은 링크입니다!! [REQ]' 에러 페이지에 갇히게 됩니다.
+    머천트별 승인 상태를 5분(300초) 단위로 캐싱하여, 승인 완료된 쇼핑몰만 안전하게 딥링크로 변환하고
+    미승인 쇼핑몰은 원본 상품 URL로 우회(Fallback)시킵니다.
+    """
+    if not m_id or not lp_aff_id:
+        return False
+    now = time.time()
+    cache_key = (m_id, lp_aff_id)
+    cached = _LINKPRICE_APPROVAL_CACHE.get(cache_key)
+    if cached and (now - cached[1]) < ttl_sec:
+        return cached[0]
+
+    try:
+        import requests
+        probe_url = (
+            f"https://click.linkprice.com/click.php?m={m_id}&a={lp_aff_id}"
+            f"&l=9999&l_cd1=3&l_cd2=0&tu=https%3A%2F%2Fwww.google.com"
+        )
+        resp = requests.get(probe_url, allow_redirects=False, timeout=1.8)
+        loc = (resp.headers.get("Location") or "").lower()
+        approved = bool(resp.status_code in (301, 302) and "error.php" not in loc)
+    except Exception:
+        approved = False
+
+    _LINKPRICE_APPROVAL_CACHE[cache_key] = (approved, now)
+    return approved
 
 
 def unwrap_third_party_affiliate_url(url: str, allow_network: bool = False) -> str:
@@ -283,15 +323,18 @@ def apply_affiliate_monetization(url: str) -> str:
                 qs["sk"] = [ali_aff_id]
                 return urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
 
-        # 3. 링크프라이스 CPS 제휴몰 (G마켓, 옥션, 11번가, 롯데온, 하이마트, SSG, 오늘의집, 무신사 등 15대 쇼핑몰)
+        # 3. 링크프라이스 CPS 제휴몰 (G마켓, 옥션, 11번가, 롯데온, 하이마트, SSG, 오늘의집, 무신사, 알리익스프레스 등 18대 쇼핑몰)
         lp_aff_id = (
             os.getenv("AFFILIATE_LINKPRICE_ID", "").strip()
             or os.getenv("LINKPRICE_AFFILIATE_ID", "").strip()
+            or DEFAULT_LINKPRICE_AFFILIATE_ID
         )
         if lp_aff_id and "click.linkprice.com" not in host:
             for domain_key, (m_id, _mall_ko) in LINKPRICE_MERCHANTS.items():
                 if domain_key in host:
-                    return f"https://click.linkprice.com/click.php?m={m_id}&a={lp_aff_id}&l=9999&l_cd1=3&l_cd2=0&tu={quote(clean_url, safe='')}"
+                    if is_linkprice_merchant_approved(m_id, lp_aff_id):
+                        return f"https://click.linkprice.com/click.php?m={m_id}&a={lp_aff_id}&l=9999&l_cd1=3&l_cd2=0&tu={quote(clean_url, safe='')}"
+                    break
 
         return clean_url
     except Exception:
