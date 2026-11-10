@@ -183,6 +183,12 @@ class RuliwebScraper(AsyncBaseScraper):
         subj_el = soup.select_one('span.subject_inner_text') or soup.select_one('.subject_text')
         if subj_el:
             detail_title = re.sub(r'\s*\(\d+\)\s*$', '', subj_el.get_text(strip=True)).strip()
+        if not detail_title or detail_title.endswith('...'):
+            og_t = soup.select_one('meta[property="og:title"]')
+            if og_t and og_t.get('content'):
+                cand_t = re.sub(r'\s*[|\-]\s*\ub8e8\ub9ac\uc6f9.*$', '', og_t.get('content', '').strip()).strip()
+                if cand_t and not cand_t.endswith('...'):
+                    detail_title = cand_t
         if detail_title:
             full_title = detail_title
 

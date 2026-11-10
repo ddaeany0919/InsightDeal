@@ -220,6 +220,25 @@ class QuasarzoneScraper(AsyncBaseScraper):
         if any(k in html for k in ("존재하지 않는 게시물", "삭제된 게시물", "블라인드 처리된", "해당 게시물이 존재하지 않습니다")):
             return {"is_closed": True}
         soup = BeautifulSoup(html, 'html.parser')
+
+        detail_title = ""
+        og_t = soup.select_one('meta[property="og:title"]')
+        if og_t and og_t.get('content'):
+            cand_t = re.sub(r'\s*(?:-\s*)?퀘이사존.*$', '', og_t.get('content', '').strip()).strip()
+            if cand_t and not cand_t.endswith('...'):
+                detail_title = cand_t
+        if not detail_title:
+            h1_t = soup.select_one('h1.title')
+            if h1_t:
+                from copy import copy
+                h1_clone = copy(h1_t)
+                for sp in h1_clone.select('span'):
+                    sp.decompose()
+                cand_t = h1_clone.get_text(strip=True)
+                if cand_t:
+                    detail_title = cand_t
+        if detail_title and (not full_title or full_title.endswith('...') or len(detail_title) > len(full_title)):
+            full_title = detail_title
         
         ecommerce_link = ""
         import re
@@ -323,7 +342,7 @@ class QuasarzoneScraper(AsyncBaseScraper):
                 logger.info(f"✨ [퀘이사존 og:image] 외부 아웃링크/상품명에서 고화질 썸네일 확보: {og_img}")
                 image_url = og_img
 
-        return {
+        result = {
             "price": price,
             "currency": currency,
             "ecommerce_link": ecommerce_link, 
@@ -331,6 +350,9 @@ class QuasarzoneScraper(AsyncBaseScraper):
             "content_html": content_html,
             "image_url": image_url
         }
+        if detail_title:
+            result["title"] = detail_title
+        return result
 
     async def _fetch_fallback_from_bridge(self) -> list[dict]:
         """

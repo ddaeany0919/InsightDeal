@@ -69,39 +69,41 @@ _PROSE_NOISE_SUBSTRINGS = (
 )
 
 
-def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str = "") -> str:
+def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str = "", post_link: str = "") -> str:
     """제목 앞머리의 [쇼핑몰] 대괄호 또는 구매 링크 도메인에서 쇼핑몰명을 정규화하여 추출합니다."""
     non_mall_brackets = {
         "끌올", "초특가", "특가", "알리특가", "알뜰특가", "코인딜", "골드박스", "핫딜", "직구", "해외직구", "역대급", "품절", "종료", "마감", "모음", "모음전",
         "광군제", "빅스마일", "빅스마일데이", "무료", "무배", "무료배송", "할인", "타임딜", "원두모음", "다이슨부품", "기타",
-        "공동구매", "선착순", "쿠폰", "이벤트", "체험단", "앱테크", "적립", "국내핫딜", "해외핫딜"
+        "공동구매", "선착순", "쿠폰", "이벤트", "체험단", "앱테크", "적립", "국내핫딜", "해외핫딜", "브랜드데이", "런칭특가"
     }
     mall_alias_map = {
         "지마켓": "G마켓", "g마켓": "G마켓", "gmarket": "G마켓",
         "옥션": "옥션", "11번가": "11번가", "쿠팡": "쿠팡", "롯데온": "롯데온", "롯데백화점": "롯데온",
-        "네이버": "네이버", "스마트스토어": "네이버", "네쇼라": "네이버", "넾다세일": "네이버",
+        "네이버": "네이버", "스마트스토어": "네이버", "네쇼라": "네이버", "넾다세일": "네이버", "네이버페이": "네이버",
         "오늘의집": "오늘의집", "알리": "알리익스프레스", "알리익스프레스": "알리익스프레스",
         "티몬": "티몬", "위메프": "위메프", "인터파크": "인터파크", "ssg": "SSG", "쓱": "SSG", "신세계몰": "신세계몰", "이마트몰": "이마트몰",
-        "무신사": "무신사", "29cm": "29CM", "토스": "토스", "토스쇼핑": "토스", "톡딜": "톡딜", "카카오": "카카오", "카카오톡딜": "톡딜", "카카오선물하기": "카카오",
+        "무신사": "무신사", "29cm": "29CM", "토스": "토스", "토스쇼핑": "토스", "톡딜": "톡딜", "카카오": "카카오", "카카오톡딜": "톡딜", "카카오선물하기": "카카오", "카카오톡선물하기": "카카오",
         "우체국쇼핑": "우체국쇼핑", "우체국": "우체국쇼핑", "하이마트": "하이마트", "롯데하이마트": "하이마트",
         "cj온스타일": "CJ온스타일", "cjonstyle": "CJ온스타일", "gs샵": "GS샵", "gsshop": "GS샵", "gs25": "GS샵", "gs25앱": "GS샵",
         "현대hmall": "현대Hmall", "hmall": "현대Hmall", "컬리": "컬리", "마켓컬리": "컬리",
         "아마존": "아마존", "큐텐": "큐텐", "qoo10": "큐텐", "테무": "테무",
         "스팀": "스팀", "steam": "스팀", "에픽게임즈": "에픽게임즈", "에픽": "에픽게임즈",
         "올리브영": "올리브영", "다이소": "다이소몰", "다이소몰": "다이소몰", "코스트코": "코스트코", "홈플러스": "홈플러스",
-        "lf몰": "LF몰", "lf스퀘어": "LF몰", "하프클럽": "하프클럽", "보리보리": "보리보리"
+        "lf몰": "LF몰", "lf스퀘어": "LF몰", "하프클럽": "하프클럽", "보리보리": "보리보리",
+        "삼성닷컴": "삼성닷컴", "lg전자": "LG전자", "컴퓨존": "컴퓨존", "다나와": "다나와", "지오다노": "지오다노", "아디다스": "아디다스", "나이키": "나이키", "소프라노몰": "소프라노몰"
     }
 
-    non_mall_substrings = ('특가', '재입고', '광군제', '모음', '공구', '선착순', '최저가', '끌올', '할인', '코드', '쿠폰', '임박', '마감', '종료', '품절', '핫딜', '직구', '무료', '무배', '배터리', '충전', '이어폰', '청소기', '모니터', '비데', '블박', '가습기', '온풍기', '사전예약', '라이브', '라방', '이벤트', '적립', '앱테크', '골라담기', '가격인하')
+    non_mall_substrings = ('특가', '재입고', '광군제', '모음', '공구', '선착순', '최저가', '끌올', '할인', '코드', '쿠폰', '임박', '마감', '종료', '품절', '핫딜', '직구', '무료', '무배', '배터리', '충전', '이어폰', '청소기', '모니터', '비데', '블박', '가습기', '온풍기', '사전예약', '라이브', '라방', '이벤트', '적립', '앱테크', '골라담기', '가격인하', '브랜드데이', '페스타', '끝딜')
 
     def _is_non_mall_tag(s_clean: str) -> bool:
         if not s_clean or s_clean in non_mall_brackets:
             return True
         return any(sub in s_clean for sub in non_mall_substrings)
 
-    u = (ecommerce_link or "").lower()
+    u = ((ecommerce_link or "") + " " + (post_link or "")).lower()
     domain_map = [
         ("aliexpress.", "알리익스프레스"),
+        ("id=ppomppu8", "알리익스프레스"),
         ("gmarket.co.kr", "G마켓"),
         ("auction.co.kr", "옥션"),
         ("11st.co.kr", "11번가"),
@@ -110,12 +112,16 @@ def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str 
         ("smartstore.naver.com", "네이버"),
         ("brand.naver.com", "네이버"),
         ("shopping.naver.com", "네이버"),
+        ("naver.me", "네이버"),
+        ("naver.com", "네이버"),
         ("ssg.com", "SSG"),
         ("ohou.se", "오늘의집"),
         ("musinsa.com", "무신사"),
         ("29cm.co.kr", "29CM"),
         ("store.kakao.com", "톡딜"),
+        ("kakao.com", "카카오"),
         ("toss.im", "토스"),
+        ("toss.shopping", "토스"),
         ("epost.go.kr", "우체국쇼핑"),
         ("e-himart.co.kr", "하이마트"),
         ("cjonstyle.com", "CJ온스타일"),
@@ -124,12 +130,26 @@ def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str 
         ("kurly.com", "컬리"),
         ("qoo10.", "큐텐"),
         ("amazon.", "아마존"),
+        ("temu.com", "테무"),
         ("steampowered.com", "스팀"),
         ("epicgames.com", "에픽게임즈"),
         ("oliveyoung.co.kr", "올리브영"),
         ("daisomall.co.kr", "다이소몰"),
         ("costco.co.kr", "코스트코"),
         ("homeplus.co.kr", "홈플러스"),
+        ("samsung.com", "삼성닷컴"),
+        ("lge.co.kr", "LG전자"),
+        ("compuzone.co.kr", "컴퓨존"),
+        ("danawa.com", "다나와"),
+        ("giordano.co.kr", "지오다노"),
+        ("adidas.co.kr", "아디다스"),
+        ("nike.com", "나이키"),
+        ("lotteimall.com", "롯데홈쇼핑"),
+        ("nsmall.com", "NS홈쇼핑"),
+        ("skstoa.com", "SK스토아"),
+        ("tmon.co.kr", "티몬"),
+        ("wemakeprice.com", "위메프"),
+        ("interpark.com", "인터파크"),
     ]
     if current_shop and current_shop.strip() and current_shop.strip() not in ('정보 없음', '-', '기타', 'None'):
         cs_clean = re.sub(r"\s+", "", current_shop.strip()).lower()
@@ -140,9 +160,8 @@ def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str 
                 return v
 
     if raw_title:
-        m_br = re.match(r"^\s*\[([^\]]{1,16})\]", raw_title)
-        if m_br:
-            cand = m_br.group(1).strip()
+        for raw_br in re.findall(r"\[([^\]]{1,16})\]", raw_title[:50]):
+            cand = re.sub(r"\s*공식(?:몰|스토어)?$", "", raw_br.strip()).strip()
             cand_clean = re.sub(r"\s+", "", cand).lower()
             if not _is_non_mall_tag(cand_clean):
                 for k, v in mall_alias_map.items():
@@ -159,15 +178,14 @@ def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str 
             return current_shop.strip()
 
     if raw_title:
-        m_br = re.match(r"^\s*\[([^\]]{1,16})\]", raw_title)
-        if m_br:
-            cand = m_br.group(1).strip()
+        for raw_br in re.findall(r"\[([^\]]{1,16})\]", raw_title[:50]):
+            cand = re.sub(r"\s*공식(?:몰|스토어)?$", "", raw_br.strip()).strip()
             cand_clean = re.sub(r"\s+", "", cand).lower()
             if not _is_non_mall_tag(cand_clean):
                 if len(cand) <= 10 and not any(ch.isdigit() for ch in cand if cand != '11번가' and cand.upper() != "29CM"):
                     return cand
 
-    return ""
+    return "기타"
 
 
 def _clean_option_display_name(raw_name: str) -> str:
@@ -179,13 +197,13 @@ def _clean_option_display_name(raw_name: str) -> str:
     n = re.sub(r"^\d{1,2}(?:\.\d+)?%\s*[/\u00B7\-|]\s*", "", n).strip()
     n = re.sub(r"^(?:vs\.?)\s+", "", n, flags=re.IGNORECASE).strip()
     while True:
-        # 1) 여는 괄호 없이 닫는 대괄호/소괄호만 남은 머리말 (예: '광군제특가] ', '잔여공구코드] ', '알리 잔여코드) ') 제거
-        nxt = re.sub(r"^[^\[\]\(\)]{1,14}[\]\)]\s*", "", n).strip()
+        # 1) 여는 괄호 없이 닫는 대괄호/소괄호만 남은 머리말 (예: '광군제특가] ', 'Promo Code:BALPUM004] ', '알리 잔여코드) ') 제거
+        nxt = re.sub(r"^[^\[\]\(\)]{1,28}[\]\)]\s*", "", n).strip()
         if nxt != n and nxt:
             n = nxt
             continue
-        # 2) 수량/용량 스펙이 아닌 일반 머리말 대괄호/소괄호 (예: '[가격인하]', '[초특가]', '[알리]', '(끌올)') 제거
-        m_lead = re.match(r"^(?:\[([^\]]{1,16})\]|\(([^\)]{1,16})\))\s*(.+)$", n)
+        # 2) 수량/용량 스펙이 아닌 일반 머리말 대괄호/소괄호 (예: '[가격인하]', '[초특가]', '[Promo Code:...]', '(끌올)') 제거
+        m_lead = re.match(r"^(?:\[([^\]]{1,28})\]|\(([^\)]{1,28})\))\s*(.+)$", n)
         if m_lead:
             tag_txt = (m_lead.group(1) or m_lead.group(2) or "").strip()
             if not re.search(r"\d+\s*(?:개|입|팩|박스|세트|병|캔|봉|포|롤|매|kg|g|ml|l|w|인치|세대|년)", tag_txt, re.IGNORECASE):
@@ -201,6 +219,14 @@ def _clean_option_display_name(raw_name: str) -> str:
         n = n[:-1].strip()
     while n.endswith("]") and n.count("]") > n.count("["):
         n = n[:-1].strip()
+    if n.count("]") > n.count("["):
+        n = re.sub(r"^[^\[\]]*\]\s*", "", n).strip()
+        if n.count("]") > n.count("["):
+            n = n.replace("]", "").strip()
+    if n.count(")") > n.count("("):
+        n = re.sub(r"^[^\(\)]*\)\s*", "", n).strip()
+        if n.count(")") > n.count("("):
+            n = n.replace(")", "").strip()
     if n.count("(") > n.count(")"):
         n = re.sub(r"\s*\([^\)]*$", "", n).strip()
     if n.count("[") > n.count("]"):
@@ -216,7 +242,7 @@ def _sanitize_deal_title_brackets(raw_title: str) -> str:
     m_head = re.match(r"^([^\[\]\(\)]{1,22})[\)\]]\s+(.+)$", t)
     if m_head:
         t = f"[{m_head.group(1).strip()}] {m_head.group(2).strip()}"
-    # 2) 모록/피드 길이 제한으로 끝단의 괄호가 닫히지 않은 채 '...' 등으로 잘린 경우 스펙/가격 보존하며 괄호 닫기
+    # 2) 목록/피드 길이 제한으로 끝단의 괄호가 닫히지 않은 채 '...' 등으로 잘린 경우 스펙/가격 보존하며 괄호 닫기
     while t.endswith(")") and t.count(")") > t.count("("):
         t = t[:-1].strip()
     while t.endswith("]") and t.count("]") > t.count("["):
@@ -228,6 +254,9 @@ def _sanitize_deal_title_brackets(raw_title: str) -> str:
             t = re.sub(r"\.{2,}\s*$", "", t).rstrip(" ,/-") + ")"
     while t.count("[") > t.count("]"):
         t = re.sub(r"\.{2,}\s*$", "", t).rstrip(" ,/-") + "]"
+    # 3) 괄호 외부 끝단에 남아있는 말줄임표('...', '…') 정리
+    if re.search(r"(?:\.{2,}|…)\s*$", t):
+        t = re.sub(r"(?:\.{2,}|…)+\s*$", "", t).rstrip(" ,/-·")
     if t.count(")") > t.count("("):
         t = t.replace(")", "")
     if t.count("]") > t.count("["):
@@ -1339,13 +1368,14 @@ class AggregatorService:
 
     async def process_scraped_deal(self, community_id: int, scraped_data: dict) -> Deal:
         from backend.core.url_utils import normalize_url
-        raw_title = _sanitize_deal_title_brackets((scraped_data.get("title", "") or "").replace("\xa0", " ").replace("릿模셈", "넾다세일").replace("\ufffd", "").strip())
+        raw_input_title = (scraped_data.get("title", "") or "").replace("\xa0", " ").replace("릿模셈", "넾다세일").replace("\ufffd", "").strip()
+        raw_title = _sanitize_deal_title_brackets(raw_input_title)
         provided_price = scraped_data.get("price", 0)
         url = normalize_url(scraped_data.get("url", "") or "")
         scraped_data["url"] = url
         if scraped_data.get("ecommerce_link"):
             scraped_data["ecommerce_link"] = normalize_url(_decode_and_clean_shop_url(scraped_data["ecommerce_link"]))
-        shop_name = infer_shop_name(raw_title, scraped_data.get("ecommerce_link", "") or url, scraped_data.get("shop_name", ""))
+        shop_name = infer_shop_name(raw_title, scraped_data.get("ecommerce_link", ""), scraped_data.get("shop_name", ""), url)
         raw_img = (scraped_data.get("image_url", "") or "").strip()
         if raw_img and any(b in raw_img.lower() for b in ("noimage", "no_image", "thumb_no_image", "dot03.gif", "logo_f.svg")):
             raw_img = None
@@ -1816,10 +1846,17 @@ class AggregatorService:
                              f"재활용글: '{raw_title}'({price}원) (유사도: {token_sim:.2f}, 가격비율: {price/old_p if old_p else 0:.2f})"
                          )
 
+                 old_ch_str = (existing_deal.content_html or "").strip()
+                 new_ch_str = (content_html or "").strip()
+                 is_old_rss_trunc = (len(old_ch_str) == 110 or old_ch_str.endswith("...</p>") or old_ch_str.endswith("..."))
+                 is_new_rss_trunc = (len(new_ch_str) == 110 or new_ch_str.endswith("...</p>") or new_ch_str.endswith("..."))
+                 is_new_title_truncated = bool(re.search(r"(?:\.{2,}|…)\s*$", raw_input_title)) and len(existing_deal.title or "") >= len(raw_title)
+
                  if is_recycled_post:
                      import json
                      # 뽐뿌 끌올/재활용 게시글: 기존 방어 가드를 모두 우회하여 100% 최신 상태로 Full Force Sync
-                     existing_deal.title = raw_title
+                     if not is_new_title_truncated:
+                         existing_deal.title = raw_title
                      if normalized.name:
                          existing_deal.base_product_name = normalized.name
                      else:
@@ -1838,8 +1875,8 @@ class AggregatorService:
                      if new_img:
                          existing_deal.image_url = new_img
 
-                     # 본문 강제 갱신 (길이 가드 무시)
-                     if content_html:
+                     # 본문 강제 갱신 (단, RSS 110자 요약문이 이미 존재하는 정식 본문을 덮어쓰는 것은 차단)
+                     if content_html and (not is_new_rss_trunc or not old_ch_str or is_old_rss_trunc):
                          existing_deal.content_html = content_html
 
                      if shop_name:
@@ -1931,16 +1968,15 @@ class AggregatorService:
                  # 제목 갱신: 단일 상품이거나 동일 URL일 때
                  # 클러스터링(롤링 윈도우)된 경우, 새 핫딜 가격이 더 싸거나 동일 URL일 때만 원본 제목 갱신
                  old_price = int(existing_deal.price) if str(existing_deal.price).isdigit() else float('inf')
-                 is_new_title_truncated = raw_title.endswith("...") and not (existing_deal.title or "").endswith("...")
                  if is_same_post_url and existing_deal.title != raw_title and not is_new_title_truncated:
                      existing_deal.title = raw_title
                      if normalized.name:
                          existing_deal.base_product_name = normalized.name
-                 elif len(existing_deals) == 1 and existing_deal.title != raw_title and price > 0 and price < old_price:
+                 elif not is_same_post_url and len(existing_deals) == 1 and existing_deal.title != raw_title and price > 0 and price < old_price and not is_new_title_truncated:
                      existing_deal.title = raw_title # 더 싼 새로운 게시글의 제목으로 교체
                      if normalized.name:
                          existing_deal.base_product_name = normalized.name
-                     if content_html:
+                     if content_html and not is_new_rss_trunc:
                          existing_deal.content_html = content_html
                          
                  # 가격 갱신 및 시세 이력 기록:

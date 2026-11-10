@@ -538,13 +538,17 @@ async def scrape_and_push_once():
                                 cached_title_str = str(cached_detail.get("title") or "").strip()
                                 is_truncated_ppomppu_on_local = (
                                     (not IS_CLOUD_ENV)
-                                    and ("ppomppu.co.kr" in item_url)
                                     and (
-                                        not cached_html_str
-                                        or len(cached_html_str) == 110
-                                        or cached_html_str.endswith("...</p>")
-                                        or cached_html_str.endswith("...")
-                                        or cached_title_str.endswith("...")
+                                        cached_title_str.endswith("...")
+                                        or (
+                                            "ppomppu.co.kr" in item_url
+                                            and (
+                                                not cached_html_str
+                                                or len(cached_html_str) == 110
+                                                or cached_html_str.endswith("...</p>")
+                                                or cached_html_str.endswith("...")
+                                            )
+                                        )
                                     )
                                 )
                                 if is_truncated_ppomppu_on_local:
@@ -633,7 +637,7 @@ async def scrape_and_push_once():
                                 re.search(r'(?:외\s*\d+|골라담기|모음|선택|공구|총정리|\d+\s*종|다양|특가\s*모음)', item_title)
                                 or (re.search(r'/[^/]+(?:원|만|\$|달러)', item_title) and re.search(r'(?:원|만|\$|달러).*/', item_title))
                             )
-                            if is_multi_title:
+                            if is_multi_title or item_title.strip().endswith("..."):
                                 need_detail = True
 
                             if need_detail:
@@ -698,30 +702,12 @@ async def scrape_and_push_once():
 
                             item["title"] = raw_t
                             item["view_count"] = max(int(item.get("view_count") or 0), 1500)
-
-                            _SEEN_DETAIL_CACHE[cache_key] = {
-                                "title": item["title"],
-                                "price": p_val,
-                                "currency": item.get("currency") or "KRW",
-                                "content_html": item.get("content_html") or "",
-                                "ecommerce_link": item.get("ecommerce_link") or "",
-                                "image_url": item.get("image_url") or "",
-                                "shipping_fee": item.get("shipping_fee") or "",
-                                "is_closed": bool(item.get("is_closed", False)),
-                                "is_super_hotdeal": bool(item.get("is_super_hotdeal", False)),
-                                "like_count": int(item.get("like_count") or 0),
-                                "view_count": int(item.get("view_count") or 1500),
-                                "comment_count": int(item.get("comment_count") or 0),
-                                "created_at": item.get("posted_at") or now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                                "options_data": item.get("options_data"),
-                                "has_options": bool(item.get("has_options", False)),
-                            }
                             final_enriched.append(item)
 
                         if skipped_count > 0 and not final_enriched:
                             logger.info(f"⏭️ [{display_name}] 신규/상태변경 게시글 없음 (기존 캐시 {skipped_count}건 전체 스킵)")
 
-                        # 5. 클라우드 서버 전송
+                        # 5. 클라우드 서버 전송 (전송 성공 시에만 로컬 캐시에 기록하여 서버 재시작/일시 장애 시 유실 원천 차단)
                         if final_enriched:
                             chunk_size = 5
                             total_processed = 0
@@ -740,6 +726,25 @@ async def scrape_and_push_once():
                                         )
                                         if res.status_code == 200:
                                             total_processed += res.json().get("processed", len(chunk))
+                                            for ch_item in chunk:
+                                                ch_key = (cache_pf, ch_item["url"])
+                                                _SEEN_DETAIL_CACHE[ch_key] = {
+                                                    "title": ch_item["title"],
+                                                    "price": int(ch_item.get("price") or 0),
+                                                    "currency": ch_item.get("currency") or "KRW",
+                                                    "content_html": ch_item.get("content_html") or "",
+                                                    "ecommerce_link": ch_item.get("ecommerce_link") or "",
+                                                    "image_url": ch_item.get("image_url") or "",
+                                                    "shipping_fee": ch_item.get("shipping_fee") or "",
+                                                    "is_closed": bool(ch_item.get("is_closed", False)),
+                                                    "is_super_hotdeal": bool(ch_item.get("is_super_hotdeal", False)),
+                                                    "like_count": int(ch_item.get("like_count") or 0),
+                                                    "view_count": int(ch_item.get("view_count") or 1500),
+                                                    "comment_count": int(ch_item.get("comment_count") or 0),
+                                                    "created_at": ch_item.get("posted_at") or now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                                    "options_data": ch_item.get("options_data"),
+                                                    "has_options": bool(ch_item.get("has_options", False)),
+                                                }
                                             break
                                     except Exception:
                                         pass
