@@ -308,24 +308,39 @@ class QuasarzoneScraper(AsyncBaseScraper):
         # 4. 본문 내용 (content_html) 파싱 및 고화질 이미지 추출
         content_html = ""
         image_url = ""
+        def _extract_qz_body_and_img(container_soup) -> tuple[str, str]:
+            first_img = ""
+            for img in container_soup.find_all('img'):
+                src = (img.get('data-original') or img.get('data-src') or img.get('src') or '').strip()
+                if not src or any(x in src.lower() for x in ('emoticon', 'sticker', 'icon', 'logo', 'blank', 'avatar')):
+                    continue
+                if src.startswith('//'):
+                    src = "https:" + src
+                elif not src.startswith('http'):
+                    src = urljoin("https://quasarzone.com", src)
+                if "thumb_" in src:
+                    src = src.replace("thumb_", "")
+                if not first_img:
+                    first_img = src
+                img.replace_with(f"\n[상품이미지: {src}]\n")
+            txt = container_soup.get_text(separator='\n', strip=True)
+            return txt, first_img
+
         org_content = soup.find(id='org_contents')
         if org_content:
             from bs4 import BeautifulSoup as BS
             # org_contents는 보통 textarea 등이며 텍스트로 HTML을 담고 있음
             inner_soup = BS(org_content.get_text(), 'html.parser')
-            content_html = inner_soup.get_text(separator='\n', strip=True)
-            img_tag = inner_soup.select_one('img')
-            if img_tag and img_tag.get('src'):
-                image_url = img_tag['src']
+            content_html, image_url = _extract_qz_body_and_img(inner_soup)
             
         if not content_html:
             content_area = soup.select_one('.view-content')
             if content_area:
-                content_html = content_area.get_text(separator='\n', strip=True)
-                if not image_url:
-                    img_tag = content_area.select_one('img')
-                    if img_tag and img_tag.get('src'):
-                        image_url = img_tag['src']
+                from copy import copy
+                ca_Text, ca_img = _extract_qz_body_and_img(copy(content_area))
+                content_html = ca_Text
+                if not image_url and ca_img:
+                    image_url = ca_img
 
         if image_url:
             if image_url.startswith('//'):

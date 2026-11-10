@@ -540,6 +540,7 @@ async def scrape_and_push_once():
                                     (not IS_CLOUD_ENV)
                                     and (
                                         cached_title_str.endswith("...")
+                                        or "<p>출처:" in cached_html_str
                                         or (
                                             "ppomppu.co.kr" in item_url
                                             and (

@@ -47,7 +47,7 @@ def _decode_and_clean_shop_url(u: str) -> str:
 
 
 _FAKE_OPTION_NAME_RE = re.compile(
-    r"^(?:[▪▫•◆◇★☆※#]+\s*)?(?:앱?기본가(?:격)?|최종가(?:격)?|최종혜택가|체감가(?:격)?|할인가(?:격)?|쿠폰가(?:격)?|정상가(?:격)?|판매가(?:격)?|행사가(?:격)?|공구가(?:격)?|혜택가(?:격)?|실구매가(?:격)?|앱사용가|판매자할인|스토어쿠폰|코인|코인할인|공구\s*코드|특가\s*코드|프로모션\s*코드|쿠폰\s*코드|할인\s*코드|스토어\s*코드|전용\s*코드|장바구니|결제시?|삼카시|신카시|국카시|현카시|롯카시|농카시|우카시|하카시|비카시|카할시|카드할인시?|청구할인시?|결제할인시?|네멤가?|와우가?|쿠폰적용가?|무료배송|배송비|택배비|합계|총\s*금액|스토어|채널|코드|링크|선착순|선착순\s*최대|멤버십|멤버십\s*할인|전체보기|바로가기|가게\s*리스트.*|오프라인\s*매장.*|0원|무료|kg|g|ml|l|개|입|미|팩|박스)$",
+    r"^(?:[▪▫•◆◇★☆※#]+\s*)?(?:앱?기본가(?:격)?|최종가(?:격)?|최종혜택가|체감가(?:격)?|할인가(?:격)?|쿠폰가(?:격)?|정상가(?:격)?|판매가(?:격)?|행사가(?:격)?|공구가(?:격)?|혜택가(?:격)?|실구매가(?:격)?|앱사용가|판매자할인|스토어쿠폰|코인|코인할인|공구\s*코드|특가\s*코드|프로모션\s*코드|쿠폰\s*코드|할인\s*코드|스토어\s*코드|전용\s*코드|장바구니|결제시?|삼카시|신카시|국카시|현카시|롯카시|농카시|우카시|하카시|비카시|카할시|카드할인시?|청구할인시?|결제할인시?|네멤가?|와우가?|쿠폰적용가?|무료배송|배송비|택배비|합계|총\s*금액|스토어|채널|코드|링크|선착순|선착순\s*최대|멤버십|멤버십\s*할인|전체보기|바로가기|가게\s*리스트.*|오프라인\s*매장.*|0원|무료|최소\s*결제\s*금액|최대\s*할인|더쎄페|CJ\s*ONE|페이코(?:\s*결제)?|토스페이(?:\s*결제)?|네이버페이(?:\s*결제)?|카카오페이(?:\s*결제)?|kg|g|ml|l|개|입|미|팩|박스)$",
     re.IGNORECASE,
 )
 
@@ -59,13 +59,14 @@ _PURE_QTY_OPTION_RE = re.compile(
 _PROSE_NOISE_SUBSTRINGS = (
     "기본가", "앱기본가", "최종가", "기본가격", "앱사용가", "판매자할인", "스토어쿠폰", "코인할인",
     "리뷰 작성", "텍스트 리뷰", "포토/동영상", "네이버페이 포인트", "받으시고", "받으세요",
-    "추천릴레이", "무료배송", "감사제", "기대는 안되긴", "미당 약", "종류들은", "제품이고",
+    "추천릴레이", "추천 릴레이", "릴레이 게시판", "무료배송", "감사제", "기대는 안되긴", "미당 약", "종류들은", "제품이고",
     "(링크", "링크:", "결제 시", "할인코드", "장바구니 담고", "가격이 좋은데", "돈없어서", "작년에 똑같은거",
     "즉시 할인", "즉시할인", "카드 할인", "카드할인", "청구할인", "청구 할인", "추가 할인", "추가할인",
     "다운로드 쿠폰", "중복쿠폰", "기존가 대비", "댓글 달아놓으시면", "업데이트 해 드릴", "업데이트 확인하시면",
     "유튜버 코드", "채널 할인코드", "스토어 할인코드", "와드하시면", "미리 장바구니에",
     "순수하게", "결제기준", "스마일캐시", "신세계 상품권", "꼭멤버십", "파는데 프리미엄은",
-    "맞는거 있으면", "탑승하시길", "금액대였던걸로", "나눠 볼 수", "쿠폰팩데이", "멤버십데이", "쿠폰 링크",
+    "맞는거 있으면", "탑승하시길", "금액대였던걸로", "나눠 볼 수", "쿠폰팩데이", "멤버십데이", "쿠폰 링크", "쿠폰 다운링크",
+    "최소결제금액", "최소 결제금액", "최대할인", "적용가능횟수", "적용가능 횟수", "프로 딜 최대",
 )
 
 
@@ -278,7 +279,9 @@ def _is_valid_option_name(name: str) -> bool:
         return False
     if _FAKE_OPTION_NAME_RE.match(n):
         return False
-    if re.match(r"^(?:[가-힣a-zA-Z]{1,6}(?:카드|카|페이|멤버십|네멤|와우)\s*(?:결제\s*|할인\s*|적용\s*)?시|카할\s*시|카드\s*할인|청구\s*할인)$", n, re.IGNORECASE):
+    if re.match(r"^(?:[가-힣a-zA-Z]{1,8}(?:카드|카|페이|페이코|멤버십|네멤|와우)\s*(?:결제\s*|할인\s*|적용\s*)?(?:시)?|카할\s*시?|카드\s*할인|청구\s*할인|페이코\s*.*최대.*|토스페이\s*.*최대.*)$", n, re.IGNORECASE):
+        return False
+    if re.search(r"(?:구매\s*시|결제\s*시|적용\s*시|담고)$", n):
         return False
     if any(sub in n for sub in _PROSE_NOISE_SUBSTRINGS):
         return False
@@ -360,6 +363,8 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             return []
         if re.search(r'(?:결제\s*할인|카드\s*할인|코드\s*할인|코인\s*할인)\s*$', s.strip()) and not any(k in s for k in ('최종가', '체감가', '공구가', '할인가', '=', '→', '->')):
             return []
+        if re.match(r'^\s*(?:\d+\s*개\s+(?:\d+\s*(?:kg|g|ml|l)\s+)?구매\s*시|최소\s*결제\s*금액|최대\s*할인)\b', s.strip(), flags=re.IGNORECASE):
+            return []
         # 0) '166,800 > 98,200원' / '94,800원 > 66,000원' 같은 화살표(>, →, ->) 앞의 취소선 정가 제거
         s = re.sub(r'(?:[₩￦$]?\s*[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,8})\s*원?\s*(?:>|→|->)\s*(?=[₩￦$]?[0-9])', ' ', s)
         # 1) 카드 조건문 ($150 이상 -$22, $150↑ -$22, 10만원 이상 1만원 할인 등) 제거
@@ -371,7 +376,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         s = re.sub(r'(?:개당|병당|포당|통당|박스당|팩당|캔당|100g당|10g당|미당)\s*약?\s*[₩￦$]?\s*[\d,]+\s*원?', ' ', s)
         # 4) 쿠폰/코인/적립금/결제할인 단독 할인 금액 문구 ($4 할인쿠폰, 코인 할인 : $1.96, 결제할인 (최대 $22), 유튜버 코드 할인 $42, 스토어 할인코드 $5 등) 제거
         s = re.sub(
-            r'(?:코인\s*할인[^\n:]*:\s*[$₩￦]?\s*[0-9,.]+|\$\s*[0-9,.]+\s*(?:할인\s*)?(?:쿠폰|코드)|[0-9,.]+\s*(?:만\s*원?|원|달러|\$)\s*(?:할인|중복|다운로드|스토어|선착순)?\s*(?:쿠폰|코드)|(?:스토어|판매자|코드|특가\s*코드|공구\s*코드|카드|결제|코인)\s*(?:코드\s*|쿠폰\s*)?할인\s*[:\-]?\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|[0-9,.]+\s*(?:달러|원|\$)\s*기준|[0-9,]+\s*원?\s*(?:적립|줘서)|(?:결제\s*할인|유튜버\s*코드\s*할인|스토어\s*중복\s*할인|중복\s*카드\s*할인|스토어\s*할인\s*코드|채널\s*할인\s*코드|추가)\s*(?:\([^\)]*\)\s*)?(?:최대\s*)?[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|최대\s*[$₩￦]\s*[0-9,.]+)',
+            r'(?:코인\s*할인[^\n:]*:\s*[$₩￦]?\s*[0-9,.]+|\$\s*[0-9,.]+\s*(?:할인\s*)?(?:쿠폰|코드)|[0-9,.]+\s*(?:만\s*원?|원|달러|\$)\s*(?:할인|중복|다운로드|스토어|선착순)?\s*(?:쿠폰|코드)|(?:스토어|판매자|코드|특가\s*코드|공구\s*코드|카드|결제|코인)\s*(?:코드\s*|쿠폰\s*)?할인\s*[:\-]?\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|[0-9,.]+\s*(?:달러|원|\$)\s*기준|[0-9,]+\s*원?\s*(?:적립|줘서)|[0-9,.]+\s*(?:만\s*원?|천\s*원?|원)\s*(?:페이백|캐시백)|(?:결제\s*할인|유튜버\s*코드\s*할인|스토어\s*중복\s*할인|중복\s*카드\s*할인|스토어\s*할인\s*코드|채널\s*할인\s*코드|추가)\s*(?:\([^\)]*\)\s*)?(?:최대\s*)?[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|(?:최대\s*할인|최소\s*결제\s*금액|최소\s*주문\s*금액)\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|천\s*원?|원|\$|달러)?|최대\s*[$₩￦]\s*[0-9,.]+)',
             ' ',
             s,
             flags=re.IGNORECASE,
@@ -386,7 +391,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         parts = [p.strip() for p in re.split(r'\s+/\s+', s) if p.strip()]
         for part in parts:
             if (
-                any(k in part for k in ('공구가', '체감가', '최종가', '역대 최저가', '실구매', '혜택가', '쿠폰가', '결제가', '할인 가격', '할인가격', '코드+코인샵', '코인샵+코드'))
+                any(k in part for k in ('공구가', '체감가', '최종가', '역대 최저가', '실구매', '혜택가', '쿠폰가', '결제가', '페이코 결제', '토스페이', '네이버페이 결제', '카카오페이 결제', '할인 가격', '할인가격', '코드+코인샵', '코인샵+코드'))
                 and '카드 시' not in part
                 and '최대카할' not in part
                 and not any(sub_k in part for sub_k in ('그래픽카드 체감가', '그래픽 체감가', 'CPU 체감가'))
@@ -483,7 +488,9 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             '할인 코드는 결제화면', '코인몰으로 이동', '코인몰에서 안보이는', '쿠폰팩데이', '멤버십데이 쿠폰',
             '개별 가격이', '계산상 약', '비교해 볼', '비슷한 금액대', '네페 2만 받으면', '네페 4만 받으면', '네페 5만 받으면', '체감가 3만 더',
             '이상 구매 시', '이상 결제 시', '이상 -$', '이상 -1만', '이상 -2만', '이상 -8천', '이상 -7천', '이상 -2800',
-            '포토 리뷰 1,000원 차이', '체감가는 천원 더 높습니다', '가격은 대략적인 예상치', '환율 변동에 따라', '표기된 가격은 예상가'
+            '포토 리뷰 1,000원 차이', '체감가는 천원 더 높습니다', '가격은 대략적인 예상치', '환율 변동에 따라', '표기된 가격은 예상가',
+            '최소결제금액', '최소 결제금액', '최대할인', '적용가능횟수', '적용가능 횟수', '프로 딜 최대', '릴레이 게시판', '쿠폰 다운링크', '선착순 쿠폰 링크',
+            '더 저렴해집니다', '사용가능합니다', '사용 가능합니다', '선택해야 나옵니다', '장보시길 바랍니다', '추천 드립니다'
         )):
             return True
         if re.match(r'^(?:링크|링크\s*\d+|구매\s*링크|\d+\s*순위|\|)$', line.strip()):
@@ -501,7 +508,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             cu_low = cu.lower()
             if any(h in cu_low for h in community_hosts):
                 continue
-            if any(p in cu_low for p in ('campaign2.naver.com', 'ofw.adison.co', 'campaign-cdn.pstatic.net', 'shopping.naver.com/event', 'event.naver.com', 'rpp.gmarket.co.kr/?exhib=', 'store.ohou.se/exhibitions/', 'ko.aliexpress.com/item/1005010123406060.html')):
+            if any(p in cu_low for p in ('campaign2.naver.com', 'ofw.adison.co', 'campaign-cdn.pstatic.net', 'shopping.naver.com/event', 'event.naver.com', 'rpp.gmarket.co.kr/?exhib=', 'store.ohou.se/exhibitions/', 'ko.aliexpress.com/item/1005010123406060.html', 'app.cjone.com', '/the/event/')):
                 continue
             if cu_low.split('?')[0].endswith(image_exts):
                 continue
@@ -810,7 +817,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             if extract_scored_prices_from_line(t_strip):
                 return True
             if re.search(
-                r'(?:기본가|공구가|체감가|최종가|최종가격|최저가|할인가|쿠폰|코드|할인|코인|옵션|선택|상세|스토어|멤버십|적립|체감|자동\s*적용|직접\s*수령|선착순|예상|참고|결제\s*할인|카드\s*할인|중복\s*할인|주문\s*시|결제\s*시|관부가세|부가세\s*포함|배터리\s*\d+개|구성\b|카드|비자|마스터|유니온페이|카카오페이|토스페이|토스뱅크|신한|롯데|국민|우리|농협|하나|비씨|IBK|KB|^→|^->|^⭕|^✅|^🎟|^🔗)',
+                r'(?:기본가|공구가|체감가|최종가|최종가격|최저가|할인가|쿠폰|코드|할인|코인|옵션|선택|상세|스토어|멤버십|적립|체감|자동\s*적용|직접\s*수령|선착순|예상|참고|결제\s*할인|카드\s*할인|중복\s*할인|주문\s*시|결제\s*시|관부가세|부가세\s*포함|배터리\s*\d+개|구성\b|카드|비자|마스터|유니온페이|카카오페이|토스페이|토스뱅크|페이코|PAYCO|네이버페이|네페|스마일페이|삼성페이|애플페이|최소\s*결제|최대\s*할인|적용\s*가능|사용\s*가능|장바구니\s*담고|CJ\s*ONE|더쎄페|신한|롯데|국민|우리|농협|하나|비씨|IBK|KB|^→|^->|^⭕|^✅|^🎟|^🔗)',
                 t_strip,
                 re.IGNORECASE,
             ):
@@ -844,9 +851,9 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 if open_top_blk is not None:
                     blocks.append((open_top_blk["lines"], open_top_blk["url"], open_top_blk["img"]))
                     open_top_blk = None
-                # 쿠폰 다운로드 전용 링크('선착순20%쿠폰', '쿠폰 링크')는 상품 블록에서 제외
+                # 쿠폰 다운로드 전용 링크('선착순20%쿠폰', '쿠폰 링크', '쿠폰 다운링크', '릴레이 게시판')는 상품 블록에서 제외
                 prev_label = text_only or (current_lines[-1] if current_lines else "")
-                if re.search(r'^(?:선착순\s*\d*%?\s*쿠폰|.*쿠폰\s*링크|.*쿠폰\s*받기)\s*:?\s*$', prev_label):
+                if re.search(r'(?:선착순\s*.*쿠폰|쿠폰\s*(?:다운\s*)?링크|쿠폰\s*받기|릴레이\s*게시판)\s*:?\s*$', prev_label):
                     current_lines = []
                     pending_blk_img = ""
                     continue
@@ -888,7 +895,16 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     open_top_blk = None
                     current_lines.append(text_only)
             else:
-                current_lines.append(text_only)
+                # Bottom-Link 블록 직후에 '페이코 결제 31,917원', '토스페이 20프로 결제 45,929원', '2개 20kg 구매시 58,752원' 같은
+                # 순수 결제수단 할인가/다회구매 조건 줄이 이어지면 직전 블록(blocks[-1])의 가격 메타로 귀속시켜 다음 상품으로 밀리는 현상 차단!
+                if blocks and not current_lines and re.match(
+                    r'^(?:페이코|PAYCO|토스페이|네이버페이|네페|카카오페이|스마일페이|카드\s*할인|쿠폰\s*적용|최종가?|체감가?|실구매가?|혜택가?|결제가?|할인가?|CJ\s*ONE|\d+\s*개\s+(?:\d+\s*(?:kg|g|ml|l)\s+)?구매\s*시|\d+\s*가지\s*장바구니)',
+                    text_only.strip(),
+                    re.IGNORECASE,
+                ):
+                    blocks[-1][0].append(text_only)
+                else:
+                    current_lines.append(text_only)
 
         if open_top_blk is not None:
             blocks.append((open_top_blk["lines"], open_top_blk["url"], open_top_blk["img"]))
@@ -1548,7 +1564,7 @@ class AggregatorService:
                 if opts_with_url:
                     scraped_data["ecommerce_link"] = opts_with_url[0]["url"]
 
-        if "무배" in raw_title or "무료배송" in raw_title or "무료" in raw_title or "/무)" in raw_title: 
+        if "무배" in raw_title or "무료배송" in raw_title or "무료" in raw_title or "/무)" in raw_title or re.search(r'/\s*(?:0\s*원?|무)\s*[\)\]]', raw_title): 
             shipping_fee = "무료배송"
         
         if shipping_fee:
@@ -1772,7 +1788,10 @@ class AggregatorService:
                     if not d.ecommerce_link:
                         continue
                     d_canon = extract_canonical_product_key(d.ecommerce_link)
-                    if (target_canon_key and d_canon == target_canon_key) or (d.ecommerce_link in (target_url, normalized_target_url)):
+                    if (target_canon_key and d_canon == target_canon_key) or (
+                        d.ecommerce_link in (target_url, normalized_target_url)
+                        and len(input_tokens.intersection(get_clean_tokens(d.title))) >= 2
+                    ):
                         if is_safe_to_merge(d):
                             target_deals.append(d)
 
@@ -1848,8 +1867,8 @@ class AggregatorService:
 
                  old_ch_str = (existing_deal.content_html or "").strip()
                  new_ch_str = (content_html or "").strip()
-                 is_old_rss_trunc = (len(old_ch_str) == 110 or old_ch_str.endswith("...</p>") or old_ch_str.endswith("..."))
-                 is_new_rss_trunc = (len(new_ch_str) == 110 or new_ch_str.endswith("...</p>") or new_ch_str.endswith("..."))
+                 is_old_rss_trunc = (len(old_ch_str) == 110 or old_ch_str.endswith("...</p>") or old_ch_str.endswith("...") or "<p>출처:" in old_ch_str)
+                 is_new_rss_trunc = (len(new_ch_str) == 110 or new_ch_str.endswith("...</p>") or new_ch_str.endswith("...") or "<p>출처:" in new_ch_str)
                  is_new_title_truncated = bool(re.search(r"(?:\.{2,}|…)\s*$", raw_input_title)) and len(existing_deal.title or "") >= len(raw_title)
 
                  if is_recycled_post:
@@ -2044,8 +2063,8 @@ class AggregatorService:
 
                  old_ch_str = (existing_deal.content_html or "").strip()
                  new_ch_str = (content_html or "").strip()
-                 is_old_rss_trunc = (len(old_ch_str) == 110 or old_ch_str.endswith("...</p>") or old_ch_str.endswith("..."))
-                 is_new_rss_trunc = (len(new_ch_str) == 110 or new_ch_str.endswith("...</p>") or new_ch_str.endswith("..."))
+                 is_old_rss_trunc = (len(old_ch_str) == 110 or old_ch_str.endswith("...</p>") or old_ch_str.endswith("...") or "<p>출처:" in old_ch_str)
+                 is_new_rss_trunc = (len(new_ch_str) == 110 or new_ch_str.endswith("...</p>") or new_ch_str.endswith("...") or "<p>출처:" in new_ch_str)
                  if new_ch_str and (
                      not old_ch_str
                      or (is_old_rss_trunc and not is_new_rss_trunc)
