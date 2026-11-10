@@ -12,46 +12,78 @@ jobs:
     defaults:
       run:
         working-directory: ./backend
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v4
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
       with:
-        python-version: "3.10"
-        
+        python-version: "3.11"
+        cache: "pip"
+        cache-dependency-path: backend/requirements.txt
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        
+
     - name: Run PyTest
+      working-directory: .
       run: |
-        # pytest tests/ (Ensure your tests path is configured properly)
-        echo "Tests passed!"
+        python -m pytest backend/tests/test_multi_option_and_history.py -q
 
   android-build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up JDK 17
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
         cache: gradle
 
+    - name: Create fallback google-services.json for CI if missing
+      run: |
+        if [ ! -f app/google-services.json ]; then
+          cat << 'EOF' > app/google-services.json
+        {
+          "project_info": {
+            "project_number": "000000000000",
+            "project_id": "insightdeal-ci-mock",
+            "storage_bucket": "insightdeal-ci-mock.appspot.com"
+          },
+          "client": [
+            {
+              "client_info": {
+                "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+                "android_client_info": {
+                  "package_name": "com.ddaeany0919.insightdeal"
+                }
+              },
+              "api_key": [
+                {
+                  "current_key": "AIzaSyA00000000000000000000000000000000"
+                }
+              ]
+            }
+          ],
+          "configuration_version": "1"
+        }
+        EOF
+        fi
+
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
     - name: Build with Gradle
-      run: ./gradlew assembleDebug
+      run: ./gradlew assembleDebug --no-daemon
 
     - name: Upload APK artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: insightdeal-debug-apk
         path: app/build/outputs/apk/debug/app-debug.apk
@@ -60,10 +92,6 @@ jobs:
     needs: backend-test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    
+
     steps:
-    - uses: actions/checkout@v3
-    # Optional: Deploy to your server
-    # - name: Deploy to Production
-    #   run: |
-    #     ssh -i ${{ secrets.SSH_KEY }} user@domain "cd /app && git pull && docker-compose up -d --build"
+    - uses: actions/checkout@v4
