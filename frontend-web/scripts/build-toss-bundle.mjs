@@ -62,7 +62,13 @@ if (fs.existsSync(outDir)) {
     execSync(`cd "${outDir}" && zip -r "${zipPath}" .`, { stdio: "inherit" });
   }
   const sizeKb = (fs.statSync(zipPath).size / 1024).toFixed(1);
+  // 5. 공식 Apps in Toss (.ait) 아티팩트 생성
+  try {
+    execSync("npx ait build", { cwd: rootDir, stdio: "inherit" });
+  } catch (err) {
+    console.warn("ait build warning:", err?.message || err);
+  }
   console.log("====================================================");
-  console.log(`✅ 정적 빌드(out/) 및 압축 완료: ${zipPath} (${sizeKb} KB)`);
+  console.log(`✅ 정적 빌드(out/) 및 .ait/.zip 생성 완료 (${sizeKb} KB)`);
   console.log("====================================================");
 }
