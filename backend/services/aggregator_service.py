@@ -1486,9 +1486,13 @@ class AggregatorService:
                     if clean_p.isdigit():
                         title_price = int(clean_p)
                 if match.group(2):
-                    shipping_raw = match.group(2).lower()
-                    if any(k in shipping_raw for k in ('무료', '무배', 'fs', 'free')) or shipping_raw.strip() == '무':
+                    shipping_raw = match.group(2).lower().strip()
+                    if any(k in shipping_raw for k in ('무료', '무배', 'fs', 'free')) or shipping_raw in ('무', '0', '0원'):
                         shipping_fee = "무료배송"
+                    elif (not shipping_fee or shipping_fee == "정보 없음") and re.match(r'^[1-5],?\d{3}\s*원?$', shipping_raw):
+                        sf_num = int(re.sub(r'[^\d]', '', shipping_raw))
+                        if 1000 <= sf_num <= 5000:
+                            shipping_fee = f"{sf_num:,}원"
 
         # 2. 괄호 외 만/원/달러/유로 및 슬래시(5980/무배), 대괄호([롯데온 18000]) 파싱
         if title_price == 0 and not is_explicit_free_deal:
@@ -1599,6 +1603,12 @@ class AggregatorService:
 
         if "무배" in raw_title or "무료배송" in raw_title or "무료" in raw_title or "/무)" in raw_title or re.search(r'/\s*(?:0\s*원?|무)\s*[\)\]]', raw_title): 
             shipping_fee = "무료배송"
+        elif not shipping_fee or shipping_fee == "정보 없음":
+            m_sf_t = re.search(r'/\s*([1-5],?\d{3})\s*원?\s*(?:[\)\]]|$)', raw_title.strip())
+            if m_sf_t:
+                sf_num_t = int(m_sf_t.group(1).replace(',', ''))
+                if 1000 <= sf_num_t <= 5000:
+                    shipping_fee = f"{sf_num_t:,}원"
         
         if shipping_fee:
             sf_str = re.sub(r'\s+', ' ', str(shipping_fee)).strip()
