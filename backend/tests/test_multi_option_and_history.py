@@ -328,5 +328,127 @@ $191.42
     assert "레노버 샤오신 패드 프로 13인치 2026" in opts_18491[0]["name"]
 
 
+def test_post_url_image_layout_and_commentary_guard():
+    """12. URL 후행 이미지 레이아웃(Image-After-URL) 및 작성자 코멘트('RGB수냉도 기본이라...', '요즘 시세에 125언더도 쉽지 않음') 오탐 차단 검증 (#19178 사례)"""
+    body_19178 = """
+1. https://item.gmarket.co.kr/Item?goodscode=4611131400 (링크: https://item.gmarket.co.kr/Item?goodscode=4611131400)
+1,299,900원
+14400f 5060 qlc 디램리스
+[상품이미지: https://image.fmkorea.com/files/attach/new5/20261110/pc1.png]
+이 구성은 5060 완본체 입문용으로 딱 무난함
+요즘 시세에 125언더도 쉽지 않음
+2. https://item.gmarket.co.kr/Item?goodscode=4507120463 (링크: https://item.gmarket.co.kr/Item?goodscode=4507120463)
+1,348,890원
+7500f 5060 tlc 디램리스
+[상품이미지: https://image.fmkorea.com/files/attach/new5/20261110/pc2.png]
+1번에서 cpu랑 ssd 체급 올린 버전이라고 보면 됨
+7500F에 TLC 조합을 이 가격대에서 찾기 힘듦
+3. https://item.gmarket.co.kr/Item?goodscode=3432110761 (링크: https://item.gmarket.co.kr/Item?goodscode=3432110761)
+2,799,000원
+9800x3d 9070xt b850m 박격포 상급반본체
+[상품이미지: https://image.fmkorea.com/files/attach/new5/20261110/pc3.png]
+9800X3D에 9070XT면 현시점 게이밍 끝판왕 조합이라고 봐도 무방
+RGB수냉도 기본이라 세팅 끝판왕 찾는 사람한테 맞음
+[상품이미지: https://image.fmkorea.com/files/attach/new5/20261110/pc3_extra.png]
+"""
+    opts = extract_structured_multi_options(
+        raw_title="프리플로우 5060 R5 7500F / 9800X3D 9070XT 완본체 PC 3종 (1,247,570원 / 무배)",
+        content_html=body_19178,
+        default_currency="KRW",
+    )
+    assert len(opts) == 3, f"Expected 3 options, got {len(opts)}: {opts}"
+    assert opts[0]["name"] == "14400f 5060 qlc 디램리스"
+    assert opts[0]["price"] == 1299900
+    assert opts[0]["image_url"].endswith("pc1.png")
+    assert opts[1]["name"] == "7500f 5060 tlc 디램리스"
+    assert opts[1]["price"] == 1348890
+    assert opts[1]["image_url"].endswith("pc2.png")
+    assert opts[2]["name"] == "9800x3d 9070xt b850m 박격포 상급반본체"
+    assert opts[2]["price"] == 2799000
+    assert opts[2]["image_url"].endswith("pc3.png")
+
+
+def test_payment_discount_amount_and_unit_price_stripping():
+    """13. 결제수단 할인 차감액('<카카오/토스페이>', '$5.8 토스페이') 및 단위당 가격('1kg당 -> 9,185원') 오탐 차단 + '●' 불릿 Top-Link 검증"""
+    body_18283 = """
+드리미 V10s 무선 진공 청소기
+(링크: https://s.click.aliexpress.com/e/_c36b4o19)
+앱기본가 : 166,440원
+- 19,500원 <드리미 V10s 전용 쿠폰 : DMKR10>
+- 7,000원 <초이스데이 쿠폰 : CDKR05>
+- 8,000원 <카카오/토스페이>
+= 체감가 131,940원
+드리미 L10s 히트 올인원 로봇청소기
+(링크: https://s.click.aliexpress.com/e/_c4L47Rwf)
+앱기본가 : 422,000원
+- 42,000원 <초이스데이 쿠폰 : CDKR30>
+- 16,000원 <카카오/토스페이>
+= 체감가 364,000원
+"""
+    opts_18283 = extract_structured_multi_options(
+        raw_title="[알리] 드리미 V10s 무선 진공 청소기 외 3건 (131,940원~/무료)",
+        content_html=body_18283,
+        default_currency="KRW",
+    )
+    assert len(opts_18283) == 2
+    assert opts_18283[0]["price"] == 131940
+    assert opts_18283[1]["price"] == 364000
+
+    body_18825 = """
+●당일작업 신선한 냉장 한돈 목살 구이용 1kg
+(링크: http://item.gmarket.co.kr/Item?goodscode=2087777067)
+소상공인 20% 적용시
+최종가 -> 18,370원
+1kg당 -> 9,185원
+●당일작업 한돈 오겹살 구이용 1kg
+(링크: http://item.gmarket.co.kr/Item?goodscode=2161467647)
+소상공인 20% 적용시
+최종가 -> 18,160원
+"""
+    opts_18825 = extract_structured_multi_options(
+        raw_title="[G마켓] 당일작업 한돈 삼겹살 구이용 1kg (18,870원 / 무배)",
+        content_html=body_18825,
+        default_currency="KRW",
+    )
+    assert len(opts_18825) == 2
+    assert "목살" in opts_18825[0]["name"]
+    assert opts_18825[0]["price"] == 18370
+    assert "오겹살" in opts_18825[1]["name"]
+    assert opts_18825[1]["price"] == 18160
+
+
+def test_top_link_spec_variants_and_size_hints():
+    """14. Top-Link 직후 규격/옵션 보조줄('42인치, 조명없음', '(싱글매트...)')이 블록을 조기 종료시키지 않고 옵션명에 반영되는지 검증"""
+    body_19087 = """
+[상품이미지: https://cdn2.ppomppu.co.kr/zboard/data3/2026/1106/f1.jpg]
+SOVE 실링팬 조명 천장 선풍기 바로가기>>> (링크: https://s.click.aliexpress.com/e/_c440uNIn)
+42인치, 조명없음
+판매가 : $65.40
+할인코드 -$7 : CDKR07, ALIBOK07
+결제할인 -$7 : KB/토스
+할인가 : $51.40
+[상품이미지: https://cdn2.ppomppu.co.kr/zboard/data3/2026/1106/f2.jpg]
+SOVE 천장 선풍기 바로가기>>> (링크: https://s.click.aliexpress.com/e/_c3t7lQnd)
+44인치, 화이트컬러, 조명있음
+판매가 : $77.53
+할인코드 -$10 : CDKR10
+결제할인 -$7 : KB/토스
+할인가 : $60.53
+"""
+    opts_19087 = extract_structured_multi_options(
+        raw_title="[알리] 실링팬 모음",
+        content_html=body_19087,
+        default_currency="USD",
+    )
+    assert len(opts_19087) == 2
+    assert "42인치" in opts_19087[0]["name"]
+    assert opts_19087[0]["price"] == 5140
+    assert opts_19087[0]["image_url"].endswith("f1.jpg")
+    assert "44인치" in opts_19087[1]["name"]
+    assert opts_19087[1]["price"] == 6053
+    assert opts_19087[1]["image_url"].endswith("f2.jpg")
+
+
+
 
 
