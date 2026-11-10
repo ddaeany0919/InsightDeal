@@ -662,6 +662,8 @@ async def scrape_and_push_once():
                                             for k, v in det.items():
                                                 if k == "price" and (not v or v == 0) and it.get("price", 0) > 0:
                                                     continue
+                                                if k == "currency" and (not det.get("price") or det.get("price") == 0) and it.get("currency"):
+                                                    continue
                                                 if v is not None and v != "":
                                                     it[k] = v
                                             # 멀티 옵션 추출 (본문 및 타이틀 기반 정밀 옵션 추출)

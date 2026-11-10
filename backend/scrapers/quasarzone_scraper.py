@@ -55,7 +55,7 @@ class QuasarzoneScraper(AsyncBaseScraper):
                     match = re.search(r'([0-9.]+)', price_str)
                     if match:
                         usd_val = float(match.group(1))
-                        price = int(usd_val * 100)
+                        price = round(usd_val * 100)
                         currency = "USD"
                 else:
                     # 첫 번째로 발견되는 숫자 그룹(쉼표 포함)만 추출하여 파싱하여 병합 버그 방지
@@ -288,10 +288,10 @@ class QuasarzoneScraper(AsyncBaseScraper):
                 shipping_fee = td.get_text(strip=True)
             elif '가격' in th_text:
                 price_str = td.get_text(strip=True)
-                if '$' in price_str or 'USD' in price_str.upper() or '달러' in price_str:
+                if '$' in price_str or 'USD' in price_str.upper() or '달러' in price_str or '불' in price_str:
                     m_p = re.search(r'([0-9,]+(?:\.[0-9]+)?)', price_str)
                     if m_p:
-                        price = int(float(m_p.group(1).replace(',', '')) * 100)
+                        price = round(float(m_p.group(1).replace(',', '')) * 100)
                         currency = "USD"
                 else:
                     m_p = re.search(r'([0-9,]+)', price_str)

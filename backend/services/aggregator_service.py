@@ -1696,8 +1696,18 @@ class AggregatorService:
             if scraped_data.get("currency"):
                 currency = scraped_data.get("currency")
 
-        # 다중 상품/옵션 규칙 기반 정밀 추출 (타이틀 다중 옵션 & 본문 멀티 링크/라인 옵션)
+        # 퀘이사존 등에서 목록 가격(센트 단위로 변환된 달러 가격, 예: $25.87 -> 2587)이 넘어왔으나 상세 병합 중 통화가 KRW로 덮어써진 경우 자동 보정
         content_html_for_opts = scraped_data.get("content_html", scraped_data.get("content", "")) or ""
+        if currency == "KRW" and 100 <= final_price <= 99999 and not re.search(r'[0-9,]+\s*원', raw_title):
+            combined_curr_txt = f"{raw_title}\n{content_html_for_opts}"
+            for m_usd_c in re.finditer(r'(?:\$\s*([0-9]{1,3}\.[0-9]{1,2})|([0-9]{1,3}\.[0-9]{1,2})\s*(?:\$|달러|불|USD))', combined_curr_txt, re.IGNORECASE):
+                usd_f = float(m_usd_c.group(1) or m_usd_c.group(2))
+                if abs(round(usd_f * 100) - final_price) <= 1:
+                    currency = "USD"
+                    final_price = round(usd_f * 100)
+                    break
+
+        # 다중 상품/옵션 규칙 기반 정밀 추출 (타이틀 다중 옵션 & 본문 멀티 링크/라인 옵션)
         structured_opts = extract_structured_multi_options(
             raw_title=raw_title,
             content_html=content_html_for_opts,
