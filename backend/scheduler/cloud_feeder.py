@@ -544,6 +544,7 @@ async def scrape_and_push_once():
                                         or cached_html_str.startswith("<p>...")
                                         or cached_html_str.endswith("...</p>")
                                         or cached_html_str.endswith("...")
+                                        or "뽐뿌 - 사람이 좋아 함께하는 곳" in cached_html_str
                                     )
                                 )
                                 is_truncated_on_local = (

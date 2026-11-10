@@ -1751,6 +1751,47 @@ class AggregatorService:
         content_html = scraped_data.get("content_html", scraped_data.get("content", ""))
         image_url = scraped_data.get("image_url")
 
+        def _is_search_fallback_img(u: str) -> bool:
+            if not u:
+                return False
+            ul = u.lower()
+            return any(k in ul for k in (
+                'search.pstatic.net', 'kakaocdn.net/argon', 'bing.com',
+                'blogfiles.naver.net', 'postfiles.pstatic.net', 'mblogthumb-phinf',
+                'cafeptthumb', 'blogpfthumb', 'influencer-phinf', 'clip-service-phinf'
+            ))
+
+        def _extract_real_post_image(c_html: str) -> str:
+            if not c_html:
+                return ""
+            for m_img in re.finditer(r'\[상품이미지:\s*(https?://[^\]\s"\'<>]+)\]', c_html):
+                cand_u = m_img.group(1).strip()
+                if cand_u and not _is_search_fallback_img(cand_u):
+                    return cand_u
+            m_att = re.search(r'\[첨부된 이미지 링크들\]:\s*(https?://[^,\s\]"\'<>]+)', c_html)
+            if m_att:
+                cand_u = m_att.group(1).strip()
+                if cand_u and not _is_search_fallback_img(cand_u):
+                    return cand_u
+            for m_tag in re.finditer(r'<img[^>]+src=["\'](https?://[^"\'>\s]+)["\']', c_html, re.IGNORECASE):
+                cand_u = m_tag.group(1).strip()
+                if cand_u and not _is_search_fallback_img(cand_u) and not any(
+                    b in cand_u.lower() for b in ('emoticon', 'sticker', 'icon', 'logo', 'blank', 'avatar', 'profile')
+                ):
+                    return cand_u
+            return ""
+
+        real_body_img_init = _extract_real_post_image(content_html)
+        if real_body_img_init and (not image_url or _is_search_fallback_img(image_url)):
+            image_url = real_body_img_init
+        elif (not image_url or _is_search_fallback_img(image_url)) and scraped_data.get("options_data"):
+            for opt_cand in (scraped_data.get("options_data") or []):
+                if isinstance(opt_cand, dict):
+                    ou = (opt_cand.get("image_url") or "").strip()
+                    if ou and not _is_search_fallback_img(ou):
+                        image_url = ou
+                        break
+
         # 2. 중복 및 롤링 윈도우 클러스터링 체크 (Upsert 로직의 핵심)
         existing_deals = self.db.query(Deal).filter(Deal.post_link == url).all()
         
@@ -2063,20 +2104,28 @@ class AggregatorService:
                              price_changed = True
                      
                  # 📸 [고화질 이미지 덮어쓰기 가드]
-                 # 기존에 이미지가 없거나, 기존 이미지가 찌그러진 저화질 썸네일이고 새 이미지는 고화질 원본인 경우 강제 갱신!
+                 # 기존에 이미지가 없거나, 기존 이미지가 찌그러진 저화질 썸네일/검색폴백이고 새 이미지는 고화질 원본인 경우 강제 갱신!
+                 is_low_quality = lambda u: _is_search_fallback_img(u) or any(
+                     x in u.lower() for x in ['_thumb', 'thumb/', 'small_', '_70x50', '_120x90', '_150x150', 'crop.webp', 'filesn', 'zboard/data/ppomppu']
+                 )
+                 is_high_quality = lambda u: (not _is_search_fallback_img(u)) and any(
+                     x in u.lower() for x in [
+                         'files/attach', 'ruliweb.com/img', 'quasarzone.com/editor', 'quasarzone.com/qb_saleinfo',
+                         'zboard/data3', 'zboard/data2', 'cdn.ppomppu', 'cdn2.ppomppu', 'cdn3.ppomppu', 'cdn4.ppomppu',
+                         'gdimg.gmarket.co.kr', 'itemimage.auction.co.kr'
+                     ]
+                 )
                  if image_url:
-                     is_low_quality = lambda u: any(x in u.lower() for x in ['_thumb', 'thumb/', 'small_', '_70x50', '_120x90', '_150x150', 'crop.webp', 'filesn', 'zboard/data/ppomppu'])
-                     is_high_quality = lambda u: any(x in u.lower() for x in ['files/attach', 'ruliweb.com/img', 'quasarzone.com/editor', 'quasarzone.com/qb_saleinfo'])
                      if not existing_deal.image_url:
                          existing_deal.image_url = image_url
                      elif is_low_quality(existing_deal.image_url) and not is_low_quality(image_url):
                          existing_deal.image_url = image_url
                      elif not is_low_quality(existing_deal.image_url) and is_low_quality(image_url):
-                         # 🎯 이미 고화질이 선점되어 있는데 저화질이 순회에서 들어오면 덮어쓰지 않고 절대 무시!
+                         # 🎯 이미 실제 게시글/쇼핑몰 이미지가 선점되어 있는데 저화질/검색폴백 이미지가 들어오면 절대 덮어쓰지 않고 무시!
                          pass
                      elif is_high_quality(existing_deal.image_url) and not is_high_quality(image_url):
-                          # 🎯 기존에 상세 페이지 고화질 원본이 선점되어 있는데, 뽐뿌 썸네일 등 일반 이미지가 들어오면 무시!
-                          pass
+                         # 🎯 기존에 상세 페이지 고화질 원본이 선점되어 있는데 일반 이미지가 들어오면 무시!
+                         pass
                      elif existing_deal.image_url != image_url:
                          existing_deal.image_url = image_url
                     
@@ -2096,14 +2145,35 @@ class AggregatorService:
 
                  old_ch_str = (existing_deal.content_html or "").strip()
                  new_ch_str = (content_html or "").strip()
-                 is_old_rss_trunc = (len(old_ch_str) == 110 or old_ch_str.endswith("...</p>") or old_ch_str.endswith("...") or "<p>출처:" in old_ch_str)
-                 is_new_rss_trunc = (len(new_ch_str) == 110 or new_ch_str.endswith("...</p>") or new_ch_str.endswith("...") or "<p>출처:" in new_ch_str)
+                 is_old_rss_trunc = (
+                     len(old_ch_str) == 110
+                     or old_ch_str.endswith("...</p>")
+                     or old_ch_str.endswith("...")
+                     or "<p>출처:" in old_ch_str
+                     or "뽐뿌 - 사람이 좋아 함께하는 곳" in old_ch_str
+                 )
+                 is_new_rss_trunc = (
+                     len(new_ch_str) == 110
+                     or new_ch_str.endswith("...</p>")
+                     or new_ch_str.endswith("...")
+                     or "<p>출처:" in new_ch_str
+                     or "뽐뿌 - 사람이 좋아 함께하는 곳" in new_ch_str
+                 )
                  if new_ch_str and (
                      not old_ch_str
                      or (is_old_rss_trunc and not is_new_rss_trunc)
                      or (not is_new_rss_trunc and len(new_ch_str) > len(old_ch_str) + 40)
                  ):
                      existing_deal.content_html = content_html
+
+                 # 본문에 실제 게시글 이미지([상품이미지: ...])가 존재하는데 대표 이미지가 검색 폴백/저화질이면 즉시 본문 원본 이미지로 복원!
+                 real_post_img_merged = _extract_real_post_image(existing_deal.content_html or content_html)
+                 if real_post_img_merged and (
+                     not existing_deal.image_url
+                     or _is_search_fallback_img(existing_deal.image_url)
+                     or is_low_quality(existing_deal.image_url)
+                 ):
+                     existing_deal.image_url = real_post_img_merged
                   
                  # [가격분석] 브랜드 및 모델명 메타 정보 보완 (기존에 비어있던 경우 업데이트)
                  if not existing_deal.brand or not existing_deal.model_code:
@@ -2175,6 +2245,13 @@ class AggregatorService:
                      scraped_data["options_data"] = new_opts_list
                      existing_deal.options_data = json.dumps(new_opts_list, ensure_ascii=False)
                      existing_deal.has_options = True
+                     if not existing_deal.image_url or _is_search_fallback_img(existing_deal.image_url):
+                         for opt_c in new_opts_list:
+                             if isinstance(opt_c, dict):
+                                 ou = (opt_c.get("image_url") or "").strip()
+                                 if ou and not _is_search_fallback_img(ou):
+                                     existing_deal.image_url = ou
+                                     break
                      if len(new_opts_list) >= 2:
                          multi_summary = format_multi_options_summary(
                              new_opts_list,

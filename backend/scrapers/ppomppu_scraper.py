@@ -425,11 +425,17 @@ class PpomppuScraper(AsyncBaseScraper):
                 if not image_url:
                     image_url = src
 
-        # 2. 본문 엘리먼트 정밀 탐색 (table.pic_bg 의 첫 빈 td가 선택되어 본문이 증발하는 버그 수정!)
+        # 2. 본문 엘리먼트 정밀 탐색 (우선순위 셀렉터 순회 + 상단 헤더 .cont 오탐지 원천 차단)
         content_element = None
-        for candidate in soup.select('td.board-contents, td.han, .cont, table.pic_bg td'):
-            if len(candidate.get_text(strip=True)) > 0 or candidate.select('img, a'):
-                content_element = candidate
+        for sel in ('td.board-contents', 'div.board-contents', 'td.han', 'table.pic_bg td'):
+            for candidate in soup.select(sel):
+                cand_txt = candidate.get_text(strip=True)
+                if "뽐뿌 - 사람이 좋아 함께하는 곳" in cand_txt and len(cand_txt) < 80:
+                    continue
+                if len(cand_txt) > 0 or candidate.select('img, a'):
+                    content_element = candidate
+                    break
+            if content_element is not None:
                 break
 
         if content_element:
@@ -579,8 +585,12 @@ class PpomppuScraper(AsyncBaseScraper):
                 logger.info(f"[뽐뿌 상세] 과거 날짜 감지로 무효화: {posted_at_iso}")
                 posted_at_iso = None
             
-        # 📸 [고화질 썸네일 복구 가드]: 본문 첨부 고화질 이미지(data3 등)가 없을 때 외부 아웃링크 og:image 및 상품명 폴백 사용
-        has_valid_body_img = bool(image_url and ('/data3/' in image_url or 'files/attach' in image_url))
+        # 📸 [고화질 썸네일 복구 가드]: 본문 첨부 고화질 이미지(data3, cdn.ppomppu 등)가 없을 때만 외부 아웃링크 og:image 및 상품명 폴백 사용
+        has_valid_body_img = bool(
+            image_url and any(
+                x in image_url for x in ('/data3/', '/data2/', 'cdn.ppomppu', 'cdn2.ppomppu', 'cdn3.ppomppu', 'cdn4.ppomppu', 'files/attach')
+            )
+        )
         if not has_valid_body_img:
             og_img = await self.fetch_og_image(ecommerce_link, full_title)
             if og_img:

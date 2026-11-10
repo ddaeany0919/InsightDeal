@@ -152,6 +152,7 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
                                 or len(existing_html_str) == 110
                                 or existing_html_str.endswith("...</p>")
                                 or existing_html_str.endswith("...")
+                                or "뽐뿌 - 사람이 좋아 함께하는 곳" in existing_html_str
                             )
                         )
                         

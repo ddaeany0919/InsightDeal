@@ -424,7 +424,8 @@ class AsyncBaseScraper(ABC):
                                     'blogpfthumb', 'kinimage', 'musicmeta', 'profile', 'icon', 'logo',
                                     'blank', 'avatar', 'favicon', '파비콘', '.ico', 'influencer-phinf',
                                     'clip-service-phinf', 'pup-post-phinf', '96x96', '32x32', '64x64',
-                                    '192x192', 'cropped-', 'Press', 'news'
+                                    '192x192', 'cropped-', 'Press', 'news',
+                                    'blogfiles.naver', 'postfiles.pstatic', 'mblogthumb-phinf', 'cafeptthumb'
                                 )
                                 preferred_naver = []
                                 fallback_naver = []
@@ -432,7 +433,7 @@ class AsyncBaseScraper(ABC):
                                     low_dec = unquote(unquote(cand)).lower()
                                     if any(b.lower() in low_dec for b in naver_bad):
                                         continue
-                                    if any(p in low_dec for p in ('shopping-phinf', 'shop-phinf', 'dthumb-phinf', 'blogfiles.naver', 'postfiles.pstatic', 'mblogthumb-phinf')):
+                                    if any(p in low_dec for p in ('shopping-phinf', 'shop-phinf', 'dthumb-phinf')):
                                         preferred_naver.append(cand)
                                     else:
                                         fallback_naver.append(cand)
