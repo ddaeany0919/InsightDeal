@@ -241,7 +241,6 @@ class QuasarzoneScraper(AsyncBaseScraper):
             full_title = detail_title
         
         ecommerce_link = ""
-        import re
         import base64
         
         # 1. market-info-view-table 내의 <a> 태그를 찾아 goToLink 파싱 (onclick 속성도 함께 검사)
