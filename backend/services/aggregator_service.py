@@ -52,7 +52,7 @@ _FAKE_OPTION_NAME_RE = re.compile(
 )
 
 _PURE_QTY_OPTION_RE = re.compile(
-    r"^\d+(?:\.\d+)?\s*(?:개|입|팩|봉|병|캔|통|박스|세트|롤|포|매|구|미|kg|g|ml|l|gb|tb)(?:\s*세트|\s*구성|\s*번들)?$",
+    r"^\d+(?:\.\d+)?\s*(?:개|입|팩|봉|병|캔|통|박스|세트|롤|포|매|구|미|kg|g|ml|l|gb|tb)(?:\s*[xX*]\s*\d+)?(?:\s*세트|\s*구성|\s*번들)?$",
     re.IGNORECASE,
 )
 
@@ -389,6 +389,8 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             m = re.search(r'\d[\d,]*', s)
             if m:
                 return int(m.group(0).replace(',', '')), "JPY"
+        if fallback_curr == "KRW" and re.match(r'^[1-9]\d{0,2}(?:,\d{3})+$', s):
+            return int(s.replace(',', '')), "KRW"
         # 통화 기호(₩, $, €, 원, 만, 엔 등)가 없는 순수 숫자(예: 12.7, 2025, 65, 75 등)는
         # 모델명/연도/화면크기(인치)일 수 있으므로 가격으로 임의 변환하지 않고 0 반환
         return 0, fallback_curr
@@ -1269,7 +1271,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
     seen_keys: set = set()
     options: list[dict] = []
     title_matches = list(re.finditer(
-        r'([^,\(\)/]+?)\s*\(\s*(?:약\s*)?([\$₩￦€¥]\s*[\d,]+(?:\.\d+)?|\$?\s*(?:[\d,]+(?:\.\d+)?)\s*(?:만\s*원?|천\s*원?|원|달러|불|유로|€(?!\s*[0-9])|\$(?!\s*[0-9])))\s*(?:외|부터|~)?\s*(?:/[^\)]*)?\)',
+        r'([^,\(\)/]+?)\s*\(\s*(?:(?:약|최저가?|체감가?|쿠폰가?|할인가?|카페머|카할|네멤|유클|와우|토스|페이코)\s*)*([\$₩￦€¥]\s*[\d,]+(?:\.\d+)?|\$?\s*(?:[\d,]+(?:\.\d+)?)\s*(?:만\s*원?|천\s*원?|원|달러|불|유로|€(?!\s*[0-9])|\$(?!\s*[0-9]))|[1-9]\d{0,2}(?:,\d{3})+(?=\s*/))\s*(?:외|부터|~)?\s*(?:/[^\)]*)?\)',
         title_no_mall
     ))
     if len(title_matches) >= 2:
@@ -1284,7 +1286,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             p_val, p_curr = parse_price_token(m.group(2), default_currency)
             if _is_valid_option_name(opt_name) and p_val >= 100:
                 if not first_valid_prefix:
-                    first_valid_prefix = re.sub(r'\s*(?:1\+1|\d+\+\d+|\d+\s*(?:개|입|팩|세트)).*$', '', opt_name).strip()
+                    first_valid_prefix = re.sub(r'\s*(?:1\+1|\d+\+\d+|\d+(?:\.\d+)?\s*(?:개|입|팩|세트|kg|g|ml|l|gb|tb)(?:\s*[xX*]\s*\d+)?).*$', '', opt_name, flags=re.IGNORECASE).strip()
                 key = (opt_name.lower(), p_val)
                 if key not in seen_keys:
                     seen_keys.add(key)
@@ -1593,7 +1595,7 @@ class AggregatorService:
         
         # 1. 괄호/대괄호 속 달러/유로/원 우선 파싱 (예: (53,475원 외/무료), (129,000원 무료배송), ($7.66/$4.4), (46638/무), [899,000])
         match = re.search(
-            r'[\(\[]\s*(?:최저가?\s*|체감가?\s*|쿠폰가?\s*|할인가?\s*|약\s*)*\$?\s*((?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?!\s*,\s*\d{3})\s*(?:만\s*원?|원|달러|불|유로|€|\$)?)\s*(?:외|부터|~|각|이상|이하|전후)?\s*(?:[/,\s]\s*([^\)\]]*))?[\)\]]',
+            r'[\(\[]\s*(?:최저가?\s*|체감가?\s*|쿠폰가?\s*|할인가?\s*|카페머\s*|카할\s*|네멤\s*|유클\s*|와우\s*|토스\s*|페이코\s*|약\s*)*\$?\s*((?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?!\s*,\s*\d{3})\s*(?:만\s*원?|원|달러|불|유로|€|\$)?)\s*(?:외|부터|~|각|이상|이하|전후)?\s*(?:[/,\s]\s*([^\)\]]*))?[\)\]]',
             title_for_price
         )
         if match:
