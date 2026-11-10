@@ -186,7 +186,7 @@ def search_coupang_products(
 
 
 def _is_network_monetized(network: str) -> bool:
-    from backend.core.url_utils import DEFAULT_LINKPRICE_AFFILIATE_ID
+    from backend.core.url_utils import DEFAULT_LINKPRICE_AFFILIATE_ID, DEFAULT_COUPANG_LPTAG
     lp_id = (
         os.getenv("AFFILIATE_LINKPRICE_ID", "").strip()
         or os.getenv("LINKPRICE_AFFILIATE_ID", "").strip()
@@ -197,6 +197,7 @@ def _is_network_monetized(network: str) -> bool:
             coupang_service.is_configured()
             or os.getenv("AFFILIATE_COUPANG_LPTAG", "").strip()
             or os.getenv("COUPANG_PARTNERS_ID", "").strip()
+            or DEFAULT_COUPANG_LPTAG
         )
     if network == "aliexpress":
         return bool(

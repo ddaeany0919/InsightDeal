@@ -9,6 +9,7 @@ _AFFILIATE_DEEPLINK_CACHE: dict[str, str] = {}
 _LINKPRICE_APPROVAL_CACHE: dict[tuple[str, str], tuple[bool, float]] = {}
 
 DEFAULT_LINKPRICE_AFFILIATE_ID = "A100709825"
+DEFAULT_COUPANG_LPTAG = "AF4452088"
 
 # Linkprice_DetailMerchantList_20261111.xlsx 기준 즉시 승인 완료된 80개 머천트 ID (0ms 즉시 변환)
 _PREAPPROVED_LINKPRICE_MERCHANTS = {
@@ -191,6 +192,12 @@ def unwrap_third_party_affiliate_url(url: str, allow_network: bool = False) -> s
     u = html.unescape(str(url)).replace("&amp;", "&").strip()
     if u in _SHORTLINK_UNWRAP_CACHE:
         return _SHORTLINK_UNWRAP_CACHE[u]
+
+    # 이미 인사이트딜 자체 쿠팡 파트너스 게이트웨이(AF4452088) 또는 링크프라이스(A100709825) 링크인 경우 그대로 보존
+    if ("link.coupang.com/re/aff" in u.lower() and DEFAULT_COUPANG_LPTAG.lower() in u.lower()) or (
+        ("newtip.net" in u.lower() or "click.linkprice.com" in u.lower()) and DEFAULT_LINKPRICE_AFFILIATE_ID.lower() in u.lower()
+    ):
+        return u
 
     # 1. 쿼리 파라미터 기반 제휴 래퍼 (네트워크 요청 없이 0ms 해독)
     if any(k in u.lower() for k in ("click.linkprice.com", "newtip.net", "lpweb.kr", "ilikeclick.com", "adpick.co.kr")):
@@ -400,10 +407,11 @@ def apply_affiliate_monetization(url: str) -> str:
         parsed = urlparse(clean_url)
         host = parsed.netloc.lower()
 
-        # 1. 쿠팡 파트너스 (COUPANG_ACCESS_KEY+SECRET_KEY 딥링크 API 또는 AFFILIATE_COUPANG_LPTAG / COUPANG_PARTNERS_ID)
+        # 1. 쿠팡 파트너스 (COUPANG_ACCESS_KEY+SECRET_KEY 딥링크 API 또는 공식 AFFSDP/AFFSRP 게이트웨이 AF4452088)
         coupang_lptag = (
             os.getenv("AFFILIATE_COUPANG_LPTAG", "").strip()
             or os.getenv("COUPANG_PARTNERS_ID", "").strip()
+            or DEFAULT_COUPANG_LPTAG
         )
         coupang_subid = os.getenv("COUPANG_SUB_ID", "insightdeal").strip() or "insightdeal"
         if "coupang.com" in host and "link.coupang.com" not in host:
@@ -418,6 +426,25 @@ def apply_affiliate_monetization(url: str) -> str:
                     return dl
             if coupang_lptag:
                 qs = parse_qs(parsed.query)
+                m_prod = re.search(r"/products/(\d+)", parsed.path)
+                if m_prod:
+                    prod_id = m_prod.group(1)
+                    aff_params = [
+                        f"lptag={coupang_lptag}",
+                        f"subid={coupang_subid}",
+                        f"pageKey={prod_id}",
+                    ]
+                    item_id = (qs.get("itemId") or qs.get("itemid") or [""])[0]
+                    vendor_item_id = (qs.get("vendorItemId") or qs.get("vendoritemid") or [""])[0]
+                    if item_id:
+                        aff_params.append(f"itemId={item_id}")
+                    if vendor_item_id:
+                        aff_params.append(f"vendorItemId={vendor_item_id}")
+                    return f"https://link.coupang.com/re/AFFSDP?{'&'.join(aff_params)}"
+                if "/np/search" in parsed.path:
+                    kw = (qs.get("q") or [""])[0]
+                    if kw:
+                        return f"https://link.coupang.com/re/AFFSRP?lptag={coupang_lptag}&subid={coupang_subid}&pageKey={quote(kw)}"
                 qs["lptag"] = [coupang_lptag]
                 qs["subid"] = [coupang_subid]
                 qs["redirect"] = ["landing"]
