@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ThumbsUp, ThumbsDown, Share2, MessageSquare, Send, Bell, Copy, ExternalLink, Check, X } from "lucide-react";
 import type { Deal, DealSource } from "../lib/types";
 import {
@@ -49,8 +49,28 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
   const [commentInput, setCommentInput] = useState<string>("");
   const [submittingComment, setSubmittingComment] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [sheetOffsetY, setSheetOffsetY] = useState<number>(0);
+  const [isDraggingSheet, setIsDraggingSheet] = useState<boolean>(false);
+  const dragStartYRef = useRef<number | null>(null);
+  const closedByPopRef = useRef<boolean>(false);
 
   const getBrowserUserId = () => getOrCreateWebDeviceUuid();
+
+  const handleDismiss = useCallback(() => {
+    setSheetOffsetY(0);
+    setIsDraggingSheet(false);
+    if (
+      typeof window !== "undefined" &&
+      !closedByPopRef.current &&
+      window.history.state?.insightDealModal
+    ) {
+      closedByPopRef.current = true;
+      window.history.back();
+      onClose();
+      return;
+    }
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     setSelectedOptionIndex(0);
@@ -64,6 +84,8 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
     setComments([]);
     setCommentInput("");
     setCopiedCode(null);
+    setSheetOffsetY(0);
+    setIsDraggingSheet(false);
 
     if (!deal) return;
 
@@ -131,12 +153,34 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
   }, [deal]);
 
   useEffect(() => {
+    if (!deal || typeof window === "undefined") return;
+
+    closedByPopRef.current = false;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    if (!window.history.state?.insightDealModal) {
+      try {
+        window.history.pushState({ insightDealModal: deal.id }, "");
+      } catch {}
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") handleDismiss();
     };
+    const handlePopState = () => {
+      closedByPopRef.current = true;
+      onClose();
+    };
+
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [deal?.id, handleDismiss, onClose]);
 
   const preOptionSources = deal ? getOptionSources(detailSources, deal.options_data) : [];
   const preSelectedOption =
@@ -282,108 +326,148 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
     }
   };
 
+  const handleHeaderTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      dragStartYRef.current = e.touches[0].clientY;
+      setIsDraggingSheet(true);
+    }
+  };
+
+  const handleHeaderTouchMove = (e: React.TouchEvent) => {
+    if (dragStartYRef.current === null || !isDraggingSheet) return;
+    const deltaY = e.touches[0].clientY - dragStartYRef.current;
+    if (deltaY > 0) {
+      setSheetOffsetY(Math.min(260, deltaY));
+    } else {
+      setSheetOffsetY(0);
+    }
+  };
+
+  const handleHeaderTouchEnd = () => {
+    if (!isDraggingSheet) return;
+    setIsDraggingSheet(false);
+    dragStartYRef.current = null;
+    if (sheetOffsetY > 75) {
+      handleDismiss();
+    } else {
+      setSheetOffsetY(0);
+    }
+  };
+
   return (
     <div
       className="deal-modal-overlay"
-      onClick={onClose}
+      onClick={handleDismiss}
     >
       <div
         className="glass-panel deal-modal-panel"
         onClick={(e) => e.stopPropagation()}
+        style={{
+          transform: sheetOffsetY > 0 ? `translateY(${sheetOffsetY}px)` : undefined,
+          transition: isDraggingSheet ? "none" : "transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)",
+        }}
       >
-        {/* 헤더 (상품 썸네일 + 메타 배지 + 상품명 + 액션 버튼) */}
-        <div className="deal-modal-header">
-          <div className="deal-modal-header-main">
-            {activeImageUrl && (
-              <div
-                key={activeImageUrl}
-                className="deal-modal-thumb"
-                style={{
-                  border: selectedOption ? "1.5px solid var(--accent)" : "1px solid var(--card-border)",
-                }}
-              >
-                <img
-                  src={getProxyImageUrl(activeImageUrl, { width: 400 })}
-                  alt={activeOptionTitle || deal.title}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    const fallback = getFallbackProxyImageUrl(activeImageUrl);
-                    if (fallback && e.currentTarget.src !== fallback) {
-                      e.currentTarget.src = fallback;
-                    }
+        {/* 상단 Sticky 헤더 (모바일 드래그 핸들 + 상품 썸네일 + 메타 배지 + 상품명 + 액션 버튼) */}
+        <div
+          className="deal-modal-header-sticky"
+          onTouchStart={handleHeaderTouchStart}
+          onTouchMove={handleHeaderTouchMove}
+          onTouchEnd={handleHeaderTouchEnd}
+        >
+          <div className="deal-modal-grabber" aria-hidden="true" />
+          <div className="deal-modal-header">
+            <div className="deal-modal-header-main">
+              {activeImageUrl && (
+                <div
+                  key={activeImageUrl}
+                  className="deal-modal-thumb"
+                  style={{
+                    border: selectedOption ? "1.5px solid var(--accent)" : "1px solid var(--card-border)",
                   }}
-                />
-                {selectedOption && (selectedOptionIndex === 0 || Boolean(selectedOption.image_url && selectedOption.image_url.trim() !== "")) && (
-                  <span
-                    style={{
-                      position: "absolute",
-                      bottom: "3px",
-                      right: "3px",
-                      background: "rgba(15, 23, 42, 0.75)",
-                      color: "#fff",
-                      fontSize: "0.62rem",
-                      fontWeight: 800,
-                      padding: "1px 5px",
-                      borderRadius: "4px",
-                      backdropFilter: "blur(4px)",
+                >
+                  <img
+                    src={getProxyImageUrl(activeImageUrl, { width: 400 })}
+                    alt={activeOptionTitle || deal.title}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      const fallback = getFallbackProxyImageUrl(activeImageUrl);
+                      if (fallback && e.currentTarget.src !== fallback) {
+                        e.currentTarget.src = fallback;
+                      }
                     }}
-                  >
-                    #{selectedOptionIndex + 1}
-                  </span>
-                )}
+                  />
+                  {selectedOption && (selectedOptionIndex === 0 || Boolean(selectedOption.image_url && selectedOption.image_url.trim() !== "")) && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        bottom: "3px",
+                        right: "3px",
+                        background: "rgba(15, 23, 42, 0.75)",
+                        color: "#fff",
+                        fontSize: "0.62rem",
+                        fontWeight: 800,
+                        padding: "1px 5px",
+                        borderRadius: "4px",
+                        backdropFilter: "blur(4px)",
+                      }}
+                    >
+                      #{selectedOptionIndex + 1}
+                    </span>
+                  )}
+                </div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px", flexWrap: "wrap" }}>
+                  <span className="deal-source">{deal.community_name}</span>
+                  {deal.tags &&
+                    deal.tags.map((t, idx) => {
+                      const cleanTag = String(t).replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]+\s*/gu, "").trim();
+                      if (!cleanTag) return null;
+                      return (
+                        <span
+                          key={idx}
+                          style={{
+                            fontSize: "0.73rem",
+                            padding: "3px 9px",
+                            borderRadius: "6px",
+                            background: "var(--badge-bg)",
+                            border: "1px solid var(--card-border)",
+                            color: "var(--badge-text)",
+                            fontWeight: 700,
+                            letterSpacing: "-0.01em",
+                          }}
+                        >
+                          {cleanTag}
+                        </span>
+                      );
+                    })}
+                </div>
+                <h3 className="deal-modal-title">
+                  {deal.title}
+                </h3>
               </div>
-            )}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px", flexWrap: "wrap" }}>
-                <span className="deal-source">{deal.community_name}</span>
-                {deal.tags &&
-                  deal.tags.map((t, idx) => {
-                    const cleanTag = String(t).replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]+\s*/gu, "").trim();
-                    if (!cleanTag) return null;
-                    return (
-                      <span
-                        key={idx}
-                        style={{
-                          fontSize: "0.73rem",
-                          padding: "3px 9px",
-                          borderRadius: "6px",
-                          background: "var(--badge-bg)",
-                          border: "1px solid var(--card-border)",
-                          color: "var(--badge-text)",
-                          fontWeight: 700,
-                          letterSpacing: "-0.01em",
-                        }}
-                      >
-                        {cleanTag}
-                      </span>
-                    );
-                  })}
-              </div>
-              <h3 className="deal-modal-title">
-                {deal.title}
-              </h3>
             </div>
-          </div>
-          <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
-            <button
-              type="button"
-              onClick={handleShare}
-              title="공유하기"
-              aria-label="상품 공유하기"
-              className="deal-modal-icon-btn bounce-click"
-            >
-              <Share2 size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="상세 모달 닫기"
-              title="닫기"
-              className="deal-modal-icon-btn bounce-click"
-            >
-              <X size={17} strokeWidth={2.4} />
-            </button>
+            <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+              <button
+                type="button"
+                onClick={handleShare}
+                title="공유하기"
+                aria-label="상품 공유하기"
+                className="deal-modal-icon-btn bounce-click"
+              >
+                <Share2 size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={handleDismiss}
+                aria-label="상세 모달 닫기"
+                title="닫기"
+                className="deal-modal-icon-btn deal-modal-close-icon-btn bounce-click"
+              >
+                <X size={18} strokeWidth={2.5} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1198,7 +1282,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
             <button
               type="button"
               className="bounce-click deal-modal-btn-close"
-              onClick={onClose}
+              onClick={handleDismiss}
             >
               <span>닫기</span>
             </button>

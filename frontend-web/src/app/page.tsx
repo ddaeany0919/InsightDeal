@@ -743,6 +743,17 @@ export default function Home() {
     if (typeof window === "undefined") return;
 
     const handleTouchStart = (e: TouchEvent) => {
+      if (
+        selectedDeal ||
+        isWishlistOpen ||
+        isNotificationOpen ||
+        showPrivacyModal ||
+        showEulaModal ||
+        showLoginModal
+      ) {
+        isPullingRef.current = false;
+        return;
+      }
       if (window.scrollY <= 0 && e.touches.length === 1) {
         touchStartYRef.current = e.touches[0].clientY;
         isPullingRef.current = true;
@@ -798,7 +809,18 @@ export default function Home() {
       window.removeEventListener("touchmove", handleTouchMove);
       window.removeEventListener("touchend", handleTouchEnd);
     };
-  }, [isRefreshing, activeTab, activePlatform, pullOffset]);
+  }, [
+    isRefreshing,
+    activeTab,
+    activePlatform,
+    pullOffset,
+    selectedDeal,
+    isWishlistOpen,
+    isNotificationOpen,
+    showPrivacyModal,
+    showEulaModal,
+    showLoginModal,
+  ]);
 
   // 50초 주기 백그라운드 새 핫딜 감지 (스크롤 위치를 방해하지 않고 상단 캡슐 알림 노출)
   useEffect(() => {
