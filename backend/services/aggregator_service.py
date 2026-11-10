@@ -86,7 +86,7 @@ def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str 
         "오늘의집": "오늘의집", "알리": "알리익스프레스", "알리익스프레스": "알리익스프레스",
         "티몬": "티몬", "위메프": "위메프", "인터파크": "인터파크", "ssg": "SSG", "쓱": "SSG", "신세계몰": "신세계몰", "이마트몰": "이마트몰",
         "무신사": "무신사", "29cm": "29CM", "토스": "토스", "토스쇼핑": "토스", "톡딜": "톡딜", "카카오": "카카오", "카카오톡딜": "톡딜", "카카오선물하기": "카카오", "카카오톡선물하기": "카카오",
-        "우체국쇼핑": "우체국쇼핑", "우체국": "우체국쇼핑", "하이마트": "하이마트", "롯데하이마트": "하이마트",
+        "우체국쇼핑": "우체국쇼핑", "우체국": "우체국쇼핑", "하이마트": "하이마트", "하이마트몰": "하이마트", "롯데하이마트": "하이마트",
         "cj온스타일": "CJ온스타일", "cjonstyle": "CJ온스타일", "gs샵": "GS샵", "gsshop": "GS샵", "gs25": "GS샵", "gs25앱": "GS샵",
         "현대hmall": "현대Hmall", "hmall": "현대Hmall", "컬리": "컬리", "마켓컬리": "컬리",
         "아마존": "아마존", "큐텐": "큐텐", "qoo10": "큐텐", "테무": "테무",
@@ -158,7 +158,9 @@ def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str 
         cs_clean = re.sub(r"\s+", "", current_shop.strip()).lower()
         if cs_clean in mall_alias_map:
             return mall_alias_map[cs_clean]
-        for k, v in mall_alias_map.items():
+        for k, v in sorted(mall_alias_map.items(), key=lambda x: len(x[0]), reverse=True):
+            if k == "이마트몰" and "하이마트" in cs_clean:
+                continue
             if k in cs_clean:
                 return v
 
@@ -167,7 +169,11 @@ def infer_shop_name(raw_title: str, ecommerce_link: str = "", current_shop: str 
             cand = re.sub(r"\s*공식(?:몰|스토어)?$", "", raw_br.strip()).strip()
             cand_clean = re.sub(r"\s+", "", cand).lower()
             if not _is_non_mall_tag(cand_clean):
-                for k, v in mall_alias_map.items():
+                if cand_clean in mall_alias_map:
+                    return mall_alias_map[cand_clean]
+                for k, v in sorted(mall_alias_map.items(), key=lambda x: len(x[0]), reverse=True):
+                    if k == "이마트몰" and "하이마트" in cand_clean:
+                        continue
                     if k == cand_clean or k in cand_clean:
                         return v
 
@@ -433,9 +439,19 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 if 500 <= pv <= 15000000:
                     results.append((pv, "KRW", score))
 
-            # 만원 단위 (57.6만원, 16만, 11만원대, 194.6만 등 - 단, '22.5W 1만', '45W 2만' 같은 보조배터리 용량 표기는 제외)
+            # 단독 콤마 포맷 원화 가격 줄 (예: '1,499,700', '2,589,280')
+            if not results:
+                m_bare_krw = re.match(r'^(?:가격\s*[:\-]?\s*)?([1-9]\d{0,2}(?:,\d{3})+)\s*$', part.strip())
+                if m_bare_krw:
+                    pv = int(m_bare_krw.group(1).replace(',', ''))
+                    if 1000 <= pv <= 15000000:
+                        results.append((pv, "KRW", score))
+
+            # 만원 단위 (57.6만원, 16만, 11만원대, 194.6만 등 - 단, '22.5W 1만', '150만원 언더', '30만원 넘는' 등 비교/용량 문구는 제외)
             if not any(r[1] == "KRW" for r in results):
-                for m_man in re.finditer(r'(?<!W\s)(?<!w\s)([0-9]+(?:\.[0-9]+)?)\s*만\s*(?:원(?:대|\s*중반|\s*초반|\s*후반)?|대|정도|가량|\s*중반|\s*초반|\s*후반)?(?!\s*(?:mAh|mah|개|명|장|번|회|점))', part):
+                for m_man in re.finditer(r'(?<!W\s)(?<!w\s)([0-9]+(?:\.[0-9]+)?)\s*만\s*(?:원(?:대|\s*중반|\s*초반|\s*후반)?|대|정도|가량|\s*중반|\s*초반|\s*후반)?(?!\s*(?:mAh|mah|개|명|장|번|회|점|언더|넘는|짜리|차이|더\s*비싸|비싸|아끼|정도\s*더))', part):
+                    if re.search(r'^\s*' + re.escape(m_man.group(0)) + r'\s*(?:언더|넘는|짜리|차이|더\s*비싸|비싸)', part[m_man.start():]):
+                        continue
                     m_float = float(m_man.group(1))
                     has_man_suffix = bool(re.search(r'만\s*(?:원|대|정도|가량|중반|초반|후반)', m_man.group(0)))
                     if has_man_suffix or m_float >= 6:
@@ -868,12 +884,26 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 break
             m_img = img_marker_re.match(ln)
             if m_img:
+                img_u = m_img.group(1).strip().replace('/./', '/')
                 if open_top_blk is not None:
+                    if not open_top_blk.get("img"):
+                        open_top_blk["img"] = img_u
+                        blocks.append((open_top_blk["lines"], open_top_blk["url"], open_top_blk["img"]))
+                        open_top_blk = None
+                        current_lines = []
+                        in_cart_combo_section = False
+                        pending_blk_img = ""
+                        continue
                     blocks.append((open_top_blk["lines"], open_top_blk["url"], open_top_blk["img"]))
                     open_top_blk = None
+                elif blocks and not current_lines and not blocks[-1][2]:
+                    blocks[-1] = (blocks[-1][0], blocks[-1][1], img_u)
+                    in_cart_combo_section = False
+                    pending_blk_img = ""
+                    continue
                 current_lines = []
                 in_cart_combo_section = False
-                pending_blk_img = m_img.group(1).strip()
+                pending_blk_img = img_u
                 continue
             cleaned_urls = extract_clean_urls_from_line(ln)
             text_only = url_pattern.sub('', ln).replace('(링크:', '').replace('()', '').strip(' -·:[]>🔗')
@@ -906,12 +936,24 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 url_line_has_own_price = bool(text_only and extract_scored_prices_from_line(text_only))
                 if has_price_before_url and (is_explicit_bottom_link or not url_line_has_own_price or not pending_blk_img):
                     # Bottom-Link 구조: 이미 제목과 가격이 위쪽에 등장했고 하단 링크로 블록이 닫히는 경우
+                    first_p_idx = next((idx_c for idx_c, cl in enumerate(current_lines) if extract_scored_prices_from_line(cl)), -1)
+                    if first_p_idx >= 2:
+                        prev_cand = current_lines[first_p_idx - 1].strip()
+                        if len(prev_cand) >= 12 and not prev_cand.startswith(('(', '옵션', '-', '•')) and _line_has_valid_name_candidate(prev_cand):
+                            current_lines = current_lines[first_p_idx - 1:]
+                        else:
+                            current_lines = current_lines[max(0, first_p_idx - 2):]
                     if text_only and not is_noise_line(text_only):
                         current_lines.append(text_only)
                     blocks.append((list(current_lines), cleaned_urls[0], pending_blk_img))
                 else:
                     # Top-Link 구조: 제목 + 링크가 먼저 등장하고 아래쪽에 가격/할인코드가 이어지는 경우
-                    top_init_lines = [text_only] if (text_only and not is_noise_line(text_only)) else list(current_lines[-2:])
+                    if text_only and not is_noise_line(text_only):
+                        top_init_lines = [text_only]
+                    elif current_lines and _line_has_valid_name_candidate(current_lines[-1]) and not extract_scored_prices_from_line(current_lines[-1]):
+                        top_init_lines = [current_lines[-1]]
+                    else:
+                        top_init_lines = list(current_lines[-2:])
                     open_top_blk = {
                         "lines": top_init_lines,
                         "url": cleaned_urls[0],

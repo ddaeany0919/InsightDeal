@@ -332,7 +332,7 @@ class AsyncBaseScraper(ABC):
                 'common/', 'btn_', 'button', 'share_', 'footer', 'header', 'avatar', 'lazyload',
                 '11st_', 'gmarket_logo', 'auction_logo', 'naver_logo',
                 'lookaside.fbsbx.com', 'facebook.com', 'instagram.com',
-                'close.jpg', 'close.png', 'close.gif', 'tvcast', 'sstatic/search'
+                'close.jpg', 'close.png', 'close.gif', 'tvcast', 'sstatic/search', 'cafefiles.naver', '아이콘'
             ]
             return not any(tok in low for tok in bad_tokens)
 
@@ -426,8 +426,8 @@ class AsyncBaseScraper(ABC):
                                     'blank', 'avatar', 'favicon', '파비콘', '.ico', 'influencer-phinf',
                                     'clip-service-phinf', 'pup-post-phinf', '96x96', '32x32', '64x64',
                                     '192x192', 'cropped-', 'Press', 'news',
-                                    'blogfiles.naver', 'postfiles.pstatic', 'mblogthumb-phinf', 'cafeptthumb',
-                                    'tvcast', 'sstatic/search', 'sstatic.net/sstatic', 'kin-phinf', 'dbscthumb-phinf', 'navertv', 'veta-phinf'
+                                    'blogfiles.naver', 'postfiles.pstatic', 'mblogthumb-phinf', 'cafeptthumb', 'cafefiles.naver',
+                                    'tvcast', 'sstatic/search', 'sstatic.net/sstatic', 'kin-phinf', 'dbscthumb-phinf', 'navertv', 'veta-phinf', '아이콘'
                                 )
                                 preferred_naver = []
                                 fallback_naver = []
