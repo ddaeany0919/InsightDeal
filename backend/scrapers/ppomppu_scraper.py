@@ -338,7 +338,19 @@ class PpomppuScraper(AsyncBaseScraper):
                     return {"image_url": fb_img}
             return {}
         soup = BeautifulSoup(html, 'html.parser')
-        
+
+        detail_title = ""
+        og_t = soup.find("meta", property="og:title")
+        if og_t and og_t.get("content"):
+            detail_title = og_t.get("content").strip()
+        if not detail_title:
+            vt_el = soup.select_one("font.view_title2, .topTitle-mainbox h1, #topTitle h1")
+            if vt_el:
+                detail_title = vt_el.get_text(" ", strip=True)
+        if detail_title and "�" not in detail_title:
+            if not full_title or full_title.endswith("...") or len(detail_title) > len(full_title):
+                full_title = detail_title
+
         ecommerce_link = ""
         # 1. 뽐뿌 개편 레이아웃 상단 구매 링크 (.topTitle-box, .topTitle-mainbox, .topTitle-link) 및 구형 레이아웃 (.word, .word_break a)
         # 닉네임(baseList-name), 프로필 등 오탐지 방지 위해 후보 a태그 중 실제 아웃링크(http)만 엄격 필터링
@@ -576,7 +588,7 @@ class PpomppuScraper(AsyncBaseScraper):
                 image_url = og_img
 
         # [CEO 피드백: 모음전 분할을 위해 텍스트 길이 충분한 본문을 content_html로 반환]
-        return {
+        res_dict = {
             "ecommerce_link": ecommerce_link, 
             "price": price_fallback, 
             "currency": extracted_currency,
@@ -586,3 +598,6 @@ class PpomppuScraper(AsyncBaseScraper):
             "is_closed": is_closed,
             "posted_at": posted_at_iso
         }
+        if detail_title and "�" not in detail_title:
+            res_dict["title"] = detail_title
+        return res_dict

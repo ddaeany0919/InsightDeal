@@ -535,6 +535,7 @@ async def scrape_and_push_once():
 
                                 is_missing_cached_img = not (cached_detail.get("image_url") or item.get("image_url"))
                                 cached_html_str = str(cached_detail.get("content_html") or "").strip()
+                                cached_title_str = str(cached_detail.get("title") or "").strip()
                                 is_truncated_ppomppu_on_local = (
                                     (not IS_CLOUD_ENV)
                                     and ("ppomppu.co.kr" in item_url)
@@ -543,6 +544,7 @@ async def scrape_and_push_once():
                                         or len(cached_html_str) == 110
                                         or cached_html_str.endswith("...</p>")
                                         or cached_html_str.endswith("...")
+                                        or cached_title_str.endswith("...")
                                     )
                                 )
                                 if is_truncated_ppomppu_on_local:

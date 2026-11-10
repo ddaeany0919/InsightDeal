@@ -174,13 +174,47 @@ def _clean_option_display_name(raw_name: str) -> str:
                 n = m_lead.group(3).strip()
                 continue
         break
+    n = re.sub(r"^\uC0C1\uD488\s*(?=[\uAC00-\uD7A3a-zA-Z0-9\[])", "", n).strip()
+    if len(n) > 60:
+        n = n[:60].strip()
     # 끝단에 닫히지 않고 잘린 괄호 조각 (예: '(옵션', '[옵션', '(무료') 제거
     n = re.sub(r"\s*[\(\[][^\)\]]*$", "", n).strip()
     while n.endswith(")") and n.count(")") > n.count("("):
         n = n[:-1].strip()
     while n.endswith("]") and n.count("]") > n.count("["):
         n = n[:-1].strip()
+    if n.count("(") > n.count(")"):
+        n = re.sub(r"\s*\([^\)]*$", "", n).strip()
+    if n.count("[") > n.count("]"):
+        n = re.sub(r"\s*\[[^\]]*$", "", n).strip()
     return n.strip(" -·:,/~+>")
+
+
+def _sanitize_deal_title_brackets(raw_title: str) -> str:
+    if not raw_title:
+        return ""
+    t = raw_title.strip()
+    # 1) 여는 괄호 없이 닫는 괄호로 시작하는 머리말 (예: '잔여공구코드) ', '광군제 22종) ', '임박) ') -> '[머리말] '
+    m_head = re.match(r"^([^\[\]\(\)]{1,22})[\)\]]\s+(.+)$", t)
+    if m_head:
+        t = f"[{m_head.group(1).strip()}] {m_head.group(2).strip()}"
+    # 2) 모록/피드 길이 제한으로 끝단의 괄호가 닫히지 않은 채 '...' 등으로 잘린 경우 스펙/가격 보존하며 괄호 닫기
+    while t.endswith(")") and t.count(")") > t.count("("):
+        t = t[:-1].strip()
+    while t.endswith("]") and t.count("]") > t.count("["):
+        t = t[:-1].strip()
+    while t.count("(") > t.count(")"):
+        if re.search(r"\(\s*\$?\s*\.{2,}\s*$", t):
+            t = re.sub(r"\s*\(\s*\$?\s*\.{2,}\s*$", "", t).strip()
+        else:
+            t = re.sub(r"\.{2,}\s*$", "", t).rstrip(" ,/-") + ")"
+    while t.count("[") > t.count("]"):
+        t = re.sub(r"\.{2,}\s*$", "", t).rstrip(" ,/-") + "]"
+    if t.count(")") > t.count("("):
+        t = t.replace(")", "")
+    if t.count("]") > t.count("["):
+        t = t.replace("]", "")
+    return t
 
 
 def _is_valid_option_name(name: str) -> bool:
@@ -646,7 +680,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 if norm_k not in seen_num_keys:
                     seen_num_keys.add(norm_k)
                     opt_obj = {
-                        "name": opt_display_name[:65],
+                        "name": _clean_option_display_name(opt_display_name),
                         "price": chosen_price,
                         "currency": chosen_curr,
                         "url": primary_url,
@@ -698,7 +732,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     max_sc = max(x[2] for x in c_prices)
                     cp_val, cp_curr, _ = [x for x in c_prices if x[2] == max_sc][-1]
                     card_options.append({
-                        "name": full_model_name[:60],
+                        "name": _clean_option_display_name(full_model_name),
                         "price": cp_val,
                         "currency": cp_curr,
                         "url": c_urls[0] if c_urls else cleaned_default_url,
@@ -907,7 +941,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     if key not in seen_blk_keys:
                         seen_blk_keys.add(key)
                         opt_d = {
-                            "name": cand_name[:60],
+                            "name": _clean_option_display_name(cand_name),
                             "price": chosen_price,
                             "currency": chosen_curr,
                             "url": blk_url,
@@ -949,7 +983,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     if _is_valid_option_name(sp_name) and p_val >= 100:
                         matched_url = body_shop_urls[idx_sp][1] if idx_sp < len(body_shop_urls) else cleaned_default_url
                         slash_opts.append({
-                            "name": sp_name[:60],
+                            "name": _clean_option_display_name(sp_name),
                             "price": p_val,
                             "currency": p_curr,
                             "url": matched_url,
@@ -997,7 +1031,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     if not matched_url:
                         matched_url = cleaned_default_url
                     options.append({
-                        "name": opt_name[:60],
+                        "name": _clean_option_display_name(opt_name),
                         "price": p_val,
                         "currency": p_curr,
                         "url": matched_url,
@@ -1062,7 +1096,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 if _is_valid_option_name(name_cand) and p_val >= 100:
                     matched_u = body_shop_urls[idx_seg][1] if idx_seg < len(body_shop_urls) else cleaned_default_url
                     slash_options.append({
-                        "name": name_cand[:60],
+                        "name": _clean_option_display_name(name_cand),
                         "price": p_val,
                         "currency": p_curr,
                         "url": matched_u,
@@ -1102,7 +1136,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 if key not in seen_keys:
                     seen_keys.add(key)
                     line_options.append({
-                        "name": opt_name[:60],
+                        "name": _clean_option_display_name(opt_name),
                         "price": p_val,
                         "currency": p_curr,
                         "url": cleaned_default_url,
@@ -1287,7 +1321,7 @@ class AggregatorService:
 
     async def process_scraped_deal(self, community_id: int, scraped_data: dict) -> Deal:
         from backend.core.url_utils import normalize_url
-        raw_title = (scraped_data.get("title", "") or "").replace("\xa0", " ").replace("릿模셈", "넾다세일").replace("\ufffd", "").strip()
+        raw_title = _sanitize_deal_title_brackets((scraped_data.get("title", "") or "").replace("\xa0", " ").replace("릿模셈", "넾다세일").replace("\ufffd", "").strip())
         provided_price = scraped_data.get("price", 0)
         url = normalize_url(scraped_data.get("url", "") or "")
         scraped_data["url"] = url
