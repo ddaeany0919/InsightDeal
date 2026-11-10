@@ -213,18 +213,18 @@ def test_option_specific_history_api(db_session):
 
 
 @pytest.mark.asyncio
-async def test_enrich_option_images_safely_name_fallback():
-    """8. URL이 없는 옵션에 대해 네이버/다음 쇼핑 CDN 썸네일 폴백 정상 작동 검증"""
+async def test_enrich_option_images_safely_no_search_pollution():
+    """8. 고유 직링크(지마켓/옥션)는 1:1 이미지를 조립하고, URL이 없거나 공유된 옵션은 무관한 웹검색 이미지로 오염시키지 않고 빈 문자열("")을 유지하는지 검증"""
     options = [
+        {"name": "지마켓 단독 옵션", "price": 15000, "currency": "KRW", "url": "https://item.gmarket.co.kr/Item?goodscode=1234567890", "image_url": ""},
         {"name": "뷰몬트 15.6 모니터", "price": 3456, "currency": "USD", "url": "", "image_url": ""},
         {"name": "경동나비엔 EME550S", "price": 240000, "currency": "KRW", "url": "", "image_url": ""}
     ]
     await AggregatorService._enrich_option_images_safely(options)
 
-    images = [opt.get("image_url") for opt in options if opt.get("image_url")]
-    assert len(images) >= 1, f"Expected at least 1 option image to be enriched, got {options}"
-    for img in images:
-        assert img.startswith("http"), f"Image URL must be valid HTTP(S), got {img}"
+    assert options[0]["image_url"] == "https://gdimg.gmarket.co.kr/1234567890/still/600"
+    assert options[1]["image_url"] == ""
+    assert options[2]["image_url"] == ""
 
 
 def test_parenthesized_usd_and_unmatched_bracket_multi_options():
