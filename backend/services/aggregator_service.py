@@ -316,6 +316,12 @@ def _is_valid_option_name(name: str) -> bool:
         return False
     if re.match(r"^\d+\s*인치\s*,\s*(?:[가-힣]+(?:컬러|색상)?\s*,\s*)?조명\s*(?:있음|없음|포함)", n):
         return False
+    if re.match(
+        r"^(?:(?:TLC|QLC|MLC|SLC)\s*,\s*\d+\s*년\s*보증|\d+\s*MB/s\s*,|N\d+\s+EU\s*,|\d+\s*G(?:B)?\s+\d+\s*G(?:B)?\s+(?:Grey|Gray|White|Black|Silver|블랙|화이트|그레이|실버)|행사\s*혜택|자가\s*설치\s*기본|무료\s*배송\s*및\s*설치|\d+서브\s*픽셀|G라이브\s*구매\s*인증)",
+        n,
+        re.IGNORECASE,
+    ):
+        return False
     if re.search(r"(?:구매\s*시|결제\s*시|적용\s*시|소지\s*시|담고)$", n):
         return False
     if any(sub in n for sub in _PROSE_NOISE_SUBSTRINGS):
@@ -420,7 +426,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         s = re.sub(r'(?:\d+(?:\.\d+)?\s*)?(?:개당|병당|포당|통당|박스당|팩당|캔당|키로당|kg당|100g당|10g당|g당|ml당|미당|구당)\s*(?:->|→|[:\-])?\s*약?\s*[₩￦$]?\s*[\d,]+\s*원?', ' ', s, flags=re.IGNORECASE)
         # 4) 쿠폰/코인/적립금/결제할인 단독 할인 금액 문구 ($4 할인쿠폰, 코인 할인 : $1.96, 결제할인 (최대 $22), 13,000원 결제할인, $14 롯데비자 / $5.8 토스페이, 8,000원 <카카오/토스페이> 등) 제거
         s = re.sub(
-            r'(?:코인\s*할인[^\n:]*:\s*[$₩￦]?\s*[0-9,.]+|\$\s*[0-9,.]+\s*(?:할인\s*)?(?:쿠폰|코드)|[0-9,.]+\s*(?:만\s*원?|천\s*원?|원|달러|\$)\s*(?:(?:할인|중복|다운로드|스토어|선착순)?\s*(?:쿠폰|코드)|(?:결제|카드|코드|코인|즉시|추가|중복)\s*할인)|(?:스토어|판매자|코드|특가\s*코드|공구\s*코드|카드|결제|코인)\s*(?:코드\s*|쿠폰\s*)?할인\s*[:\-]?\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|[0-9,.]+\s*(?:달러|원|\$)\s*기준|(?:선착순\s*)?적립금\s*[$₩￦]?\s*[0-9,]+\s*원?|[0-9,]+\s*원?\s*(?:적립금?|줘서)|[0-9,.]+\s*(?:만\s*원?|천\s*원?|원)\s*(?:페이백|캐시백)|(?:결제\s*할인|유튜버\s*코드\s*할인|스토어\s*중복\s*할인|중복\s*카드\s*할인|스토어\s*할인\s*코드|채널\s*할인\s*코드|추가)\s*(?:\([^\)]*\)\s*)?(?:최대\s*)?[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|(?:최대\s*할인(?!\s*가)|최소\s*결제\s*금액|최소\s*주문\s*금액)\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|천\s*원?|원|\$|달러)?|최대\s*[$₩￦]\s*[0-9,.]+|(?:[$₩￦]\s*[0-9,.]+|[0-9,.]+\s*(?:만\s*원?|천\s*원?|원|달러|\$))\s*[-:<\[\(\s]*\s*(?:롯데\s*비자|우리\s*비자|비자\s*카드|유니온\s*페이|토스\s*뱅크|IBK\s*마스터|우리\s*마스터|롯데\s*마스터|마스터\s*카드|카카오\s*/\s*토스페이|KB\s*/\s*롯데카드|카카오\s*페이(?!\s*결제)|토스\s*페이(?!\s*(?:\d+%?\s*|\d+프로\s*)?결제)|네이버\s*페이(?!\s*결제)|롯데\s*카드|KB\s*(?:국민\s*)?카드|KB\s*국민|신한\s*카드|삼성\s*카드|현대\s*카드|하나\s*카드|농협\s*카드|BC\s*카드)(?!\s*(?:결제가|최종|체감|할인가|실구매|적용가|시\s*최저)))',
+            r'(?:코인\s*할인[^\n:]*:\s*[$₩￦]?\s*[0-9,.]+|\$\s*[0-9,.]+\s*(?:할인\s*)?(?:쿠폰|코드)|[0-9,.]+\s*(?:만\s*원?|천\s*원?|원|달러|\$)\s*(?:(?:할인|중복|다운로드|스토어|선착순)?\s*(?:쿠폰|코드)|(?:결제|카드|코드|코인|즉시|추가|중복)\s*할인)|(?:스토어|판매자|코드|특가\s*코드|공구\s*코드|카드|결제|코인)\s*(?:코드\s*|쿠폰\s*)?할인\s*[:\-]?\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|[0-9,.]+\s*(?:달러|원|\$)\s*기준|(?:선착순\s*)?적립금\s*[$₩￦]?\s*[0-9,]+\s*원?|[0-9,]+\s*원?\s*(?:적립금?|줘서)|[0-9,.]+\s*(?:만\s*원?|천\s*원?|원)\s*(?:페이백|캐시백)|(?:결제\s*할인|유튜버\s*코드\s*할인|스토어\s*중복\s*할인|중복\s*카드\s*할인|스토어\s*할인\s*코드|채널\s*할인\s*코드|추가)\s*(?:\([^\)]*\)\s*)?(?:최대\s*)?[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|(?:최대\s*할인(?!\s*가)|최소\s*결제\s*금액|최소\s*주문\s*금액)\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|천\s*원?|원|\$|달러)?|(?<!할인가\s)(?:최대|최소)\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|천\s*원?|원|\$|달러)?|(?:체감가?\s*)?[0-9,]+\s*원\??\s*(?:낮아|빠지|할인|인하|절감)|(?:[$₩￦]\s*[0-9,.]+|[0-9,.]+\s*(?:만\s*원?|천\s*원?|원|달러|\$))\s*[-:<\[\(\s]*\s*(?:롯데\s*비자|우리\s*비자|비자\s*카드|유니온\s*페이|토스\s*뱅크|IBK\s*마스터|우리\s*마스터|롯데\s*마스터|마스터\s*카드|카카오\s*/\s*토스페이|KB\s*/\s*롯데카드|카카오\s*페이(?!\s*결제)|토스\s*페이(?!\s*(?:\d+%?\s*|\d+프로\s*)?결제)|네이버\s*페이(?!\s*결제)|롯데\s*카드|KB\s*(?:국민\s*)?카드|KB\s*국민|신한\s*카드|삼성\s*카드|현대\s*카드|하나\s*카드|농협\s*카드|BC\s*카드)(?!\s*(?:결제가|최종|체감|할인가|실구매|적용가|시\s*최저)))',
             ' ',
             s,
             flags=re.IGNORECASE,
@@ -435,7 +441,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         parts = [p.strip() for p in re.split(r'\s+/\s+', s) if p.strip()]
         for part in parts:
             if (
-                any(k in part for k in ('공구가', '체감가', '최종가', '최종가격', '역대 최저가', '실구매', '혜택가', '쿠폰가', '결제가', '구매가', '합계', '최대 할인가', '최대할인가', '페이코 결제', '토스페이 결제', '토스페이 20프로 결제', '네이버페이 결제', '카카오페이 결제', '할인 가격', '할인가격', '코드+코인샵', '코인샵+코드'))
+                any(k in part for k in ('공구가', '체감가', '최종가', '최종가격', '역대 최저가', '실구매', '혜택가', '쿠폰가', '결제가', '구매가', '단가', '합계', '최대 할인가', '최대할인가', '페이코 결제', '토스페이 결제', '토스페이 20프로 결제', '네이버페이 결제', '카카오페이 결제', '할인 가격', '할인가격', '코드+코인샵', '코인샵+코드'))
                 and '카드 시' not in part
                 and '최대카할' not in part
                 and not any(sub_k in part for sub_k in ('그래픽카드 체감가', '그래픽 체감가', 'CPU 체감가'))
@@ -443,7 +449,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 score = 4
             elif any(k in part for k in ('카드할인가', '카드 할인가', '할인가', '카드 시', '최대카할', '최저')):
                 score = 3
-            elif any(k in part for k in ('상세페이지 가격', '상세페이지가', '앱판매가', '판매가', '앱기본가', '기본가격', '기본가', '정상가', '출고가', '정가', '엡 가격', '앱 가격')):
+            elif any(k in part for k in ('기존 판매 가격', '기존 판매가', '상세페이지 가격', '상세페이지가', '앱판매가', '판매가', '앱기본가', '기본가격', '기본가', '정상가', '출고가', '정가', '엡 가격', '앱 가격')):
                 score = 1
             else:
                 score = 2
@@ -537,7 +543,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         if len(line) < 2 or len(line) > 180:
             return True
         low = line.lower()
-        if low.startswith('[첨부된 이미지') or low.startswith('[상품이미지:'):
+        if low.startswith('[첨부된 이미지') or low.startswith('[상품이미지:') or line.strip().startswith('※'):
             return True
         if any(w in low for w in (
             '게시글 신고 기능 안내', '신고버튼을 누르면', '빠삭 운영진', '링크오류시', '링크가 열리지 않는다면',
@@ -553,6 +559,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             '더 저렴해집니다', '사용가능합니다', '사용 가능합니다', '선택해야 나옵니다', '장보시길 바랍니다', '추천 드립니다',
             '품절 / 종결 / 취소된 게시물', '로그인필수', '로그인 필수', '이더라구영', '제 취향은', '뿜빠이', '판매할 예정이오니', '많은 관심 부탁', '마지막 빅스마일데이',
             '우선 여기까지이고', '앱으로 봐야 할인가', '봐주셔서 감사합니다', '행사를 통해',
+            '할인 쿠폰 + 중복 할인 쿠폰', '구매 인증 이벤트',
             '언더도 쉽지 않음', '언더 찾기 힘듦', '받쳐주는게', '추가하는거 추천', '작업성능 챙기면서', '사람한테 맞음',
             '끝판왕 조합이라고', '쿨러가 기본급이라', '체급차이 생각하면', '입문용으로 딱 좋은', '조합이랑 비교하면',
             '욕심내고 싶다면', '호불호 없고 무난함', '차이인데 글카가', '찍먹까지 생각하면', '더 쓰는게 맞음',
@@ -704,6 +711,8 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             expect_high_priority_price = False
 
             for idx_s, s_ln in enumerate(seg["lines"]):
+                if re.match(r'^\s*\*\s*비슷한\s*상품', s_ln.strip()):
+                    break
                 for cu in extract_clean_urls_from_line(s_ln):
                     if cu not in seg_urls:
                         seg_urls.append(cu)
@@ -755,7 +764,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     expect_high_priority_price = False
                 else:
                     expect_high_priority_price = any(
-                        k in s_ln_no_url for k in ('공구가', '체감가', '최종가', '혜택가', '구매가', '실구매', '쿠폰가', '할인 가격')
+                        k in s_ln_no_url for k in ('공구가', '체감가', '최종가', '혜택가', '구매가', '실구매', '쿠폰가', '단가', '할인 가격')
                     )
 
             # 상품명 정제 (첫 줄 header_raw 기준)
@@ -983,13 +992,17 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 url_line_has_own_price = bool(text_only and extract_scored_prices_from_line(text_only))
                 if has_price_before_url and (is_explicit_bottom_link or not url_line_has_own_price or not pending_blk_img):
                     # Bottom-Link 구조: 이미 제목과 가격이 위쪽에 등장했고 하단 링크로 블록이 닫히는 경우
+                    # 첫 블록(not blocks)의 최상단에 게시글 서론/인사말이 섞여 있을 때만 명시적 헤더('- 상품명 -') 기준으로 앞부분 서론 제거
                     first_p_idx = next((idx_c for idx_c, cl in enumerate(current_lines) if extract_scored_prices_from_line(cl)), -1)
-                    if first_p_idx >= 2:
-                        prev_cand = current_lines[first_p_idx - 1].strip()
-                        if len(prev_cand) >= 12 and not prev_cand.startswith(('(', '옵션', '-', '•')) and _line_has_valid_name_candidate(prev_cand):
-                            current_lines = current_lines[first_p_idx - 1:]
-                        else:
-                            current_lines = current_lines[max(0, first_p_idx - 2):]
+                    if not blocks and first_p_idx >= 2:
+                        dash_idx = next(
+                            (idx_c for idx_c in range(first_p_idx) if re.match(r'^[-■●◆▶★]\s*\S', current_lines[idx_c].strip())),
+                            -1,
+                        )
+                        if dash_idx >= 1:
+                            current_lines = current_lines[dash_idx:]
+                        elif first_p_idx >= 4:
+                            current_lines = current_lines[first_p_idx - 2:]
                     if text_only and not is_noise_line(text_only):
                         current_lines.append(text_only)
                     blocks.append((list(current_lines), cleaned_urls[0], pending_blk_img))
@@ -1073,6 +1086,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             expect_blk_code = False
             size_variant_hint = ""
             spec_variant_hint = ""
+            in_multiline_paren = False
             for bl in blk_lines:
                 m_sz = re.search(r'\(\s*((?:싱글|슈퍼싱글|퀸|킹|더블)(?:매트)?)', bl)
                 if m_sz and not size_variant_hint:
@@ -1080,6 +1094,9 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 m_sp_var = re.match(r'^\s*(\d+\s*(?:인치|형)\s*,\s*[^()]{2,25})\s*$', bl)
                 if m_sp_var and not spec_variant_hint:
                     spec_variant_hint = m_sp_var.group(1).strip()
+                m_cap_opt = re.match(r'^\s*\*?\s*(\d+\s*(?:GB|TB|MB)\s*옵션)\s*$', bl, re.IGNORECASE)
+                if m_cap_opt and not spec_variant_hint:
+                    spec_variant_hint = m_cap_opt.group(1).strip()
                 if re.match(r'^[-－—•\s]*(?:[$₩￦]?\s*[0-9,.]+\s*(?:원|달러|\$)?\s*)?(?:(?:공구|할인|쿠폰|프로모션|스토어|채널|전용|특가)\s*(?:코드|쿠폰)|코드\s*할인|코드|쿠폰)(?:\s*[$₩￦]?\s*[0-9,.]+\s*(?:원|달러|\$)?)?\s*:?\s*$', bl):
                     expect_blk_code = True
                     continue
@@ -1111,6 +1128,16 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                 for p_tup in line_scored_prices:
                     cand_prices.append(p_tup)
 
+                was_in_paren = in_multiline_paren
+                open_p = bl.count('(')
+                close_p = bl.count(')')
+                if open_p > close_p:
+                    in_multiline_paren = True
+                elif close_p > open_p:
+                    in_multiline_paren = False
+                if was_in_paren or (bl.strip().startswith('(') and in_multiline_paren):
+                    continue
+
                 if _is_price_or_code_meta_line(bl) and cand_name and len(cand_name) > 10:
                     continue
 
@@ -1140,10 +1167,12 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     ):
                         cand_name = cleaned_candidate
                     elif (
-                        len(cand_name) <= 10
+                        (len(cand_name) <= 10 or len(cleaned_candidate) <= 12 or re.match(r'^[A-Z0-9\-]{6,}\b', cleaned_candidate))
+                        and len(cand_name) <= 28
                         and not had_prices_before_line
                         and not line_scored_prices
                         and not _is_price_or_code_meta_line(bl)
+                        and not bl.strip().startswith(('(', '*'))
                         and cleaned_candidate.lower() not in cand_name.lower()
                         and len(cand_name) + len(cleaned_candidate) <= 45
                     ):
@@ -1871,7 +1900,16 @@ class AggregatorService:
             return any(k in ul for k in (
                 'search.pstatic.net', 'kakaocdn.net/argon', 'bing.com',
                 'blogfiles.naver.net', 'postfiles.pstatic.net', 'mblogthumb-phinf',
-                'cafeptthumb', 'blogpfthumb', 'influencer-phinf', 'clip-service-phinf'
+                'cafeptthumb', 'blogpfthumb', 'influencer-phinf', 'clip-service-phinf',
+                'filesn/', '_70x50', 'crop.webp', '_thumb', 'thumb/', 'small_', 'zboard/data/ppomppu'
+            ))
+
+        def _is_community_hosted_img(u: str) -> bool:
+            if not u:
+                return False
+            ul = u.lower()
+            return any(cd in ul for cd in (
+                'fmkorea.com', 'ppomppu.co.kr', 'quasarzone.com', 'ruliweb.com', 'clien.net', 'bbasak.com'
             ))
 
         def _extract_real_post_image(c_html: str) -> str:
@@ -1898,7 +1936,7 @@ class AggregatorService:
         if real_body_img_init and (
             not image_url
             or _is_search_fallback_img(image_url)
-            or (content_html and image_url not in content_html)
+            or (_is_community_hosted_img(image_url) and content_html and image_url not in content_html)
         ):
             image_url = real_body_img_init
         elif (not image_url or _is_search_fallback_img(image_url)) and scraped_data.get("options_data"):
@@ -2308,7 +2346,7 @@ class AggregatorService:
                      not existing_deal.image_url
                      or _is_search_fallback_img(existing_deal.image_url)
                      or is_low_quality(existing_deal.image_url)
-                     or (eff_body_html and existing_deal.image_url not in eff_body_html)
+                     or (_is_community_hosted_img(existing_deal.image_url) and eff_body_html and existing_deal.image_url not in eff_body_html)
                  ):
                      existing_deal.image_url = real_post_img_merged
                   
