@@ -1138,3 +1138,223 @@ body {
   gap: 8px;
   min-width: 0;
 }
+
+/* DealDetailModal PC & Mobile Unified Layout */
+.deal-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 20px;
+  animation: slideUp 0.25s ease;
+}
+
+.deal-modal-panel {
+  max-width: 620px;
+  width: 100%;
+  border-radius: 24px;
+  padding: 24px 24px 0 24px;
+  max-height: min(90dvh, 90vh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border: 1px solid var(--card-border);
+}
+
+.deal-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.deal-modal-header-main {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+
+.deal-modal-thumb {
+  width: 76px;
+  height: 76px;
+  border-radius: 14px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--surface-subtle);
+  position: relative;
+  transition: border-color 0.2s ease;
+}
+
+.deal-modal-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--text-main);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.deal-modal-icon-btn {
+  background: var(--surface-subtle);
+  border: 1px solid var(--card-border);
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-main);
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.deal-modal-icon-btn:hover {
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: rgba(var(--accent-rgb), 0.35);
+  color: var(--accent);
+}
+
+.deal-modal-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--card-bg);
+  padding: 14px 0 20px 0;
+  border-top: 1px solid var(--card-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10;
+}
+
+.deal-modal-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+
+.deal-modal-btn-primary {
+  flex: 2;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 12px;
+  border-radius: 14px;
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deal-modal-btn-secondary {
+  flex: 1.35;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 10px;
+  border-radius: 14px;
+  background: rgba(var(--accent-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  color: var(--accent);
+  font-size: 0.88rem;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.deal-modal-btn-close {
+  flex: 0.65;
+  min-width: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 10px;
+  border-radius: 14px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--card-border);
+  color: var(--text-main);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .deal-modal-overlay {
+    padding: 10px;
+  }
+
+  .deal-modal-panel {
+    border-radius: 20px;
+    padding: 18px 16px 0 16px;
+    max-height: min(92dvh, 92vh);
+    gap: 14px;
+  }
+
+  .deal-modal-header {
+    gap: 10px;
+  }
+
+  .deal-modal-header-main {
+    gap: 10px;
+  }
+
+  .deal-modal-thumb {
+    width: 64px;
+    height: 64px;
+    border-radius: 12px;
+  }
+
+  .deal-modal-title {
+    font-size: 1.02rem;
+    line-height: 1.36;
+  }
+
+  .deal-modal-icon-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .deal-modal-footer {
+    padding: 12px 0 14px 0;
+    gap: 8px;
+  }
+
+  .deal-modal-actions {
+    gap: 7px;
+  }
+
+  .deal-modal-btn-primary {
+    flex: 1.75;
+    padding: 12px 8px;
+    border-radius: 12px;
+    font-size: 0.83rem;
+  }
+
+  .deal-modal-btn-secondary {
+    flex: 1.15;
+    padding: 12px 8px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+  }
+
+  .deal-modal-btn-close {
+    flex: 0.6;
+    min-width: 54px;
+    padding: 12px 8px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+  }
+}

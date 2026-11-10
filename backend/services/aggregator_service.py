@@ -383,7 +383,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             flags=re.IGNORECASE,
         ) and not any(k in s for k in ('최종가', '체감가', '공구가', '혜택가', '실구매', '할인가', '적용가', '=', '→', '->')):
             return []
-        if re.search(r'(?:결제\s*할인|카드\s*할인|코드\s*할인|코인\s*할인)\s*$', s.strip()) and not any(k in s for k in ('최종가', '체감가', '공구가', '할인가', '=', '→', '->')):
+        if re.search(r'(?:결제\s*할인|카드\s*할인|코드\s*할인|코인\s*할인)(?:\s*[\[<(\uff08][^\n\]>)\uff09]*[\]>)\uff09])?\s*$', s.strip()) and not any(k in s for k in ('최종가', '체감가', '공구가', '할인가', '=', '→', '->')):
             return []
         if re.match(r'^\s*(?:\d+\s*개\s+(?:\d+\s*(?:kg|g|ml|l)\s+)?구매\s*시|\d+\s*가지\s*장바구니|선착순\s*쿠폰\s*소진\s*시|최소\s*결제\s*금액|최대\s*할인)\b', s.strip(), flags=re.IGNORECASE):
             return []
@@ -396,9 +396,9 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
         # 3) 단위당 가격 (100g당 1,200원, 개당 500원, 키로당 7,950원 등) 제거
         s = re.sub(r'\([^\)]*(?:당|개당|병당|포당|통당|박스당|팩당|캔당|키로당|kg당|g당|ml당|알당|캡슐당)[^\)]*\)', ' ', s)
         s = re.sub(r'(?:개당|병당|포당|통당|박스당|팩당|캔당|키로당|kg당|100g당|10g당|g당|ml당|미당|구당)\s*약?\s*[₩￦$]?\s*[\d,]+\s*원?', ' ', s)
-        # 4) 쿠폰/코인/적립금/결제할인 단독 할인 금액 문구 ($4 할인쿠폰, 코인 할인 : $1.96, 결제할인 (최대 $22), 유튜버 코드 할인 $42, 스토어 할인코드 $5, 적립금 1,000원 등) 제거
+        # 4) 쿠폰/코인/적립금/결제할인 단독 할인 금액 문구 ($4 할인쿠폰, 코인 할인 : $1.96, 결제할인 (최대 $22), 13,000원 결제할인, 유튜버 코드 할인 $42, 스토어 할인코드 $5, 적립금 1,000원 등) 제거
         s = re.sub(
-            r'(?:코인\s*할인[^\n:]*:\s*[$₩￦]?\s*[0-9,.]+|\$\s*[0-9,.]+\s*(?:할인\s*)?(?:쿠폰|코드)|[0-9,.]+\s*(?:만\s*원?|천\s*원?|원|달러|\$)\s*(?:할인|중복|다운로드|스토어|선착순)?\s*(?:쿠폰|코드)|(?:스토어|판매자|코드|특가\s*코드|공구\s*코드|카드|결제|코인)\s*(?:코드\s*|쿠폰\s*)?할인\s*[:\-]?\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|[0-9,.]+\s*(?:달러|원|\$)\s*기준|(?:선착순\s*)?적립금\s*[$₩￦]?\s*[0-9,]+\s*원?|[0-9,]+\s*원?\s*(?:적립금?|줘서)|[0-9,.]+\s*(?:만\s*원?|천\s*원?|원)\s*(?:페이백|캐시백)|(?:결제\s*할인|유튜버\s*코드\s*할인|스토어\s*중복\s*할인|중복\s*카드\s*할인|스토어\s*할인\s*코드|채널\s*할인\s*코드|추가)\s*(?:\([^\)]*\)\s*)?(?:최대\s*)?[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|(?:최대\s*할인|최소\s*결제\s*금액|최소\s*주문\s*금액)\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|천\s*원?|원|\$|달러)?|최대\s*[$₩￦]\s*[0-9,.]+)',
+            r'(?:코인\s*할인[^\n:]*:\s*[$₩￦]?\s*[0-9,.]+|\$\s*[0-9,.]+\s*(?:할인\s*)?(?:쿠폰|코드)|[0-9,.]+\s*(?:만\s*원?|천\s*원?|원|달러|\$)\s*(?:(?:할인|중복|다운로드|스토어|선착순)?\s*(?:쿠폰|코드)|(?:결제|카드|코드|코인|즉시|추가|중복)\s*할인)|(?:스토어|판매자|코드|특가\s*코드|공구\s*코드|카드|결제|코인)\s*(?:코드\s*|쿠폰\s*)?할인\s*[:\-]?\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|[0-9,.]+\s*(?:달러|원|\$)\s*기준|(?:선착순\s*)?적립금\s*[$₩￦]?\s*[0-9,]+\s*원?|[0-9,]+\s*원?\s*(?:적립금?|줘서)|[0-9,.]+\s*(?:만\s*원?|천\s*원?|원)\s*(?:페이백|캐시백)|(?:결제\s*할인|유튜버\s*코드\s*할인|스토어\s*중복\s*할인|중복\s*카드\s*할인|스토어\s*할인\s*코드|채널\s*할인\s*코드|추가)\s*(?:\([^\)]*\)\s*)?(?:최대\s*)?[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|원|달러|\$)?|(?:최대\s*할인|최소\s*결제\s*금액|최소\s*주문\s*금액)\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|천\s*원?|원|\$|달러)?|최대\s*[$₩￦]\s*[0-9,.]+)',
             ' ',
             s,
             flags=re.IGNORECASE,
@@ -898,11 +898,13 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     continue
                 is_explicit_bottom_link = bool(
                     not text_only
-                    or re.match(r'^(?:(?:구매\s*)?링크|바로가기)\b', ln.strip())
-                    or re.match(r'^(?:링크|구매\s*링크|바로가기)$', text_only.strip())
+                    or re.match(r'^(?:>+|[👉🔗▶☞]+|(?:구매\s*)?링크|바로가기|구매하기|보러가기)\b', ln.strip())
+                    or re.match(r'^(?:링크|구매\s*링크|바로가기|구매하기|보러가기)$', text_only.strip())
+                    or re.search(r'(?:바로\s*가기|구매\s*하기|구매\s*링크|보러\s*가기|상품\s*링크)\s*>*\s*$', text_only.strip())
                 )
                 has_price_before_url = any(bool(extract_scored_prices_from_line(cl)) for cl in current_lines)
-                if has_price_before_url and (is_explicit_bottom_link or not pending_blk_img):
+                url_line_has_own_price = bool(text_only and extract_scored_prices_from_line(text_only))
+                if has_price_before_url and (is_explicit_bottom_link or not url_line_has_own_price or not pending_blk_img):
                     # Bottom-Link 구조: 이미 제목과 가격이 위쪽에 등장했고 하단 링크로 블록이 닫히는 경우
                     if text_only and not is_noise_line(text_only):
                         current_lines.append(text_only)
@@ -1341,11 +1343,20 @@ class AggregatorService:
             'quasarzone.com', 'clien.net', 'bbasak.com'
         )
 
+        url_counts: dict[str, int] = {}
+        for o in options:
+            u_norm = (o.get("url") or "").strip()
+            if u_norm:
+                url_counts[u_norm] = url_counts.get(u_norm, 0) + 1
+
         async def _fetch_single_option_image(opt: dict, client: httpx.AsyncClient):
             if opt.get("image_url"):
                 return  # 이미 1:1 매칭된 본문 이미지가 있으면 보존
             u = (opt.get("url") or "").strip()
-            if u and u.startswith("http") and not any(h in u.lower() for h in community_hosts):
+            # 동일 URL을 여러 옵션이 공유하는 경우 대표 썸네일 중복 오염 방지를 위해 개별 og:image 추출 생략
+            if not u or url_counts.get(u, 0) > 1:
+                return
+            if u.startswith("http") and not any(h in u.lower() for h in community_hosts):
                 # 1. 지마켓 초고속 CDN 이미지 우회 조립
                 if "gmarket.co.kr" in u:
                     m_g = re.search(r'goodscode=([0-9]+)', u)
@@ -1361,6 +1372,9 @@ class AggregatorService:
                         return
 
                 # 3. 외부 쇼핑몰 메타태그(og:image / twitter:image) 비동기 타격 (타임아웃 2.5초)
+                # 알리익스프레스 단축 링크(s.click.aliexpress.com) 등은 공통 로고/무관 이미지를 반환할 수 있으므로 검증 강화
+                if "aliexpress.com" in u.lower():
+                    return
                 try:
                     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
                     res = await client.get(u, headers=headers, timeout=2.5, follow_redirects=True)
@@ -1380,68 +1394,15 @@ class AggregatorService:
                                 img_cand = urljoin(str(res.url), img_cand)
                             
                             low_img = img_cand.lower().split("?")[0]
-                            if not any(bad in low_img for bad in ("logo", "icon", "blank", "noimage", "transparent", "avatar")) and not low_img.endswith((".svg", ".ico")):
+                            bad_tokens = (
+                                "logo", "icon", "blank", "noimage", "transparent", "avatar",
+                                "default", "og_default", "share_img", "sns_share", "common"
+                            )
+                            if not any(bad in low_img for bad in bad_tokens) and not low_img.endswith((".svg", ".ico")):
                                 opt["image_url"] = img_cand
                                 return
                 except Exception:
                     pass
-
-            # 4. 옵션 상품명 기반 네이버/다음 쇼핑 썸네일 초고속 검색 폴백 (외부 링크 부재 또는 og:image 실패 시)
-            opt_name = (opt.get("name") or "").strip()
-            clean_q = re.sub(r'^(?:[#\d]+[\.\)\s]+|[①-⑳]\s*)', '', opt_name).strip()
-            clean_q = re.sub(r'[\d,.]+\s*(?:만\s*원?|원|달러|불|유로|€|\$)', '', clean_q).strip(' -·:,/~+[]()')
-            clean_q = re.sub(r'\([^\)]*\)', '', clean_q).strip()
-
-            if len(clean_q) >= 2:
-                try:
-                    from urllib.parse import quote, unquote
-                    req_hdrs = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                        "Accept-Language": "ko-KR,ko;q=0.9"
-                    }
-                    # 1) 네이버 검색 썸네일 (search.pstatic.net)
-                    rn = await client.get(
-                        f"https://search.naver.com/search.naver?where=nexearch&query={quote(clean_q)}",
-                        headers=req_hdrs,
-                        timeout=3.0
-                    )
-                    if rn.status_code == 200 and rn.text:
-                        n_imgs = re.findall(r'(https://search\.pstatic\.net/common/\?src=[^\s"\'&<>]+)', rn.text)
-                        for cand in n_imgs[:6]:
-                            low_dec = unquote(cand).lower()
-                            if not any(b in low_dec for b in ('blogpfthumb', 'kinimage', 'musicmeta', 'profile', 'icon', 'logo', 'blank', 'avatar', 'default')):
-                                opt["image_url"] = cand
-                                return
-
-                    # 2) 다음 카카오 CDN (kakaocdn.net)
-                    rd = await client.get(
-                        f"https://search.daum.net/search?w=tot&q={quote(clean_q)}",
-                        headers=req_hdrs,
-                        timeout=3.0
-                    )
-                    if rd.status_code == 200 and rd.text:
-                        d_imgs = re.findall(r'(https://search\d+\.kakaocdn\.net/argon/[^\s"\'<>]+)', rd.text)
-                        for cand in d_imgs[:4]:
-                            low_cand = cand.lower()
-                            if not any(b in low_cand for b in ('profile', 'icon', 'logo', 'blank', 'avatar')):
-                                opt["image_url"] = cand
-                                return
-
-                    # 3) 빙 이미지 검색 폴백 (희귀 직구/단종 모델)
-                    res_b = await client.get(
-                        f"https://www.bing.com/images/search?q={quote(clean_q + ' 상품')}&FORM=HDRSC2",
-                        headers=req_hdrs,
-                        timeout=3.0
-                    )
-                    if res_b.status_code == 200 and res_b.text:
-                        murls = re.findall(r'murl&quot;:&quot;(https?://[^&]+?)&quot;', res_b.text)
-                        for candidate in murls[:6]:
-                            low_c = candidate.lower()
-                            if not any(b in low_c for b in ('logo', 'icon', 'blank', 'avatar', 'profile')) and not low_c.endswith(('.svg', '.ico')):
-                                opt["image_url"] = candidate
-                                return
-                except Exception as e:
-                    logger.debug(f"Option image search fallback failed for '{clean_q}': {e}")
 
         targets = [o for o in options if not o.get("image_url")][:8]
         if not targets:

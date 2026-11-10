@@ -536,23 +536,25 @@ async def scrape_and_push_once():
                                 is_missing_cached_img = not (cached_detail.get("image_url") or item.get("image_url"))
                                 cached_html_str = str(cached_detail.get("content_html") or "").strip()
                                 cached_title_str = str(cached_detail.get("title") or "").strip()
-                                is_truncated_ppomppu_on_local = (
+                                is_truncated_ppomppu = (
+                                    "ppomppu.co.kr" in item_url
+                                    and (
+                                        not cached_html_str
+                                        or len(cached_html_str) < 150
+                                        or cached_html_str.startswith("<p>...")
+                                        or cached_html_str.endswith("...</p>")
+                                        or cached_html_str.endswith("...")
+                                    )
+                                )
+                                is_truncated_on_local = (
                                     (not IS_CLOUD_ENV)
                                     and (
                                         cached_title_str.endswith("...")
                                         or "<p>출처:" in cached_html_str
-                                        or (
-                                            "ppomppu.co.kr" in item_url
-                                            and (
-                                                not cached_html_str
-                                                or len(cached_html_str) == 110
-                                                or cached_html_str.endswith("...</p>")
-                                                or cached_html_str.endswith("...")
-                                            )
-                                        )
+                                        or is_truncated_ppomppu
                                     )
                                 )
-                                if is_truncated_ppomppu_on_local:
+                                if is_truncated_ppomppu or is_truncated_on_local:
                                     items_needing_detail.append(item)
                                     continue
                                 status_changed = (
@@ -648,7 +650,7 @@ async def scrape_and_push_once():
 
                         # 3. 비동기 병렬 상세 페칭 (신규 게시글만 대상, Vercel 릴레이 및 뽐뿌 부하 방지를 위해 클라우드 동시 3개 제한)
                         if items_needing_detail:
-                            target_details = items_needing_detail[:10] if IS_CLOUD_ENV else items_needing_detail
+                            target_details = items_needing_detail[:15] if IS_CLOUD_ENV else items_needing_detail
                             detail_sem = asyncio.Semaphore(3 if IS_CLOUD_ENV else 5)
 
                             async def fetch_one_detail(it):

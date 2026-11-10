@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { ThumbsUp, ThumbsDown, Share2, MessageSquare, Send, Bell, Copy, ExternalLink, Check } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Share2, MessageSquare, Send, Bell, Copy, ExternalLink, Check, X } from "lucide-react";
 import type { Deal, DealSource } from "../lib/types";
 import {
   formatPrice,
@@ -284,55 +284,22 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
   return (
     <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: "rgba(15, 23, 42, 0.55)",
-        backdropFilter: "blur(10px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 2000,
-        padding: "20px",
-        animation: "slideUp 0.25s ease",
-      }}
+      className="deal-modal-overlay"
       onClick={onClose}
     >
       <div
-        className="glass-panel"
-        style={{
-          maxWidth: "620px",
-          width: "100%",
-          borderRadius: "24px",
-          padding: "24px 24px 0 24px",
-          maxHeight: "90vh",
-          overflowY: "auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: "18px",
-          border: "1px solid var(--card-border)",
-        }}
+        className="glass-panel deal-modal-panel"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 헤더 (상품 썸네일 + 메타 배지 + 상품명 + 액션 버튼) */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "14px" }}>
-          <div style={{ display: "flex", gap: "14px", alignItems: "flex-start", flex: 1, minWidth: 0 }}>
+        <div className="deal-modal-header">
+          <div className="deal-modal-header-main">
             {activeImageUrl && (
               <div
                 key={activeImageUrl}
+                className="deal-modal-thumb"
                 style={{
-                  width: "76px",
-                  height: "76px",
-                  borderRadius: "14px",
-                  overflow: "hidden",
-                  flexShrink: 0,
-                  background: "var(--surface-subtle)",
                   border: selectedOption ? "1.5px solid var(--accent)" : "1px solid var(--card-border)",
-                  position: "relative",
-                  transition: "border-color 0.2s ease",
                 }}
               >
                 <img
@@ -347,7 +314,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                     }
                   }}
                 />
-                {selectedOption && (
+                {selectedOption && (selectedOptionIndex === 0 || Boolean(selectedOption.image_url && selectedOption.image_url.trim() !== "")) && (
                   <span
                     style={{
                       position: "absolute",
@@ -393,48 +360,29 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                     );
                   })}
               </div>
-              <h3 style={{ fontSize: "1.15rem", fontWeight: 800, lineHeight: 1.4, color: "var(--text-main)" }}>
+              <h3 className="deal-modal-title">
                 {deal.title}
               </h3>
             </div>
           </div>
           <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
             <button
+              type="button"
               onClick={handleShare}
               title="공유하기"
-              style={{
-                background: "var(--surface-subtle)",
-                border: "1px solid var(--card-border)",
-                cursor: "pointer",
-                width: 34,
-                height: 34,
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--text-main)",
-              }}
+              aria-label="상품 공유하기"
+              className="deal-modal-icon-btn bounce-click"
             >
               <Share2 size={15} />
             </button>
             <button
+              type="button"
               onClick={onClose}
               aria-label="상세 모달 닫기"
               title="닫기"
-              style={{
-                background: "var(--surface-subtle)",
-                border: "1px solid var(--card-border)",
-                cursor: "pointer",
-                width: 34,
-                height: 34,
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--text-sub)",
-              }}
+              className="deal-modal-icon-btn bounce-click"
             >
-              ✕
+              <X size={17} strokeWidth={2.4} />
             </button>
           </div>
         </div>
@@ -690,33 +638,11 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                               const fallback = getFallbackProxyImageUrl(src.image_url);
                               if (fallback && e.currentTarget.src !== fallback) {
                                 e.currentTarget.src = fallback;
+                              } else {
+                                e.currentTarget.style.display = "none";
                               }
                             }}
                           />
-                        ) : deal.image_url ? (
-                          <div style={{ position: "relative", width: "100%", height: "100%" }}>
-                            <img
-                              src={getProxyImageUrl(deal.image_url, { width: 120 })}
-                              alt={optionTitle}
-                              style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.55 }}
-                              referrerPolicy="no-referrer"
-                            />
-                            <span
-                              style={{
-                                position: "absolute",
-                                inset: 0,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: "0.75rem",
-                                color: isSelected ? "var(--accent)" : "var(--text-main)",
-                                fontWeight: 800,
-                                background: "rgba(0,0,0,0.25)",
-                              }}
-                            >
-                              #{idx + 1}
-                            </span>
-                          </div>
                         ) : (
                           <span
                             style={{
@@ -732,16 +658,19 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
                       {/* 상품 정보 (명칭, 가격, 할인코드 복사 칩, 보조링크) */}
                       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "4px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "6px" }}>
                           <span
                             title={optionTitle}
                             style={{
                               fontSize: "0.85rem",
                               fontWeight: isSelected ? 800 : 700,
                               color: isSelected ? "var(--accent)" : "var(--text-main)",
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
                               overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
+                              lineHeight: 1.35,
+                              wordBreak: "keep-all",
                               flex: 1,
                             }}
                           >
@@ -1177,19 +1106,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
         </div>
 
         {/* 2 & 3. 구매처 다이렉트 링크 & 원본 커뮤니티 게시글 바로가기 (하단 Sticky 액션 바) */}
-        <div
-          style={{
-            position: "sticky",
-            bottom: 0,
-            background: "var(--card-bg)",
-            padding: "14px 0 20px 0",
-            borderTop: "1px solid var(--card-border)",
-            display: "flex",
-            flexDirection: "column",
-            gap: "10px",
-            zIndex: 10,
-          }}
-        >
+        <div className="deal-modal-footer">
           {/* 선택된 옵션 전용 프로모션 코드 안내 바 */}
           {selectedOption?.code && (
             <div
@@ -1236,9 +1153,9 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
             </div>
           )}
 
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <div className="deal-modal-actions">
             <a
-              className="btn-primary bounce-click"
+              className="btn-primary bounce-click deal-modal-btn-primary"
               href={resolveOutboundUrl(activeEcommerceUrl)}
               target="_blank"
               rel="noopener"
@@ -1261,22 +1178,10 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                   showToast("쇼핑몰 직접 링크가 없어 원본 게시글로 이동합니다.");
                 }
               }}
-              style={{
-                flex: 2,
-                minWidth: "180px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "14px",
-                borderRadius: "14px",
-                textDecoration: "none",
-                fontSize: "0.92rem",
-                fontWeight: 800,
-              }}
             >
-              <span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {selectedOption
-                  ? `${activeOptionTitle ? activeOptionTitle.slice(0, 15) : "옵션"} 구매하기 (${formatPrice(activePrice, activeCurrency)})`
+                  ? `선택 상품 구매 (${formatPrice(activePrice, activeCurrency)})`
                   : "쇼핑몰 바로가기"}
               </span>
             </a>
@@ -1285,47 +1190,20 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                 href={resolveOutboundUrl(deal.post_link)}
                 target="_blank"
                 rel="noopener"
-                className="bounce-click"
-                style={{
-                  flex: 1.5,
-                  minWidth: "150px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "14px",
-                  borderRadius: "14px",
-                  background: "rgba(var(--accent-rgb), 0.1)",
-                  border: "1px solid rgba(var(--accent-rgb), 0.3)",
-                  color: "var(--accent)",
-                  fontWeight: 800,
-                  textDecoration: "none",
-                }}
+                className="bounce-click deal-modal-btn-secondary"
               >
                 <span>원본 게시글 보기</span>
               </a>
             )}
             <button
               type="button"
-              className="bounce-click"
+              className="bounce-click deal-modal-btn-close"
               onClick={onClose}
-              style={{
-                flex: 0.7,
-                minWidth: "70px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "14px",
-                borderRadius: "14px",
-                background: "var(--surface-subtle)",
-                border: "1px solid var(--card-border)",
-                color: "var(--text-main)",
-                fontWeight: 700,
-              }}
             >
               <span>닫기</span>
             </button>
           </div>
-          <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", textAlign: "center", margin: "2px 0 0 0" }}>
+          <p style={{ fontSize: "0.68rem", color: "var(--text-muted)", textAlign: "center", margin: "1px 0 0 0", lineHeight: 1.3 }}>
             일부 쇼핑몰 이동 링크는 제휴 마케팅의 일환으로 일정액의 수수료를 제공받을 수 있습니다.
           </p>
         </div>
