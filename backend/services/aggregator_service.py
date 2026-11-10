@@ -68,6 +68,7 @@ _PROSE_NOISE_SUBSTRINGS = (
     "맞는거 있으면", "탑승하시길", "금액대였던걸로", "나눠 볼 수", "쿠폰팩데이", "멤버십데이", "쿠폰 링크", "쿠폰 다운링크",
     "최소결제금액", "최소 결제금액", "최대할인", "적용가능횟수", "적용가능 횟수", "프로 딜 최대",
     "로그인필수", "로그인 필수", "이더라구영", "제 취향은", "뿜빠이", "판매할 예정이오니", "많은 관심 부탁", "마지막 빅스마일데이",
+    "우선 여기까지이고", "앱으로 봐야 할인가", "봐주셔서 감사합니다", "행사를 통해", "맘아프네요",
 )
 
 
@@ -221,8 +222,10 @@ def _clean_option_display_name(raw_name: str) -> str:
                 continue
         break
     n = re.sub(r"^\uC0C1\uD488\s*(?=[\uAC00-\uD7A3a-zA-Z0-9\[])", "", n).strip()
+    n = re.sub(r"\s+유일한\s+뱅가드\s+본체이나\s+", " ", n).strip()
+    n = re.sub(r"인게\s*맘아프네요\.?$", "", n).strip()
     n = re.sub(
-        r"\s+(?:인데\s*작년버전\s*있는데.*|작년버전\s*있는데.*|형태인데\s*이쁜듯|이쁜듯|가볍고\s*빵빵해서\s*국밥임|활용도\s*좋음|국밥임|체감가?|최종가?|혜택가?|할인가?|쿠폰가?|공구가?|결제가?|실구매가?|최대|최저)(?:\s*[:\-])?$",
+        r"\s*(?:인데\s*작년버전\s*있는데.*|작년버전\s*있는데.*|형태인데\s*이쁜듯|이쁜듯|가볍고\s*빵빵해서\s*국밥임|활용도\s*좋음|국밥임|체감가?|최종가?|혜택가?|할인가?|쿠폰가?|공구가?|결제가?|실구매가?|최대|최저|인데)(?:\s*[:\-])?$",
         "",
         n,
         flags=re.IGNORECASE,
@@ -510,10 +513,11 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             '포토 리뷰 1,000원 차이', '체감가는 천원 더 높습니다', '가격은 대략적인 예상치', '환율 변동에 따라', '표기된 가격은 예상가',
             '최소결제금액', '최소 결제금액', '최대할인', '적용가능횟수', '적용가능 횟수', '프로 딜 최대', '릴레이 게시판', '쿠폰 다운링크', '선착순 쿠폰 링크',
             '더 저렴해집니다', '사용가능합니다', '사용 가능합니다', '선택해야 나옵니다', '장보시길 바랍니다', '추천 드립니다',
-            '품절 / 종결 / 취소된 게시물', '로그인필수', '로그인 필수', '이더라구영', '제 취향은', '뿜빠이', '판매할 예정이오니', '많은 관심 부탁', '마지막 빅스마일데이'
+            '품절 / 종결 / 취소된 게시물', '로그인필수', '로그인 필수', '이더라구영', '제 취향은', '뿜빠이', '판매할 예정이오니', '많은 관심 부탁', '마지막 빅스마일데이',
+            '우선 여기까지이고', '앱으로 봐야 할인가', '봐주셔서 감사합니다', '행사를 통해'
         )):
             return True
-        if re.match(r'^\s*(?:<[^>]{1,20}>|\[[^\]]{1,20}\])\s*$', line.strip()):
+        if re.match(r'^\s*(?:<[^>]{1,20}>?|\[[^\]]{1,20}\]?)\s*$', line.strip()):
             return True
         if re.match(r'^\s*(?:[ㅇㅁㅂ▪▫•\-\*]\s*)*(?:개당|병당|캔당|키로당|kg당|100g당|10g당|g당|ml당|팩당|포당|봉당|통당|박스당|알당|캡슐당|미당|구당)\s*약?\s*[₩￦$]?\s*[0-9,]+', line.strip(), re.IGNORECASE):
             return True
@@ -878,7 +882,7 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
             if text_only == "링크":
                 text_only = ""
 
-            if idx_ln <= 2 and not text_only and cleaned_urls and not current_lines and not pending_blk_img:
+            if idx_ln <= 2 and ln.startswith('(링크:') and not text_only and cleaned_urls and not current_lines and not pending_blk_img:
                 continue
 
             if cleaned_urls:

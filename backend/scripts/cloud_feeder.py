@@ -627,8 +627,8 @@ async def scrape_and_push_once():
                                 if is_ppomppu:
                                     need_detail = (item_page_no == 1) or (not has_full_content) or (not has_direct_ecom) or (not item.get("image_url"))
                                 else:
-                                    need_detail = (item_page_no == 1) or (not item.get("image_url"))
-                                    if item.get("content_html") and item.get("image_url"):
+                                    need_detail = (item_page_no == 1) or (not item.get("image_url")) or (not content_txt) or ("<p>출처:" in content_txt)
+                                    if content_txt and ("<p>출처:" not in content_txt) and item.get("image_url"):
                                         need_detail = False
 
                             # 다중 상품/모음전 패턴 게시글 감지 (모음, 골라담기, 외 \d+, 공구, 총정리, \d+종 등)
