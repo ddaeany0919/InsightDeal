@@ -500,7 +500,19 @@ class PpomppuScraper(AsyncBaseScraper):
                     ecommerce_link = body_outlinks[0]
             body_text = content_element.get_text(separator='\n', strip=True)
         else:
-            body_text = soup.get_text(separator=' ')
+            body_text = ""
+
+        html_text = soup.get_text(separator=' ', strip=True)
+        is_closed = False
+        if ("종결" in html_text and "취소된 게시물" in html_text) or any(
+            k in html_text for k in ("존재하지 않는 게시물", "삭제된 게시물", "게시물이 존재하지 않습니다", "블라인드 처리된")
+        ):
+            is_closed = True
+
+        if not body_text and not images:
+            if is_closed:
+                return {"is_closed": True}
+            return {}
 
         if images:
             body_text += f"\n[첨부된 이미지 링크들]: {', '.join(images)}"
@@ -558,14 +570,12 @@ class PpomppuScraper(AsyncBaseScraper):
             if re.search(r'(무료배송|무배|배송비\s*mu배|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', search_text):
                 shipping_fee = "무료배송"
         
-        is_closed = False
         if ("종결" in body_text and "취소된 게시물" in body_text) or any(
             k in body_text for k in ("존재하지 않는 게시물", "삭제된 게시물", "게시물이 존재하지 않습니다", "블라인드 처리된")
         ):
             is_closed = True
             
         posted_at_iso = None
-        html_text = soup.get_text(separator=' ', strip=True)
         # 1차: 등록일 키워드 기반 상세 매칭
         dates = re.findall(r'등록일\s*[:\s]*(\d{4}-\d{2}-\d{2}\s*\d{2}:\d{2}(?::\d{2})?)', html_text)
         if dates:

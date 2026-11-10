@@ -486,7 +486,11 @@ class FmkoreaScraper(AsyncBaseScraper):
             is_closed = True
 
         # 📸 [고화질 썸네일 복구 가드]: 아웃링크(ecommerce_link) 또는 상품명 기반 고화질 og:image 조회
-        if ecommerce_link or not image_url:
+        if image_url:
+            image_url = image_url.replace("/./", "/")
+        if body_text:
+            body_text = body_text.replace("/./", "/")
+        if not image_url or any(k in image_url.lower() for k in ("crop.webp", "_70x50", "_thumb")):
             og_img = await self.fetch_og_image(ecommerce_link, full_title if not image_url else "")
             if og_img:
                 logger.info(f"✨ [펨코 og:image] 외부 아웃링크/상품명에서 고화질 썸네일 확보: {og_img}")
