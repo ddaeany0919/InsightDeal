@@ -43,6 +43,11 @@ def _decode_and_clean_shop_url(u: str) -> str:
                 pass
     u = re.split(r'[가-힣\s"\'<>]|(?:\$\d)', u)[0].strip().rstrip(".,;)>]")
     u = u.replace("/./", "/")
+    try:
+        from backend.core.url_utils import unwrap_third_party_affiliate_url
+        u = unwrap_third_party_affiliate_url(u, allow_network=True)
+    except Exception:
+        pass
     return u
 
 

@@ -506,3 +506,21 @@ class DealVote(Base):
     __table_args__ = (UniqueConstraint('deal_id', 'user_id', name='unique_deal_user_vote'),)
 
 
+class OutboundClick(Base):
+    """💰 쇼핑몰 아웃링크 구매 클릭 & 제휴 수익 트래킹 테이블"""
+    __tablename__ = "outbound_clicks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    deal_id = Column(Integer, nullable=True, index=True)
+    mall_name = Column(String(100), nullable=False, index=True)
+    domain = Column(String(255), nullable=False)
+    affiliate_network = Column(String(50), nullable=False, default="direct")  # coupang, aliexpress, linkprice, direct
+    is_monetized = Column(Boolean, default=False, nullable=False)
+    price_krw = Column(Integer, default=0)
+    estimated_commission_krw = Column(Float, default=0.0)
+    platform = Column(String(30), default="web")  # web, toss, android
+    target_url = Column(String(2048), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
+
+
+

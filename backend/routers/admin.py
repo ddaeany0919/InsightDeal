@@ -52,6 +52,11 @@ HTML_TEMPLATE = """
             <button class="btn" id="update-btn" onclick="triggerUpdate()">▶ 스크래퍼 전체 강제 실행</button>
         </div>
 
+        <div class="status-title" style="margin-bottom: 10px;">💰 제휴 수익화(Affiliate) & 아웃링크 클릭 현황</div>
+        <div class="progress-container" id="monetization-box" style="margin-bottom: 20px;">
+            <div style="text-align:center; color:#999; font-size:14px;">수익화 통계를 불러오는 중...</div>
+        </div>
+
         <div class="status-title" style="margin-bottom: 10px;">커뮤니티별 업데이트 현황</div>
         <div class="progress-container" id="progress-list">
             <!-- 자바스크립트로 동적 렌더링 -->
@@ -155,9 +160,36 @@ HTML_TEMPLATE = """
             }
         }
 
-        // 초기 한 번 실행하고 2초마다 갱신
+        async function fetchMonetizationStats() {
+            try {
+                const res = await fetch('/api/coupang/stats?t=' + Date.now());
+                if (!res.ok) return;
+                const d = await res.json();
+                const box = document.getElementById('monetization-box');
+                if (!box || !d.networks) return;
+                const nets = Object.values(d.networks).map(n => {
+                    const badge = n.configured
+                        ? '<span style="color:#16a34a;font-weight:bold;">● 수익화 가동 중</span>'
+                        : '<span style="color:#d97706;font-weight:bold;">○ 키 미입력 (' + n.env_key + ')</span>';
+                    return `<div class="progress-item"><div style="flex:1;font-weight:bold;color:#333;">${n.name} <span style="font-size:12px;color:#666;font-weight:normal;">(수수료 ${n.commission_rate})</span></div><div>${badge}</div></div>`;
+                }).join('');
+                const cov = d.db_coverage || {};
+                const cs = d.click_stats || {};
+                box.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;background:#f0f7ff;padding:10px 14px;border-radius:6px;margin-bottom:10px;font-size:13px;">
+                        <span>📦 최근 ${cov.sampled_deals || 0}개 딜 중 제휴 수익 전환 가능 비율: <strong style="color:#007bff;">${cov.monetizable_ratio_pct || 0}% (${cov.monetizable_deals || 0}건)</strong></span>
+                        <span>🖱️ 누적 구매 클릭: <strong>${cs.total_clicks || 0}회</strong> (예상 누적 수수료: <strong style="color:#16a34a;">₩${(cs.estimated_commission_krw || 0).toLocaleString()}</strong>)</span>
+                    </div>
+                    ${nets}
+                `;
+            } catch (e) {}
+        }
+
+        // 초기 한 번 실행하고 주기적 갱신
         fetchLogs();
+        fetchMonetizationStats();
         setInterval(fetchLogs, 2000);
+        setInterval(fetchMonetizationStats, 10000);
     </script>
 </body>
 </html>

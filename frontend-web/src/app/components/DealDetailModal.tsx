@@ -9,6 +9,7 @@ import {
   getFallbackProxyImageUrl,
   apiUrl,
   resolveOutboundUrl,
+  trackOutboundClick,
   polishDealBodyText,
   extractPromoCodes,
   getOrCreateWebDeviceUuid,
@@ -854,7 +855,10 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                                   href={resolveOutboundUrl(sUrl)}
                                   target="_blank"
                                   rel="noopener"
-                                  onClick={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    trackOutboundClick(sUrl, deal.id, src.price || activePrice, optionCurrency);
+                                  }}
                                   style={{
                                     fontSize: "0.7rem",
                                     color: "var(--text-sub)",
@@ -878,6 +882,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                         rel="noopener"
                         onClick={(e) => {
                           e.stopPropagation();
+                          trackOutboundClick(itemUrl, deal.id, src.price || activePrice, optionCurrency);
                           if (src.code && typeof navigator !== "undefined" && navigator.clipboard) {
                             navigator.clipboard.writeText(src.code).catch(() => {});
                             showToast(`할인코드 '${src.code}' 복사 완료! 쇼핑몰로 이동합니다.`);
@@ -1254,6 +1259,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                   showToast("이동할 수 있는 링크가 없습니다.");
                   return;
                 }
+                trackOutboundClick(targetUrl, deal.id, activePrice, activeCurrency);
                 const codeToCopy = selectedOption?.code || (promoCodes.length > 0 ? promoCodes[0] : null);
                 if (codeToCopy && typeof navigator !== "undefined" && navigator.clipboard) {
                   navigator.clipboard.writeText(codeToCopy).catch(() => {});

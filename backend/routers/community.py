@@ -120,7 +120,9 @@ def _build_direct_mall_search_url(shop_name: str, raw_title: str, post_url: str 
         "하프클럽": f"https://www.halfclub.com/search?keyword={q_enc}",
         "보리보리": f"https://www.boribori.co.kr/search?keyword={q_enc}",
     }
-    return mall_search_templates.get(inferred_shop, f"https://search.shopping.naver.com/search/all?query={q_enc}")
+    from backend.core.url_utils import apply_affiliate_monetization
+    target_search_url = mall_search_templates.get(inferred_shop, f"https://search.shopping.naver.com/search/all?query={q_enc}")
+    return apply_affiliate_monetization(target_search_url)
 
 
 def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
@@ -157,6 +159,8 @@ def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
                     opt_ecom_url = ""
                 if not opt_ecom_url:
                     opt_ecom_url = _build_direct_mall_search_url(shop_name, f"[{shop_name}] {opt_name}" if shop_name else opt_name, post_link or "", comp_name) or cleaned_ecom_url
+                raw_subs = opt.get("sub_urls") or opt.get("urls") or []
+                clean_subs = [get_clean_ecommerce_url(su, "", deal_id, None, is_multi_item=False) or su for su in raw_subs if su]
                 deal_sources.append({
                     "site_name": f"{comp_name} - {opt_name}",
                     "post_url": deal.post_link or "",
@@ -165,7 +169,7 @@ def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
                     "currency": opt.get("currency", currency),
                     "code": opt.get("code") or "",
                     "image_url": opt.get("image_url") or "",
-                    "sub_urls": opt.get("sub_urls") or opt.get("urls") or [],
+                    "sub_urls": clean_subs,
                 })
         except Exception:
             deal_sources.append({

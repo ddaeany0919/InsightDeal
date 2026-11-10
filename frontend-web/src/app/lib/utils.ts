@@ -545,3 +545,41 @@ export const ensureWebPushSubscribed = async (): Promise<{
     return { deviceUuid, pushGranted: Notification.permission === "granted" };
   }
 };
+
+
+/**
+ * 쇼핑몰 구매 링크 클릭 시 페이지 이동 지연(0ms) 없이 백엔드 수익화 분석기로 클릭 이벤트를 비동기 전송합니다.
+ */
+export const trackOutboundClick = (
+  url: string | undefined | null,
+  dealId?: number,
+  price?: number | string,
+  currency: string = "KRW"
+): void => {
+  if (!url || url === "#" || typeof window === "undefined") return;
+  try {
+    const rawPriceNum =
+      typeof price === "number"
+        ? price
+        : parseInt(String(price || "").replace(/[^0-9]/g, ""), 10) || 0;
+    const ua = navigator.userAgent || "";
+    const isToss =
+      ua.includes("TossApp") ||
+      window.location.hostname.includes("toss") ||
+      process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true";
+    const platform = isToss ? "toss" : /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ? "mobile_web" : "pc_web";
+
+    fetch(apiUrl("/api/coupang/track-click"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url,
+        deal_id: dealId,
+        price: rawPriceNum,
+        currency: currency || "KRW",
+        platform,
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
+};
