@@ -994,7 +994,9 @@ def extract_structured_multi_options(raw_title: str, content_html: str, default_
                     # Bottom-Link 구조: 이미 제목과 가격이 위쪽에 등장했고 하단 링크로 블록이 닫히는 경우
                     # 첫 블록(not blocks)의 최상단에 게시글 서론/인사말이 섞여 있을 때만 명시적 헤더('- 상품명 -') 기준으로 앞부분 서론 제거
                     first_p_idx = next((idx_c for idx_c, cl in enumerate(current_lines) if extract_scored_prices_from_line(cl)), -1)
-                    if not blocks and first_p_idx >= 2:
+                    if is_post_url_image_layout and first_p_idx >= 1:
+                        current_lines = current_lines[first_p_idx - 1:]
+                    elif not blocks and first_p_idx >= 2:
                         dash_idx = next(
                             (idx_c for idx_c in range(first_p_idx) if re.match(r'^[-■●◆▶★]\s*\S', current_lines[idx_c].strip())),
                             -1,
