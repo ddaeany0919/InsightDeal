@@ -4,19 +4,25 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ddaeany0919.insightdeal.models.DealItem
+import com.ddaeany0919.insightdeal.models.DealSource
 import com.ddaeany0919.insightdeal.models.PriceHistoryPoint
+import com.ddaeany0919.insightdeal.network.ApiCommentCreate
+import com.ddaeany0919.insightdeal.network.ApiDealComment
+import com.ddaeany0919.insightdeal.network.ApiDealVotes
+import com.ddaeany0919.insightdeal.network.ApiService
+import com.ddaeany0919.insightdeal.network.ApiVoteCreate
+import com.ddaeany0919.insightdeal.network.NetworkModule
+import com.ddaeany0919.insightdeal.network.TrackClickRequest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import com.ddaeany0919.insightdeal.network.ApiService
-import com.ddaeany0919.insightdeal.network.ApiDealComment
-import com.ddaeany0919.insightdeal.network.ApiDealVotes
-import com.ddaeany0919.insightdeal.network.ApiCommentCreate
-import com.ddaeany0919.insightdeal.network.ApiVoteCreate
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 @Immutable
 data class DealDetailUiState(
@@ -38,10 +44,10 @@ class DealDetailViewModel : ViewModel() {
     private val _selectedPeriod = MutableStateFlow("7d")
     val selectedPeriod: StateFlow<String> = _selectedPeriod.asStateFlow()
 
-    private val apiService = com.ddaeany0919.insightdeal.network.NetworkModule.createService<ApiService>()
-    
+    private val apiService = NetworkModule.createService<ApiService>()
+
     private var currentDealId: Int? = null
-    private val historyCache = java.util.concurrent.ConcurrentHashMap<String, List<PriceHistoryPoint>>()
+    private val historyCache = ConcurrentHashMap<String, List<PriceHistoryPoint>>()
 
     fun setPeriod(period: String) {
         if (_selectedPeriod.value != period) {
@@ -59,10 +65,67 @@ class DealDetailViewModel : ViewModel() {
         }
     }
 
-    private fun extractUniqueMultiOptions(deal: DealItem?): List<com.ddaeany0919.insightdeal.models.DealSource> {
-        val rawList = deal?.sources?.filter { it.siteName.contains(" - ") && (it.price ?: 0L) > 0L } ?: emptyList()
+    /**
+     * 쇼핑몰 구매 링크 클릭 시 비동기(Fire-and-forget)로 /api/coupang/track-click 수익화 집계를 전송합니다.
+     */
+    fun trackOutboundClick(
+        url: String,
+        price: Long? = null,
+        currency: String? = null
+    ) {
+        val trimmedUrl = url.trim()
+        if (trimmedUrl.isEmpty()) return
+        val deal = _uiState.value.deal
+        val resolvedDealId = currentDealId ?: deal?.id
+        val resolvedPrice = (price ?: deal?.price ?: 0L).coerceAtLeast(0L).toInt()
+        val resolvedCurrency = (currency ?: deal?.currency ?: "KRW").ifBlank { "KRW" }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                apiService.trackOutboundClick(
+                    TrackClickRequest(
+                        url = trimmedUrl,
+                        dealId = resolvedDealId,
+                        price = resolvedPrice,
+                        currency = resolvedCurrency,
+                        platform = "android"
+                    )
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 트래킹 실패가 구매 전환을 방해하지 않도록 무시
+            }
+        }
+    }
+
+    fun resolveMultiOptions(deal: DealItem?): List<DealSource> {
+        if (deal == null) return emptyList()
+        val sourceOptions = deal.sources
+            ?.filter { it.siteName.contains(" - ") && it.siteName.substringAfter(" - ").isNotBlank() }
+            .orEmpty()
+
+        val combined = if (sourceOptions.isNotEmpty()) {
+            sourceOptions
+        } else {
+            deal.optionsData
+                .filter { it.name.isNotBlank() }
+                .map { opt ->
+                    DealSource(
+                        siteName = "${deal.siteName} - ${opt.name}",
+                        postUrl = deal.postUrl.orEmpty(),
+                        ecommerceUrl = opt.url ?: deal.ecommerceUrl,
+                        price = opt.price,
+                        currency = opt.currency ?: deal.currency,
+                        code = opt.code,
+                        imageUrl = opt.imageUrl ?: deal.imageUrl,
+                        subUrls = opt.subUrls ?: emptyList()
+                    )
+                }
+        }
+
         val seen = mutableSetOf<String>()
-        return rawList.filter { src ->
+        return combined.filter { src ->
             val optTitle = cleanOptionTitle(src.siteName).lowercase().replace(" ", "")
             optTitle.isNotEmpty() && seen.add(optTitle)
         }
@@ -73,7 +136,7 @@ class DealDetailViewModel : ViewModel() {
             _uiState.value = _uiState.value.copy(isHistoryLoading = true)
             try {
                 val deal = _uiState.value.deal
-                val multiOptions = extractUniqueMultiOptions(deal)
+                val multiOptions = resolveMultiOptions(deal)
                 val selectedOpt = if (multiOptions.size > 1) multiOptions.getOrNull(_uiState.value.selectedOptionIndex) else null
                 val optQuery = selectedOpt?.let { cleanOptionTitle(it.siteName) }?.takeIf { it.isNotBlank() }
                 val optCurrency = selectedOpt?.currency ?: deal?.currency
@@ -112,7 +175,9 @@ class DealDetailViewModel : ViewModel() {
                 } else {
                     _uiState.value = _uiState.value.copy(isHistoryLoading = false)
                 }
-            } catch (e: Exception) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
                 _uiState.value = _uiState.value.copy(isHistoryLoading = false)
             }
         }
@@ -126,60 +191,55 @@ class DealDetailViewModel : ViewModel() {
                 coroutineScope {
                     val requestedPeriod = if (_selectedPeriod.value == "7d") "7d_auto" else _selectedPeriod.value
                     val dealDeferred = async { apiService.getEnhancedDealInfo(dealId) }
-                    val historyDeferred = async { apiService.getDealPriceHistory(dealId, requestedPeriod) }
                     val commentsDeferred = async {
-                        try { apiService.getDealComments(dealId) } catch (e: Exception) { null }
+                        try {
+                            apiService.getDealComments(dealId)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            null
+                        }
                     }
                     val votesDeferred = async {
-                        try { apiService.getDealVotes(dealId, getDeviceId()) } catch (e: Exception) { null }
+                        try {
+                            apiService.getDealVotes(dealId, getDeviceId())
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            null
+                        }
                     }
 
                     val dealResponse = dealDeferred.await()
-                    val historyResponse = historyDeferred.await()
                     val commentsResponse = commentsDeferred.await()
                     val votesResponse = votesDeferred.await()
 
                     if (dealResponse.isSuccessful) {
                         val deal = dealResponse.body()
-                        val multiOptions = extractUniqueMultiOptions(deal)
+                        val multiOptions = resolveMultiOptions(deal)
                         val firstOpt = if (multiOptions.size > 1) multiOptions.firstOrNull() else null
                         val firstOptQuery = firstOpt?.let { cleanOptionTitle(it.siteName) }?.takeIf { it.isNotBlank() }
                         val firstOptCurrency = firstOpt?.currency ?: deal?.currency
 
-                        var history = if (firstOptQuery != null) {
-                            val optHistoryResp = try {
-                                apiService.getDealPriceHistory(
-                                    dealId = dealId,
-                                    period = requestedPeriod,
-                                    query = firstOptQuery,
-                                    currency = firstOptCurrency
-                                )
-                            } catch (e: Exception) { null }
-                            if (optHistoryResp?.isSuccessful == true) optHistoryResp.body() ?: emptyList() else emptyList()
-                        } else {
-                            if (historyResponse.isSuccessful) historyResponse.body() ?: emptyList() else emptyList()
+                        val historyResponse = try {
+                            apiService.getDealPriceHistory(
+                                dealId = dealId,
+                                period = requestedPeriod,
+                                query = firstOptQuery,
+                                currency = firstOptCurrency
+                            )
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            null
                         }
+                        val history = if (historyResponse?.isSuccessful == true) historyResponse.body() ?: emptyList() else emptyList()
 
                         val comments = if (commentsResponse?.isSuccessful == true) commentsResponse.body() ?: emptyList() else emptyList()
                         val votes = if (votesResponse?.isSuccessful == true) votesResponse.body() else null
 
-                        // 백엔드 1-RTT 7d_auto 폴백으로 3개월(YY.MM.DD 포맷) 데이터가 반환된 경우 탭 상태도 즉시 3m로 동기화
                         if (_selectedPeriod.value == "7d" && history.size >= 2 && history.any { it.date.matches(Regex("^\\d{2}\\.\\d{2}\\.\\d{2}$")) }) {
                             _selectedPeriod.value = "3m"
-                        } else if (history.size <= 1 && _selectedPeriod.value == "7d") {
-                            val fallbackResponse = try {
-                                apiService.getDealPriceHistory(
-                                    dealId = dealId,
-                                    period = "3m",
-                                    query = firstOptQuery,
-                                    currency = firstOptCurrency
-                                )
-                            } catch (e: Exception) { null }
-                            val fallbackHistory = if (fallbackResponse?.isSuccessful == true) fallbackResponse.body() ?: emptyList() else emptyList()
-                            if (fallbackHistory.size >= 2) {
-                                history = fallbackHistory
-                                _selectedPeriod.value = "3m"
-                            }
                         }
 
                         val cacheKey = "${dealId}_${firstOptQuery ?: "default"}_${firstOptCurrency}_${_selectedPeriod.value}"
@@ -208,22 +268,23 @@ class DealDetailViewModel : ViewModel() {
                     } else {
                         _uiState.value = DealDetailUiState(
                             isLoading = false,
-                            error = "상세 정보를 불러오는 데 실패했습니다. (코드: ${dealResponse.code()})"
+                            error = "상세 정보를 불러오지 못했어요. (코드: ${dealResponse.code()})"
                         )
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.value = DealDetailUiState(
                     isLoading = false,
-                    error = "네트워크 오류가 발생했습니다: ${e.message}"
+                    error = "네트워크 연결을 확인해 주세요."
                 )
             }
         }
     }
-    
-    // --- 익명 디바이스 ID (투표/댓글용) ---
+
     private var cachedDeviceId: String? = null
-    
+
     private fun getDeviceId(): String {
         return cachedDeviceId ?: run {
             val newId = "anon_${UUID.randomUUID().toString().take(8)}"
@@ -235,7 +296,7 @@ class DealDetailViewModel : ViewModel() {
     fun addComment(content: String) {
         val dealId = currentDealId ?: return
         if (content.isBlank()) return
-        
+
         viewModelScope.launch {
             try {
                 val req = ApiCommentCreate(
@@ -251,15 +312,17 @@ class DealDetailViewModel : ViewModel() {
                         )
                     }
                 }
-            } catch (e: Exception) {
-                // 에러 처리
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 댓글 등록 실패 무시
             }
         }
     }
 
     fun vote(voteType: String) {
         val dealId = currentDealId ?: return
-        
+
         viewModelScope.launch {
             try {
                 val req = ApiVoteCreate(
@@ -273,8 +336,10 @@ class DealDetailViewModel : ViewModel() {
                         _uiState.value = _uiState.value.copy(votes = newVotes)
                     }
                 }
-            } catch (e: Exception) {
-                // 에러 처리
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 투표 실패 무시
             }
         }
     }

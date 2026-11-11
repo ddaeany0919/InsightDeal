@@ -1,6 +1,7 @@
 package com.ddaeany0919.insightdeal.presentation.webview
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.webkit.WebResourceRequest
@@ -8,24 +9,44 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import com.ddaeany0919.insightdeal.utils.CustomTabLauncher
 
-// [jetpack-compose-performance] UA 상수 호이스팅
 private const val CLEAN_MOBILE_UA = "Mozilla/5.0 (Linux; Android 14; SM-S928N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 private const val DESKTOP_CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-/**
- * 안드로이드 모바일 환경에서 데스크톱 전용 쇼핑몰 URL 접속 시 발생하는 봇 인증(Captcha)을 원천 차단하고,
- * 빠삭(bbasak.com) 게시글 접속 시 상단 대형 배너를 건너뛰고 본문(#view_content)으로 즉시 스크롤되도록 변환합니다.
- */
+private val SHOPPING_SCHEME_PACKAGES = mapOf(
+    "coupang" to "com.coupang.mobile",
+    "coupangapp" to "com.coupang.mobile",
+    "elevenstreet" to "com.elevenst",
+    "st11" to "com.elevenst",
+    "gmarket" to "com.ebay.kr.gmarket",
+    "auction" to "com.ebay.kr.auction",
+    "lotteon" to "com.lotte.lotteon",
+    "ssg" to "kr.co.ssg",
+    "aliexpress" to "com.alibaba.aliexpresshd",
+    "naversearchapp" to "com.nhn.android.search"
+)
+
 fun resolveMobileWebViewUrl(rawUrl: String): String {
     var trimmed = rawUrl.trim().replace(":443", "")
     if (trimmed.isBlank()) return ""
@@ -33,7 +54,6 @@ fun resolveMobileWebViewUrl(rawUrl: String): String {
         trimmed = "https://$trimmed"
     }
 
-    // 1. 빠삭(bbasak.com) 게시글 본문 앵커(#view_content) 자동 부착
     if (trimmed.contains("bbasak.com/bbs/board.php", ignoreCase = true) &&
         trimmed.contains("wr_id=", ignoreCase = true) &&
         !trimmed.contains("#")
@@ -41,36 +61,30 @@ fun resolveMobileWebViewUrl(rawUrl: String): String {
         trimmed = "$trimmed#view_content"
     }
 
-    // 2. 옥션 데스크톱 상세 URL -> 모바일 VIP URL 변환 (모바일 UA에서 PC URL 접속 시 봇 차단 우회)
     val auctionMatch = Regex("itempage3?\\.auction\\.co\\.kr/DetailView\\.aspx\\?.*itemno=([A-Za-z0-9]+)", RegexOption.IGNORE_CASE).find(trimmed)
     if (auctionMatch != null) {
         return "http://mitem.auction.co.kr/vip?itemNo=${auctionMatch.groupValues[1]}"
     }
 
-    // 3. G마켓 데스크톱 상세 URL -> 모바일 VIP URL 변환
     val gmarketMatch = Regex("item\\.gmarket\\.co\\.kr/Item\\?.*goodscode=([0-9]+)", RegexOption.IGNORE_CASE).find(trimmed)
     if (gmarketMatch != null) {
         return "http://mitem.gmarket.co.kr/vi/product/${gmarketMatch.groupValues[1]}"
     }
 
-    // 4. 11번가 데스크톱 URL -> 모바일 URL 변환
     val st11Match = Regex("www\\.11st\\.co\\.kr/products/([0-9]+)", RegexOption.IGNORE_CASE).find(trimmed)
     if (st11Match != null) {
         return "https://m.11st.co.kr/products/m/${st11Match.groupValues[1]}"
     }
 
-    // 5. 쿠팡 데스크톱 URL -> 모바일 URL 변환
     if (trimmed.contains("://www.coupang.com/vp/products/", ignoreCase = true)) {
         return trimmed.replace(Regex("://www\\.coupang\\.com/vp/products/", RegexOption.IGNORE_CASE), "://m.coupang.com/vm/products/")
     }
 
-    // 6. 뽐뿌 데스크톱 URL -> 모바일 URL 변환
     val ppomppuMatch = Regex("www\\.ppomppu\\.co\\.kr/zboard/(?:view|zboard)\\.php\\?.*id=([^&]+).*no=([0-9]+)", RegexOption.IGNORE_CASE).find(trimmed)
     if (ppomppuMatch != null) {
         return "https://m.ppomppu.co.kr/new/bbs_view.php?id=${ppomppuMatch.groupValues[1]}&no=${ppomppuMatch.groupValues[2]}"
     }
 
-    // 7. 클리앙 데스크톱 URL -> 모바일 URL 변환
     if (trimmed.contains("://www.clien.net/service/board/", ignoreCase = true)) {
         return trimmed.replace("://www.clien.net/", "://m.clien.net/")
     }
@@ -88,10 +102,7 @@ fun DealWebViewScreen(
     val context = LocalContext.current
     var webView: WebView? by remember { mutableStateOf(null) }
     var canGoBack by remember { mutableStateOf(false) }
-    var pendingIntent: Intent? by remember { mutableStateOf(null) }
-    var pendingFallbackUrl: String? by remember { mutableStateOf(null) }
 
-    // [navigation-event] 시스템 뒤로가기 제스처 시 웹뷰 내부 히스토리가 있으면 우선 뒤로 이동
     BackHandler(enabled = canGoBack) {
         if (webView?.canGoBack() == true) {
             webView?.goBack()
@@ -101,70 +112,10 @@ fun DealWebViewScreen(
         }
     }
 
-    if (pendingIntent != null) {
-        AlertDialog(
-            onDismissRequest = { 
-                pendingIntent = null
-                pendingFallbackUrl = null
-            },
-            title = { Text("쇼핑몰 연결", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
-            text = { Text("해당 쇼핑몰 앱으로 열면 더 편리하게 구매하실 수 있습니다.\n어떻게 이동하시겠습니까?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        try {
-                            context.startActivity(pendingIntent!!)
-                        } catch (e: Exception) {
-                            val packageName = pendingIntent!!.`package`
-                            if (packageName != null) {
-                                try {
-                                    val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
-                                        addCategory(Intent.CATEGORY_BROWSABLE)
-                                        component = null
-                                        selector = null
-                                    }
-                                    context.startActivity(playStoreIntent)
-                                } catch (e2: Exception) {
-                                    e2.printStackTrace()
-                                }
-                            }
-                        }
-                        pendingIntent = null
-                        pendingFallbackUrl = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFFFF6D00))
-                ) {
-                    Text("App에서 보기")
-                }
-            },
-            dismissButton = {
-                if (pendingFallbackUrl != null) {
-                    OutlinedButton(onClick = {
-                        val safeFallback = pendingFallbackUrl!!
-                        if (safeFallback.startsWith("http://") || safeFallback.startsWith("https://")) {
-                            webView?.loadUrl(safeFallback)
-                        }
-                        pendingIntent = null
-                        pendingFallbackUrl = null
-                    }) {
-                        Text("웹에서 보기")
-                    }
-                } else {
-                    OutlinedButton(onClick = {
-                        pendingIntent = null
-                        pendingFallbackUrl = null
-                    }) {
-                        Text("취소")
-                    }
-                }
-            }
-        )
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("상세보기") },
+                title = { Text("원본 게시글") },
                 navigationIcon = {
                     IconButton(onClick = {
                         if (webView?.canGoBack() == true) {
@@ -173,24 +124,13 @@ fun DealWebViewScreen(
                             onBack()
                         }
                     }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "뒤로가기")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
                     }
                 },
                 actions = {
                     IconButton(onClick = {
-                        try {
-                            val targetUrl = webView?.url ?: url
-                            if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)).apply {
-                                    addCategory(Intent.CATEGORY_BROWSABLE)
-                                    component = null
-                                    selector = null
-                                }
-                                context.startActivity(intent)
-                            }
-                        } catch (e: Exception) {
-                            // Ignore
-                        }
+                        val targetUrl = webView?.url ?: url
+                        CustomTabLauncher.launchShoppingUrl(context, targetUrl)
                     }) {
                         Icon(Icons.Default.OpenInBrowser, contentDescription = "브라우저로 열기")
                     }
@@ -222,35 +162,27 @@ fun DealWebViewScreen(
                         }
 
                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                            val requestUrl = request?.url?.toString() ?: ""
-                            
-                            if (requestUrl.startsWith("intent://")) {
+                            val requestUrl = request?.url?.toString().orEmpty()
+                            if (requestUrl.isBlank()) return false
+
+                            if (requestUrl.startsWith("intent://", ignoreCase = true)) {
                                 try {
-                                    // [android-intent-security] Intent Scheme Hijacking 방어:
-                                    // CATEGORY_BROWSABLE 강제 및 명시적 component/selector 초기화로 내부 비공개 컴포넌트 호출 차단
                                     val intent = Intent.parseUri(requestUrl, Intent.URI_INTENT_SCHEME).apply {
                                         addCategory(Intent.CATEGORY_BROWSABLE)
                                         component = null
                                         selector = null
                                     }
-                                    val rawFallbackUrl = intent.getStringExtra("browser_fallback_url")
-                                    val fallbackUrl = rawFallbackUrl?.takeIf {
-                                        it.startsWith("http://") || it.startsWith("https://")
+                                    val fallbackUrl = intent.getStringExtra("browser_fallback_url")?.takeIf {
+                                        it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true)
                                     }
-                                    
-                                    if (fallbackUrl != null) {
-                                        // 1. 안전한 http/https fallback URL(웹)이 있다면 다이얼로그를 띄워 물어본다
-                                        pendingIntent = intent
-                                        pendingFallbackUrl = fallbackUrl
-                                        return true
-                                    } else {
-                                        // 2. fallback URL이 없다면 선택의 여지가 없으므로 바로 앱 실행
-                                        try {
-                                            context.startActivity(intent)
-                                            return true
-                                        } catch (e: Exception) {
+                                    try {
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        if (fallbackUrl != null) {
+                                            view?.loadUrl(fallbackUrl)
+                                        } else {
                                             val packageName = intent.`package`
-                                            if (packageName != null) {
+                                            if (!packageName.isNullOrBlank()) {
                                                 try {
                                                     val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
                                                         addCategory(Intent.CATEGORY_BROWSABLE)
@@ -258,36 +190,52 @@ fun DealWebViewScreen(
                                                         selector = null
                                                     }
                                                     context.startActivity(playStoreIntent)
-                                                } catch (e2: Exception) {
-                                                    e2.printStackTrace()
+                                                } catch (_: Exception) {
+                                                    // Ignore
                                                 }
                                             }
                                         }
                                     }
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
+                                } catch (_: Exception) {
+                                    // Ignore malformed intent scheme
                                 }
-                                // 앱 스키마 오류 시 웹뷰 기본 에러(ERR_UNKNOWN_URL_SCHEME) 방지
                                 return true
-                            } else if (!requestUrl.startsWith("http://") && !requestUrl.startsWith("https://")) {
-                                // 일반적인 외부 앱 스키마 (market://, kakaotalk://, toss:// 등)
+                            }
+
+                            if (!requestUrl.startsWith("http://", ignoreCase = true) &&
+                                !requestUrl.startsWith("https://", ignoreCase = true)
+                            ) {
+                                val parsedUri = runCatching { Uri.parse(requestUrl) }.getOrNull()
+                                val scheme = parsedUri?.scheme?.lowercase().orEmpty()
                                 try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(requestUrl)).apply {
+                                    val intent = Intent(Intent.ACTION_VIEW, parsedUri ?: Uri.parse(requestUrl)).apply {
                                         addCategory(Intent.CATEGORY_BROWSABLE)
                                         component = null
                                         selector = null
                                     }
                                     context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
+                                } catch (_: ActivityNotFoundException) {
+                                    val fallbackPkg = SHOPPING_SCHEME_PACKAGES[scheme]
+                                    if (fallbackPkg != null) {
+                                        runCatching {
+                                            val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$fallbackPkg")).apply {
+                                                addCategory(Intent.CATEGORY_BROWSABLE)
+                                                component = null
+                                                selector = null
+                                            }
+                                            context.startActivity(marketIntent)
+                                        }
+                                    }
+                                } catch (_: Exception) {
+                                    // Ignore
                                 }
                                 return true
                             }
-                            
+
                             return super.shouldOverrideUrlLoading(view, request)
                         }
                     }
-                    
+
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
@@ -296,16 +244,12 @@ fun DealWebViewScreen(
                         setSupportZoom(true)
                         builtInZoomControls = true
                         displayZoomControls = false
-                        // [android-intent-security] 로컬 파일/컨텐츠 임의 접근 차단 및 혼합 컨텐츠 호환 모드 설정
                         allowFileAccess = false
                         allowContentAccess = false
                         mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                     }
 
                     val resolvedUrl = resolveMobileWebViewUrl(url)
-
-                    // 봇 차단(네이버 스마트스토어, 클라우드플레어 등)을 완벽히 우회하기 위해 
-                    // 일반 모바일 크롬 브라우저와 완전히 동일한 User-Agent 사용
                     settings.userAgentString = if (resolvedUrl.contains("bbasak.com")) {
                         DESKTOP_CHROME_UA
                     } else {
@@ -313,8 +257,7 @@ fun DealWebViewScreen(
                     }
 
                     webView = this
-                    
-                    // 네이버 스마트스토어 등 봇 차단 우회를 위한 헤더 조작
+
                     val extraHeaders = mutableMapOf<String, String>()
                     if (resolvedUrl.contains("naver.com") || resolvedUrl.contains("fmkorea.com") || resolvedUrl.contains("clien.net") || resolvedUrl.contains("quasarzone.com")) {
                         extraHeaders["Referer"] = "https://search.naver.com"
@@ -327,9 +270,7 @@ fun DealWebViewScreen(
                     loadUrl(resolvedUrl, extraHeaders)
                 }
             },
-            update = {
-                // Ignore
-            }
+            update = {}
         )
     }
 

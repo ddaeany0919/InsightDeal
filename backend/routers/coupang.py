@@ -281,6 +281,52 @@ def track_outbound_click(
     return {"status": "ok", **info}
 
 
+_EXTRA_ALLOWED_REDIRECT_DOMAINS = {
+    "coupang.com",
+    "coupa.ng",
+    "aliexpress.com",
+    "gmarket.co.kr",
+    "auction.co.kr",
+    "11st.co.kr",
+    "naver.com",
+    "lotteon.com",
+    "ssg.com",
+    "hmall.com",
+    "gsshop.com",
+    "cjthemarket.com",
+    "cjonstyle.com",
+    "ohou.se",
+    "musinsa.com",
+    "kurly.com",
+    "qoo10.com",
+    "amazon.com",
+    "amazon.co.jp",
+    "ebay.com",
+    "newegg.com",
+    "kakao.com",
+    "newtip.net",
+    "linkprice.com",
+}
+
+
+def _validate_redirect_url(raw_url: str) -> None:
+    from urllib.parse import urlparse
+    from backend.core.url_utils import LINKPRICE_MERCHANTS
+
+    u = (raw_url or "").strip()
+    if not u or not (u.startswith("http://") or u.startswith("https://")):
+        raise HTTPException(status_code=400, detail="Disallowed redirect domain")
+    parsed = urlparse(u)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Disallowed redirect domain")
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if not host:
+        raise HTTPException(status_code=400, detail="Disallowed redirect domain")
+    allowed_domains = {d.lower().rstrip(".") for d in LINKPRICE_MERCHANTS.keys()} | _EXTRA_ALLOWED_REDIRECT_DOMAINS
+    if not any(host == d or host.endswith("." + d) for d in allowed_domains):
+        raise HTTPException(status_code=400, detail="Disallowed redirect domain")
+
+
 @router.get("/redirect")
 def redirect_with_affiliate(
     url: str = Query(..., description="이동할 쇼핑몰 원본 URL"),
@@ -289,14 +335,16 @@ def redirect_with_affiliate(
     db: Session = Depends(get_db_session),
 ):
     """
-    외부 공유 링크나 푸시 알림에서 호출 시 타인 제휴코드를 세탁하고
-    인사이트딜 제휴 링크로 즉시 302 리다이렉트합니다.
+    외부 공유 링크나 푸시 알림에서 호출 시 허용 도메인을 검증한 뒤
+    제휴 링크로 302 리다이렉트합니다.
     """
     from backend.core.url_utils import unwrap_third_party_affiliate_url, apply_affiliate_monetization
-    if not url or not url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="유효하지 않은 URL입니다.")
+
+    _validate_redirect_url(url)
     clean_u = unwrap_third_party_affiliate_url(url, allow_network=True)
+    _validate_redirect_url(clean_u)
     monetized_u = apply_affiliate_monetization(clean_u)
+    _validate_redirect_url(monetized_u)
     _record_outbound_click(db=db, url=monetized_u, deal_id=deal_id, platform=platform)
     return RedirectResponse(url=monetized_u, status_code=302)
 

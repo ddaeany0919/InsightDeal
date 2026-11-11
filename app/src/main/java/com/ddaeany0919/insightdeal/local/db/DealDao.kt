@@ -7,7 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
 /**
- * 💾 핫딜 로컬 캐싱 쿼리를 처리하는 DAO
+ * 핫딜 로컬 캐싱 쿼리를 처리하는 DAO
  */
 @Dao
 interface DealDao {
@@ -16,9 +16,7 @@ interface DealDao {
     suspend fun insertAll(deals: List<DealEntity>)
 
     /**
-     * 카테고리, 검색 키워드, 제휴 플랫폼 필터링을 로컬 수준에서 유연하게 지원하는 PagingSource 반환 쿼리
-     * - category가 "전체"이거나 null인 경우 무시 처리
-     * - platform이 "전체"이거나 null인 경우 무시 처리
+     * 카테고리, 검색 키워드, 커뮤니티 플랫폼 필터링 및 3종 정렬(latest / popular / price_asc) 지원 PagingSource 쿼리
      */
     @Query("""
         SELECT * FROM deals 
@@ -32,16 +30,25 @@ interface DealDao {
               (INSTR(',' || :platform || ',', ',클리앙,') > 0 AND INSTR(siteName, '클리앙') > 0) OR
               (INSTR(',' || :platform || ',', ',알리뽐뿌,') > 0 AND INSTR(siteName, '알리뽐뿌') > 0) OR
               (INSTR(',' || :platform || ',', ',뽐뿌해외,') > 0 AND INSTR(siteName, '뽐뿌해외') > 0) OR
+              (INSTR(',' || :platform || ',', ',빠삭,') > 0 AND INSTR(siteName, '빠삭') > 0) OR
               (INSTR(',' || :platform || ',', ',빠삭국내,') > 0 AND INSTR(siteName, '빠삭국내') > 0) OR
               (INSTR(',' || :platform || ',', ',빠삭해외,') > 0 AND INSTR(siteName, '빠삭해외') > 0) OR
               (INSTR(',' || :platform || ',', ',빠삭육아,') > 0 AND INSTR(siteName, '빠삭육아') > 0)
           ))
-        ORDER BY createdAt DESC, id DESC
+        ORDER BY
+          CASE WHEN :sort = 'popular' THEN honeyScore END DESC,
+          CASE WHEN :sort = 'popular' THEN likeCount END DESC,
+          CASE WHEN :sort = 'popular' THEN commentCount END DESC,
+          CASE WHEN :sort = 'price_asc' THEN (CASE WHEN price > 0 THEN 0 ELSE 1 END) END ASC,
+          CASE WHEN :sort = 'price_asc' THEN price END ASC,
+          createdAt DESC,
+          id DESC
     """)
     fun getPagedDeals(
         category: String?,
         keyword: String?,
-        platform: String?
+        platform: String?,
+        sort: String = "latest"
     ): PagingSource<Int, DealEntity>
 
     @Query("DELETE FROM deals")

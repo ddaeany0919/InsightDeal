@@ -564,9 +564,14 @@ fun AdvancedSearchScreen(
                                         if (isMeaningfulQuery(searchQuery.text)) {
                                             searchAutoComplete.addToSearchHistory(searchQuery.text.trim())
                                         }
-                                        val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")
-                                        navController.navigate("webview/$encodedUrl")
-                                    }
+                                        viewModel.trackOutboundClick(
+                                            url = url,
+                                            price = deal.price.takeIf { it > 0L }?.toInt(),
+                                            currency = deal.currency
+                                        )
+                                        com.ddaeany0919.insightdeal.utils.CustomTabLauncher.launchShoppingUrl(context, url)
+                                    },
+                                    highlightKeyword = searchQuery.text.trim()
                                 )
                             }
                         }

@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     const subscription = await request.json();
     console.log('[API Route] Registering subscription:', subscription);
 
-    // 백엔드 API 서버의 `/api/notifications/register-web` 엔드포인트로 릴레이
+    // 백엔드 API 서버의 `/api/push/register-web` 엔드포인트로 릴레이
     const response = await fetch(`${BACKEND_API_URL}/api/push/register-web`, {
       method: 'POST',
       headers: {
@@ -24,9 +24,10 @@ export async function POST(request: Request) {
       const errorMsg = await response.text();
       return NextResponse.json({ error: `Backend error: ${errorMsg}` }, { status: response.status });
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('[API Route] Error registering push subscription:', e);
-    return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 });
+    const message = e instanceof Error ? e.message : 'Internal Server Error';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -48,7 +49,8 @@ export async function DELETE(request: Request) {
     } else {
       return NextResponse.json({ error: 'Failed to delete from backend' }, { status: response.status });
     }
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Internal Server Error';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -28,7 +28,7 @@ fun MyPostsScreen(
     val context = LocalContext.current
     val viewModel: CommunityBoardViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val uiState by viewModel.uiState.collectAsState()
-    val currentUserId by AuthManager.getUsername(context).collectAsState(initial = "admin")
+    val currentUserId by AuthManager.getUsername(context).collectAsState(initial = "guest")
 
     LaunchedEffect(Unit) {
         viewModel.loadPosts()
@@ -85,7 +85,7 @@ fun MyPostsScreen(
                 ) { post ->
                     ShouldIBuyVoteCard(
                         post = post,
-                        currentUserId = currentUserId ?: "admin",
+                        currentUserId = currentUserId ?: "guest",
                         // [Bug Fix] MainActivity의 정의된 라우트("community_edit/{postId}")와 일치하도록 수정
                         onEditClick = { navController?.navigate("community_edit/${post.id}") },
                         onVoteSubmit = { viewModel.loadPosts(showLoading = false) },

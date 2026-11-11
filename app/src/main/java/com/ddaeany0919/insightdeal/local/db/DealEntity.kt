@@ -3,10 +3,11 @@ package com.ddaeany0919.insightdeal.local.db
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.ddaeany0919.insightdeal.models.DealItem
+import com.ddaeany0919.insightdeal.models.DealOptionItem
 import com.ddaeany0919.insightdeal.models.DealSource
 
 /**
- * 💾 핫딜 로컬 캐싱을 위한 Room Entity
+ * 핫딜 로컬 캐싱을 위한 Room Entity
  */
 @Entity(tableName = "deals")
 data class DealEntity(
@@ -19,6 +20,7 @@ data class DealEntity(
     val imageUrl: String?,
     val ecommerceUrl: String?,
     val postUrl: String?,
+    val shopName: String? = null,
     val siteName: String,
     val siteNames: List<String>,
     val sources: List<DealSource>,
@@ -33,7 +35,11 @@ data class DealEntity(
     val honeyScore: Int,
     val aiSummary: String?,
     val contentHtml: String?,
-    val isClosed: Boolean
+    val isClosed: Boolean,
+    val hasOptions: Boolean = false,
+    val optionsCount: Int = 0,
+    val optionsData: List<DealOptionItem> = emptyList(),
+    val subUrls: List<String> = emptyList()
 ) {
     /**
      * Entity -> Domain Model 변환
@@ -49,6 +55,7 @@ data class DealEntity(
             imageUrl = imageUrl,
             ecommerceUrl = ecommerceUrl,
             postUrl = postUrl,
+            shopName = shopName,
             siteName = siteName,
             siteNames = siteNames,
             sources = sources,
@@ -63,7 +70,11 @@ data class DealEntity(
             honeyScore = honeyScore,
             aiSummary = aiSummary,
             contentHtml = contentHtml,
-            isClosed = isClosed
+            isClosed = isClosed,
+            hasOptions = hasOptions,
+            optionsCount = optionsCount,
+            optionsData = optionsData,
+            subUrls = subUrls
         )
     }
 
@@ -82,6 +93,7 @@ data class DealEntity(
                 imageUrl = deal.imageUrl,
                 ecommerceUrl = deal.ecommerceUrl,
                 postUrl = deal.postUrl,
+                shopName = deal.shopName,
                 siteName = deal.siteName,
                 siteNames = deal.siteNames,
                 sources = deal.sources ?: emptyList(),
@@ -96,7 +108,11 @@ data class DealEntity(
                 honeyScore = deal.honeyScore,
                 aiSummary = deal.aiSummary,
                 contentHtml = deal.contentHtml,
-                isClosed = deal.isClosed
+                isClosed = deal.isClosed,
+                hasOptions = deal.hasMultipleOptions,
+                optionsCount = deal.resolvedOptionCount,
+                optionsData = deal.optionsData,
+                subUrls = deal.resolvedSubUrls
             )
         }
     }

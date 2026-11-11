@@ -1,13 +1,22 @@
 package com.ddaeany0919.insightdeal.presentation.home
 
+import com.ddaeany0919.insightdeal.presentation.decodeHtmlEntities
 import com.ddaeany0919.insightdeal.presentation.formatPrice
+import com.ddaeany0919.insightdeal.presentation.resolveShopBadgeAndCleanTitle
 import androidx.compose.foundation.*
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import com.ddaeany0919.insightdeal.presentation.KeywordManagerViewModel
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.*
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -19,11 +28,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.*
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.*
 import androidx.compose.ui.unit.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.paging.LoadState
@@ -32,6 +46,7 @@ import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import com.ddaeany0919.insightdeal.models.DealItem
+import com.ddaeany0919.insightdeal.utils.CustomTabLauncher
 
 import com.ddaeany0919.insightdeal.presentation.components.shimmerEffect
 import com.ddaeany0919.insightdeal.presentation.rememberRelativeTime
@@ -81,10 +96,29 @@ fun HomeScreen(
     wishlistViewModel: WishlistViewModel? = null,
     keywordViewModel: KeywordManagerViewModel = viewModel()
 ) {
-    val filterState by viewModel.filterState.collectAsState()
+    val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     val selectedCategory = filterState.category
+    val configuration = LocalConfiguration.current
+    val isExpandedScreen = configuration.screenWidthDp >= 600
+    val focusManager = LocalFocusManager.current
+    var searchInput by remember { mutableStateOf(filterState.keyword.orEmpty()) }
 
-    val wishlistState by wishlistViewModel?.uiState?.collectAsState(initial = WishlistUiState.Loading) ?: remember { mutableStateOf(WishlistUiState.Loading) }
+    LaunchedEffect(filterState.keyword) {
+        val externalKeyword = filterState.keyword.orEmpty()
+        if (externalKeyword != searchInput.trim()) {
+            searchInput = externalKeyword
+        }
+    }
+
+    LaunchedEffect(searchInput) {
+        val trimmed = searchInput.trim()
+        if (trimmed != filterState.keyword.orEmpty()) {
+            kotlinx.coroutines.delay(300L)
+            viewModel.searchDeals(trimmed)
+        }
+    }
+
+    val wishlistState by wishlistViewModel?.uiState?.collectAsStateWithLifecycle(initialValue = WishlistUiState.Loading) ?: remember { mutableStateOf(WishlistUiState.Loading) }
     val wishlistedUrls = remember(wishlistState) {
         if (wishlistState is WishlistUiState.Success) {
             (wishlistState as WishlistUiState.Success).items.map { it.productUrl }.toSet()
@@ -94,7 +128,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val networkMonitor = remember { NetworkMonitor(context) }
-    val isOnline by networkMonitor.isOnline.collectAsState(initial = true)
+    val isOnline by networkMonitor.isOnline.collectAsStateWithLifecycle(initialValue = true)
     val isDark = MaterialTheme.colorScheme.background.red < 0.2f
 
     var isNotificationPermissionGranted by remember {
@@ -126,13 +160,7 @@ fun HomeScreen(
                 isNotificationPermissionGranted = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
                 val prefs = context.getSharedPreferences("app", android.content.Context.MODE_PRIVATE)
                 val disabledPlatforms = prefs.getStringSet("disabled_platforms", emptySet()) ?: emptySet()
-                if (disabledPlatforms.isEmpty()) {
-                    viewModel.selectPlatform("전체")
-                } else {
-                    val allPlatforms = listOf("뽐뿌", "퀘이사존", "펨코", "루리웹", "클리앙", "알리뽐뿌", "빠삭국내", "빠삭해외", "빠삭육아")
-                    val activePlatforms = allPlatforms.filter { it !in disabledPlatforms }.joinToString(",")
-                    viewModel.selectPlatform(activePlatforms)
-                }
+                viewModel.updateDisabledPlatforms(disabledPlatforms)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -141,9 +169,8 @@ fun HomeScreen(
         }
     }
 
-    // ✨ Paging3 Lazy 아이템 콜렉팅 및 상태 구독
     val dealsPagingItems = viewModel.dealsPagingData.collectAsLazyPagingItems()
-    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
 
     // Toss 스타일 프리미엄 소프트 가이드 알림 권한 팝업 UI
     if (showPrePermissionDialog) {
@@ -293,11 +320,10 @@ fun HomeScreen(
         )
     }
 
-    // 🔔 신규 피처: 알림 내역 바텀시트 팝업 상태 관리 및 연동
-    val notificationAlerts by com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager.alerts.collectAsState()
+    val notificationAlerts by com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager.alerts.collectAsStateWithLifecycle()
     var showNotificationHistory by remember { mutableStateOf(false) }
 
-    val username by com.ddaeany0919.insightdeal.presentation.auth.AuthManager.getUsername(context).collectAsState(initial = "guest")
+    val username by com.ddaeany0919.insightdeal.presentation.auth.AuthManager.getUsername(context).collectAsStateWithLifecycle(initialValue = "guest")
     val isLoggedIn = username != "guest" && !username.isNullOrEmpty()
 
     val hiddenDeals = remember { mutableStateListOf<String>() }
@@ -313,7 +339,7 @@ fun HomeScreen(
             hiddenSet.add(dealId.toString())
             prefs.edit().putStringSet("hidden_deals", hiddenSet).apply()
             hiddenDeals.add(dealId.toString())
-            android.widget.Toast.makeText(context, "해당 핫딜이 숨김 처리되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, "해당 핫딜을 목록에서 숨겼어요", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -325,14 +351,13 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    // [Epic 4] 쿠팡 파트너스 / 쿠팡 계정 로그인 (UI 제공)
     var showCoupangDialog by remember { mutableStateOf(false) }
     if (showCoupangDialog) {
         CoupangSettingsDialog(onDismiss = { showCoupangDialog = false })
     }
 
-    val hasNewDeals by viewModel.hasNewDeals.collectAsState()
-    val newDealsCount by viewModel.newDealsCount.collectAsState()
+    val hasNewDeals by viewModel.hasNewDeals.collectAsStateWithLifecycle()
+    val newDealsCount by viewModel.newDealsCount.collectAsStateWithLifecycle()
 
     val pullRefreshState = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
 
@@ -351,7 +376,6 @@ fun HomeScreen(
         }
     }
 
-    // 람다 재생성 방지 및 컴포지션 메모리 방어
     val onNavigateToDetail = remember(navController) {
         { dealId: Int -> navController.navigate("deal_detail/$dealId") }
     }
@@ -362,27 +386,34 @@ fun HomeScreen(
 
     val onOpenUrlInWebView = remember(navController, context) {
         { url: String ->
-            val prefs = com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager.getEncryptedPrefs(context)
-            val savedTime = prefs.getLong("last_dismiss_commission_time", 0L)
-            val currentTime = System.currentTimeMillis()
-            val shouldShowSheet = (currentTime - savedTime) > 24 * 60 * 60 * 1000
+            val lowerUrl = url.lowercase(Locale.ROOT)
+            val isCommunityPost = listOf(
+                "ppomppu.co.kr", "fmkorea.com", "quasarzone.com",
+                "ruliweb.com", "clien.net", "bbasak.com"
+            ).any { lowerUrl.contains(it) }
 
-            val isCoupang = url.contains("coupang.com") || url.contains("link.coupang.com")
-            val isAliexpress = url.contains("aliexpress.com") || url.contains("s.click.aliexpress.com")
-            val isAffiliate = isCoupang || isAliexpress
-
-            if (isAffiliate && shouldShowSheet) {
-                pendingUrlToOpen = url
-                dontShowToday = false
-                commissionMessage = if (isCoupang) {
-                    "이 링크는 쿠팡 파트너스 활동의 일환으로, 구매 시 이에 따른 일정액의 수수료를 지급받아 InsightDeal 서비스를 지속적으로 운영하는 데 큰 도움이 됩니다.\n\n추가적인 구매 금액 부담은 전혀 없으니 안심하셔도 좋습니다."
-                } else {
-                    "이 링크는 알리익스프레스 어소시에이트 활동의 일환으로, 구매 시 이에 따른 일정액의 수수료를 지급받아 InsightDeal 서비스를 지속적으로 운영하는 데 큰 도움이 됩니다.\n\n추가적인 구매 금액 부담은 전혀 없으니 안심하셔도 좋습니다."
-                }
-                showCommissionSheet = true
-            } else {
+            if (isCommunityPost) {
                 val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")
                 navController.navigate("webview/$encodedUrl")
+            } else {
+                viewModel.trackOutboundClick(url)
+                val prefs = com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager.getEncryptedPrefs(context)
+                val savedTime = prefs.getLong("last_dismiss_commission_time", 0L)
+                val currentTime = System.currentTimeMillis()
+                val shouldShowSheet = (currentTime - savedTime) > 24 * 60 * 60 * 1000
+
+                val isCoupang = lowerUrl.contains("coupang.com") || lowerUrl.contains("coupa.ng")
+                val isAliexpress = lowerUrl.contains("aliexpress.com")
+                val isAffiliate = isCoupang || isAliexpress
+
+                if (isAffiliate && shouldShowSheet) {
+                    pendingUrlToOpen = url
+                    dontShowToday = false
+                    commissionMessage = "쿠팡 파트너스 및 제휴 마케팅 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.\n\n구매 가격에는 추가 부담이 발생하지 않습니다."
+                    showCommissionSheet = true
+                } else {
+                    CustomTabLauncher.launchShoppingUrl(context, url)
+                }
             }
         }
     }
@@ -408,9 +439,10 @@ fun HomeScreen(
                             haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                             scope.launch {
                                 try {
-                                    viewModel.selectCategory("전체")
+                                    searchInput = ""
+                                    viewModel.resetHomeFilters()
                                     try {
-                                        listState.animateScrollToItem(0)
+                                        gridState.animateScrollToItem(0)
                                     } catch (_: Exception) {
                                     }
                                     dealsPagingItems.refresh()
@@ -624,35 +656,35 @@ fun HomeScreen(
                 }
             }
 
-            LazyColumn(
-                state = listState,
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(if (isExpandedScreen) 2 else 1),
+                state = gridState,
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 contentPadding = PaddingValues(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                    // [Phase 11 Epic 2] 안드로이드 상단 '투데이 픽' 캐러셀 UI 도입
-                    if (selectedCategory == "전체") {
-                        item(key = "today_picks_section", contentType = "today_picks_section") {
-                            val topHotDeals by viewModel.topHotDeals.collectAsState()
+                if (selectedCategory == "전체") {
+                    item(
+                        key = "today_picks_section",
+                        span = { GridItemSpan(maxLineSpan) },
+                        contentType = "today_picks_section"
+                    ) {
+                        val topHotDeals by viewModel.topHotDeals.collectAsStateWithLifecycle()
 
-                            val topPicks = remember(topHotDeals) {
-                                topHotDeals
-                                    .filter { deal ->
-                                        // 🎯 AI 요약 여부와 상관없이 100점 만점 꿀딜은 즉각 노출 보장!
-                                        val isSuperHot = deal.honeyScore >= 100
-                                        !deal.isClosed && isSuperHot
-                                    }
-                                    .filter { deal ->
-                                        deal.category != "적립" && !deal.title.contains("적립") && !deal.title.contains("불가") && !deal.title.contains("정보")
-                                    }
-                                    .sortedByDescending { it.createdAt ?: "" }
-                            }
+                        val topPicks = remember(topHotDeals) {
+                            topHotDeals
+                                .filter { deal ->
+                                    val isSuperHot = deal.honeyScore >= 100
+                                    !deal.isClosed && isSuperHot
+                                }
+                                .filter { deal ->
+                                    deal.category != "적립" && !deal.title.contains("적립") && !deal.title.contains("불가") && !deal.title.contains("정보")
+                                }
+                                .sortedByDescending { it.createdAt ?: "" }
+                        }
 
-
-                            LaunchedEffect(topHotDeals.size, topPicks.size) {
-                                android.util.Log.d("HomeScreen", "topHotDeals size: ${topHotDeals.size}, topPicks size: ${topPicks.size}")
-                            }
-
+                        Column(modifier = Modifier.fillMaxWidth()) {
                             if (topPicks.isNotEmpty()) {
                                 Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
                                     Text(
@@ -663,7 +695,7 @@ fun HomeScreen(
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     LazyRow(
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(14.dp),
                                         contentPadding = PaddingValues(horizontal = 4.dp)
                                     ) {
                                         items(
@@ -672,8 +704,10 @@ fun HomeScreen(
                                             contentType = { "today_pick_item" }
                                         ) { index ->
                                             val pick = topPicks[index]
+                                            val resolvedPickTitle = remember(pick.id, pick.title, pick.shopName, pick.ecommerceUrl) {
+                                                resolveShopBadgeAndCleanTitle(pick.title, pick.shopName, pick.ecommerceUrl)
+                                            }
 
-                                            // 2중 하이브리드 CDN/프록시 및 로드 실패 시 Fallback URL 캐싱
                                             val primaryPickUrl = remember(pick.id, pick.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
                                                 val fallbackPickImg = "https://placehold.co/400x300/E2E8F0/A0AEC0?text=Deal"
                                                 val rawPickUrl = pick.imageUrl.takeIf { !it.isNullOrBlank() } ?: fallbackPickImg
@@ -698,35 +732,29 @@ fun HomeScreen(
                                                     .build()
                                             }
 
-                                            val priceText = remember(pick.id, pick.price, pick.currency, pick.category, pick.title) {
-                                                if (pick.price > 0) {
-                                                    when (pick.currency.uppercase(Locale.getDefault())) {
-                                                        "USD" -> "$${String.format(Locale.US, "%.2f", pick.price.toDouble() / 100)}"
-                                                        "EUR" -> "€${String.format(Locale.US, "%.2f", pick.price.toDouble() / 100)}"
-                                                        else -> formatPrice(pick.price, pick.currency, pick.title)
-                                                    }
-                                                } else if (pick.category == "적립" || pick.title.contains("적립")) {
+                                            val priceText = remember(pick.id, pick.price, pick.currency, pick.category, resolvedPickTitle.cleanTitle) {
+                                                if (pick.price > 0L) {
+                                                    val formatted = formatPrice(pick.price, pick.currency, resolvedPickTitle.cleanTitle)
+                                                    if (pick.category == "적립") "$formatted 적립" else formatted
+                                                } else if (pick.category == "적립" || resolvedPickTitle.cleanTitle.contains("적립")) {
                                                     "포인트 적립"
-                                                } else if (pick.category == "이벤트" || pick.category == "SW/게임" || pick.category == "게임/SW" ||
-                                                    FREE_KEYWORDS.any { pick.title.contains(it) }) {
-                                                    "무료 (쿠폰/공짜)"
                                                 } else {
-                                                    "금액 확인 필요"
+                                                    formatPrice(pick.price, pick.currency, resolvedPickTitle.cleanTitle)
                                                 }
                                             }
 
-                                            val isBookmarked = wishlistedUrls.contains(pick.postUrl)
+                                            val isBookmarked = wishlistedUrls.contains(pick.ecommerceUrl?.takeIf { it.isNotBlank() } ?: pick.postUrl ?: "")
 
-                                            val displayShipping = remember(pick.id, pick.shippingFee, pick.category, pick.title) {
+                                            val displayShipping = remember(pick.id, pick.shippingFee, pick.category, resolvedPickTitle.cleanTitle) {
                                                 val digitalCategories = HOME_DIGITAL_CATEGORIES
-                                                val isDigitalTitle = pick.title.contains("요금제") || pick.title.contains("데이터")
+                                                val isDigitalTitle = resolvedPickTitle.cleanTitle.contains("요금제") || resolvedPickTitle.cleanTitle.contains("데이터")
                                                 val hideShipping = pick.category in digitalCategories || isDigitalTitle
 
                                                 if (hideShipping) null
                                                 else {
-                                                    val trimmed = pick.shippingFee?.trim() ?: "정보 없음"
+                                                    val trimmed = decodeHtmlEntities(pick.shippingFee).trim().ifEmpty { "정보 없음" }
                                                     when {
-                                                        trimmed == "정보 없음" || trimmed.isEmpty() || trimmed == "배송비 확인 필요" -> "확인 필요"
+                                                        trimmed == "정보 없음" || trimmed == "배송비 확인 필요" -> "확인 필요"
                                                         trimmed.contains("와우") -> "와우무료"
                                                         trimmed.contains("스마일") || trimmed.contains("스클") -> "스클무료"
                                                         trimmed.contains("우주패스") -> "우주패스"
@@ -734,15 +762,15 @@ fun HomeScreen(
                                                         trimmed.startsWith("0원/") || trimmed.startsWith("0원+") || trimmed.startsWith("0/") || trimmed.startsWith("0+") -> trimmed.replaceFirst(SHIPPING_LEADING_ZERO_REGEX, "무료 ")
                                                         trimmed == "유료" || trimmed == "유료배송" -> "유료"
                                                         trimmed.all { it.isDigit() || it == ',' } -> "${trimmed}원"
-                                                        else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료").replace(Regex("(이상|미만|이하)(0원?)?\\s*무료"), "$1 무료").replace(Regex("(\\d+[만천])(이상|미만|이하)"), "$1원$2").trim()
+                                                        else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료").replace(SHIPPING_FREE_COND_REGEX, "$1 무료").replace(SHIPPING_AMOUNT_COND_REGEX, "$1원$2").trim()
                                                     }
                                                 }
                                             }
 
                                             Card(
                                                 modifier = Modifier
-                                                    .width(180.dp)
-                                                    .height(195.dp)
+                                                    .width(184.dp)
+                                                    .height(206.dp)
                                                     .bounceClick {
                                                         onNavigateToDetail(pick.id)
                                                     },
@@ -753,48 +781,59 @@ fun HomeScreen(
                                                     contentColor = MaterialTheme.colorScheme.onSurface
                                                 )
                                             ) {
-                                                 Column {
-                                                     if (pick.imageUrl.isNullOrBlank()) {
-                                                         BrandPlaceholder(
-                                                             siteName = pick.siteName,
-                                                             modifier = Modifier
-                                                                 .height(100.dp)
-                                                                 .fillMaxWidth()
-                                                                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
-                                                             textStyle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
-                                                         )
-                                                     } else {
-                                                         SubcomposeAsyncImage(
-                                                              model = imageRequest,
-                                                              contentDescription = "Carousel Image",
-                                                             modifier = Modifier
-                                                                 .height(100.dp)
-                                                                 .fillMaxWidth()
-                                                                 .background(if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White)
-                                                                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
-                                                             contentScale = ContentScale.Crop,
-                                                              onError = {
-                                                                  if (fallbackPickUrl != null && activePickUrl != fallbackPickUrl) {
-                                                                      activePickUrl = fallbackPickUrl
-                                                                  }
-                                                              },
-                                                             error = {
-                                                                 BrandPlaceholder(
-                                                                     siteName = pick.siteName,
-                                                                     modifier = Modifier.fillMaxSize(),
-                                                                     textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                                                 )
-                                                             }
-                                                         )
-                                                     }
-                                                     Column(Modifier.padding(8.dp)) {
-                                                         Text(
-                                                             text = pick.title,
-                                                             maxLines = 2,
-                                                             overflow = TextOverflow.Ellipsis,
-                                                             fontSize = 13.sp,
+                                                Column {
+                                                    if (pick.imageUrl.isNullOrBlank()) {
+                                                        BrandPlaceholder(
+                                                            siteName = pick.siteName,
+                                                            modifier = Modifier
+                                                                .height(100.dp)
+                                                                .fillMaxWidth()
+                                                                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+                                                            textStyle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                                                        )
+                                                    } else {
+                                                        SubcomposeAsyncImage(
+                                                            model = imageRequest,
+                                                            contentDescription = resolvedPickTitle.cleanTitle,
+                                                            modifier = Modifier
+                                                                .height(100.dp)
+                                                                .fillMaxWidth()
+                                                                .background(if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White)
+                                                                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+                                                            contentScale = ContentScale.Crop,
+                                                            onError = {
+                                                                if (fallbackPickUrl != null && activePickUrl != fallbackPickUrl) {
+                                                                    activePickUrl = fallbackPickUrl
+                                                                }
+                                                            },
+                                                            error = {
+                                                                BrandPlaceholder(
+                                                                    siteName = pick.siteName,
+                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                                                )
+                                                            }
+                                                        )
+                                                    }
+                                                    Column(Modifier.padding(8.dp)) {
+                                                        if (!resolvedPickTitle.shopBadge.isNullOrBlank()) {
+                                                            Text(
+                                                                text = resolvedPickTitle.shopBadge,
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                                modifier = Modifier.padding(bottom = 2.dp)
+                                                            )
+                                                        }
+                                                        Text(
+                                                            text = resolvedPickTitle.cleanTitle,
+                                                            maxLines = 2,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                            fontSize = 13.sp,
                                                             fontWeight = FontWeight.Bold,
-                                                            lineHeight = 18.sp,
+                                                            lineHeight = 17.sp,
                                                             color = MaterialTheme.colorScheme.onSurface,
                                                         )
                                                         Spacer(Modifier.weight(1f))
@@ -808,7 +847,6 @@ fun HomeScreen(
                                                                 verticalAlignment = Alignment.CenterVertically,
                                                                 modifier = Modifier.weight(1f).padding(end = 2.dp)
                                                             ) {
-                                                                // 🎯 지능형 동적 가격 폰트 스케일링 가드 (글자 길이에 맞춘 유연한 사이즈 조정)
                                                                 val priceFontSize = when {
                                                                     priceText.length >= 9 -> 10.sp
                                                                     priceText.length >= 7 -> 12.sp
@@ -817,7 +855,11 @@ fun HomeScreen(
                                                                 }
                                                                 Text(
                                                                     text = priceText,
-                                                                    color = if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30),
+                                                                    color = if (pick.price > 0L || priceText == "무료") {
+                                                                        if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30)
+                                                                    } else {
+                                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                                    },
                                                                     fontSize = priceFontSize,
                                                                     fontWeight = FontWeight.ExtraBold,
                                                                     maxLines = 1,
@@ -840,7 +882,7 @@ fun HomeScreen(
                                                                     }
                                                                 }
                                                             }
-                                                            androidx.compose.material3.IconButton(
+                                                            IconButton(
                                                                 onClick = {
                                                                     wishlistViewModel?.let { vm ->
                                                                         val targetUrl = pick.ecommerceUrl?.takeIf { it.isNotBlank() } ?: pick.postUrl ?: ""
@@ -848,7 +890,7 @@ fun HomeScreen(
                                                                             val item = (wishlistState as? WishlistUiState.Success)?.items?.find { it.productUrl == targetUrl }
                                                                             if (item != null) vm.deleteItem(item)
                                                                         } else {
-                                                                            vm.addItem(pick.title, targetUrl, pick.price.toInt(), pick.price.toInt(), pick.siteName)
+                                                                            vm.addItem(resolvedPickTitle.cleanTitle, targetUrl, pick.price.toInt(), pick.price.toInt(), pick.siteName)
                                                                             scope.launch {
                                                                                 val result = snackbarHostState.showSnackbar(
                                                                                     message = "관심 상품에 담았어요",
@@ -864,9 +906,9 @@ fun HomeScreen(
                                                                 },
                                                                 modifier = Modifier.size(22.dp)
                                                             ) {
-                                                                androidx.compose.material3.Icon(
+                                                                Icon(
                                                                     imageVector = if (isBookmarked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                                                    contentDescription = "Bookmark",
+                                                                    contentDescription = "관심 상품",
                                                                     tint = if (isBookmarked) Color.Red else Color.Gray,
                                                                     modifier = Modifier.size(18.dp)
                                                                 )
@@ -893,24 +935,24 @@ fun HomeScreen(
                                         elevation = CardDefaults.cardElevation(0.dp),
                                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                                     ) {
-                                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 36.dp), contentAlignment = Alignment.Center) {
+                                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                 Icon(
                                                     imageVector = Icons.Default.SearchOff,
                                                     contentDescription = null,
                                                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                                                    modifier = Modifier.size(40.dp).padding(bottom = 10.dp)
+                                                    modifier = Modifier.size(36.dp).padding(bottom = 8.dp)
                                                 )
-                                                Text("현재 진행 중인 핫딜이 없습니다.", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                Text("조금 뒤에 다시 확인해 보세요!", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp))
+                                                Text("아직 집계된 오늘의 핫딜이 없어요", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Text("조금 뒤에 다시 확인해 보세요", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp))
                                             }
                                         }
                                     }
                                 }
                             }
+
                             Spacer(Modifier.height(4.dp))
 
-                            // 🔔 실시간 키워드 알림 설정 유도 배너 (컴팩트 1줄 슬림 바 + 닫기 지원)
                             var hideKeywordBanner by remember {
                                 mutableStateOf(
                                     com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
@@ -996,9 +1038,8 @@ fun HomeScreen(
                             }
                             Spacer(Modifier.height(6.dp))
 
-                            // 📈 [Epic 3B] 실시간 급상승 검색어 랭킹 티커 바 (3초 자동 롤링 + 클릭 시 즉시 검색 이동)
-                            val popularRankings by viewModel.popularRankings.collectAsState()
-                            val popularKeywords by viewModel.popularKeywords.collectAsState()
+                            val popularRankings by viewModel.popularRankings.collectAsStateWithLifecycle()
+                            val popularKeywords by viewModel.popularKeywords.collectAsStateWithLifecycle()
                             val tickerItems = remember(popularRankings, popularKeywords) {
                                 if (popularRankings.isNotEmpty()) {
                                     popularRankings.take(10)
@@ -1030,8 +1071,8 @@ fun HomeScreen(
                                         .fillMaxWidth()
                                         .padding(horizontal = 4.dp, vertical = 2.dp)
                                         .bounceClick {
-                                            val encodedKw = java.net.URLEncoder.encode(currentItem.keyword, "UTF-8")
-                                            navController.navigate("advanced_search?query=$encodedKw")
+                                            searchInput = currentItem.keyword
+                                            viewModel.searchDeals(currentItem.keyword)
                                         },
                                     shape = RoundedCornerShape(12.dp),
                                     color = if (isDark) Color(0xFF191F28) else Color.White,
@@ -1097,21 +1138,13 @@ fun HomeScreen(
                                                     color = if (isDark) Color(0x33FF5A26) else Color(0xFFFFF1EC)
                                                 ) {
                                                     Text(
-                                                        text = "HOT",
+                                                        text = "인기",
                                                         fontSize = 9.sp,
                                                         fontWeight = FontWeight.ExtraBold,
                                                         color = Color(0xFFFF5A26),
                                                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                                     )
                                                 }
-                                            } else if (currentItem.status == "UP") {
-                                                Spacer(modifier = Modifier.width(5.dp))
-                                                Text(
-                                                    text = "▲",
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color(0xFFFF5A26)
-                                                )
                                             }
                                         }
                                         Row(
@@ -1135,154 +1168,254 @@ fun HomeScreen(
                                         }
                                     }
                                 }
-                                Spacer(Modifier.height(6.dp))
                             }
+                        }
+                    }
+                }
 
+                // 인라인 검색바 + 커뮤니티 가로 필터 칩 + 정렬 3종 탭 (단정한 M3 무채색/단색 위계)
+                item(
+                    key = "search_and_filters_section",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "search_and_filters_section"
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 2.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // 1) 컴팩트 인라인 검색바
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isDark) Color(0xFF191F28) else Color(0xFFF3F4F6),
+                            border = BorderStroke(
+                                1.dp,
+                                if (searchInput.isNotBlank()) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                else if (isDark) Color(0xFF2B333E) else Color(0xFFE5E7EB)
+                            )
+                        ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    "실시간 핫딜",
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 18.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "검색",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(modifier = Modifier.weight(1f)) {
+                                    if (searchInput.isEmpty()) {
+                                        Text(
+                                            text = "상품명이나 쇼핑몰을 검색해보세요",
+                                            fontSize = 13.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    BasicTextField(
+                                        value = searchInput,
+                                        onValueChange = { searchInput = it },
+                                        singleLine = true,
+                                        textStyle = TextStyle(
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                        keyboardActions = KeyboardActions(
+                                            onSearch = {
+                                                viewModel.searchDeals(searchInput)
+                                                focusManager.clearFocus()
+                                            }
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                if (searchInput.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.Cancel,
+                                        contentDescription = "검색어 지우기",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .clickable {
+                                                searchInput = ""
+                                                viewModel.searchDeals("")
+                                            }
+                                    )
+                                }
+                            }
+                        }
+
+                        // 2) 가로 스크롤 커뮤니티 필터 칩
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            contentPadding = PaddingValues(horizontal = 2.dp)
+                        ) {
+                            items(
+                                count = HomeViewModel.COMMUNITY_FILTER_CHIPS.size,
+                                key = { idx -> HomeViewModel.COMMUNITY_FILTER_CHIPS[idx] }
+                            ) { idx ->
+                                val chip = HomeViewModel.COMMUNITY_FILTER_CHIPS[idx]
+                                val isSelected = filterState.communityChip == chip
+                                val chipContainer = when {
+                                    isSelected && isDark -> Color.White
+                                    isSelected -> Color(0xFF191F28)
+                                    isDark -> Color(0xFF191F28)
+                                    else -> Color.White
+                                }
+                                val chipContent = when {
+                                    isSelected && isDark -> Color(0xFF111827)
+                                    isSelected -> Color.White
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(999.dp),
+                                    color = chipContainer,
+                                    border = if (isSelected) null else BorderStroke(
+                                        1.dp,
+                                        if (isDark) Color(0xFF2B333E) else Color(0xFFE5E8EB)
+                                    ),
+                                    modifier = Modifier.clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.selectCommunityChip(chip)
+                                    }
+                                ) {
+                                    Text(
+                                        text = chip,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = chipContent,
+                                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // 3) 정렬 3종 탭 (최신순 / 인기순 / 낮은가격순) + 보조 필터 칩
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val sortOptions = listOf(
+                                "latest" to "최신순",
+                                "popular" to "인기순",
+                                "price_asc" to "낮은가격순"
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isDark) Color(0xFF191F28) else Color(0xFFF2F4F7)
+                            ) {
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(3.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    FilterChip(
-                                        selected = filterState.hideClosed,
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            viewModel.toggleHideClosed()
-                                        },
-                                        label = {
+                                    sortOptions.forEach { (sortKey, sortLabel) ->
+                                        val selected = filterState.sortBy == sortKey
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = when {
+                                                selected && isDark -> Color(0xFF2B333E)
+                                                selected -> Color.White
+                                                else -> Color.Transparent
+                                            },
+                                            shadowElevation = if (selected && !isDark) 1.dp else 0.dp,
+                                            modifier = Modifier.clickable {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                viewModel.selectSort(sortKey)
+                                            }
+                                        ) {
                                             Text(
-                                                "품절 숨기기",
-                                                fontSize = 11.5.sp,
-                                                fontWeight = if (filterState.hideClosed) FontWeight.Bold else FontWeight.Medium
+                                                text = sortLabel,
+                                                fontSize = 12.sp,
+                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                                color = if (selected) MaterialTheme.colorScheme.onSurface
+                                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                             )
-                                        },
-                                        shape = RoundedCornerShape(999.dp)
-                                    )
-                                    FilterChip(
-                                        selected = filterState.popularOnly,
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            viewModel.togglePopularOnly()
-                                        },
-                                        label = {
-                                            Text(
-                                                "인기·역대가",
-                                                fontSize = 11.5.sp,
-                                                fontWeight = if (filterState.popularOnly) FontWeight.Bold else FontWeight.Medium
-                                            )
-                                        },
-                                        shape = RoundedCornerShape(999.dp)
-                                    )
-                                    FilterChip(
-                                        selected = filterState.freeShippingOnly,
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            viewModel.toggleFreeShippingOnly()
-                                        },
-                                        label = {
-                                            Text(
-                                                "무료배송",
-                                                fontSize = 11.5.sp,
-                                                fontWeight = if (filterState.freeShippingOnly) FontWeight.Bold else FontWeight.Medium
-                                            )
-                                        },
-                                        shape = RoundedCornerShape(999.dp)
-                                    )
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    }
-            // ✨ 상태 관리를 통한 스켈레톤 로딩 노출
-            // [HOTFIX] 이미 로드된 데이터가 존재할 때(itemCount > 0) refresh가 발생하더라도 목록을 밀어버리지 않고 유지하여 스크롤 튕김 완벽 차단!
-            when {
-                dealsPagingItems.loadState.refresh is LoadState.Loading && dealsPagingItems.itemCount == 0 -> {
-                    items(
-                        count = 3,
-                        key = { index -> "skeleton_$index" },
-                        contentType = { "skeleton_loader" }
-                    ) { HomeDealCardSkeleton() }
-                }
-                dealsPagingItems.loadState.refresh is LoadState.Error -> {
-                    item(key = "loading_error", contentType = "error_section") {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(220.dp)
-                                .padding(horizontal = 4.dp, vertical = 8.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
-                            ),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.05f)
-                            )
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxSize().padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.horizontalScroll(rememberScrollState())
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.ErrorOutline,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(44.dp),
-                                    tint = MaterialTheme.colorScheme.error
+                                FilterChip(
+                                    selected = filterState.hideClosed,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.toggleHideClosed()
+                                    },
+                                    label = {
+                                        Text(
+                                            "품절 제외",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (filterState.hideClosed) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(999.dp)
                                 )
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Text(
-                                    text = "실시간 핫딜 로딩 실패",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                FilterChip(
+                                    selected = filterState.freeShippingOnly,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.toggleFreeShippingOnly()
+                                    },
+                                    label = {
+                                        Text(
+                                            "무료배송",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (filterState.freeShippingOnly) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(999.dp)
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "일시적인 네트워크 또는 서버 지연입니다.",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.6f)
-                                )
-                                Spacer(modifier = Modifier.height(14.dp))
-                                Button(
-                                    onClick = { dealsPagingItems.refresh() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                    modifier = Modifier.height(34.dp)
-                                ) {
-                                    Text("재시도", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
                             }
                         }
                     }
                 }
-                else -> {
-                    if (dealsPagingItems.itemCount == 0) {
-                        item(key = "empty_deals", contentType = "empty_section") {
+
+                // 상태 관리를 통한 스켈레톤 로딩 노출
+                when {
+                    dealsPagingItems.loadState.refresh is LoadState.Loading && dealsPagingItems.itemCount == 0 -> {
+                        items(
+                            count = if (isExpandedScreen) 4 else 3,
+                            key = { index -> "skeleton_$index" },
+                            contentType = { "skeleton_loader" }
+                        ) { HomeDealCardSkeleton() }
+                    }
+                    dealsPagingItems.loadState.refresh is LoadState.Error -> {
+                        item(
+                            key = "loading_error",
+                            span = { GridItemSpan(maxLineSpan) },
+                            contentType = "error_section"
+                        ) {
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(220.dp)
                                     .padding(horizontal = 4.dp, vertical = 8.dp),
                                 shape = RoundedCornerShape(16.dp),
-                                border = androidx.compose.foundation.BorderStroke(
+                                border = BorderStroke(
                                     1.dp,
-                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
                                 ),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
+                                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.05f)
                                 )
                             ) {
                                 Column(
@@ -1291,92 +1424,172 @@ fun HomeScreen(
                                     verticalArrangement = Arrangement.Center
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Inbox,
+                                        imageVector = Icons.Default.ErrorOutline,
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                                        modifier = Modifier.size(40.dp)
+                                        modifier = Modifier.size(40.dp),
+                                        tint = MaterialTheme.colorScheme.error
                                     )
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Text(
-                                        text = "아직 등록된 핫딜이 없습니다",
+                                        text = "핫딜 목록을 불러오지 못했어요",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onErrorContainer
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "새로운 특가 정보가 수집되는 대로 바로 보여드릴게요!",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        text = "네트워크 상태를 확인한 뒤 다시 시도해 주세요.",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.65f)
                                     )
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    Button(
+                                        onClick = { dealsPagingItems.refresh() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                        modifier = Modifier.height(34.dp)
+                                    ) {
+                                        Text("다시 시도", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
                     }
-
-                    // ✨ itemKey 제공으로 Recomposition 최소화 보장 및 contentType 지정
-                    items(
-                        count = dealsPagingItems.itemCount,
-                        key = dealsPagingItems.itemKey { it.id },
-                        contentType = { "deal_item" }
-                    ) { index ->
-                        val deal = dealsPagingItems[index]
-
-                        if (deal != null) {
-                            val isHidden = remember(deal.id, hiddenDeals.size) {
-                                hiddenDeals.contains(deal.id.toString())
+                    else -> {
+                        if (dealsPagingItems.itemCount == 0) {
+                            val hasActiveFilter = !filterState.keyword.isNullOrBlank() ||
+                                filterState.communityChip != "전체" ||
+                                filterState.category != "전체" ||
+                                filterState.hideClosed ||
+                                filterState.freeShippingOnly
+                            item(
+                                key = "empty_deals",
+                                span = { GridItemSpan(maxLineSpan) },
+                                contentType = "empty_section"
+                            ) {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(220.dp)
+                                        .padding(horizontal = 4.dp, vertical = 8.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                    ),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxSize().padding(16.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Inbox,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                                            modifier = Modifier.size(40.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Text(
+                                            text = if (hasActiveFilter) "조건에 맞는 핫딜이 없어요" else "아직 등록된 핫딜이 없어요",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = if (hasActiveFilter) "검색어나 필터 조건을 변경해 보세요." else "새로운 특가 정보가 올라오면 바로 알려드릴게요.",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                                        )
+                                        if (hasActiveFilter) {
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            OutlinedButton(
+                                                onClick = {
+                                                    searchInput = ""
+                                                    viewModel.resetHomeFilters()
+                                                },
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                modifier = Modifier.height(32.dp)
+                                            ) {
+                                                Text("필터 초기화", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            if (!isHidden) {
-                                DealCardComposable(
-                                    deal = deal,
-                                    onDetailClick = remember(deal.id) { { onNavigateToDetail(deal.id) } },
-                                    onOpenUrl = onOpenUrlInWebView,
-                                    isWishlisted = wishlistedUrls.contains(deal.ecommerceUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl ?: ""),
-                                    onToggleWishlist = remember(deal.id, wishlistState) {
-                                        {
-                                            wishlistViewModel?.let { vm ->
-                                                val targetUrl = deal.ecommerceUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl ?: ""
-                                                if (wishlistedUrls.contains(targetUrl)) {
-                                                    val item = (wishlistState as? WishlistUiState.Success)?.items?.find { it.productUrl == targetUrl }
-                                                    if (item != null) vm.deleteItem(item)
-                                                } else {
-                                                    vm.addItem(deal.title, targetUrl, deal.price.toInt(), deal.price.toInt(), deal.siteName)
-                                                    scope.launch {
-                                                        val result = snackbarHostState.showSnackbar(
-                                                            message = "관심 상품에 담았어요",
-                                                            actionLabel = "관심 목록 보기",
-                                                            duration = SnackbarDuration.Short
-                                                        )
-                                                        if (result == SnackbarResult.ActionPerformed) {
-                                                            navController.navigate("watchlist")
+                        }
+
+                        items(
+                            count = dealsPagingItems.itemCount,
+                            key = dealsPagingItems.itemKey { it.id },
+                            contentType = { "deal_item" }
+                        ) { index ->
+                            val deal = dealsPagingItems[index]
+
+                            if (deal != null) {
+                                val isHidden = remember(deal.id, hiddenDeals.size) {
+                                    hiddenDeals.contains(deal.id.toString())
+                                }
+                                if (!isHidden) {
+                                    DealCardComposable(
+                                        deal = deal,
+                                        onDetailClick = remember(deal.id) { { onNavigateToDetail(deal.id) } },
+                                        onOpenUrl = onOpenUrlInWebView,
+                                        isWishlisted = wishlistedUrls.contains(deal.ecommerceUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl ?: ""),
+                                        onToggleWishlist = remember(deal.id, wishlistState) {
+                                            {
+                                                wishlistViewModel?.let { vm ->
+                                                    val targetUrl = deal.ecommerceUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl ?: ""
+                                                    if (wishlistedUrls.contains(targetUrl)) {
+                                                        val item = (wishlistState as? WishlistUiState.Success)?.items?.find { it.productUrl == targetUrl }
+                                                        if (item != null) vm.deleteItem(item)
+                                                    } else {
+                                                        vm.addItem(decodeHtmlEntities(deal.title), targetUrl, deal.price.toInt(), deal.price.toInt(), deal.siteName)
+                                                        scope.launch {
+                                                            val result = snackbarHostState.showSnackbar(
+                                                                message = "관심 상품에 담았어요",
+                                                                actionLabel = "관심 목록 보기",
+                                                                duration = SnackbarDuration.Short
+                                                            )
+                                                            if (result == SnackbarResult.ActionPerformed) {
+                                                                navController.navigate("watchlist")
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
-                                        }
-                                    },
-                                    onMoreClick = {
-                                        selectedDealForOptions = deal
-                                        showDealOptionsBottomSheet = true
-                                    }
-                                )
+                                        },
+                                        onMoreClick = {
+                                            selectedDealForOptions = deal
+                                            showDealOptionsBottomSheet = true
+                                        },
+                                        highlightKeyword = filterState.keyword
+                                    )
+                                }
+                            } else {
+                                HomeDealCardSkeleton()
                             }
-                        } else {
-                            // 🚀 스크롤 속도가 데이터 로드보다 빠를 때 높이 0으로 압축되는 레이아웃 붕괴를 원천 방어하여 튕김 현상 제거!
-                            HomeDealCardSkeleton()
                         }
-                    }
 
-                    // 하단 추가 로딩 시의 스켈레톤 표시
-                    if (dealsPagingItems.loadState.append is LoadState.Loading) {
-                        item(key = "append_skeleton", contentType = "skeleton_loader") {
-                            HomeDealCardSkeleton()
+                        if (dealsPagingItems.loadState.append is LoadState.Loading) {
+                            item(
+                                key = "append_skeleton",
+                                span = { GridItemSpan(maxLineSpan) },
+                                contentType = "skeleton_loader"
+                            ) {
+                                HomeDealCardSkeleton()
+                            }
                         }
                     }
                 }
             }
         }
-    }
 
         // M3 공식 PullToRefresh 스피너 (군더더기 없는 깔끔한 네이티브 원형 인디케이터)
         androidx.compose.material3.pulltorefresh.PullToRefreshContainer(
@@ -1384,7 +1597,7 @@ fun HomeScreen(
             state = pullRefreshState,
         )
 
-        // ↻ 실시간 새 핫딜 감지 플로팅 캡슐 배너 (미니멀 M3 Surface)
+        // 실시간 새 핫딜 감지 플로팅 캡슐 배너
         AnimatedVisibility(
             visible = hasNewDeals,
             enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(300)) + androidx.compose.animation.slideInVertically(animationSpec = androidx.compose.animation.core.tween(300)) { -it },
@@ -1399,7 +1612,7 @@ fun HomeScreen(
                         dealsPagingItems.refresh()
                         viewModel.onRefreshNewDeals()
                         scope.launch {
-                            listState.animateScrollToItem(0)
+                            gridState.animateScrollToItem(0)
                         }
                     },
                 shape = RoundedCornerShape(999.dp),
@@ -1510,8 +1723,7 @@ fun HomeScreen(
                                 prefs.edit().putLong("last_dismiss_commission_time", System.currentTimeMillis()).apply()
                             }
                             if (pendingUrlToOpen.isNotEmpty()) {
-                                val encodedUrl = java.net.URLEncoder.encode(pendingUrlToOpen, "UTF-8")
-                                navController.navigate("webview/$encodedUrl")
+                                CustomTabLauncher.launchShoppingUrl(context, pendingUrlToOpen)
                             }
                         },
                         modifier = Modifier
@@ -1825,17 +2037,15 @@ fun HomeScreen(
                     }
                 }
             )
-
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 16.dp)
-            )
         }
 
-
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp)
+        )
     }
 }
 
@@ -1870,6 +2080,48 @@ fun HomeDealCardSkeleton() {
     }
 }
 
+internal fun buildHighlightedTitle(
+    title: String,
+    keyword: String?,
+    highlightBg: Color,
+    highlightFg: Color
+): AnnotatedString {
+    val cleanQuery = keyword?.trim().orEmpty()
+    if (cleanQuery.isEmpty()) return AnnotatedString(title)
+
+    return buildAnnotatedString {
+        var cursor = 0
+        while (cursor < title.length) {
+            val matchIndex = title.indexOf(cleanQuery, startIndex = cursor, ignoreCase = true)
+            if (matchIndex < 0) {
+                append(title.substring(cursor))
+                break
+            }
+            if (matchIndex > cursor) {
+                append(title.substring(cursor, matchIndex))
+            }
+            withStyle(
+                SpanStyle(
+                    background = highlightBg,
+                    color = highlightFg,
+                    fontWeight = FontWeight.Bold
+                )
+            ) {
+                append(title.substring(matchIndex, matchIndex + cleanQuery.length))
+            }
+            cursor = matchIndex + cleanQuery.length
+        }
+    }
+}
+
+private data class CardOptionEntry(
+    val name: String,
+    val price: Long,
+    val currency: String,
+    val targetUrl: String
+)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 @Suppress("UNUSED_PARAMETER")
 fun DealCardComposable(
@@ -1878,20 +2130,30 @@ fun DealCardComposable(
     onOpenUrl: (String) -> Unit = {},
     isWishlisted: Boolean = false,
     onToggleWishlist: () -> Unit = {},
-    onMoreClick: (() -> Unit)? = null
+    onMoreClick: (() -> Unit)? = null,
+    highlightKeyword: String? = null
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val isDark = MaterialTheme.colorScheme.background.red < 0.2f
 
-    // 1. 뱃지 판단 캐싱
-    val isSuperHot = remember(deal.id, deal.aiSummary, deal.honeyScore) {
-        (deal.aiSummary?.contains("🔥 [커뮤니티 인기]") == true
-                || deal.aiSummary?.contains("🔥 [커뮤니티 인증 핫딜]") == true)
-                && deal.honeyScore >= 100
+    // 1. 쇼핑몰 배지 및 중복 [말머리] 제거·HTML 엔티티 디코딩 캐싱
+    val resolvedShopTitle = remember(deal.id, deal.title, deal.shopName, deal.ecommerceUrl) {
+        resolveShopBadgeAndCleanTitle(
+            rawTitle = deal.title,
+            shopName = deal.shopName,
+            ecommerceUrl = deal.ecommerceUrl
+        )
     }
 
-    // 2. 2중 하이브리드 CDN / 프록시 및 로드 실패 시 Fallback URL 캐싱
+    // 2. 인기 배지 판단 캐싱
+    val isSuperHot = remember(deal.id, deal.aiSummary, deal.honeyScore) {
+        ((deal.aiSummary?.contains("[커뮤니티 인기]") == true) ||
+            (deal.aiSummary?.contains("[커뮤니티 인증 핫딜]") == true)) &&
+            deal.honeyScore >= 100
+    }
+
+    // 3. 이미지 URL 및 Request 캐싱
     val primaryImageUrl = remember(deal.id, deal.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
         com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(deal.imageUrl, targetWidth = 400)
     }
@@ -1901,7 +2163,6 @@ fun DealCardComposable(
 
     var activeImageUrl by remember(primaryImageUrl) { mutableStateOf(primaryImageUrl) }
 
-    // 3. 이미지 Request 캐싱
     val imageRequest = remember(activeImageUrl, deal.postUrl) {
         if (activeImageUrl == null) null
         else {
@@ -1915,7 +2176,7 @@ fun DealCardComposable(
         }
     }
 
-    // 4. 출처 뱃지 목록 캐싱 (디코드 및 서브 출처 잘린 동일 명칭의 중복 뱃지 완전 소탕)
+    // 4. 출처 배지 목록 캐싱
     val sourcesToRender = remember(deal.id, deal.sources, deal.siteName, deal.postUrl) {
         val rawSources = if (!deal.sources.isNullOrEmpty()) deal.sources else listOf(com.ddaeany0919.insightdeal.models.DealSource(deal.siteName, deal.postUrl ?: ""))
         rawSources.distinctBy { source ->
@@ -1927,17 +2188,17 @@ fun DealCardComposable(
         }
     }
 
-    // 5. 배송비 연산 캐싱
-    val displayShipping = remember(deal.id, deal.shippingFee, deal.category, deal.title) {
+    // 5. 배송비 연산 캐싱 (HTML 엔티티 디코딩 보장)
+    val displayShipping = remember(deal.id, deal.shippingFee, deal.category, resolvedShopTitle.cleanTitle) {
         val digitalCategories = HOME_DIGITAL_CATEGORIES
-        val isDigitalTitle = deal.title.contains("요금제") || deal.title.contains("데이터")
+        val isDigitalTitle = resolvedShopTitle.cleanTitle.contains("요금제") || resolvedShopTitle.cleanTitle.contains("데이터")
         val hideShipping = deal.category in digitalCategories || isDigitalTitle
 
         if (hideShipping) null
         else {
-            val trimmed = deal.shippingFee?.trim() ?: "정보 없음"
+            val trimmed = decodeHtmlEntities(deal.shippingFee).trim().ifEmpty { "정보 없음" }
             when {
-                trimmed == "정보 없음" || trimmed.isEmpty() || trimmed == "배송비 확인 필요" -> "확인 필요"
+                trimmed == "정보 없음" || trimmed == "배송비 확인 필요" -> "확인 필요"
                 trimmed.contains("와우") -> "와우무료"
                 trimmed.contains("스마일") || trimmed.contains("스클") -> "스클무료"
                 trimmed.contains("우주패스") -> "우주패스"
@@ -1945,31 +2206,59 @@ fun DealCardComposable(
                 trimmed.startsWith("0원/") || trimmed.startsWith("0원+") || trimmed.startsWith("0/") || trimmed.startsWith("0+") -> trimmed.replaceFirst(SHIPPING_LEADING_ZERO_REGEX, "무료 ")
                 trimmed == "유료" || trimmed == "유료배송" -> "유료"
                 trimmed.all { it.isDigit() || it == ',' } -> "${trimmed}원"
-                else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료").replace(Regex("(이상|미만|이하)(0원?)?\\s*무료"), "$1 무료").replace(Regex("(\\d+[만천])(이상|미만|이하)"), "$1원$2").trim()
+                else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료").replace(SHIPPING_FREE_COND_REGEX, "$1 무료").replace(SHIPPING_AMOUNT_COND_REGEX, "$1원$2").trim()
             }
         }
     }
 
-    // 6. 가격 정보 포맷팅 캐싱
-    val priceText = remember(deal.id, deal.price, deal.currency, deal.category, deal.title) {
-        if (deal.price > 0) {
-            when (deal.currency.uppercase(Locale.getDefault())) {
-                "USD" -> "$${String.format(Locale.US, "%.2f", deal.price.toDouble() / 100)}"
-                "EUR" -> "€${String.format(Locale.US, "%.2f", deal.price.toDouble() / 100)}"
-                else -> if (deal.category == "적립") "${formatPrice(deal.price, deal.currency, deal.title)} 적립" else formatPrice(deal.price, deal.currency, deal.title)
-            }
-        } else if (deal.category == "적립" || deal.title.contains("적립")) {
+    // 6. 가격 정보 포맷팅 캐싱 (StringUtils.formatPrice 단일 소스 사용)
+    val priceText = remember(deal.id, deal.price, deal.currency, deal.category, resolvedShopTitle.cleanTitle) {
+        if (deal.price > 0L) {
+            val formatted = formatPrice(deal.price, deal.currency, resolvedShopTitle.cleanTitle)
+            if (deal.category == "적립") "$formatted 적립" else formatted
+        } else if (deal.category == "적립" || resolvedShopTitle.cleanTitle.contains("적립")) {
             "포인트 적립"
-        } else if (deal.category == "이벤트" || deal.category == "SW/게임" || deal.category == "게임/SW" ||
-            FREE_KEYWORDS.any { deal.title.contains(it) }) {
-            "무료 (쿠폰/공짜)"
         } else {
-            "가격 확인 필요"
+            formatPrice(deal.price, deal.currency, resolvedShopTitle.cleanTitle)
         }
     }
 
-    // 7. 아코디언 관련 메리트 정보 캐시
-    val AIPriceAdvantageText = remember(deal.id, deal.honeyScore) {
+    // 7. 다중 옵션 수 및 아코디언 목록 캐싱 (price == 0 옵션도 누락 없이 "가격 확인"으로 노출)
+    val optionCount = remember(deal.id, deal.hasOptions, deal.optionsCount, deal.optionsData, deal.sources) {
+        deal.resolvedOptionCount
+    }
+
+    val multiOptions = remember(deal.id, deal.optionsData, deal.sources, deal.currency, deal.ecommerceUrl, deal.postUrl) {
+        if (deal.optionsData.size > 1) {
+            deal.optionsData.map { opt ->
+                CardOptionEntry(
+                    name = decodeHtmlEntities(opt.name).trim(),
+                    price = opt.price,
+                    currency = opt.currency ?: deal.currency,
+                    targetUrl = opt.url?.takeIf { it.isNotBlank() }
+                        ?: opt.subUrls?.firstOrNull { it.isNotBlank() }
+                        ?: deal.ecommerceUrl?.takeIf { it.isNotBlank() }
+                        ?: deal.postUrl.orEmpty()
+                )
+            }
+        } else {
+            deal.sources
+                ?.filter { it.siteName.contains(" - ") && it.siteName.substringAfter(" - ").isNotBlank() }
+                ?.map { src ->
+                    CardOptionEntry(
+                        name = decodeHtmlEntities(src.siteName.substringAfter(" - ")).trim(),
+                        price = src.price ?: 0L,
+                        currency = src.currency ?: deal.currency,
+                        targetUrl = src.ecommerceUrl?.takeIf { it.isNotBlank() }
+                            ?: src.subUrls?.firstOrNull { it.isNotBlank() }
+                            ?: src.postUrl
+                    )
+                }
+                .orEmpty()
+        }
+    }
+
+    val scoreSummaryText = remember(deal.id, deal.honeyScore) {
         val percentileText = when {
             deal.honeyScore >= 95 -> "상위 1%"
             deal.honeyScore >= 90 -> "상위 5%"
@@ -1982,6 +2271,16 @@ fun DealCardComposable(
 
     val cardBgColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f) else Color.White
     val cardContentColor = MaterialTheme.colorScheme.onSurface
+    val highlightBg = if (isDark) Color(0x4DFFB74D) else Color(0xFFFFF3BF)
+    val highlightFg = if (isDark) Color(0xFFFFE082) else Color(0xFF7C2D12)
+    val highlightedTitle = remember(resolvedShopTitle.cleanTitle, highlightKeyword, isDark) {
+        buildHighlightedTitle(
+            title = resolvedShopTitle.cleanTitle,
+            keyword = highlightKeyword,
+            highlightBg = highlightBg,
+            highlightFg = highlightFg
+        )
+    }
 
     Card(
         modifier = Modifier
@@ -1999,7 +2298,6 @@ fun DealCardComposable(
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top) {
                     if (imageRequest == null) {
-                        // 이미지가 없는 경우 (또는 분리된 상품 중 이미지가 없는 경우)
                         BrandPlaceholder(
                             siteName = deal.siteName,
                             modifier = Modifier
@@ -2011,7 +2309,7 @@ fun DealCardComposable(
                         Box(modifier = Modifier.size(80.dp)) {
                             SubcomposeAsyncImage(
                                 model = imageRequest,
-                                contentDescription = deal.title,
+                                contentDescription = resolvedShopTitle.cleanTitle,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .background(if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White, RoundedCornerShape(8.dp))
@@ -2032,7 +2330,6 @@ fun DealCardComposable(
                                 }
                             )
 
-                            // 종료된 상품 오버레이
                             if (deal.isClosed) {
                                 Box(
                                     modifier = Modifier
@@ -2054,17 +2351,16 @@ fun DealCardComposable(
 
                     Spacer(modifier = Modifier.width(12.dp))
 
-                    // 정보
                     Column(modifier = Modifier.weight(1f)) {
-                        // 출처 뱃지 및 쿠팡 FOMO 뱃지
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.Top
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            FlowRow(
+                                modifier = Modifier.weight(1f).padding(end = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 sourcesToRender.forEach { source ->
                                     val displaySiteName = if (source.siteName.contains(" - ")) {
@@ -2086,40 +2382,81 @@ fun DealCardComposable(
                                     Surface(
                                         shape = RoundedCornerShape(4.dp),
                                         color = containerColor,
-                                        modifier = Modifier.clickable {
-                                            try {
-                                                val targetUrl = source.postUrl
-                                                val safeUrl = targetUrl.replace(":443", "")
-                                                if (safeUrl.isNotBlank()) {
-                                                    var finalUrl = if (safeUrl.startsWith("http")) safeUrl else "https://$safeUrl"
-                                                    if (finalUrl.contains("bbasak.com") && !finalUrl.contains("device=pc")) {
-                                                        finalUrl += if (finalUrl.contains("?")) "&device=pc" else "?device=pc"
+                                        modifier = Modifier
+                                            .align(Alignment.CenterVertically)
+                                            .clickable {
+                                                try {
+                                                    val targetUrl = source.postUrl
+                                                    val safeUrl = targetUrl.replace(":443", "")
+                                                    if (safeUrl.isNotBlank()) {
+                                                        var finalUrl = if (safeUrl.startsWith("http")) safeUrl else "https://$safeUrl"
+                                                        if (finalUrl.contains("bbasak.com") && !finalUrl.contains("device=pc")) {
+                                                            finalUrl += if (finalUrl.contains("?")) "&device=pc" else "?device=pc"
+                                                        }
+                                                        onOpenUrl(finalUrl)
+                                                    } else {
+                                                        android.widget.Toast.makeText(context, "연결할 링크가 없어요.", android.widget.Toast.LENGTH_SHORT).show()
                                                     }
-                                                    onOpenUrl(finalUrl)
-                                                } else {
-                                                    android.widget.Toast.makeText(context, "연결할 대상 링크가 존재하지 않습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                                                } catch (_: Exception) {
+                                                    android.widget.Toast.makeText(context, "브라우저를 열 수 없어요.", android.widget.Toast.LENGTH_SHORT).show()
                                                 }
-                                            } catch (e: Exception) {
-                                                android.widget.Toast.makeText(context, "브라우저 앱을 열 수 없습니다.", android.widget.Toast.LENGTH_SHORT).show()
                                             }
-                                        }
                                     ) {
                                         Text(
                                             text = displaySiteName,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                             fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
                                             color = contentColor
+                                        )
+                                    }
+                                }
+
+                                if (!resolvedShopTitle.shopBadge.isNullOrBlank()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = if (isDark) Color(0xFF2B333E) else Color(0xFFF2F4F7),
+                                        border = BorderStroke(
+                                            0.5.dp,
+                                            if (isDark) Color(0xFF3E4856) else Color(0xFFE5E8EB)
+                                        ),
+                                        modifier = Modifier.align(Alignment.CenterVertically)
+                                    ) {
+                                        Text(
+                                            text = resolvedShopTitle.shopBadge,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                if (deal.hasMultipleOptions && optionCount > 1) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = if (isDark) Color(0xFF1E3A5F) else Color(0xFFEFF6FF),
+                                        modifier = Modifier.align(Alignment.CenterVertically)
+                                    ) {
+                                        Text(
+                                            text = "옵션 ${optionCount}개",
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDark) Color(0xFF93C5FD) else Color(0xFF1D4ED8)
                                         )
                                     }
                                 }
 
                                 val timeAgo = rememberRelativeTime(deal.createdAt)
                                 if (timeAgo.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = timeAgo,
                                         fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        modifier = Modifier
+                                            .align(Alignment.CenterVertically)
+                                            .padding(start = 2.dp)
                                     )
                                 }
                             }
@@ -2145,7 +2482,7 @@ fun DealCardComposable(
                         Spacer(modifier = Modifier.height(6.dp))
 
                         Text(
-                            text = deal.title,
+                            text = highlightedTitle,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 2,
@@ -2157,8 +2494,11 @@ fun DealCardComposable(
 
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            @OptIn(ExperimentalLayoutApi::class)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             FlowRow(
                                 modifier = Modifier.weight(1f),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -2169,9 +2509,11 @@ fun DealCardComposable(
                                     text = priceText,
                                     fontSize = priceFontSize,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = if (deal.price > 0) {
+                                    color = if (deal.price > 0L || priceText == "무료") {
                                         if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30)
-                                    } else MaterialTheme.colorScheme.error,
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
                                     modifier = Modifier.align(Alignment.CenterVertically).weight(1f, fill = false),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -2184,10 +2526,10 @@ fun DealCardComposable(
                                         modifier = Modifier.align(Alignment.CenterVertically)
                                     ) {
                                         Text(
-                                            text = " 배송비: $displayShipping ",
+                                            text = "배송비: $displayShipping",
                                             fontSize = 9.sp,
                                             color = if (isDark) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(vertical = 2.dp)
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                         )
                                     }
                                 }
@@ -2212,200 +2554,199 @@ fun DealCardComposable(
                     }
                 }
 
-            // ✨ 아코디언 토글 상세 영역 (중복 큰 이미지 없이 핵심 요약 및 액션 버튼만 컴팩트하게 표시)
-            androidx.compose.animation.AnimatedVisibility(visible = isExpanded) {
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(modifier = Modifier.height(10.dp))
+                AnimatedVisibility(visible = isExpanded) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (isDark) Color(0xFF3E2723) else Color(0xFFFFF8E1),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = AIPriceAdvantageText,
-                            modifier = Modifier.padding(8.dp),
-                            fontSize = 12.sp,
-                            color = if (isDark) Color(0xFFFF8A65) else Color(0xFFD84315),
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    val multiOptions = remember(deal.id, deal.sources) {
-                        deal.sources?.filter { it.siteName.contains(" - ") && (it.price ?: 0L) > 0L } ?: emptyList()
-                    }
-                    if (multiOptions.size > 1) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    color = if (isDark) MaterialTheme.colorScheme.surface.copy(alpha = 0.6f) else Color(0xFFF8FAFC),
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isDark) Color(0xFF2B333E) else Color(0xFFF8FAFC),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = "옵션별 가격 및 바로가기",
+                                text = scoreSummaryText,
+                                modifier = Modifier.padding(8.dp),
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center
                             )
-                            multiOptions.forEach { opt ->
-                                val optName = opt.siteName.substringAfter(" - ").trim()
-                                val optPriceText = formatPrice(opt.price ?: deal.price, opt.currency ?: deal.currency, optName)
-                                val optTargetUrl = opt.ecommerceUrl?.takeIf { it.isNotBlank() } ?: opt.postUrl
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White,
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            if (optTargetUrl.isNotBlank()) {
-                                                val finalOptUrl = if (optTargetUrl.startsWith("http")) optTargetUrl else "https://$optTargetUrl"
-                                                onOpenUrl(finalOptUrl)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (multiOptions.size > 1) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        color = if (isDark) MaterialTheme.colorScheme.surface.copy(alpha = 0.6f) else Color(0xFFF8FAFC),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "옵션별 가격 및 바로가기",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                multiOptions.forEach { opt ->
+                                    val optPriceText = formatPrice(opt.price, opt.currency, opt.name)
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White,
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                if (opt.targetUrl.isNotBlank()) {
+                                                    val finalOptUrl = if (opt.targetUrl.startsWith("http")) opt.targetUrl else "https://${opt.targetUrl}"
+                                                    onOpenUrl(finalOptUrl)
+                                                }
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = opt.name,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                            )
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = optPriceText,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (opt.price > 0L || optPriceText == "무료") {
+                                                        if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30)
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                    }
+                                                )
+                                                Icon(
+                                                    imageVector = Icons.Default.ChevronRight,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
                                             }
                                         }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "• $optName",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f).padding(end = 8.dp)
-                                        )
-                                        Text(
-                                            text = "$optPriceText ➔",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30)
-                                        )
                                     }
                                 }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                    } else if (!deal.aiSummary.isNullOrBlank()) {
-                        val cleanedSummary = remember(deal.aiSummary) {
-                            deal.aiSummary
-                                .replace(Regex("^[🔥✨🤖💡⚡🎉📦✅⚠️\\s]+"), "")
-                                .replace("[커뮤니티 인증 핫딜]", "")
-                                .trim()
-                        }
-                        if (cleanedSummary.isNotBlank() &&
-                            !cleanedSummary.contains("AI가 자동 분리") &&
-                            !cleanedSummary.contains("모음전] 여러 상품이 포함된")) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Star, contentDescription = null, tint = if (isDark) Color(0xFF81C784) else Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    text = cleanedSummary,
-                                    fontSize = 13.sp,
-                                    color = if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32),
-                                    fontWeight = FontWeight.Medium,
-                                    lineHeight = 18.sp
-                                )
                             }
                             Spacer(modifier = Modifier.height(12.dp))
-                        }
-                    }
-                    // 📈 가격 상세 분석 버튼 추가
-                    Button(
-                        onClick = onDetailClick,
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isDark) MaterialTheme.colorScheme.secondary else Color(0xFF1F2937),
-                            contentColor = if (isDark) MaterialTheme.colorScheme.onSecondary else Color.White
-                        ),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("가격 추이 및 상세보기", fontWeight = FontWeight.ExtraBold)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Button(
-                        onClick = {
-                            try {
-                                val isPointEvent = deal.category == "적립" || deal.title.contains("네이버페이") || deal.title.contains("네이버 페이")
-                                var targetUrl = if (isPointEvent) {
-                                    deal.postUrl // 네이버페이나 적립 포인트는 원본 게시글을 거쳐야 적립이 됨
-                                } else {
-                                    deal.ecommerceUrl?.takeIf { it.isNotBlank() }?.replace(":443", "") ?: deal.postUrl
-                                }
-                                if (!targetUrl.isNullOrBlank()) {
-                                    val prefs = context.getSharedPreferences("insightdeal_prefs", android.content.Context.MODE_PRIVATE)
-                                    val afCode = prefs.getString("coupang_af_code", "") ?: ""
-
-                                    if (afCode.isNotBlank() && (targetUrl.contains("coupang.com") || targetUrl.contains("coupa.ng"))) {
-                                        android.util.Log.d("Hijack", "💰 Coupang Hijacked! 100% 수익화 모드: $afCode")
-                                        targetUrl = if (targetUrl.contains("?")) "$targetUrl&subId=$afCode" else "$targetUrl?subId=$afCode"
-                                        android.widget.Toast.makeText(context, "[쿠팡 파트너스 수익화 On] AF코드 작동중", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-
-                                    var finalUrl = if (targetUrl.startsWith("http")) targetUrl else "https://$targetUrl"
-                                    if (finalUrl.contains("bbasak.com") && !finalUrl.contains("device=pc")) {
-                                        finalUrl += if (finalUrl.contains("?")) "&device=pc" else "?device=pc"
-                                    }
-                                    onOpenUrl(finalUrl)
-                                } else {
-                                    android.widget.Toast.makeText(context, "원본 링크가 제공되지 않았습니다.", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            } catch (e: Exception) {
-                                android.widget.Toast.makeText(context, "브라우저 앱을 열 수 없습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                        } else if (!deal.aiSummary.isNullOrBlank()) {
+                            val cleanedSummary = remember(deal.aiSummary) {
+                                deal.aiSummary
+                                    .replace(Regex("^[^가-힣A-Za-z0-9\\[]+"), "")
+                                    .replace("[커뮤니티 인증 핫딜]", "")
+                                    .replace("[커뮤니티 인기]", "")
+                                    .trim()
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isDark) MaterialTheme.colorScheme.primary else Color(0xFFFF6D00),
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("구매하러 가기", fontWeight = FontWeight.ExtraBold)
+                            if (cleanedSummary.isNotBlank() &&
+                                !cleanedSummary.contains("자동 분리") &&
+                                !cleanedSummary.contains("모음전] 여러 상품이 포함된")
+                            ) {
+                                Text(
+                                    text = cleanedSummary,
+                                    fontSize = 12.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium,
+                                    lineHeight = 18.sp,
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+                        }
+
+                        Button(
+                            onClick = onDetailClick,
+                            modifier = Modifier.fillMaxWidth().height(46.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDark) MaterialTheme.colorScheme.secondary else Color(0xFF1F2937),
+                                contentColor = if (isDark) MaterialTheme.colorScheme.onSecondary else Color.White
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("상세 정보 및 가격 추이", fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = {
+                                try {
+                                    val isPointEvent = deal.category == "적립" || resolvedShopTitle.cleanTitle.contains("네이버페이") || resolvedShopTitle.cleanTitle.contains("네이버 페이")
+                                    var targetUrl = if (isPointEvent) {
+                                        deal.postUrl
+                                    } else {
+                                        deal.ecommerceUrl?.takeIf { it.isNotBlank() }?.replace(":443", "") ?: deal.postUrl
+                                    }
+                                    if (!targetUrl.isNullOrBlank()) {
+                                        val prefs = context.getSharedPreferences("insightdeal_prefs", android.content.Context.MODE_PRIVATE)
+                                        val afCode = prefs.getString("coupang_af_code", "") ?: ""
+
+                                        if (afCode.isNotBlank() && (targetUrl.contains("coupang.com") || targetUrl.contains("coupa.ng"))) {
+                                            targetUrl = if (targetUrl.contains("?")) "$targetUrl&subId=$afCode" else "$targetUrl?subId=$afCode"
+                                        }
+
+                                        var finalUrl = if (targetUrl.startsWith("http")) targetUrl else "https://$targetUrl"
+                                        if (finalUrl.contains("bbasak.com") && !finalUrl.contains("device=pc")) {
+                                            finalUrl += if (finalUrl.contains("?")) "&device=pc" else "?device=pc"
+                                        }
+                                        onOpenUrl(finalUrl)
+                                    } else {
+                                        android.widget.Toast.makeText(context, "이동할 링크가 없어요.", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (_: Exception) {
+                                    android.widget.Toast.makeText(context, "브라우저를 열 수 없어요.", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(46.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDark) MaterialTheme.colorScheme.primary else Color(0xFFFF6D00),
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("쇼핑몰 바로가기", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
-        }
 
-        // 핫딜 뱃지를 우측 최상단에 고정 (Box로 감싸서 BoxScope 2D 정렬 완벽 보장!)
-        if (isSuperHot) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                Surface(
-                    shape = RoundedCornerShape(bottomStart = 12.dp, topEnd = 12.dp),
-                    color = if (isDark) Color(0xFF3700B3).copy(alpha = 0.2f) else Color(0xFFFFEBEB),
-                    modifier = Modifier.align(Alignment.TopEnd)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            if (isSuperHot) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Surface(
+                        shape = RoundedCornerShape(bottomStart = 12.dp, topEnd = 12.dp),
+                        color = if (isDark) Color(0xFF3700B3).copy(alpha = 0.2f) else Color(0xFFFFEBEB),
+                        modifier = Modifier.align(Alignment.TopEnd)
                     ) {
-                        Text(
-                            text = "인기",
-                            fontSize = 11.sp,
-                            color = if (isDark) Color(0xFFCF6679) else Color(0xFFD32F2F),
-                            fontWeight = FontWeight.ExtraBold
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "인기",
+                                fontSize = 11.sp,
+                                color = if (isDark) Color(0xFFCF6679) else Color(0xFFD32F2F),
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
                     }
                 }
             }
         }
     }
-}
 }
 
 
@@ -2417,10 +2758,10 @@ fun KeywordSettingsBottomSheet(
 ) {
     var keywordText by remember { mutableStateOf("") }
 
-    val keywordsState by keywordViewModel.keywords.collectAsState()
-    val dndEnabled by keywordViewModel.dndEnabled.collectAsState()
-    val dndStartTime by keywordViewModel.dndStartTime.collectAsState()
-    val dndEndTime by keywordViewModel.dndEndTime.collectAsState()
+    val keywordsState by keywordViewModel.keywords.collectAsStateWithLifecycle()
+    val dndEnabled by keywordViewModel.dndEnabled.collectAsStateWithLifecycle()
+    val dndStartTime by keywordViewModel.dndStartTime.collectAsStateWithLifecycle()
+    val dndEndTime by keywordViewModel.dndEndTime.collectAsStateWithLifecycle()
 
     // 💡 바텀시트가 실행되는 0.00ms 시점에 즉각 백엔드로부터 최신 맞춤 키워드 정보를 강제 동기화합니다.
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -2805,7 +3146,7 @@ fun NotificationHistoryBottomSheet(
     onOpenUrlInWebView: (String) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val alertsState by com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager.alerts.collectAsState()
+    val alertsState by com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager.alerts.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 

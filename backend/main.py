@@ -14,6 +14,13 @@ _project_root = os.path.dirname(_backend_dir)
 for _p in (_project_root, _backend_dir):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+if "pytest" not in sys.modules and "PYTEST_CURRENT_TEST" not in os.environ:
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(_backend_dir, ".env"), override=False)
+        load_dotenv(os.path.join(_project_root, ".env"), override=False)
+    except Exception:
+        pass
 import logging
 import ipaddress
 import httpx

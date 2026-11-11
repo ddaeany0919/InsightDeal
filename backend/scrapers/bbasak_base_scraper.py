@@ -44,35 +44,16 @@ class BbasakBaseScraper(AsyncBaseScraper):
                 
             full_title = title_element.get_text(strip=True)
             
-            price = 0
-            extracted_currency = "KRW"
-            import re
-            usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
-            if not usd_match:
-                usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', full_title, re.IGNORECASE)
-                
-            if usd_match:
-                try:
-                    val = float(usd_match.group(1).replace(',', ''))
-                    price = int(val * 100)
-                    if '유로' in full_title or '€' in full_title:
-                        extracted_currency = "EUR"
-                    else:
-                        extracted_currency = "USD"
-                except: pass
-            else:
-                match = re.search(r'([\d,]+)\s*원', full_title)
-                if match:
+            from backend.core.deal_normalizer import parse_title_price_and_shipping
+            price, extracted_currency, _, _ = parse_title_price_and_shipping(full_title)
+            if price == 0:
+                plan_match = re.search(r'(\d{2,3})\s*요금제', full_title)
+                if plan_match:
                     try:
-                        price = int(match.group(1).replace(',', ''))
-                    except: pass
-                
-                if price == 0:
-                    plan_match = re.search(r'(\d{2,3})\s*요금제', full_title)
-                    if plan_match:
-                        try:
-                            price = int(plan_match.group(1)) * 1000
-                        except: pass
+                        price = int(plan_match.group(1)) * 1000
+                        extracted_currency = "KRW"
+                    except Exception:
+                        pass
                 
             is_closed = False
             if '종료' in full_title or '마감' in full_title or '품절' in full_title:
@@ -107,13 +88,7 @@ class BbasakBaseScraper(AsyncBaseScraper):
                 if cmt_match:
                     comment_count = int(cmt_match.group(1))
                     full_title = re.sub(r'\s*\[\d+\]$', '', full_title).strip()
-                
-            # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
-            if extracted_currency == "KRW" and price > 0 and price <= 10000:
-                if any(kw in full_title for kw in ['알리', '코인', '큐텐', '직구', '알익']):
-                    extracted_currency = "USD"
-                    price = int(price * 100)
-                
+
             # 실제 게시글 작성 시간 추출
             posted_at_iso = None
             time_str = ""
@@ -148,10 +123,18 @@ class BbasakBaseScraper(AsyncBaseScraper):
                 "category": category_extracted
             }
 
-        tasks = [process_row(row) for row in post_rows]
-        results = await asyncio.gather(*tasks)
+        async def safe_process_row(row):
+            try:
+                return await process_row(row)
+            except Exception as row_err:
+                logger.warning(f"[{self.platform_name}] 행 파싱 오류로 건너뜀: {row_err}")
+                return None
+
+        tasks = [safe_process_row(row) for row in post_rows]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
         for r in results:
-            if r: deals.append(r)
+            if isinstance(r, dict):
+                deals.append(r)
             
         return deals
 
@@ -244,6 +227,8 @@ class BbasakBaseScraper(AsyncBaseScraper):
         view_content_el = soup.select_one('#view_content') or soup.select_one('#board_view')
         body_text = view_content_el.get_text(separator=' ') if view_content_el else soup.get_text(separator=' ')
 
+        from backend.core.deal_normalizer import extract_body_fallback_price, parse_price_string
+
         # 0. 빠삭 상품정보 영역(.detailTxt ul li)의 명시적 가격/배송비/링크 추출
         for li in soup.select('#view_content .detailTxt li, .detailTxt li'):
             tit_span = li.select_one('span.titTxt')
@@ -253,23 +238,14 @@ class BbasakBaseScraper(AsyncBaseScraper):
             full_li_text = li.get_text(strip=True)
             val_text = full_li_text[len(label):].strip() if full_li_text.startswith(label) else full_li_text.replace(label, '', 1).strip()
             if '가격' in label and val_text:
-                usd_m = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)|([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', val_text, re.IGNORECASE)
-                if usd_m:
-                    try:
-                        raw_v = usd_m.group(1) or usd_m.group(2)
-                        price_fallback = int(float(raw_v.replace(',', '')) * 100)
-                        extracted_currency = "EUR" if ('유로' in val_text or '€' in val_text) else "USD"
-                    except Exception:
-                        pass
-                else:
-                    num_m = re.search(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,8})', val_text)
-                    if num_m:
-                        try:
-                            cand = int(num_m.group(1).replace(',', ''))
-                            if 100 <= cand <= 15000000:
-                                price_fallback = cand
-                        except Exception:
-                            pass
+                parsed_p, parsed_c = parse_price_string(
+                    val_text,
+                    allow_bare_number=True,
+                    context_hint=full_title or "",
+                )
+                if parsed_p > 0:
+                    price_fallback = parsed_p
+                    extracted_currency = parsed_c
             elif ('배송' in label or '택배' in label) and val_text:
                 if val_text in ('0', '0원') or '무료' in val_text or '무배' in val_text:
                     shipping_fee = "무료배송"
@@ -281,34 +257,8 @@ class BbasakBaseScraper(AsyncBaseScraper):
                     ecommerce_link = a_tag['href'].strip()
 
         # 가격 휴리스틱 추출 (상단 .detailTxt에 가격이 없을 때만)
-        cleaned_body_text = re.sub(r'https?://[^\s]+', '', body_text)
-
         if price_fallback == 0:
-            usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', cleaned_body_text, re.IGNORECASE)
-            if not usd_match:
-                usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', cleaned_body_text, re.IGNORECASE)
-
-            price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', cleaned_body_text)
-
-            if usd_match:
-                try:
-                    val = float(usd_match.group(1).replace(',', ''))
-                    price_fallback = int(val * 100)
-                    if '유로' in body_text or '€' in body_text:
-                        extracted_currency = "EUR"
-                    else:
-                        extracted_currency = "USD"
-                except Exception:
-                    pass
-            elif price_matches:
-                for pm in price_matches:
-                    try:
-                        cand = int(pm.replace(',', '').replace('.', ''))
-                        if cand >= 100:
-                            price_fallback = cand
-                            break
-                    except Exception:
-                        pass
+            price_fallback, extracted_currency = extract_body_fallback_price(body_text, full_title or "")
 
         # 1. 명시적인 테이블 정보(배송비/택배비) 확인
         if not shipping_fee:

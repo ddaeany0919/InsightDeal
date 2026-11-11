@@ -242,8 +242,8 @@ fun WritePostScreen(
     viewModel: WritePostViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val context = LocalContext.current
-    val userId by AuthManager.getUsername(context).collectAsState(initial = "admin")
-    val nickname by AuthManager.getNickname(context).collectAsState(initial = "admin")
+    val userId by AuthManager.getUsername(context).collectAsState(initial = "guest")
+    val nickname by AuthManager.getNickname(context).collectAsState(initial = "익명")
 
     val isSubmitting by viewModel.isSubmitting.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -289,8 +289,8 @@ fun WritePostScreen(
                         onClick = {
                             viewModel.submitPost(
                                 postId = postId,
-                                userId = userId ?: "admin",
-                                nickname = nickname ?: "admin"
+                                userId = userId ?: "guest",
+                                nickname = nickname ?: "익명"
                             )
                         },
                         enabled = title.isNotBlank() && content.isNotBlank() && !isSubmitting && !isLoading,

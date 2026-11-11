@@ -1,13 +1,9 @@
 package com.ddaeany0919.insightdeal.presentation.community
 
-import android.content.Context
-import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,15 +11,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.outlined.ThumbsUpDown
 import androidx.compose.material.icons.outlined.Visibility
@@ -32,132 +24,25 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.ddaeany0919.insightdeal.data.network.CommunityPostCreateReq
 import com.ddaeany0919.insightdeal.data.network.CommunityPostDto
-import com.ddaeany0919.insightdeal.models.DealItem
-import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
 import com.ddaeany0919.insightdeal.presentation.bounceClick
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-
-sealed class CommunityBoardUiState {
-    object Loading : CommunityBoardUiState()
-    data class Success(val posts: List<CommunityPostDto>) : CommunityBoardUiState()
-    data class Error(val message: String) : CommunityBoardUiState()
-}
-
-class CommunityBoardViewModel : ViewModel() {
-    private val api = NetworkModule.createService<com.ddaeany0919.insightdeal.network.ApiService>()
-
-    private val _uiState = MutableStateFlow<CommunityBoardUiState>(CommunityBoardUiState.Loading)
-    val uiState: StateFlow<CommunityBoardUiState> = _uiState.asStateFlow()
-
-    fun loadPosts(showLoading: Boolean = true) {
-        viewModelScope.launch {
-            if (showLoading) {
-                _uiState.value = CommunityBoardUiState.Loading
-            }
-            try {
-                val response = api.getCommunityPosts(postType = "REQUEST")
-                if (response.isSuccessful && response.body() != null) {
-                    _uiState.value = CommunityBoardUiState.Success(response.body()!!)
-                } else {
-                    _uiState.value = CommunityBoardUiState.Error("데이터를 불러오지 못했습니다.")
-                }
-            } catch (e: Exception) {
-                _uiState.value = CommunityBoardUiState.Error(e.message ?: "알 수 없는 오류")
-            }
-        }
-    }
-
-    fun votePost(context: Context, post: CommunityPostDto, isBuy: Boolean, oldVote: String?, onComplete: () -> Unit) {
-        viewModelScope.launch {
-            try {
-                var newBuy = post.bountyPoints
-                var newSkip = post.likeCount
-
-                if (oldVote == "BUY") newBuy = (newBuy - 1).coerceAtLeast(0)
-                if (oldVote == "SKIP") newSkip = (newSkip - 1).coerceAtLeast(0)
-
-                if (isBuy) newBuy += 1 else newSkip += 1
-
-                val req = CommunityPostCreateReq(
-                    postType = post.postType,
-                    userId = post.userId,
-                    nickname = post.nickname,
-                    title = post.title,
-                    content = post.content,
-                    targetPrice = post.targetPrice,
-                    bountyPoints = newBuy,
-                    likeCount = newSkip,
-                    location = post.location
-                )
-                val response = api.updateCommunityPost(post.id, req)
-                if (response.isSuccessful) {
-                    saveUserVote(context, post.id, if (isBuy) "BUY" else "SKIP")
-                    onComplete()
-                }
-            } catch (e: Exception) {
-            }
-        }
-    }
-
-    fun cancelVotePost(context: Context, post: CommunityPostDto, currentVote: String, onComplete: () -> Unit) {
-        viewModelScope.launch {
-            try {
-                val newBuy = if (currentVote == "BUY") (post.bountyPoints - 1).coerceAtLeast(0) else post.bountyPoints
-                val newSkip = if (currentVote == "SKIP") (post.likeCount - 1).coerceAtLeast(0) else post.likeCount
-
-                val req = CommunityPostCreateReq(
-                    postType = post.postType,
-                    userId = post.userId,
-                    nickname = post.nickname,
-                    title = post.title,
-                    content = post.content,
-                    targetPrice = post.targetPrice,
-                    bountyPoints = newBuy,
-                    likeCount = newSkip,
-                    location = post.location
-                )
-                val response = api.updateCommunityPost(post.id, req)
-                if (response.isSuccessful) {
-                    val prefs = context.getSharedPreferences("should_i_buy_votes", Context.MODE_PRIVATE)
-                    prefs.edit().remove("vote_${post.id}").apply()
-                    onComplete()
-                }
-            } catch (e: Exception) {
-            }
-        }
-    }
-}
-
-private fun getUserVote(context: Context, postId: Int): String? {
-    val prefs = context.getSharedPreferences("should_i_buy_votes", Context.MODE_PRIVATE)
-    return prefs.getString("vote_$postId", null)
-}
-
-private fun saveUserVote(context: Context, postId: Int, vote: String) {
-    val prefs = context.getSharedPreferences("should_i_buy_votes", Context.MODE_PRIVATE)
-    prefs.edit().putString("vote_$postId", vote).apply()
-}
+import com.ddaeany0919.insightdeal.presentation.decodeHtmlEntities
+import com.ddaeany0919.insightdeal.presentation.formatPrice
+import com.ddaeany0919.insightdeal.presentation.formatRelativeTime
 
 private val AccentOrange = Color(0xFFFF6B35)
 private val AccentOrangeSoft = Color(0xFFFFF0EB)
@@ -173,9 +58,9 @@ fun CommunityBoardScreen(
     navController: NavController? = null,
     viewModel: CommunityBoardViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val currentUserId by AuthManager.getUsername(context).collectAsState(initial = "admin")
+    val currentUserId by AuthManager.getUsername(context).collectAsStateWithLifecycle(initialValue = "guest")
     val isLoggedIn = currentUserId != "guest" && !currentUserId.isNullOrEmpty()
     var showLoginIncentiveDialog by remember { mutableStateOf(false) }
 
@@ -253,7 +138,7 @@ fun CommunityBoardScreen(
                             modifier = Modifier.size(32.dp)
                         )
                         Text(
-                            "게시글을 불러오는 중...",
+                            "게시글을 불러오는 중이에요",
                             style = MaterialTheme.typography.bodyMedium,
                             color = NeutralGray500
                         )
@@ -302,7 +187,7 @@ fun CommunityBoardScreen(
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "아직 등록된 게시글이 없습니다",
+                                "아직 등록된 게시글이 없어요",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -314,7 +199,13 @@ fun CommunityBoardScreen(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             OutlinedButton(
-                                onClick = { navController?.navigate("community_write") },
+                                onClick = {
+                                    if (isLoggedIn) {
+                                        navController?.navigate("community_write")
+                                    } else {
+                                        showLoginIncentiveDialog = true
+                                    }
+                                },
                                 shape = RoundedCornerShape(10.dp),
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                             ) {
@@ -329,7 +220,7 @@ fun CommunityBoardScreen(
                             items(items = state.posts, key = { it.id }, contentType = { "community_post_item" }) { post ->
                                 ShouldIBuyVoteCard(
                                     post = post,
-                                    currentUserId = currentUserId ?: "admin",
+                                    currentUserId = currentUserId ?: "guest",
                                     onEditClick = { navController?.navigate("community_edit/${post.id}") },
                                     onVoteSubmit = { viewModel.loadPosts(showLoading = false) },
                                     navController = navController,
@@ -349,16 +240,16 @@ fun CommunityBoardScreen(
         AlertDialog(
             onDismissRequest = { showLoginIncentiveDialog = false },
             title = {
-                Text("로그인이 필요합니다", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
+                Text("로그인이 필요해요", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
             },
             text = {
-                Text("커뮤니티 게시글 작성 및 투표 참여는 로그인 후 이용할 수 있습니다.", fontSize = 14.sp, color = NeutralGray700)
+                Text("커뮤니티 게시글 작성 및 투표 참여는 로그인 후 이용할 수 있어요.", fontSize = 14.sp, color = NeutralGray700)
             },
             confirmButton = {
                 Button(
                     onClick = {
                         showLoginIncentiveDialog = false
-                        navController?.navigate("settings")
+                        navController?.navigate("auth")
                     },
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
@@ -389,14 +280,20 @@ fun ShouldIBuyVoteCard(
     viewModel: CommunityBoardViewModel
 ) {
     val context = LocalContext.current
-    val api = remember { NetworkModule.createService<com.ddaeany0919.insightdeal.network.ApiService>() }
-    val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
+    val linkedDeals by viewModel.linkedDeals.collectAsStateWithLifecycle()
 
-    var userVote by remember { mutableStateOf(getUserVote(context, post.id)) }
+    var userVote by remember(post.id) { mutableStateOf(viewModel.getUserVote(post.id)) }
 
-    LaunchedEffect(post) {
-        userVote = getUserVote(context, post.id)
+    LaunchedEffect(post.id) {
+        userVote = viewModel.getUserVote(post.id)
+    }
+
+    val dealId = remember(post.location) { viewModel.parseLinkedDealId(post.location) }
+    val linkedDeal = dealId?.let { linkedDeals[it] }
+
+    LaunchedEffect(post.location) {
+        viewModel.ensureLinkedDealLoaded(post.location)
     }
 
     val totalVotes = post.bountyPoints + post.likeCount
@@ -406,54 +303,32 @@ fun ShouldIBuyVoteCard(
     val animatedProgress by animateFloatAsState(
         targetValue = buyRatio,
         animationSpec = spring(
-            dampingRatio = 0.55f, // 찰랑거리는 바운스 강도 극대화
-            stiffness = 120f      // 쫀득한 속도감
+            dampingRatio = 0.55f,
+            stiffness = 120f
         ),
         label = "progressAnimation"
     )
 
-    // 엄지척 이모지 쫀득한 spring 튕김 애니메이션 상태 추가
     val buyIconScale by animateFloatAsState(
-        targetValue = if (userVote == "BUY") 1.25f else 1.0f,
+        targetValue = if (userVote == "BUY") 1.2f else 1.0f,
         animationSpec = spring(dampingRatio = 0.45f, stiffness = 250f),
         label = "buyIconScale"
     )
     val buyIconRotation by animateFloatAsState(
-        targetValue = if (userVote == "BUY") -15f else 0f,
+        targetValue = if (userVote == "BUY") -12f else 0f,
         animationSpec = spring(dampingRatio = 0.45f, stiffness = 200f),
         label = "buyIconRotation"
     )
     val skipIconScale by animateFloatAsState(
-        targetValue = if (userVote == "SKIP") 1.25f else 1.0f,
+        targetValue = if (userVote == "SKIP") 1.2f else 1.0f,
         animationSpec = spring(dampingRatio = 0.45f, stiffness = 250f),
         label = "skipIconScale"
     )
     val skipIconRotation by animateFloatAsState(
-        targetValue = if (userVote == "SKIP") 15f else 0f,
+        targetValue = if (userVote == "SKIP") 12f else 0f,
         animationSpec = spring(dampingRatio = 0.45f, stiffness = 200f),
         label = "skipIconRotation"
     )
-
-    var linkedDeal by remember { mutableStateOf<DealItem?>(null) }
-
-    LaunchedEffect(post.location) {
-        post.location?.let { loc ->
-            val dealId = if (loc.startsWith("deal_id:")) {
-                loc.removePrefix("deal_id:").toIntOrNull()
-            } else {
-                loc.toIntOrNull()
-            }
-            if (dealId != null) {
-                try {
-                    val response = api.getEnhancedDealInfo(dealId)
-                    if (response.isSuccessful && response.body() != null) {
-                        linkedDeal = response.body()
-                    }
-                } catch (e: Exception) {
-                }
-            }
-        }
-    }
 
     Card(
         modifier = Modifier
@@ -483,7 +358,7 @@ fun ShouldIBuyVoteCard(
                     modifier = Modifier.weight(1f).padding(end = 8.dp)
                 )
 
-                if (post.userId == currentUserId) {
+                if (currentUserId != "guest" && post.userId == currentUserId) {
                     Surface(
                         onClick = onEditClick,
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -513,8 +388,8 @@ fun ShouldIBuyVoteCard(
                 )
             }
 
-            // 연동 상품
             linkedDeal?.let { deal ->
+                val cleanDealTitle = remember(deal.id, deal.title) { decodeHtmlEntities(deal.title) }
                 Spacer(modifier = Modifier.height(10.dp))
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
@@ -581,7 +456,7 @@ fun ShouldIBuyVoteCard(
                             )
                         }
                         Text(
-                            text = deal.title,
+                            text = cleanDealTitle,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -590,7 +465,7 @@ fun ShouldIBuyVoteCard(
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            text = com.ddaeany0919.insightdeal.presentation.formatPrice(deal.price.toLong(), null, deal.title),
+                            text = formatPrice(deal.price, deal.currency, cleanDealTitle),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color(0xFFFF5A26)
@@ -601,7 +476,6 @@ fun ShouldIBuyVoteCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 투표 현황 바 (참여자가 있을 때만 비율 표시, 0명일 때는 중립 트랙)
             if (totalVotes > 0) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
@@ -651,17 +525,15 @@ fun ShouldIBuyVoteCard(
                 OutlinedButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        scope.launch {
-                            if (isBuySelected) {
-                                viewModel.cancelVotePost(context, post, "BUY") {
-                                    userVote = null
-                                    onVoteSubmit()
-                                }
-                            } else {
-                                viewModel.votePost(context, post, isBuy = true, oldVote = userVote) {
-                                    userVote = "BUY"
-                                    onVoteSubmit()
-                                }
+                        if (isBuySelected) {
+                            viewModel.cancelVotePost(post, "BUY") {
+                                userVote = null
+                                onVoteSubmit()
+                            }
+                        } else {
+                            viewModel.votePost(post, isBuy = true, oldVote = userVote) {
+                                userVote = "BUY"
+                                onVoteSubmit()
                             }
                         }
                     },
@@ -702,17 +574,15 @@ fun ShouldIBuyVoteCard(
                 OutlinedButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        scope.launch {
-                            if (isSkipSelected) {
-                                viewModel.cancelVotePost(context, post, "SKIP") {
-                                    userVote = null
-                                    onVoteSubmit()
-                                }
-                            } else {
-                                viewModel.votePost(context, post, isBuy = false, oldVote = userVote) {
-                                    userVote = "SKIP"
-                                    onVoteSubmit()
-                                }
+                        if (isSkipSelected) {
+                            viewModel.cancelVotePost(post, "SKIP") {
+                                userVote = null
+                                onVoteSubmit()
+                            }
+                        } else {
+                            viewModel.votePost(post, isBuy = false, oldVote = userVote) {
+                                userVote = "SKIP"
+                                onVoteSubmit()
                             }
                         }
                     },
@@ -753,14 +623,13 @@ fun ShouldIBuyVoteCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 작성자 / 시간 및 조회수/댓글수
             Row(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "${post.nickname ?: "익명"} · ${formatRelativeTime(post.createdAt)}",
+                    text = "${post.nickname ?: "익명"} · ${formatRelativeTime(post.createdAt.orEmpty())}",
                     fontSize = 11.sp,
                     color = NeutralGray500
                 )
@@ -798,31 +667,5 @@ fun ShouldIBuyVoteCard(
                 }
             }
         }
-    }
-}
-
-private fun formatRelativeTime(dateTimeStr: String?): String {
-    if (dateTimeStr.isNullOrBlank()) return ""
-    return try {
-        val cleanStr = dateTimeStr.substringBefore(".").substringBefore("+")
-        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
-        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
-        val date = sdf.parse(cleanStr) ?: return dateTimeStr
-
-        val diff = System.currentTimeMillis() - date.time
-        val seconds = diff / 1000
-        val minutes = seconds / 60
-        val hours = minutes / 60
-        val days = hours / 24
-
-        when {
-            seconds < 60 -> "방금 전"
-            minutes < 60 -> "${minutes}분 전"
-            hours < 24 -> "${hours}시간 전"
-            days < 7 -> "${days}일 전"
-            else -> dateTimeStr.substringBefore("T")
-        }
-    } catch (e: Exception) {
-        dateTimeStr.substringBefore("T")
     }
 }

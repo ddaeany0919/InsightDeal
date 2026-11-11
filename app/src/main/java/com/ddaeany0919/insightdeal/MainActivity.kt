@@ -392,14 +392,21 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                 com.ddaeany0919.insightdeal.presentation.mypage.history.MyCommentsScreen(navController = navController, onBack = { navController.popBackStack() })
             }
             composable("recent_deals") {
+                val activityContext = androidx.compose.ui.platform.LocalContext.current
                 com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealsScreen(
                     onBack = { navController.popBackStack() },
                     onDealClick = { dealId -> navController.navigate("deal_detail/$dealId") },
                     onOpenUrl = { url ->
                         val finalUrl = if (url.startsWith("http")) url else "https://$url"
-                        val encodedUrl = java.net.URLEncoder.encode(finalUrl, "UTF-8")
-                        navController.navigate("webview/$encodedUrl")
+                        homeViewModel.trackOutboundClick(url = finalUrl)
+                        com.ddaeany0919.insightdeal.utils.CustomTabLauncher.launchShoppingUrl(activityContext, finalUrl)
                     }
+                )
+            }
+            composable("recommendations") {
+                com.ddaeany0919.insightdeal.presentation.recommendation.RecommendationScreen(
+                    onDealClick = { deal -> navController.navigate("deal_detail/${deal.id}") },
+                    onBack = { navController.popBackStack() }
                 )
             }
             composable("settings") {
@@ -421,6 +428,7 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
             }
             composable("platform") { com.ddaeany0919.insightdeal.presentation.platform.PlatformScreen() }
             composable("deal_detail/{dealId}") { backStackEntry ->
+                val activityContext = androidx.compose.ui.platform.LocalContext.current
                 val dealId = backStackEntry.arguments?.getString("dealId")?.toIntOrNull() ?: -1
                 val viewModel: com.ddaeany0919.insightdeal.presentation.DealDetailViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
                 com.ddaeany0919.insightdeal.presentation.DealDetailRoute(
@@ -429,8 +437,7 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                     wishlistViewModel = wishlistViewModel,
                     onBack = { navController.popBackStack() },
                     onOpenUrl = { url ->
-                        val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")
-                        navController.navigate("webview/$encodedUrl")
+                        com.ddaeany0919.insightdeal.utils.CustomTabLauncher.launchShoppingUrl(activityContext, url)
                     },
                     onNavigateToCommunity = {
                         navController.navigate("community")

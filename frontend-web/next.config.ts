@@ -22,17 +22,12 @@ const backendUrl =
 
 console.log(`[Next.js Rewrite Engine] Configured rewrite destination to: ${backendUrl}`);
 
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+const nextConfig: NextConfig = {
   ...(isTossMiniApp
     ? { output: "export" as const, images: { unoptimized: true } }
     : isVercel
       ? {}
       : { output: "standalone" as const }),
-  typescript: {
-    // 빌드 시 TypeScript 정적 검사 통과 보장 가드
-    ignoreBuildErrors: true,
-  },
   turbopack: {},
   // CORS 문제를 해결하기 위해 백엔드로 프록시합니다. (앱인토스 정적 빌드 시에는 apiUrl()이 직접 백엔드 HTTPS를 호출)
   ...(isTossMiniApp

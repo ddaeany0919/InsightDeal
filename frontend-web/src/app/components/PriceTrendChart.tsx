@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { RefreshCw, BarChart3 } from "lucide-react";
 import type { PriceHistoryItem } from "../lib/types";
 import { apiUrl, formatPrice } from "../lib/utils";
@@ -13,7 +13,7 @@ export interface PriceTrendStats {
 }
 
 interface PriceTrendChartProps {
-  basePrice: any;
+  basePrice: string | number | null | undefined;
   dealId?: number;
   currency?: string;
   optionName?: string;
@@ -44,25 +44,30 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
     setUserPeriod(nextPeriod);
   };
 
-  const getCleanPrice = (pVal: any) => {
+  const getCleanPrice = (pVal: string | number | null | undefined) => {
     if (pVal === null || pVal === undefined) return 10000;
     const clean = String(pVal).replace(/[^0-9.]/g, "");
     if (!clean) return 10000;
     const num = parseFloat(clean);
     if (num <= 0) return 10000;
-    if (parseInt(clean, 10) === 1393) return 13.93 * 1350;
     return num;
   };
 
   const base = getCleanPrice(basePrice);
+  const dummyBase = dealId ? 0 : base;
+  const onHistoryStatusRef = useRef(onHistoryStatus);
+
+  useEffect(() => {
+    onHistoryStatusRef.current = onHistoryStatus;
+  }, [onHistoryStatus]);
 
   useEffect(() => {
     if (!dealId) {
-      const dummyPrices = [Math.round(base * 1.15), Math.round(base * 1.08), Math.round(base * 1.0)];
+      const dummyPrices = [Math.round(dummyBase * 1.15), Math.round(dummyBase * 1.08), Math.round(dummyBase * 1.0)];
       const dummyDates = ["3일 전", "어제", "오늘"];
       setChartData(dummyPrices.map((p, idx) => ({ price: p, date: dummyDates[idx] })));
       setIsRealData(false);
-      onHistoryStatus?.(true, {
+      onHistoryStatusRef.current?.(true, {
         minPrice: Math.min(...dummyPrices),
         avgPrice: Math.round(dummyPrices.reduce((a, b) => a + b, 0) / dummyPrices.length),
         maxPrice: Math.max(...dummyPrices),
@@ -121,7 +126,7 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
           setChartData(formatted);
           setIsRealData(true);
           const pVals = formatted.map(d => d.price);
-          onHistoryStatus?.(true, {
+          onHistoryStatusRef.current?.(true, {
             minPrice: Math.min(...pVals),
             avgPrice: Math.round(pVals.reduce((a, b) => a + b, 0) / pVals.length),
             maxPrice: Math.max(...pVals),
@@ -130,13 +135,13 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
         } else {
           setChartData([]);
           setIsRealData(false);
-          onHistoryStatus?.(false);
+          onHistoryStatusRef.current?.(false);
         }
       } catch {
         if (!isMounted) return;
         setChartData([]);
         setIsRealData(false);
-        onHistoryStatus?.(false);
+        onHistoryStatusRef.current?.(false);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -145,13 +150,19 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
     return () => {
       isMounted = false;
     };
-  }, [dealId, userPeriod, optionName, currency]);
+  }, [dealId, dummyBase, userPeriod, optionName, currency]);
 
+  const normCurrency = (currency || "KRW").trim().toUpperCase();
   const formatPriceNum = (num: number) => {
-    if (currency === "USD" || currency === "EUR") {
-      return formatPrice(Math.round(num), currency);
+    if (!Number.isFinite(num) || num <= 0) return "가격 확인";
+    if (
+      normCurrency === "USD" ||
+      normCurrency === "EUR" ||
+      normCurrency === "CNY" ||
+      normCurrency === "JPY"
+    ) {
+      return formatPrice(Math.round(num), normCurrency);
     }
-    if (num < 150) return `$${num.toFixed(2)}`;
     return `${Math.round(num).toLocaleString()}원`;
   };
 
@@ -187,13 +198,15 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
               return (
                 <button
                   key={opt.key}
+                  type="button"
                   onClick={() => setPeriod(opt.key)}
                   style={{
                     background: isActive ? "var(--accent)" : "transparent",
                     color: isActive ? "#fff" : "var(--text-sub)",
                     border: "none",
                     borderRadius: "8px",
-                    padding: "4px 10px",
+                    minHeight: "38px",
+                    padding: "6px 11px",
                     fontSize: "0.75rem",
                     fontWeight: 800,
                     cursor: "pointer",
@@ -308,15 +321,17 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
             return (
               <button
                 key={opt.key}
+                type="button"
                 onClick={() => setPeriod(opt.key)}
                 style={{
                   background: isActive ? "var(--accent)" : "transparent",
                   color: isActive ? "#fff" : "var(--text-sub)",
                   border: "none",
                   borderRadius: "8px",
-                  padding: "4px 10px",
+                  minHeight: "38px",
+                  padding: "6px 11px",
                   fontSize: "0.75rem",
-                  fontWeight: 800,
+                  fontWeight: 700,
                   cursor: "pointer",
                   transition: "all 0.2s"
                 }}

@@ -63,12 +63,12 @@ fun MyCommentsScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val currentUserId by AuthManager.getUsername(context).collectAsState(initial = "admin")
+    val currentUserId by AuthManager.getUsername(context).collectAsState(initial = "guest")
     val viewModel: MyCommentsViewModel = viewModel()
     val uiState by viewModel.uiState.collectAsState()
 
     LaunchedEffect(currentUserId) {
-        viewModel.loadComments(currentUserId ?: "admin")
+        viewModel.loadComments(currentUserId ?: "guest")
     }
 
     Scaffold(

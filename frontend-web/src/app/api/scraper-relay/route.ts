@@ -6,6 +6,18 @@ export const preferredRegion = "icn1";
 let cachedFmkoreaCookies = "";
 let cachedMcwBytes: ArrayBuffer | null = null;
 
+interface McwWasmExports extends WebAssembly.Exports {
+  memory: WebAssembly.Memory;
+  __wbindgen_malloc: (size: number, align: number) => number;
+  fm5: (p0: number, l0: number, p1: number, l1: number) => void;
+}
+
+interface FakeWindowShape {
+  document: { cookie: string };
+  window: FakeWindowShape;
+  self: FakeWindowShape;
+}
+
 async function solveFmkoreaWasmInNode(
   arg0: string,
   arg1: string,
@@ -23,43 +35,56 @@ async function solveFmkoreaWasmInNode(
   class FakeWindow {}
   const outCookies: string[] = [];
   const doc = {
+    get cookie(): string {
+      return outCookies.join("; ");
+    },
     set cookie(v: string) {
       outCookies.push(v);
     },
   };
-  const win: any = Object.create(FakeWindow.prototype);
+  const win = Object.create(FakeWindow.prototype) as FakeWindowShape;
   win.document = doc;
   win.window = win;
   win.self = win;
 
-  let wasm: any;
-  const heap: any[] = new Array(128).fill(undefined);
+  const wasmRef: { current: McwWasmExports | null } = { current: null };
+  const getWasm = (): McwWasmExports => {
+    if (!wasmRef.current) {
+      throw new Error("Wasm exports not initialized");
+    }
+    return wasmRef.current;
+  };
+
+  const heap: unknown[] = new Array(128).fill(undefined);
   heap.push(undefined, null, true, false);
   let heap_next = heap.length;
-  const getObject = (idx: number) => heap[idx];
+  const getObject = (idx: number): unknown => heap[idx];
   const dropObject = (idx: number) => {
     if (idx < 132) return;
     heap[idx] = heap_next;
     heap_next = idx;
   };
-  const takeObject = (idx: number) => {
+  const takeObject = (idx: number): unknown => {
     const ret = getObject(idx);
     dropObject(idx);
     return ret;
   };
-  const addHeapObject = (obj: any) => {
+  const addHeapObject = (obj: unknown): number => {
     if (heap_next === heap.length) heap.push(heap.length + 1);
     const idx = heap_next;
-    heap_next = heap[idx];
+    heap_next = heap[idx] as number;
     heap[idx] = obj;
     return idx;
   };
   let WASM_VECTOR_LEN = 0;
-  const getUint8Memory0 = () => new Uint8Array(wasm.memory.buffer);
-  const getInt32Memory0 = () => new Int32Array(wasm.memory.buffer);
+  const getUint8Memory0 = () => new Uint8Array(getWasm().memory.buffer);
+  const getInt32Memory0 = () => new Int32Array(getWasm().memory.buffer);
   const enc = new TextEncoder();
   const dec = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
-  const passStringToWasm0 = (arg: string, malloc: Function) => {
+  const passStringToWasm0 = (
+    arg: string,
+    malloc: (size: number, align: number) => number
+  ) => {
     const buf = enc.encode(arg);
     const ptr = malloc(buf.length, 1) >>> 0;
     getUint8Memory0()
@@ -73,40 +98,47 @@ async function solveFmkoreaWasmInNode(
 
   const imports = {
     wbg: {
-      __wbindgen_object_drop_ref: (a: number) => takeObject(a),
+      __wbindgen_object_drop_ref: (a: number) => {
+        takeObject(a);
+      },
       __wbg_instanceof_Window_f401953a2cf86220: (a: number) =>
         getObject(a) instanceof FakeWindow,
       __wbg_document_5100775d18896c16: (a: number) =>
-        addHeapObject(getObject(a).document),
+        addHeapObject((getObject(a) as FakeWindowShape).document),
       __wbg_setcookie_21ee60540965860c: (a: number, b: number, c: number) => {
-        getObject(a).cookie = getStringFromWasm0(b, c);
+        (getObject(a) as { cookie: string }).cookie = getStringFromWasm0(b, c);
       },
       __wbg_newnoargs_e258087cd0daa0ea: () => addHeapObject(() => win),
       __wbg_call_27c0f87801dedf93: (a: number, b: number) =>
-        addHeapObject(getObject(a).call(getObject(b))),
+        addHeapObject(
+          (getObject(a) as (this: unknown) => unknown).call(getObject(b))
+        ),
       __wbg_self_ce0dbfc45cf2f5be: () => addHeapObject(win),
       __wbg_window_c6fb939a7f436783: () => addHeapObject(win),
       __wbg_globalThis_d1e6af4856ba331b: () => addHeapObject(win),
       __wbg_global_207b558942527489: () => addHeapObject(win),
       __wbindgen_is_undefined: (a: number) => getObject(a) === undefined,
-      __wbg_getDate_27ca688e44a3c7be: (a: number) => getObject(a).getDate(),
+      __wbg_getDate_27ca688e44a3c7be: (a: number) =>
+        (getObject(a) as Date).getDate(),
       __wbg_new0_7d84e5b2cd9fdc73: () => addHeapObject(new Date()),
       __wbg_setDate_80dcac1241d0bc50: (a: number, b: number) =>
-        getObject(a).setDate(b >>> 0),
+        (getObject(a) as Date).setDate(b >>> 0),
       __wbg_toUTCString_aef4e727dedbd221: (a: number) =>
-        addHeapObject(getObject(a).toUTCString()),
+        addHeapObject((getObject(a) as Date).toUTCString()),
       __wbindgen_object_clone_ref: (a: number) => addHeapObject(getObject(a)),
       __wbindgen_string_get: (a: number, b: number) => {
         const obj = getObject(b);
         const ret = typeof obj === "string" ? obj : undefined;
-        const ptr1 = !ret ? 0 : passStringToWasm0(ret, wasm.__wbindgen_malloc);
+        const ptr1 = !ret
+          ? 0
+          : passStringToWasm0(ret, getWasm().__wbindgen_malloc);
         getInt32Memory0()[a / 4 + 1] = WASM_VECTOR_LEN;
         getInt32Memory0()[a / 4 + 0] = ptr1;
       },
       __wbindgen_debug_string: (a: number, b: number) => {
         const ptr1 = passStringToWasm0(
           String(getObject(b)),
-          wasm.__wbindgen_malloc
+          getWasm().__wbindgen_malloc
         );
         getInt32Memory0()[a / 4 + 1] = WASM_VECTOR_LEN;
         getInt32Memory0()[a / 4 + 0] = ptr1;
@@ -119,12 +151,13 @@ async function solveFmkoreaWasmInNode(
 
   const mod = new WebAssembly.Module(cachedMcwBytes);
   const inst = new WebAssembly.Instance(mod, imports);
-  wasm = inst.exports;
-  const p0 = passStringToWasm0(arg0, wasm.__wbindgen_malloc);
+  const wasmExports = inst.exports as unknown as McwWasmExports;
+  wasmRef.current = wasmExports;
+  const p0 = passStringToWasm0(arg0, wasmExports.__wbindgen_malloc);
   const l0 = WASM_VECTOR_LEN;
-  const p1 = passStringToWasm0(arg1, wasm.__wbindgen_malloc);
+  const p1 = passStringToWasm0(arg1, wasmExports.__wbindgen_malloc);
   const l1 = WASM_VECTOR_LEN;
-  wasm.fm5(p0, l0, p1, l1);
+  wasmExports.fm5(p0, l0, p1, l1);
   return outCookies.map((c) => c.split(";")[0].trim());
 }
 
@@ -193,9 +226,12 @@ export async function GET(req: NextRequest) {
       if (m) {
         const arg0 = m[1];
         const arg1 = m[2];
+        const headersWithSetCookie = res.headers as Headers & {
+          getSetCookie?: () => string[];
+        };
         const setCookieHeaders =
-          typeof (res.headers as any).getSetCookie === "function"
-            ? (res.headers as any).getSetCookie()
+          typeof headersWithSetCookie.getSetCookie === "function"
+            ? headersWithSetCookie.getSetCookie()
             : [res.headers.get("set-cookie") || ""];
         const respCookies = setCookieHeaders
           .filter(Boolean)
@@ -273,9 +309,10 @@ export async function GET(req: NextRequest) {
         "Cache-Control": "no-store, max-age=0",
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Relay fetch failed";
     return NextResponse.json(
-      { error: err?.message || "Relay fetch failed" },
+      { error: message },
       { status: 502 }
     );
   }

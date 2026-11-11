@@ -106,35 +106,23 @@ class FmkoreaScraper(AsyncBaseScraper):
                         if strong: shop_name = strong.get_text(strip=True)
                     elif '가격' in text:
                         strong = span.select_one('.strong')
-                        if strong: 
+                        if strong:
+                            from backend.core.deal_normalizer import parse_price_string
                             price_text = strong.get_text(strip=True)
-                            price_text_clean = re.sub(r'\d+(?:\.\d+)?\s*(?:kg|g|ml|l|개|입|봉|팩|포|장|매|구|미|알|병|캔|통|박스)\s*당', ' ', price_text, flags=re.IGNORECASE)
-                            if '$' in price_text_clean or '달러' in price_text_clean or 'USD' in price_text_clean.upper():
-                                extracted_currency = "USD"
-                            elif '€' in price_text_clean or '유로' in price_text_clean or 'EUR' in price_text_clean.upper():
-                                extracted_currency = "EUR"
-                                
-                            p_match = re.search(r'([0-9,]+(?:\.[0-9]+)?)', price_text_clean)
-                            if p_match:
-                                try:
-                                    raw_val = float(p_match.group(1).replace(',', ''))
-                                    if extracted_currency in ["USD", "EUR"]:
-                                        extracted_price = int(raw_val * 100)
-                                    else:
-                                        extracted_price = int(raw_val)
-                                except: pass
+                            p_val, p_curr = parse_price_string(
+                                price_text,
+                                allow_bare_number=True,
+                                context_hint=full_title,
+                            )
+                            if p_val > 0:
+                                extracted_price = p_val
+                                extracted_currency = p_curr
                     elif '배송비' in text:
                         strong = span.select_one('.strong')
                         if strong: shipping_fee = strong.get_text(strip=True)
             
             if "(0원)" in full_title and extracted_price == 0:
                 extracted_price = 0
-
-            # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
-            if extracted_currency == "KRW" and extracted_price > 0 and extracted_price <= 10000:
-                if any(kw in full_title for kw in ['알리', '코인', '큐텐', '직구', '알익']):
-                    extracted_currency = "USD"
-                    extracted_price = int(extracted_price * 100)
 
             # 종료 여부 확인 (취소선이 그어져 있는지 또는 종료 키워드)
             is_closed = False
@@ -225,9 +213,16 @@ class FmkoreaScraper(AsyncBaseScraper):
                 "content_html": ""
             }
 
-        tasks = [process_row(row) for row in post_rows]
-        results = await asyncio.gather(*tasks)
-        return [r for r in results if r]
+        async def safe_process_row(row):
+            try:
+                return await process_row(row)
+            except Exception as row_err:
+                logger.warning(f"[{self.platform_name}] 행 파싱 오류로 건너뜀: {row_err}")
+                return None
+
+        tasks = [safe_process_row(row) for row in post_rows]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return [r for r in results if isinstance(r, dict)]
 
     async def get_detail(self, url: str, full_title: str = "") -> dict:
         """펨코리아 상세 페이지 데이터 파싱 로직"""
@@ -331,6 +326,8 @@ class FmkoreaScraper(AsyncBaseScraper):
         shop_name = ""
         is_price_resolved = False
         
+        from backend.core.deal_normalizer import parse_price_string, extract_body_fallback_price
+
         # 1. table 방식의 핫딜 정보 파싱 (데스크탑 레이아웃 등)
         for table in soup.select('table'):
             text = table.get_text()
@@ -342,26 +339,21 @@ class FmkoreaScraper(AsyncBaseScraper):
                         th_text = th.get_text(strip=True)
                         td_text = td.get_text(strip=True)
                         if '가격' in th_text:
-                            if any(x in td_text.lower() for x in ['무료', '공짜', '나눔', 'free', '0원', '무배']):
-                                price_fallback = 0
+                            parsed_p, parsed_c = parse_price_string(
+                                td_text,
+                                allow_bare_number=True,
+                                context_hint=full_title or "",
+                            )
+                            if parsed_p > 0:
+                                price_fallback = parsed_p
+                                currency_fallback = parsed_c
                                 is_price_resolved = True
                             else:
-                                td_text_clean = re.sub(r'\d+(?:\.\d+)?\s*(?:kg|g|ml|l|개|입|봉|팩|포|장|매|구|미|알|병|캔|통|박스)\s*당', ' ', td_text, flags=re.IGNORECASE)
-                                if '$' in td_text_clean or '달러' in td_text_clean or 'USD' in td_text_clean.upper():
-                                    currency_fallback = "USD"
-                                elif '€' in td_text_clean or '유로' in td_text_clean or 'EUR' in td_text_clean.upper():
-                                    currency_fallback = "EUR"
-                                
-                                price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', td_text_clean)
-                                if price_matches:
-                                    try:
-                                        raw_val = float(price_matches[0].replace(',', ''))
-                                        if currency_fallback in ["USD", "EUR"]:
-                                            price_fallback = int(raw_val * 100)
-                                        else:
-                                            price_fallback = int(raw_val)
-                                        is_price_resolved = True
-                                    except: pass
+                                td_no_ship = re.sub(r'무료\s*배송|무배|배송비\s*무료', ' ', td_text, flags=re.IGNORECASE)
+                                if re.search(r'(?:^|\D)0\s*원|무료|공짜|나눔|\bfree\b', td_no_ship, re.IGNORECASE):
+                                    price_fallback = 0
+                                    currency_fallback = "KRW"
+                                    is_price_resolved = True
                         elif '배송' in th_text:
                             shipping_fee = td_text
                         elif '쇼핑몰' in th_text:
@@ -375,27 +367,22 @@ class FmkoreaScraper(AsyncBaseScraper):
                 for span in hotdeal_info.select('span'):
                     span_text = span.get_text(strip=True)
                     if '가격:' in span_text:
-                        # 무료 감지 추가
-                        if any(x in span_text.lower() for x in ['무료', '공짜', '나눔', 'free', '0원', '무배']):
-                            price_fallback = 0
+                        price_raw = span_text.split(':', 1)[-1].strip()
+                        parsed_p, parsed_c = parse_price_string(
+                            price_raw,
+                            allow_bare_number=True,
+                            context_hint=full_title or "",
+                        )
+                        if parsed_p > 0:
+                            price_fallback = parsed_p
+                            currency_fallback = parsed_c
                             is_price_resolved = True
                         else:
-                            span_text_clean = re.sub(r'\d+(?:\.\d+)?\s*(?:kg|g|ml|l|개|입|봉|팩|포|장|매|구|미|알|병|캔|통|박스)\s*당', ' ', span_text, flags=re.IGNORECASE)
-                            if '$' in span_text_clean or '달러' in span_text_clean or 'USD' in span_text_clean.upper():
-                                currency_fallback = "USD"
-                            elif '€' in span_text_clean or '유로' in span_text_clean or 'EUR' in span_text_clean.upper():
-                                currency_fallback = "EUR"
-                                
-                            price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', span_text_clean)
-                            if price_matches:
-                                try:
-                                    raw_val = float(price_matches[0].replace(',', ''))
-                                    if currency_fallback in ["USD", "EUR"]:
-                                        price_fallback = int(raw_val * 100)
-                                    else:
-                                        price_fallback = int(raw_val)
-                                    is_price_resolved = True
-                                except: pass
+                            raw_no_ship = re.sub(r'무료\s*배송|무배|배송비\s*무료', ' ', price_raw, flags=re.IGNORECASE)
+                            if re.search(r'(?:^|\D)0\s*원|무료|공짜|나눔|\bfree\b', raw_no_ship, re.IGNORECASE):
+                                price_fallback = 0
+                                currency_fallback = "KRW"
+                                is_price_resolved = True
                     elif '배송:' in span_text:
                         shipping_fee = span_text.replace('배송:', '').replace('배송 :', '').strip()
                     elif '쇼핑몰:' in span_text:
@@ -439,29 +426,22 @@ class FmkoreaScraper(AsyncBaseScraper):
             
             # 가격이 수립되지 않은 경우에만 본문 폴백 가격 유추기 작동
             if not is_price_resolved:
-                # 본문 파싱 전 URL 소거 처리! (스팀 앱아이디 등 링크 내의 숫자 오인 차단)
-                cleaned_body_text = re.sub(r'https?://[^\s]+', '', body_text)
-                
-                if "(0원)" in cleaned_body_text or "나눔" in cleaned_body_text or any(x in cleaned_body_text.lower() for x in ['무료', '공짜', 'free']):
-                    price_fallback = 0
+                fb_p, fb_c = extract_body_fallback_price(body_text, full_title or "")
+                if fb_p > 0:
+                    price_fallback = fb_p
+                    currency_fallback = fb_c
                     is_price_resolved = True
                 else:
-                    if '$' in cleaned_body_text or '달러' in cleaned_body_text or 'USD' in cleaned_body_text.upper():
-                        currency_fallback = "USD"
-                    elif '€' in cleaned_body_text or '유로' in cleaned_body_text or 'EUR' in cleaned_body_text.upper():
-                        currency_fallback = "EUR"
-                        
-                    price_matches = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,}(?:\.[0-9]+)?)\s*(?:원|달러|\$|€|유로)?', cleaned_body_text)
-                    if price_matches:
-                        try:
-                            raw_val = float(price_matches[0].replace(',', ''))
-                            if currency_fallback in ["USD", "EUR"]:
-                                price_fallback = int(raw_val * 100)
-                            else:
-                                price_fallback = int(raw_val)
-                            is_price_resolved = True
-                        except:
-                            pass
+                    cleaned_body_no_ship = re.sub(
+                        r'https?://[^\s]+|무료\s*배송|무배|배송비\s*무료|택배비\s*무료',
+                        ' ',
+                        body_text,
+                        flags=re.IGNORECASE,
+                    )
+                    if re.search(r'\(\s*0\s*원\s*\)|나눔|무료\s*배포|공짜|\bfree\b', cleaned_body_no_ship, re.IGNORECASE):
+                        price_fallback = 0
+                        currency_fallback = "KRW"
+                        is_price_resolved = True
                     
             if not shipping_fee:
                 if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):

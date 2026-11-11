@@ -1,34 +1,37 @@
 package com.ddaeany0919.insightdeal.presentation.home
 
+import android.util.Log
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.ExperimentalPagingApi
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
-import kotlinx.coroutines.launch
+import androidx.paging.filter
+import androidx.paging.map
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
+import com.ddaeany0919.insightdeal.models.DealItem
+import com.ddaeany0919.insightdeal.network.ApiService
+import com.ddaeany0919.insightdeal.network.NetworkModule
+import com.ddaeany0919.insightdeal.network.PopularKeywordRankingItem
+import com.ddaeany0919.insightdeal.network.TrackClickRequest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
-import com.ddaeany0919.insightdeal.models.DealItem
-import com.ddaeany0919.insightdeal.network.NetworkModule
-import com.ddaeany0919.insightdeal.network.ApiService
-import com.ddaeany0919.insightdeal.network.PopularKeywordRankingItem
-import com.ddaeany0919.insightdeal.presentation.home.HotDealsPagingSource
-
-import androidx.paging.ExperimentalPagingApi
-import androidx.paging.filter
-import androidx.paging.map
 import kotlinx.coroutines.flow.map
-import com.ddaeany0919.insightdeal.InsightDealApplication
-import androidx.compose.foundation.lazy.LazyListState
+import kotlinx.coroutines.launch
 
 class HomeViewModel : ViewModel() {
 
-    // ✨ 홈 화면 스크롤 보존을 위한 LazyListState 호스팅
     val listState = LazyListState()
 
     private val apiService = NetworkModule.createService<ApiService>()
@@ -41,7 +44,7 @@ class HomeViewModel : ViewModel() {
 
     private val _popularUpdatedAt = MutableStateFlow("")
     val popularUpdatedAt: StateFlow<String> = _popularUpdatedAt.asStateFlow()
-    
+
     private val _topHotDeals = MutableStateFlow<List<DealItem>>(emptyList())
     val topHotDeals: StateFlow<List<DealItem>> = _topHotDeals.asStateFlow()
 
@@ -52,7 +55,7 @@ class HomeViewModel : ViewModel() {
     val newDealsCount: StateFlow<Int> = _newDealsCount.asStateFlow()
 
     private var latestKnownDealId: Int = 0
-    private var dealWatcherJob: kotlinx.coroutines.Job? = null
+    private var dealWatcherJob: Job? = null
 
     init {
         fetchPopularKeywords()
@@ -64,7 +67,7 @@ class HomeViewModel : ViewModel() {
         dealWatcherJob?.cancel()
         dealWatcherJob = viewModelScope.launch {
             while (true) {
-                kotlinx.coroutines.delay(50_000L) // 50초 주기 체크
+                delay(50_000L)
                 try {
                     val response = apiService.getCommunityHotDeals(limit = 10, offset = 0)
                     if (response.isSuccessful) {
@@ -80,8 +83,9 @@ class HomeViewModel : ViewModel() {
                             }
                         }
                     }
-                } catch (e: Exception) {
-                    // 백그라운드 폴링 예외 무시
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
                 }
             }
         }
@@ -99,7 +103,10 @@ class HomeViewModel : ViewModel() {
                         latestKnownDealId = topDeal.id
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -113,8 +120,9 @@ class HomeViewModel : ViewModel() {
                     _popularRankings.value = body?.rankings ?: emptyList()
                     _popularUpdatedAt.value = body?.updatedAt ?: ""
                 }
-            } catch (e: Exception) {
-                // Ignore failure and fallback to empty keywords
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
             }
         }
     }
@@ -125,16 +133,40 @@ class HomeViewModel : ViewModel() {
                 val response = apiService.getTopHotDeals()
                 if (response.isSuccessful) {
                     val deals = response.body()?.deals ?: emptyList()
-                    android.util.Log.d("HomeViewModel", "getTopHotDeals success, count: ${deals.size}")
                     _topHotDeals.value = deals
                     if (latestKnownDealId == 0 && deals.isNotEmpty()) {
                         latestKnownDealId = deals.first().id
                     }
                 } else {
-                    android.util.Log.e("HomeViewModel", "getTopHotDeals failed: ${response.code()}")
+                    Log.e("HomeViewModel", "getTopHotDeals failed: ${response.code()}")
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                android.util.Log.e("HomeViewModel", "getTopHotDeals error", e)
+                Log.e("HomeViewModel", "getTopHotDeals error", e)
+            }
+        }
+    }
+
+    fun trackOutboundClick(
+        url: String,
+        price: Int? = null,
+        currency: String? = "KRW"
+    ) {
+        if (url.isBlank()) return
+        viewModelScope.launch {
+            try {
+                apiService.trackOutboundClick(
+                    TrackClickRequest(
+                        url = url,
+                        price = price?.takeIf { it > 0 },
+                        currency = currency ?: "KRW",
+                        platform = "android"
+                    )
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
             }
         }
     }
@@ -143,20 +175,51 @@ class HomeViewModel : ViewModel() {
         val category: String = "전체",
         val keyword: String? = null,
         val platform: String? = null,
+        val communityChip: String = "전체",
+        val disabledPlatforms: Set<String> = emptySet(),
+        val sortBy: String = "latest",
         val hideClosed: Boolean = false,
         val popularOnly: Boolean = false,
         val freeShippingOnly: Boolean = false
+    ) {
+        fun resolvedPlatformQuery(): String? {
+            if (communityChip.isNotBlank() && communityChip != "전체") {
+                return communityChip
+            }
+            if (!platform.isNullOrBlank() && platform != "전체") {
+                return platform
+            }
+            if (disabledPlatforms.isNotEmpty()) {
+                val active = ALL_COMMUNITY_PLATFORMS.filter { it !in disabledPlatforms }
+                return if (active.isEmpty()) null else active.joinToString(",")
+            }
+            return null
+        }
+    }
+
+    private data class PagerQueryKey(
+        val category: String,
+        val keyword: String?,
+        val platform: String?,
+        val sortBy: String
     )
 
     private val _filterState = MutableStateFlow(FilterState())
     val filterState: StateFlow<FilterState> = _filterState.asStateFlow()
 
-    // ✨ Paging3 적용: 서버/DB 쿼리 조건(category, keyword, platform)이 바뀔 때만 Pager 재생성하여 플리커링 원천 차단
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, ExperimentalPagingApi::class)
     private val basePagingData: Flow<PagingData<DealItem>> = _filterState
-        .map { Triple(it.category, it.keyword, it.platform) }
+        .map {
+            PagerQueryKey(
+                category = it.category,
+                keyword = it.keyword,
+                platform = it.resolvedPlatformQuery(),
+                sortBy = it.sortBy
+            )
+        }
         .distinctUntilChanged()
-        .flatMapLatest { (category, keyword, platform) ->
+        .flatMapLatest { query ->
+            val db = LocalDataProvider.database
             Pager(
                 config = PagingConfig(
                     pageSize = 20,
@@ -164,17 +227,19 @@ class HomeViewModel : ViewModel() {
                     initialLoadSize = 20
                 ),
                 remoteMediator = HotDealsRemoteMediator(
-                    database = InsightDealApplication.database,
+                    database = db,
                     apiService = apiService,
-                    category = category,
-                    keyword = keyword,
-                    platform = platform
+                    category = query.category,
+                    keyword = query.keyword,
+                    platform = query.platform,
+                    sort = query.sortBy
                 ),
                 pagingSourceFactory = {
-                    InsightDealApplication.database.dealDao().getPagedDeals(
-                        category = category,
-                        keyword = keyword,
-                        platform = platform
+                    db.dealDao().getPagedDeals(
+                        category = query.category,
+                        keyword = query.keyword,
+                        platform = query.platform,
+                        sort = query.sortBy
                     )
                 }
             ).flow.map { pagingData ->
@@ -183,8 +248,7 @@ class HomeViewModel : ViewModel() {
         }
         .cachedIn(viewModelScope)
 
-    // 퀵 필터 칩(품절 숨기기 / 인기·역대가 / 무료배송) 클릭 시 DB/네트워크 재호출 없이 인메모리 즉시 필터링
-    val dealsPagingData: Flow<PagingData<DealItem>> = kotlinx.coroutines.flow.combine(
+    val dealsPagingData: Flow<PagingData<DealItem>> = combine(
         basePagingData,
         _filterState
     ) { pagingData, state ->
@@ -207,7 +271,7 @@ class HomeViewModel : ViewModel() {
     }
 
     fun searchDeals(keyword: String) {
-        val normalized = if (keyword.isBlank()) null else keyword
+        val normalized = keyword.trim().takeIf { it.isNotEmpty() }
         if (_filterState.value.keyword != normalized) {
             _filterState.value = _filterState.value.copy(keyword = normalized)
         }
@@ -217,6 +281,26 @@ class HomeViewModel : ViewModel() {
         val normalized = if (platform.isBlank() || platform == "전체") null else platform
         if (_filterState.value.platform != normalized) {
             _filterState.value = _filterState.value.copy(platform = normalized)
+        }
+    }
+
+    fun selectCommunityChip(chip: String) {
+        val normalized = if (chip.isBlank()) "전체" else chip
+        if (_filterState.value.communityChip != normalized) {
+            _filterState.value = _filterState.value.copy(communityChip = normalized)
+        }
+    }
+
+    fun updateDisabledPlatforms(disabled: Set<String>) {
+        if (_filterState.value.disabledPlatforms != disabled) {
+            _filterState.value = _filterState.value.copy(disabledPlatforms = disabled)
+        }
+    }
+
+    fun selectSort(sortBy: String) {
+        val validSort = if (sortBy in SUPPORTED_SORTS) sortBy else "latest"
+        if (_filterState.value.sortBy != validSort) {
+            _filterState.value = _filterState.value.copy(sortBy = validSort)
         }
     }
 
@@ -230,5 +314,39 @@ class HomeViewModel : ViewModel() {
 
     fun toggleFreeShippingOnly() {
         _filterState.value = _filterState.value.copy(freeShippingOnly = !_filterState.value.freeShippingOnly)
+    }
+
+    fun resetHomeFilters() {
+        _filterState.value = _filterState.value.copy(
+            category = "전체",
+            keyword = null,
+            communityChip = "전체",
+            sortBy = "latest"
+        )
+    }
+
+    companion object {
+        val SUPPORTED_SORTS = setOf("latest", "popular", "price_asc")
+        val COMMUNITY_FILTER_CHIPS = listOf(
+            "전체",
+            "뽐뿌",
+            "펨코",
+            "퀘이사존",
+            "루리웹",
+            "클리앙",
+            "알리뽐뿌",
+            "빠삭"
+        )
+        private val ALL_COMMUNITY_PLATFORMS = listOf(
+            "뽐뿌",
+            "퀘이사존",
+            "펨코",
+            "루리웹",
+            "클리앙",
+            "알리뽐뿌",
+            "빠삭국내",
+            "빠삭해외",
+            "빠삭육아"
+        )
     }
 }

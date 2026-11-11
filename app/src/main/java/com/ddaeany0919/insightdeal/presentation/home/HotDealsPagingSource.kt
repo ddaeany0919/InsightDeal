@@ -4,41 +4,47 @@ import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.ApiService
+import kotlinx.coroutines.CancellationException
 
 class HotDealsPagingSource(
     private val apiService: ApiService,
     private val category: String? = null,
     private val keyword: String? = null,
-    private val platform: String? = null
+    private val platform: String? = null,
+    private val sort: String = "latest"
 ) : PagingSource<Int, DealItem>() {
 
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, DealItem> {
         val offset = params.key ?: 0
         val limit = params.loadSize
-        
+
         return try {
-            android.util.Log.d("HotDealsPagingSource", "Calling getCommunityHotDeals: limit=$limit, offset=$offset, category=$category, keyword=$keyword, platform=$platform")
+            val resolvedPlatform = when {
+                platform.isNullOrBlank() || platform == "전체" -> null
+                platform == "빠삭" -> "빠삭국내,빠삭해외,빠삭육아"
+                else -> platform
+            }
             val response = apiService.getCommunityHotDeals(
-                limit = limit, 
-                offset = offset, 
+                limit = limit,
+                offset = offset,
                 category = if (category == "전체") null else category,
                 keyword = keyword,
-                platform = if (platform == "전체") null else platform
+                platform = resolvedPlatform,
+                sort = sort
             )
             if (response.isSuccessful) {
                 val data = response.body()?.deals ?: emptyList()
-                android.util.Log.d("HotDealsPagingSource", "getCommunityHotDeals success, count: ${data.size}")
                 LoadResult.Page(
                     data = data,
                     prevKey = if (offset == 0) null else offset - limit,
                     nextKey = if (data.isEmpty() || data.size < limit) null else offset + limit
                 )
             } else {
-                android.util.Log.e("HotDealsPagingSource", "getCommunityHotDeals failed: ${response.code()} ${response.message()}")
                 LoadResult.Error(Exception("API Error: ${response.code()}"))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            android.util.Log.e("HotDealsPagingSource", "Exception in load()", e)
             LoadResult.Error(e)
         }
     }

@@ -1,12 +1,12 @@
 package com.ddaeany0919.insightdeal.data
 
 import com.ddaeany0919.insightdeal.models.ApiDeal
-import com.ddaeany0919.insightdeal.models.ComparisonResponse
+import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.HealthResponse
 import kotlinx.coroutines.flow.Flow
 
 interface DealsRepository {
-    fun searchDeal(query: String, forceRefresh: Boolean = false): Flow<Resource<ComparisonResponse>>
+    fun searchDeal(query: String, forceRefresh: Boolean = false): Flow<Resource<List<DealItem>>>
     fun getPopularDeals(popularQueries: List<String> = defaultPopularQueries, maxResults: Int = 10): Flow<Resource<List<ApiDeal>>>
     fun checkServerHealth(): Flow<Resource<HealthResponse>>
     suspend fun clearCache(olderThanMinutes: Int = 30)

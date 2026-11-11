@@ -1,38 +1,33 @@
 package com.ddaeany0919.insightdeal.presentation.recommendation
 
-import android.app.Application
 import android.util.Log
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ddaeany0919.insightdeal.models.DealItem
-import com.ddaeany0919.insightdeal.domain.PersonalizationEngine
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
+import com.ddaeany0919.insightdeal.domain.InteractionType
 import com.ddaeany0919.insightdeal.domain.PersonalizationInsights
 import com.ddaeany0919.insightdeal.domain.UserInteraction
-import com.ddaeany0919.insightdeal.domain.InteractionType
+import com.ddaeany0919.insightdeal.models.DealItem
+import com.ddaeany0919.insightdeal.network.ApiService
+import com.ddaeany0919.insightdeal.network.NetworkModule
+import com.ddaeany0919.insightdeal.network.TrackClickRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
-import com.ddaeany0919.insightdeal.network.ApiService
 
-/**
- * 🎯 AI 추천 시스템 ViewModel
- * PersonalizationEngine과 연동하여 맞춤형 추천 서비스 제공
- */
-class RecommendationViewModel(
-    application: Application
-) : AndroidViewModel(application) {
+class RecommendationViewModel : ViewModel() {
 
     companion object {
         private const val TAG = "RecommendationVM"
     }
 
-    private val personalizationEngine = PersonalizationEngine.getInstance(application)
-    private val apiService = com.ddaeany0919.insightdeal.network.NetworkModule.createService<ApiService>()
+    private val personalizationEngine = LocalDataProvider.personalizationEngine
+    private val apiService = NetworkModule.createService<ApiService>()
 
-    // UI 상태
     private val _recommendations = MutableStateFlow<List<DealItem>>(emptyList())
     val recommendations: StateFlow<List<DealItem>> = _recommendations.asStateFlow()
 
@@ -45,177 +40,137 @@ class RecommendationViewModel(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
-    // 캐시된 데이터
     private var allDeals: List<DealItem> = emptyList()
     private var categoryDeals: Map<String, List<DealItem>> = emptyMap()
     private var brandDeals: Map<String, List<DealItem>> = emptyMap()
     private var trendingDeals: List<DealItem> = emptyList()
 
     init {
-        Log.d(TAG, "🎯 추천 시스템 ViewModel 초기화")
         loadInsights()
     }
 
-    /**
-     * 개인화 추천 데이터 로드
-     */
     fun loadPersonalizedRecommendations() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 _isLoading.value = true
                 _errorMessage.value = null
-                
-                Log.d(TAG, "🔄 개인화 추천 데이터 로드 시작")
-                
-                // 1. 전체 딜 데이터 로드
+
                 val dealsResponse = apiService.getCommunityHotDeals(
-                    limit = 100,
-                    offset = 0
+                    limit = 80,
+                    offset = 0,
+                    sort = "popular"
                 )
-                
+
                 if (dealsResponse.isSuccessful) {
-                    allDeals = dealsResponse.body()?.deals ?: emptyList()
-                    Log.d(TAG, "✅ 전체 딜 ${allDeals.size}개 로드 완료")
-                    
-                    // 2. AI 개인화 추천 생성
-                    val personalizedRecommendations = personalizationEngine.generatePersonalizedRecommendations(allDeals)
-                    _recommendations.value = personalizedRecommendations
-                    
-                    // 3. 카테고리/브랜드별 분류
+                    allDeals = dealsResponse.body()?.deals.orEmpty()
+
+                    val personalized = personalizationEngine
+                        .generatePersonalizedRecommendations(allDeals)
+                        .ifEmpty {
+                            allDeals
+                                .filter { !it.isClosed }
+                                .sortedByDescending { it.honeyScore }
+                                .take(20)
+                        }
+                    _recommendations.value = personalized
+
                     groupDealsByCategory()
                     groupDealsByBrand()
                     loadTrendingDeals()
-                    
-                    Log.d(TAG, "🎯 AI 추천 ${personalizedRecommendations.size}개 생성 완료")
-                    
                 } else {
-                    val error = "데이터 로드에 실패했습니다: ${dealsResponse.code()}"
-                    _errorMessage.value = error
-                    Log.e(TAG, "❌ $error")
+                    _errorMessage.value = "맞춤 핫딜을 불러오지 못했어요. (${dealsResponse.code()})"
                 }
-                
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: HttpException) {
-                val error = "네트워크 오류: ${e.code()}"
-                _errorMessage.value = error
-                Log.e(TAG, "❌ HTTP Exception: ${e.message}")
+                Log.e(TAG, "HTTP error: ${e.code()}", e)
+                _errorMessage.value = "서버 응답이 지연되고 있어요. (${e.code()})"
             } catch (e: Exception) {
-                val error = "데이터 로드 중 오류 발생: ${e.message}"
-                _errorMessage.value = error
-                Log.e(TAG, "❌ Unexpected error: ${e.message}")
+                Log.e(TAG, "Load recommendations failed", e)
+                _errorMessage.value = "네트워크 연결 상태를 확인해 주세요."
             } finally {
                 _isLoading.value = false
             }
         }
     }
 
-    /**
-     * 데이터 새로고침
-     */
     fun refresh() {
-        Log.d(TAG, "🔄 데이터 새로고침")
         loadPersonalizedRecommendations()
         loadInsights()
     }
 
-    /**
-     * 사용자 피드백 처리
-     */
-    fun provideFeedback(dealId: Int, isPositive: Boolean) {
-        Log.d(TAG, "👍👎 피드백 수집: $dealId = ${if (isPositive) "좋음" else "싫음"}")
-        
-        // PersonalizationEngine에 피드백 전달
-        personalizationEngine.provideFeedback(dealId, isPositive)
-        
-        // 추천 알고리즘 개선을 위해 새로고침
+    fun trackOutboundClick(url: String, price: Int? = null, currency: String? = "KRW") {
+        if (url.isBlank()) return
         viewModelScope.launch {
-            val updatedRecommendations = personalizationEngine.generatePersonalizedRecommendations(allDeals)
-            _recommendations.value = updatedRecommendations
+            try {
+                apiService.trackOutboundClick(
+                    TrackClickRequest(
+                        url = url,
+                        price = price?.takeIf { it > 0 },
+                        currency = currency ?: "KRW",
+                        platform = "android"
+                    )
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
         }
     }
 
-    /**
-     * 카테고리별 추천 조회
-     */
-    fun getCategoryRecommendations(categoryName: String): List<DealItem> {
-        return categoryDeals[categoryName] ?: emptyList()
+    fun provideFeedback(dealId: Int, isPositive: Boolean) {
+        personalizationEngine.provideFeedback(dealId, isPositive)
+        viewModelScope.launch(Dispatchers.Default) {
+            val updated = personalizationEngine.generatePersonalizedRecommendations(allDeals)
+            if (updated.isNotEmpty()) {
+                _recommendations.value = updated
+            }
+        }
     }
 
-    /**
-     * 브랜드별 추천 조회
-     */
-    fun getBrandRecommendations(brandName: String): List<DealItem> {
-        return brandDeals[brandName] ?: emptyList()
-    }
+    fun getCategoryRecommendations(categoryName: String): List<DealItem> =
+        categoryDeals[categoryName].orEmpty()
 
-    /**
-     * 트렌딩 추천 조회
-     */
-    fun getTrendingRecommendations(): List<DealItem> {
-        return trendingDeals
-    }
+    fun getBrandRecommendations(brandName: String): List<DealItem> =
+        brandDeals[brandName].orEmpty()
 
-    /**
-     * 에러 메시지 컴리어
-     */
+    fun getTrendingRecommendations(): List<DealItem> = trendingDeals
+
     fun clearError() {
         _errorMessage.value = null
     }
 
-    /**
-     * 개인화 인사이트 로드
-     */
     private fun loadInsights() {
-        val insights = personalizationEngine.getPersonalizationInsights()
-        _insights.value = insights
-        Log.d(TAG, "📊 인사이트 로드: ${insights.totalInteractions}번 상호작용, ${insights.profileCompleteness}% 완성도")
+        _insights.value = personalizationEngine.getPersonalizationInsights()
     }
 
-    /**
-     * 카테고리별 딜 분류
-     */
     private fun groupDealsByCategory() {
-        val grouped = allDeals.groupBy { deal ->
-            extractCategoryFromTitle(deal.title)
-        }
+        val grouped = allDeals.groupBy { deal -> extractCategoryFromTitle(deal.title) }
         categoryDeals = grouped.mapValues { (_, deals) ->
             deals.sortedByDescending { it.discountRate ?: 0 }.take(10)
         }
-        Log.d(TAG, "📊 카테고리별 분류 완료: ${categoryDeals.size}개 카테고리")
     }
 
-    /**
-     * 브랜드별 딜 분류
-     */
     private fun groupDealsByBrand() {
-        val grouped = allDeals.groupBy { deal ->
-            extractBrandFromTitle(deal.title)
-        }.filter { (brand, _) -> brand != "기타" }
-        
+        val grouped = allDeals
+            .groupBy { deal -> extractBrandFromTitle(deal.title) }
+            .filter { (brand, _) -> brand != "기타" }
+
         brandDeals = grouped.mapValues { (_, deals) ->
             deals.sortedByDescending { it.discountRate ?: 0 }.take(8)
         }
-        Log.d(TAG, "🏷️ 브랜드별 분류 완료: ${brandDeals.size}개 브랜드")
     }
 
-    /**
-     * 트렌딩 딜 로드 (인기 순)
-     */
     private fun loadTrendingDeals() {
-        // 할인율 높은 순 + 최근 등록 순으로 정렬
         trendingDeals = allDeals
-            .filter { (it.discountRate ?: 0) >= 20 } // 20% 이상 할인
+            .filter { !it.isClosed }
             .sortedWith(
-                compareByDescending<DealItem> { it.discountRate ?: 0 }
-                    .thenByDescending { it.id } // 최신 등록순
+                compareByDescending<DealItem> { it.honeyScore }
+                    .thenByDescending { it.id }
             )
             .take(15)
-        
-        Log.d(TAG, "🔥 트렌딩 딜 ${trendingDeals.size}개 로드 완료")
     }
 
-    /**
-     * 제목에서 카테고리 추출 (간단 버전)
-     */
     private fun extractCategoryFromTitle(title: String): String {
         val text = title.lowercase()
         return when {
@@ -229,9 +184,6 @@ class RecommendationViewModel(
         }
     }
 
-    /**
-     * 제목에서 브랜드 추출
-     */
     private fun extractBrandFromTitle(title: String): String {
         val text = title.lowercase()
         val brands = mapOf(
@@ -244,7 +196,7 @@ class RecommendationViewModel(
             "샤오미" to listOf("샤오미", "xiaomi"),
             "소니" to listOf("소니", "sony")
         )
-        
+
         brands.forEach { (brand, keywords) ->
             if (keywords.any { text.contains(it) }) {
                 return brand
@@ -253,11 +205,6 @@ class RecommendationViewModel(
         return "기타"
     }
 
-
-
-    /**
-     * 사용자 상호작용 추적
-     */
     fun trackInteraction(dealId: Int, type: InteractionType, deal: DealItem) {
         val interaction = UserInteraction(
             type = type,
@@ -267,43 +214,25 @@ class RecommendationViewModel(
             brand = extractBrandFromTitle(deal.title),
             price = deal.price
         )
-        
         personalizationEngine.trackUserInteraction(interaction)
-        Log.d(TAG, "📊 상호작용 추적: ${type.name} - $dealId")
-        
-        // 인사이트 업데이트
         loadInsights()
     }
 
-    /**
-     * 고급 추천 기능들
-     */
-    fun getCollaborativeFilteringRecommendations(): List<DealItem> {
-        return personalizationEngine.findSimilarUserRecommendations(allDeals)
-    }
+    fun getCollaborativeFilteringRecommendations(): List<DealItem> =
+        personalizationEngine.findSimilarUserRecommendations(allDeals)
 
-    fun getContentBasedRecommendations(): List<DealItem> {
-        return personalizationEngine.getContentBasedRecommendations(allDeals)
-    }
+    fun getContentBasedRecommendations(): List<DealItem> =
+        personalizationEngine.getContentBasedRecommendations(allDeals)
 
     fun getHybridRecommendations(): List<DealItem> {
-        // 협업 + 콘텐츠 기반 하이브리드 추천
         val collaborative = getCollaborativeFilteringRecommendations()
         val contentBased = getContentBasedRecommendations()
         val personalized = _recommendations.value
-        
-        // 중단 제거 및 다양성 보장
-        val combined = (personalized + collaborative + contentBased)
+        return (personalized + collaborative + contentBased)
             .distinctBy { it.id }
-            .shuffled()
             .take(30)
-        
-        Log.d(TAG, "🤖 하이브리드 추천 ${combined.size}개 생성")
-        return combined
     }
 }
 
-// 🛠️ 유틸리티 확장 함수
-private fun String.containsAny(keywords: List<String>): Boolean {
-    return keywords.any { this.contains(it, ignoreCase = true) }
-}
+private fun String.containsAny(keywords: List<String>): Boolean =
+    keywords.any { this.contains(it, ignoreCase = true) }

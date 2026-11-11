@@ -49,21 +49,13 @@ class QuasarzoneScraper(AsyncBaseScraper):
             currency = "KRW"
             price_tag = row.select_one('span.text-orange, span.v2-list-row__price')
             if price_tag:
+                from backend.core.deal_normalizer import parse_price_string
                 price_str = price_tag.get_text(strip=True)
-                import re
-                if '$' in price_str or 'USD' in price_str.upper() or '달러' in price_str or '불' in price_str:
-                    match = re.search(r'([0-9.]+)', price_str)
-                    if match:
-                        usd_val = float(match.group(1))
-                        price = round(usd_val * 100)
-                        currency = "USD"
-                else:
-                    # 첫 번째로 발견되는 숫자 그룹(쉼표 포함)만 추출하여 파싱하여 병합 버그 방지
-                    match = re.search(r'([0-9,]+)', price_str)
-                    if match:
-                        digits = re.sub(r'[^0-9]', '', match.group(1))
-                        if digits:
-                            price = int(digits)
+                price, currency = parse_price_string(
+                    price_str,
+                    allow_bare_number=True,
+                    context_hint=full_title,
+                )
 
             shop_name = ""
             shop_logo = row.select_one('img.v2-shop-logo')
@@ -209,9 +201,16 @@ class QuasarzoneScraper(AsyncBaseScraper):
                 "content_html": ""
             }
             
-        tasks = [process_row(row) for row in post_rows]
-        results = await asyncio.gather(*tasks)
-        return [r for r in results if r]
+        async def safe_process_row(row):
+            try:
+                return await process_row(row)
+            except Exception as row_err:
+                logger.warning(f"[{self.platform_name}] 행 파싱 오류로 건너뜀: {row_err}")
+                return None
+
+        tasks = [safe_process_row(row) for row in post_rows]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return [r for r in results if isinstance(r, dict)]
 
     async def get_detail(self, url: str, full_title: str = "") -> dict:
         """상세 페이지 데이터 파싱 로직"""
@@ -287,18 +286,13 @@ class QuasarzoneScraper(AsyncBaseScraper):
             if '배송비' in th_text:
                 shipping_fee = td.get_text(strip=True)
             elif '가격' in th_text:
+                from backend.core.deal_normalizer import parse_price_string
                 price_str = td.get_text(strip=True)
-                if '$' in price_str or 'USD' in price_str.upper() or '달러' in price_str or '불' in price_str:
-                    m_p = re.search(r'([0-9,]+(?:\.[0-9]+)?)', price_str)
-                    if m_p:
-                        price = round(float(m_p.group(1).replace(',', '')) * 100)
-                        currency = "USD"
-                else:
-                    m_p = re.search(r'([0-9,]+)', price_str)
-                    if m_p:
-                        digits = re.sub(r'[^0-9]', '', m_p.group(1))
-                        if digits:
-                            price = int(digits)
+                price, currency = parse_price_string(
+                    price_str,
+                    allow_bare_number=True,
+                    context_hint=ecommerce_link,
+                )
         
         if not shipping_fee:
             body_text = soup.get_text(separator=' ')

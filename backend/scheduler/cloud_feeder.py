@@ -11,6 +11,13 @@ _project_root = os.path.dirname(_backend_dir)
 for _p in (_project_root, _backend_dir):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+if "pytest" not in sys.modules and "PYTEST_CURRENT_TEST" not in os.environ:
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(_backend_dir, ".env"), override=False)
+        load_dotenv(os.path.join(_project_root, ".env"), override=False)
+    except Exception:
+        pass
 
 # 클라우드 실행 환경 감지 (GitHub Actions, Cloud Run, Docker 서버 등)
 IS_CLOUD_ENV = bool(
@@ -708,12 +715,7 @@ async def scrape_and_push_once():
                                 img_tag = f'<p><img src="{item["image_url"]}" alt="thumbnail" /></p>' if item.get("image_url") else ""
                                 item["content_html"] = f"{img_tag}<p><strong>{item.get('title', '')}</strong></p><p>출처: {shop_txt} {ship_txt}</p>"
 
-                            raw_t = item.get("title") or ""
-                            p_val = int(item.get("price") or 0)
-                            if "적립" in raw_t and (p_val > 100 or any(k in raw_t for k in ("슈퍼적립", "즉시적립", "캐시적립", "만 적립", "만원 적립"))):
-                                raw_t = raw_t.replace("슈퍼적립", "슈퍼혜택").replace("즉시적립", "즉시페이백").replace("캐시적립", "캐시백").replace("적립", "페이백")
-
-                            item["title"] = raw_t
+                            item["title"] = item.get("title") or ""
                             item["view_count"] = max(int(item.get("view_count") or 0), 1500)
                             final_enriched.append(item)
 
@@ -724,6 +726,8 @@ async def scrape_and_push_once():
                         if final_enriched:
                             chunk_size = 5
                             total_processed = 0
+                            feeder_token = os.getenv("FEEDER_API_TOKEN", "").strip()
+                            feeder_headers = {"X-Feeder-Token": feeder_token} if feeder_token else {}
                             for idx in range(0, len(final_enriched), chunk_size):
                                 chunk = final_enriched[idx:idx + chunk_size]
                                 for attempt in range(2):
@@ -736,6 +740,7 @@ async def scrape_and_push_once():
                                                 "base_url": base_url,
                                                 "deals": chunk,
                                             },
+                                            headers=feeder_headers or None,
                                         )
                                         if res.status_code == 200:
                                             total_processed += res.json().get("processed", len(chunk))

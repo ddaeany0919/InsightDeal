@@ -40,7 +40,7 @@ class WishlistUpdateRequest(BaseModel):
     alert_enabled: Optional[bool] = None
 
 @router.post("/item-alert")
-async def create_or_update_item_alert(data: WishlistItemAlertRequest, db: Session = Depends(get_db)):
+def create_or_update_item_alert(data: WishlistItemAlertRequest, db: Session = Depends(get_db)):
     """1-RTT 원스톱 목표가 알림 등록 및 갱신 (Upsert)"""
     key_str = (data.keyword or data.title or data.product_url or "").strip()
     if not key_str:
@@ -75,7 +75,7 @@ async def create_or_update_item_alert(data: WishlistItemAlertRequest, db: Sessio
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/from-url")
-async def create_wishlist_from_url(data: WishlistCreateFromURL, db: Session = Depends(get_db)):
+def create_wishlist_from_url(data: WishlistCreateFromURL, db: Session = Depends(get_db)):
     """URL 기반 위시리스트 추가 (이미 존재 시 목표가 갱신)"""
     logger.info(f"[WISHLIST_URL] URL 등록: {data.product_url}")
     try:
@@ -110,7 +110,7 @@ async def create_wishlist_from_url(data: WishlistCreateFromURL, db: Session = De
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/from-keyword")
-async def create_wishlist_from_keyword(data: WishlistCreateFromKeyword, db: Session = Depends(get_db)):
+def create_wishlist_from_keyword(data: WishlistCreateFromKeyword, db: Session = Depends(get_db)):
     """키워드 기반 위시리스트 추가 (이미 존재 시 목표가 갱신)"""
     logger.info(f"[WISHLIST_KEYWORD] 키워드 등록: {data.keyword}")
     try:
@@ -145,7 +145,7 @@ async def create_wishlist_from_keyword(data: WishlistCreateFromKeyword, db: Sess
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/")
-async def get_wishlist(user_id: str = Query(...), db: Session = Depends(get_db)):
+def get_wishlist(user_id: str = Query(...), db: Session = Depends(get_db)):
     """사용자의 위시리스트 조회"""
     logger.info(f"[WISHLIST_GET] 조회: user_id={user_id}")
     try:
@@ -169,7 +169,7 @@ async def check_price(wishlist_id: int, user_id: str = Query(...), db: Session =
         raise HTTPException(status_code=500, detail=f"가격 체크 실패: {str(e)}")
 
 @router.delete("/{wishlist_id}")
-async def delete_wishlist(wishlist_id: int, user_id: str = Query(...), db: Session = Depends(get_db)):
+def delete_wishlist(wishlist_id: int, user_id: str = Query(...), db: Session = Depends(get_db)):
     """위시리스트 삭제"""
     logger.info(f"[WISHLIST_DELETE] 삭제 시도: wishlist_id={wishlist_id}, user_id={user_id}")
     try:
@@ -194,7 +194,7 @@ async def delete_wishlist(wishlist_id: int, user_id: str = Query(...), db: Sessi
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.patch("/{wishlist_id}")
-async def update_wishlist(
+def update_wishlist(
     wishlist_id: int, 
     data: WishlistUpdateRequest, 
     user_id: str = Query(...), 

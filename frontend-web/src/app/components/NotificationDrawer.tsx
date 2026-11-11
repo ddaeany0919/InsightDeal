@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Bell, Trash2 } from "lucide-react";
 import Link from "next/link";
 import type { Deal } from "../lib/types";
-import { formatPrice, apiUrl } from "../lib/utils";
+import { formatPrice, decodeHtmlEntities, apiUrl } from "../lib/utils";
 
 interface NotificationDrawerProps {
   isOpen: boolean;
@@ -24,6 +24,19 @@ interface NotificationLogItem {
   deal_url?: string;
 }
 
+function formatAlertTime(item: NotificationLogItem, referenceNow: number): string {
+  if (item.receivedAt && typeof item.receivedAt === "number" && referenceNow > 0) {
+    const diffMins = Math.max(0, Math.floor((referenceNow - item.receivedAt) / 60000));
+    if (diffMins < 1) return "방금 전";
+    if (diffMins < 60) return `${diffMins}분 전`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}시간 전`;
+    const d = new Date(item.receivedAt);
+    return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
+  }
+  return item.received_at || "최근";
+}
+
 export default function NotificationDrawer({
   isOpen,
   onClose,
@@ -33,6 +46,12 @@ export default function NotificationDrawer({
 }: NotificationDrawerProps) {
   const [serverAlerts, setServerAlerts] = useState<NotificationLogItem[]>([]);
   const [alertIds, setAlertIds] = useState<number[]>([]);
+  const [nowTs, setNowTs] = useState<number>(0);
+  const onCountChangeRef = useRef(onServerAlertCountChange);
+
+  useEffect(() => {
+    onCountChangeRef.current = onServerAlertCountChange;
+  }, [onServerAlertCountChange]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -52,43 +71,44 @@ export default function NotificationDrawer({
     );
   };
 
-  const formatAlertTime = (item: NotificationLogItem) => {
-    if (item.receivedAt && typeof item.receivedAt === "number") {
-      const diffMins = Math.max(0, Math.floor((Date.now() - item.receivedAt) / 60000));
-      if (diffMins < 1) return "방금 전";
-      if (diffMins < 60) return `${diffMins}분 전`;
-      const diffHours = Math.floor(diffMins / 60);
-      if (diffHours < 24) return `${diffHours}시간 전`;
-      const d = new Date(item.receivedAt);
-      return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
-    }
-    return item.received_at || "최근";
-  };
-
   useEffect(() => {
     if (!isOpen || typeof window === "undefined") return;
 
-    // 1. 로컬에서 알림 켜둔 딜 ID 복원
-    try {
-      const savedAlerts = localStorage.getItem("insightdeal_alerts");
-      if (savedAlerts) {
-        setAlertIds(JSON.parse(savedAlerts));
+    const syncLocalState = () => {
+      setNowTs(Date.now());
+      try {
+        const savedAlerts = localStorage.getItem("insightdeal_alerts");
+        setAlertIds(savedAlerts ? JSON.parse(savedAlerts) : []);
+      } catch {
+        setAlertIds([]);
       }
-    } catch (e) {}
+    };
 
-    // 2. 실제 백엔드 알림 수신 내역 조회
+    const initTimer = window.setTimeout(syncLocalState, 0);
+    const tick = window.setInterval(() => setNowTs(Date.now()), 60000);
+
+    // 백엔드 알림 수신 내역 조회
+    const controller = new AbortController();
     const deviceUuid = getDeviceUuid();
     if (deviceUuid) {
-      fetch(apiUrl(`/api/users/notifications?user_id=${encodeURIComponent(deviceUuid)}`))
+      fetch(apiUrl(`/api/users/notifications?user_id=${encodeURIComponent(deviceUuid)}`), {
+        signal: controller.signal,
+      })
         .then((res) => (res.ok ? res.json() : []))
         .then((data) => {
-          if (Array.isArray(data)) {
+          if (!controller.signal.aborted && Array.isArray(data)) {
             setServerAlerts(data);
-            onServerAlertCountChange?.(data.length);
+            onCountChangeRef.current?.(data.length);
           }
         })
         .catch(() => {});
     }
+
+    return () => {
+      window.clearTimeout(initTimer);
+      window.clearInterval(tick);
+      controller.abort();
+    };
   }, [isOpen]);
 
   const handleDeleteServerAlert = async (e: React.MouseEvent, alertId: string | number) => {
@@ -100,7 +120,7 @@ export default function NotificationDrawer({
     }).catch(() => null);
     setServerAlerts((prev) => {
       const next = prev.filter((a) => String(a.id) !== String(alertId));
-      onServerAlertCountChange?.(next.length);
+      onCountChangeRef.current?.(next.length);
       return next;
     });
   };
@@ -112,7 +132,7 @@ export default function NotificationDrawer({
       method: "POST",
     }).catch(() => null);
     setServerAlerts([]);
-    onServerAlertCountChange?.(0);
+    onCountChangeRef.current?.(0);
   };
 
   if (!isOpen) return null;
@@ -142,7 +162,7 @@ export default function NotificationDrawer({
           width: "100%",
           maxWidth: "420px",
           height: "100%",
-          padding: "32px 24px",
+          padding: "calc(24px + env(safe-area-inset-top, 0px)) 24px calc(28px + env(safe-area-inset-bottom, 0px)) 24px",
           display: "flex",
           flexDirection: "column",
           gap: "20px",
@@ -160,14 +180,17 @@ export default function NotificationDrawer({
             <h3 style={{ fontSize: "1.2rem", fontWeight: 800 }}>내 알림 내역</h3>
           </div>
           <button
+            type="button"
             onClick={onClose}
             aria-label="알림 내역 닫기"
             style={{
               background: "var(--surface-subtle)",
               border: "1px solid var(--card-border)",
               cursor: "pointer",
-              width: 32,
-              height: 32,
+              width: 44,
+              height: 44,
+              minWidth: 44,
+              minHeight: 44,
               borderRadius: "50%",
               display: "flex",
               alignItems: "center",
@@ -203,6 +226,8 @@ export default function NotificationDrawer({
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "4px",
+                  minHeight: "44px",
+                  padding: "0 6px",
                 }}
               >
                 <Trash2 size={13} />
@@ -235,12 +260,13 @@ export default function NotificationDrawer({
                     <span className="deal-source" style={{ fontSize: "0.7rem", padding: "2px 8px" }}>
                       #{item.keyword}
                     </span>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                       <span style={{ fontSize: "0.72rem", color: "var(--text-sub)" }}>
-                        {formatAlertTime(item)}
+                        {formatAlertTime(item, nowTs)}
                       </span>
                       <button
                         type="button"
+                        aria-label="알림 삭제"
                         onClick={(e) => handleDeleteServerAlert(e, item.id)}
                         title="알림 삭제"
                         style={{
@@ -249,7 +275,12 @@ export default function NotificationDrawer({
                           color: "var(--text-sub)",
                           cursor: "pointer",
                           fontSize: "0.75rem",
-                          padding: "2px 4px",
+                          minWidth: "44px",
+                          minHeight: "44px",
+                          margin: "-10px -8px -10px 0",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
                         }}
                       >
                         ✕
@@ -257,7 +288,7 @@ export default function NotificationDrawer({
                     </div>
                   </div>
                   <span style={{ fontSize: "0.85rem", fontWeight: 700, lineHeight: 1.4, color: "var(--text-main)" }}>
-                    {item.title}
+                    {decodeHtmlEntities(item.title)}
                   </span>
                 </div>
               );
@@ -312,7 +343,7 @@ export default function NotificationDrawer({
                     {deal.community_name}
                   </span>
                   <span style={{ fontSize: "0.85rem", color: "var(--deal-orange)", fontWeight: 800 }}>
-                    {formatPrice(deal.price, deal.currency)}
+                    {formatPrice(deal.price, deal.currency, deal.title)}
                   </span>
                 </div>
                 <span
@@ -327,7 +358,7 @@ export default function NotificationDrawer({
                     overflow: "hidden",
                   }}
                 >
-                  {deal.title}
+                  {decodeHtmlEntities(deal.title)}
                 </span>
               </div>
             ))
@@ -338,6 +369,7 @@ export default function NotificationDrawer({
           <div
             style={{
               marginTop: "12px",
+              minHeight: "48px",
               background: "rgba(var(--accent-rgb), 0.1)",
               border: "1px solid rgba(var(--accent-rgb), 0.3)",
               borderRadius: "16px",

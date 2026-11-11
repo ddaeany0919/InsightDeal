@@ -204,7 +204,7 @@ fun CommunityPostDetailScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isCommentSubmitting by viewModel.isCommentSubmitting.collectAsState()
 
-    val currentUserId by AuthManager.getUsername(context).collectAsState(initial = "admin")
+    val currentUserId by AuthManager.getUsername(context).collectAsState(initial = "guest")
     val currentUserNickname by AuthManager.getNickname(context).collectAsState(initial = "익명")
     val isLoggedIn = currentUserId != "guest" && !currentUserId.isNullOrEmpty()
 
@@ -367,7 +367,7 @@ fun CommunityPostDetailScreen(
                                         viewModel.updateComment(
                                             postId = postId,
                                             commentId = editingCommentId!!,
-                                            userId = currentUserId ?: "admin",
+                                            userId = currentUserId ?: "guest",
                                             nickname = currentUserNickname ?: "익명 고수",
                                             content = commentText,
                                             dealUrl = null
@@ -379,7 +379,7 @@ fun CommunityPostDetailScreen(
                                     } else {
                                         viewModel.submitComment(
                                             postId = postId,
-                                            userId = currentUserId ?: "admin",
+                                            userId = currentUserId ?: "guest",
                                             nickname = currentUserNickname ?: "익명 고수",
                                             content = commentText,
                                             dealUrl = null,
@@ -850,7 +850,7 @@ fun CommunityPostDetailScreen(
                                                 viewModel.acceptComment(
                                                     postId = currentPost.id,
                                                     commentId = comment.id,
-                                                    userId = currentUserId ?: "admin"
+                                                    userId = currentUserId ?: "guest"
                                                 )
                                             },
                                             colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFF59F00))

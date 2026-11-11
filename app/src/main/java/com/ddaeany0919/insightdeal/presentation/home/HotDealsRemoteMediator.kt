@@ -2,21 +2,20 @@ package com.ddaeany0919.insightdeal.presentation.home
 
 import androidx.paging.ExperimentalPagingApi
 import androidx.paging.LoadType
-import androidx.paging.RemoteMediator.MediatorResult
-import androidx.paging.RemoteMediator
 import androidx.paging.PagingState
+import androidx.paging.RemoteMediator
 import androidx.room.withTransaction
 import com.ddaeany0919.insightdeal.local.db.AppDatabase
 import com.ddaeany0919.insightdeal.local.db.DealEntity
 import com.ddaeany0919.insightdeal.local.db.DealRemoteKeysEntity
 import com.ddaeany0919.insightdeal.network.ApiService
-import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import retrofit2.HttpException
+import java.io.IOException
 
 /**
- * 🛰️ Paging 3 RemoteMediator
+ * Paging 3 RemoteMediator
  * - 네트워크 API로부터 데이터를 불러와 로컬 Room DB에 오프라인 캐싱을 수행합니다.
- * - 오프라인 상태에서도 캐싱된 DB 데이터를 노출함으로써 중단 없는 UX를 보장합니다.
  */
 @OptIn(ExperimentalPagingApi::class)
 class HotDealsRemoteMediator(
@@ -24,7 +23,8 @@ class HotDealsRemoteMediator(
     private val apiService: ApiService,
     private val category: String?,
     private val keyword: String?,
-    private val platform: String?
+    private val platform: String?,
+    private val sort: String = "latest"
 ) : RemoteMediator<Int, DealEntity>() {
 
     override suspend fun load(
@@ -32,7 +32,6 @@ class HotDealsRemoteMediator(
         state: PagingState<Int, DealEntity>
     ): MediatorResult {
         return try {
-            // 1. 현재 로드 타입에 따른 Offset(페이지 키) 계산
             val offset = when (loadType) {
                 LoadType.REFRESH -> 0
                 LoadType.PREPEND -> {
@@ -47,16 +46,15 @@ class HotDealsRemoteMediator(
             }
 
             val limit = state.config.pageSize
+            val resolvedPlatform = normalizePlatformQuery(platform)
 
-            android.util.Log.d("HotDealsRemoteMediator", "Loading data: offset=$offset, limit=$limit, category=$category, keyword=$keyword, platform=$platform")
-            
-            // 2. 네트워크 API 호출
             val response = apiService.getCommunityHotDeals(
                 limit = limit,
                 offset = offset,
                 category = if (category == "전체") null else category,
                 keyword = if (keyword.isNullOrBlank()) null else keyword,
-                platform = if (platform == "전체") null else platform
+                platform = resolvedPlatform,
+                sort = sort
             )
 
             if (response.isSuccessful) {
@@ -64,7 +62,6 @@ class HotDealsRemoteMediator(
                 val deals = responseBody?.deals ?: emptyList()
                 val endOfPaginationReached = deals.isEmpty() || deals.size < limit
 
-                // 3. 로컬 DB 트랜잭션 수행 (clearAllDeals 없이 Upsert로 플리커링 원천 차단)
                 database.withTransaction {
                     val prevKey = if (offset == 0) null else offset - limit
                     val nextKey = if (endOfPaginationReached) null else offset + deals.size
@@ -83,16 +80,30 @@ class HotDealsRemoteMediator(
 
                 MediatorResult.Success(endOfPaginationReached = endOfPaginationReached)
             } else {
-                android.util.Log.e("HotDealsRemoteMediator", "API Error: ${response.code()} ${response.message()}")
                 MediatorResult.Error(HttpException(response))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: IOException) {
-            android.util.Log.e("HotDealsRemoteMediator", "Network IO Exception during mediation", e)
             MediatorResult.Error(e)
         } catch (e: Exception) {
-            android.util.Log.e("HotDealsRemoteMediator", "Unexpected Exception during mediation", e)
             MediatorResult.Error(e)
         }
+    }
+
+    private fun normalizePlatformQuery(rawPlatform: String?): String? {
+        if (rawPlatform.isNullOrBlank() || rawPlatform == "전체") return null
+        val expanded = rawPlatform.split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .flatMap { token ->
+                when (token) {
+                    "빠삭" -> listOf("빠삭국내", "빠삭해외", "빠삭육아")
+                    else -> listOf(token)
+                }
+            }
+            .distinct()
+        return expanded.joinToString(",").ifEmpty { null }
     }
 
     private suspend fun getRemoteKeyForLastItem(state: PagingState<Int, DealEntity>): DealRemoteKeysEntity? {
@@ -100,13 +111,5 @@ class HotDealsRemoteMediator(
             ?.let { deal ->
                 database.dealRemoteKeysDao().getRemoteKeysForDealId(deal.id)
             }
-    }
-
-    private suspend fun getRemoteKeyClosestToCurrentPosition(state: PagingState<Int, DealEntity>): DealRemoteKeysEntity? {
-        return state.anchorPosition?.let { position ->
-            state.closestItemToPosition(position)?.id?.let { id ->
-                database.dealRemoteKeysDao().getRemoteKeysForDealId(id)
-            }
-        }
     }
 }

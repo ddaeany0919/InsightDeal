@@ -94,3 +94,4 @@ backend/backups/
 keystore.properties
 *.jks
 *.keystore
+*.ait

@@ -13,7 +13,7 @@ import androidx.room.TypeConverters
         DealRemoteKeysEntity::class,
         KeywordEntity::class
     ], 
-    version = 4, 
+    version = 6, 
     exportSchema = false
 )
 @TypeConverters(Converters::class)

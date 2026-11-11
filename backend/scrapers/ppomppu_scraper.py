@@ -16,73 +16,55 @@ class PpomppuScraper(AsyncBaseScraper):
     async def parse_list(self, html: str) -> list[dict]:
         """뽐뿌 게시판 리스트에서 제목과 URL (그리고 가능하면 가격) 추출"""
         if "<rss" in html or "<item>" in html:
+            from backend.core.deal_normalizer import normalize_shipping_fee, parse_title_price_and_shipping
             rss_blocks = re.findall(r"<item>(.*?)</item>", html, re.DOTALL)
             rss_deals = []
-            is_overseas = self.platform_name in ["뽐뿌해외", "알리뽐뿌"]
             for blk in rss_blocks:
-                m_t = re.search(r"<title>(.*?)</title>", blk, re.DOTALL)
-                full_title = BeautifulSoup(m_t.group(1), "html.parser").get_text(strip=True) if m_t else ""
-                if not full_title or any(k in full_title for k in ("공지", "질문", "문의")):
+                try:
+                    m_t = re.search(r"<title>(.*?)</title>", blk, re.DOTALL)
+                    full_title = BeautifulSoup(m_t.group(1), "html.parser").get_text(strip=True) if m_t else ""
+                    if not full_title or any(k in full_title for k in ("공지", "질문", "문의")):
+                        continue
+                    m_link = re.search(r"<link>\s*(https?://[^\s<]+)", blk)
+                    raw_link = m_link.group(1).replace("&amp;", "&") if m_link else ""
+                    if not raw_link:
+                        continue
+                    url = raw_link.replace("http://", "https://")
+                    m_desc = re.search(r"<description>(.*?)</description>", blk, re.DOTALL)
+                    desc_txt = BeautifulSoup(m_desc.group(1), "html.parser").get_text(" ", strip=True) if m_desc else ""
+                    ecom_m = re.search(r"(https?://[^\s\"'<>]+)", desc_txt)
+                    ecom_url = ecom_m.group(1) if ecom_m and "ppomppu.co.kr" not in ecom_m.group(1) else ""
+                    extracted_price, extracted_currency, extracted_ship, _ = parse_title_price_and_shipping(full_title)
+                    shipping_fee = extracted_ship or normalize_shipping_fee("", title=full_title)
+                    m_hits = re.search(r"<hits>(.*?)</hits>", blk, re.DOTALL)
+                    hits_txt = m_hits.group(1).strip() if m_hits else ""
+                    like_count, view_count = 0, 1500
+                    hm = re.search(r"\[(\d+)\|(\d+)", hits_txt)
+                    if hm:
+                        like_count = int(hm.group(1))
+                        view_count = max(int(hm.group(2)), 1500)
+                    cat_m = re.match(r"^\[(.*?)\]", full_title)
+                    rss_deals.append({
+                        "title": full_title,
+                        "url": url,
+                        "price": extracted_price,
+                        "currency": extracted_currency,
+                        "shop_name": "",
+                        "image_url": "",
+                        "ecommerce_link": ecom_url,
+                        "content_html": f"<p>{desc_txt}</p>" if desc_txt else "",
+                        "is_closed": any(k in full_title for k in ("종료", "마감", "품절")),
+                        "shipping_fee": shipping_fee,
+                        "is_super_hotdeal": like_count >= 8 or view_count >= 2500,
+                        "posted_at": None,
+                        "view_count": view_count,
+                        "like_count": like_count,
+                        "comment_count": 0,
+                        "category": cat_m.group(1).strip() if cat_m else None,
+                    })
+                except Exception as rss_err:
+                    logger.warning(f"[{self.platform_name}] RSS 항목 파싱 오류로 건너뜀: {rss_err}")
                     continue
-                m_link = re.search(r"<link>\s*(https?://[^\s<]+)", blk)
-                raw_link = m_link.group(1).replace("&amp;", "&") if m_link else ""
-                if not raw_link:
-                    continue
-                url = raw_link.replace("http://", "https://")
-                m_desc = re.search(r"<description>(.*?)</description>", blk, re.DOTALL)
-                desc_txt = BeautifulSoup(m_desc.group(1), "html.parser").get_text(" ", strip=True) if m_desc else ""
-                ecom_m = re.search(r"(https?://[^\s\"'<>]+)", desc_txt)
-                ecom_url = ecom_m.group(1) if ecom_m and "ppomppu.co.kr" not in ecom_m.group(1) else ""
-                extracted_price = 0
-                extracted_currency = "KRW"
-                usd_m = re.search(r"(?:\$|USD|달러|불|유로|€)\s*([0-9,.]+)|([0-9,.]+)\s*(?:\$|USD|달러|불|유로|€)", full_title, re.IGNORECASE) if is_overseas else None
-                krw_m = re.search(r"([\d,.]+(?:원|만원|만))", full_title)
-                if is_overseas and usd_m:
-                    try:
-                        val = float((usd_m.group(1) or usd_m.group(2)).replace(",", ""))
-                        extracted_price = round(val * 100)
-                        extracted_currency = "EUR" if ("유로" in full_title or "€" in full_title) else "USD"
-                    except Exception:
-                        pass
-                elif krw_m:
-                    p_str = krw_m.group(1).replace(",", "")
-                    if "만" in p_str:
-                        try:
-                            clean_p = re.sub(r"[^\d.]", "", p_str)
-                            if clean_p:
-                                extracted_price = int(float(clean_p) * 10000)
-                        except Exception:
-                            pass
-                    else:
-                        nums = re.findall(r"\d+", p_str)
-                        if nums:
-                            extracted_price = int("".join(nums))
-                m_hits = re.search(r"<hits>(.*?)</hits>", blk, re.DOTALL)
-                hits_txt = m_hits.group(1).strip() if m_hits else ""
-                like_count, view_count = 0, 1500
-                hm = re.search(r"\[(\d+)\|(\d+)", hits_txt)
-                if hm:
-                    like_count = int(hm.group(1))
-                    view_count = max(int(hm.group(2)), 1500)
-                cat_m = re.match(r"^\[(.*?)\]", full_title)
-                rss_deals.append({
-                    "title": full_title,
-                    "url": url,
-                    "price": extracted_price,
-                    "currency": extracted_currency,
-                    "shop_name": "",
-                    "image_url": "",
-                    "ecommerce_link": ecom_url,
-                    "content_html": f"<p>{desc_txt}</p>" if desc_txt else "",
-                    "is_closed": any(k in full_title for k in ("종료", "마감", "품절")),
-                    "shipping_fee": "무료배송" if any(k in full_title for k in ("무배", "무료")) else "",
-                    "is_super_hotdeal": like_count >= 8 or view_count >= 2500,
-                    "posted_at": None,
-                    "view_count": view_count,
-                    "like_count": like_count,
-                    "comment_count": 0,
-                    "category": cat_m.group(1).strip() if cat_m else None,
-                })
             if rss_deals:
                 return rss_deals
 
@@ -187,44 +169,10 @@ class PpomppuScraper(AsyncBaseScraper):
                 if any(x in img_url_lower for x in ['transparent', 'blank', 'logo', 'icon', 'empty', 'noimage']) or image_url.startswith('data:') or 'base64' in img_url_lower:
                     image_url = ""
 
-            # 제목에서 가격 추출 시도 (예: 15,900원, 3만9천원)
+            # 제목에서 가격/통화 추출 (단일 진실 공급원 deal_normalizer 위임)
             import re
-            extracted_price = 0
-            extracted_currency = "KRW"
-            
-            is_overseas = (self.platform_name in ["뽐뿌해외", "알리뽐뿌"])
-            
-            usd_match = None
-            if is_overseas:
-                usd_match = re.search(r'(?:\$|USD|달러|불|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
-                if not usd_match:
-                    usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|불|유로|€)', full_title, re.IGNORECASE)
-                
-            price_match = re.search(r'([\d,]+(?:원|만원))', full_title)
-            
-            if is_overseas and usd_match:
-                try:
-                    val = float(usd_match.group(1).replace(',', ''))
-                    extracted_price = round(val * 100)
-                    if '유로' in full_title or '€' in full_title:
-                        extracted_currency = "EUR"
-                    else:
-                        extracted_currency = "USD"
-                except: pass
-            elif price_match:
-                price_str = price_match.group(1).replace(',', '')
-                if '만원' in price_str:
-                    try: extracted_price = int(float(price_str.replace('만원', '')) * 10000)
-                    except: pass
-                else:
-                    nums = re.findall(r'\d+', price_str)
-                    if nums: extracted_price = int(''.join(nums))
-
-            # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
-            if is_overseas and extracted_currency == "KRW" and extracted_price > 0 and extracted_price <= 10000:
-                if any(kw in full_title for kw in ['알리', '코인', '큐텐', '직구', '알익']):
-                    extracted_currency = "USD"
-                    extracted_price = int(extracted_price * 100)
+            from backend.core.deal_normalizer import parse_title_price_and_shipping
+            extracted_price, extracted_currency, _, _ = parse_title_price_and_shipping(full_title)
 
             is_closed = False
             if '종료' in full_title or '마감' in full_title or '품절' in full_title:
@@ -320,9 +268,16 @@ class PpomppuScraper(AsyncBaseScraper):
                 "category": scraped_category
             }
             
-        tasks = [process_row(row) for row in post_rows]
-        results = await asyncio.gather(*tasks)
-        return [r for r in results if r]
+        async def safe_process_row(row):
+            try:
+                return await process_row(row)
+            except Exception as row_err:
+                logger.warning(f"[{self.platform_name}] 행 파싱 오류로 건너뜀: {row_err}")
+                return None
+
+        tasks = [safe_process_row(row) for row in post_rows]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return [r for r in results if isinstance(r, dict)]
 
     async def get_detail(self, url: str, full_title: str = "") -> dict:
         """
@@ -515,37 +470,8 @@ class PpomppuScraper(AsyncBaseScraper):
         if images:
             body_text += f"\n[첨부된 이미지 링크들]: {', '.join(images)}"
             
-        # 예: 15,000원, 23,500 원, 49900원 등
-        extracted_currency = "KRW"
-        
-        is_overseas = (self.platform_name in ["뽐뿌해외", "알리뽐뿌"])
-        
-        # [방어막 추가]: 본문 파싱 전 URL 소거 처리! (링크 내의 숫자 오인 차단)
-        cleaned_body_text = re.sub(r'https?://[^\s]+', '', body_text)
-        
-        usd_match = None
-        if is_overseas:
-            usd_match = re.search(r'(?:\$|USD|달러|불|유로|€)\s*([0-9,.]+)', cleaned_body_text, re.IGNORECASE)
-            if not usd_match:
-                usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|불|유로|€)', cleaned_body_text, re.IGNORECASE)
-            
-        price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', cleaned_body_text)
-        
-        if is_overseas and usd_match:
-            try:
-                val = float(usd_match.group(1).replace(',', ''))
-                price_fallback = round(val * 100)
-                if '유로' in body_text or '€' in body_text:
-                    extracted_currency = "EUR"
-                else:
-                    extracted_currency = "USD"
-            except: pass
-        elif price_matches:
-            try:
-                # 본문에서 찾은 가격 중 가장 합리적인 첫 번째 금액
-                price_fallback = int(price_matches[0].replace(',', '').replace('.', ''))
-            except:
-                pass
+        from backend.core.deal_normalizer import extract_body_fallback_price
+        price_fallback, extracted_currency = extract_body_fallback_price(body_text, full_title or "")
                 
         shipping_fee = ""
         # 1. 명시적인 테이블 정보(배송비/택배비) 확인
@@ -565,7 +491,7 @@ class PpomppuScraper(AsyncBaseScraper):
         if not shipping_fee:
             search_text = full_title + " " + body_text
             import re
-            if re.search(r'(무료배송|무배|배송비\s*mu배|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', search_text):
+            if re.search(r'(무료배송|무배|배송비\s*무배|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', search_text):
                 shipping_fee = "무료배송"
         
         if ("종결" in body_text and "취소된 게시물" in body_text) or any(

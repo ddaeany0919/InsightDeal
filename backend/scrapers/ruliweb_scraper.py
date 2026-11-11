@@ -26,10 +26,11 @@ class RuliwebScraper(AsyncBaseScraper):
         import asyncio
         async def process_row(row):
             link_element = row.select_one('a.subject_link, a.board_list_item')
-            if not link_element: return None
+            if not link_element or not link_element.get('href'):
+                return None
 
             from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-            raw_url = urljoin("https://bbs.ruliweb.com", link_element['href'])
+            raw_url = urljoin("https://bbs.ruliweb.com", link_element.get('href'))
             parsed_href = urlparse(raw_url)
             qs = parse_qs(parsed_href.query)
             qs.pop('page', None)
@@ -98,39 +99,8 @@ class RuliwebScraper(AsyncBaseScraper):
             if time_td:
                 posted_at_iso = self.parse_time_str(time_td.get_text(strip=True))
 
-            extracted_currency = "KRW"
-            price = 0
-            
-            if price == 0:
-                usd_match = re.search(r'(?:\$|USD|달러|불|유로|€)\s*([0-9,.]+)', full_title, re.IGNORECASE)
-                if not usd_match:
-                    usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|불|유로|€)', full_title, re.IGNORECASE)
-                    
-                price_match = re.search(r'([\d,]+(?:원|만원))', full_title)
-                
-                if usd_match:
-                    try:
-                        val = float(usd_match.group(1).replace(',', ''))
-                        price = int(val * 100)
-                        if '유로' in full_title or '€' in full_title:
-                            extracted_currency = "EUR"
-                        else:
-                            extracted_currency = "USD"
-                    except: pass
-                elif price_match:
-                    price_str = price_match.group(1).replace(',', '')
-                    if '만원' in price_str:
-                        try: price = int(float(price_str.replace('만원', '')) * 10000)
-                        except: pass
-                    else:
-                        nums = re.findall(r'\d+', price_str)
-                        if nums: price = int(''.join(nums))
-
-            # 휴리스틱: 제목에 직구 관련 키워드가 있고 가격이 10000 이하면 USD로 간주
-            if extracted_currency == "KRW" and price > 0 and price <= 10000:
-                if any(kw in full_title for kw in ['알리', '코인', '큐텐', '직구', '알익']):
-                    extracted_currency = "USD"
-                    price = int(price * 100)
+            from backend.core.deal_normalizer import parse_title_price_and_shipping
+            price, extracted_currency, _, _ = parse_title_price_and_shipping(full_title)
 
             return {
                 "category": category,
@@ -151,9 +121,16 @@ class RuliwebScraper(AsyncBaseScraper):
                 "content_html": ""
             }
             
-        tasks = [process_row(row) for row in post_rows]
-        results = await asyncio.gather(*tasks)
-        return [r for r in results if r]
+        async def safe_process_row(row):
+            try:
+                return await process_row(row)
+            except Exception as row_err:
+                logger.warning(f"[{self.platform_name}] 행 파싱 오류로 건너뜀: {row_err}")
+                return None
+
+        tasks = [safe_process_row(row) for row in post_rows]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return [r for r in results if isinstance(r, dict)]
 
     async def get_detail(self, url: str, full_title: str = "") -> dict:
         """상세 페이지 데이터 파싱 로직"""
@@ -259,36 +236,9 @@ class RuliwebScraper(AsyncBaseScraper):
         search_text = (full_title or "") + " " + body_text
         if re.search(r'(무료배송|무배|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', search_text):
             shipping_fee = "무료배송"
-        extracted_currency = "KRW"
 
-        # [방어막 추가]: 제목 우선 가격 추출 + 본문 파싱 전 URL 소거 처리
-        cleaned_body_text = re.sub(r'https?://[^\s\)]+', '', search_text)
-
-        usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', cleaned_body_text, re.IGNORECASE)
-        if not usd_match:
-            usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', cleaned_body_text, re.IGNORECASE)
-
-        price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', cleaned_body_text)
-
-        if usd_match:
-            try:
-                val = float(usd_match.group(1).replace(',', ''))
-                price_fallback = int(val * 100)
-                if '유로' in search_text or '€' in search_text:
-                    extracted_currency = "EUR"
-                else:
-                    extracted_currency = "USD"
-            except Exception:
-                pass
-        elif price_matches:
-            for pm in price_matches:
-                try:
-                    cand = int(pm.replace(',', '').replace('.', ''))
-                    if cand >= 100:
-                        price_fallback = cand
-                        break
-                except Exception:
-                    pass
+        from backend.core.deal_normalizer import extract_body_fallback_price
+        price_fallback, extracted_currency = extract_body_fallback_price(body_text, full_title or "")
 
         # 📸 [고화질 썸네일 복구 가드]: 본문에 이미지가 없거나 cache 관련 썸네일인 경우, 아웃링크 og:image 및 상품명 기반 폴백 추출
         if not image_url or "cache" in image_url:

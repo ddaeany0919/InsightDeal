@@ -3,21 +3,16 @@ package com.ddaeany0919.insightdeal.network
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.models.DealStats
 import com.ddaeany0919.insightdeal.models.PriceHistoryPoint
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
-import retrofit2.Response
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
-import retrofit2.http.*
-import java.util.concurrent.TimeUnit
 import com.google.gson.annotations.SerializedName
+import retrofit2.Response
+import retrofit2.http.*
 
 /**
- * 🌐 InsightDeal API 서비스 인터페이스 (통합 버전)
+ * InsightDeal API 서비스 인터페이스 (통합 버전)
  */
 interface ApiService {
 
-    // 🔥 핫딜 목록 조회
+    // 핫딜 목록 조회
     @GET("api/product/deals")
     suspend fun getDeals(
         @Query("page") page: Int = 1,
@@ -27,7 +22,7 @@ interface ApiService {
         @Query("sort") sort: String = "latest"
     ): Response<DealsResponse>
 
-    // 🔍 핫딜 검색
+    // 핫딜 검색
     @GET("deals/search")
     suspend fun searchDeals(
         @Query("q") query: String,
@@ -41,15 +36,15 @@ interface ApiService {
         @Query("sort") sort: String = "relevance"
     ): Response<DealsResponse>
 
-    // 📊 핫딜 통계
+    // 핫딜 통계
     @GET("deals/stats")
     suspend fun getDealStats(): Response<DealStats>
 
-    // 🔥 특정 핫딜 상세 정보
+    // 특정 핫딜 상세 정보
     @GET("deals/{id}")
     suspend fun getDealDetail(@Path("id") dealId: Int): Response<DealDetail>
 
-    // 📈 핫딜 가격 히스토리
+    // 핫딜 가격 히스토리
     @GET("api/community/deals/{dealId}/history")
     suspend fun getDealPriceHistory(
         @Path("dealId") dealId: Int,
@@ -57,90 +52,76 @@ interface ApiService {
         @Query("query") query: String? = null,
         @Query("currency") currency: String? = null
     ): Response<List<PriceHistoryPoint>>
-    // 🎯 향상된 딜 정보 (임시)
+
+    // 커뮤니티 핫딜 단건 상세 조회
     @GET("api/community/deals/{dealId}")
     suspend fun getEnhancedDealInfo(@Path("dealId") dealId: Int): Response<DealItem>
 
-    // ✅ 쿠팡 상품 추적 API
-
-    // 사용자가 추가한 쿠팡 상품 목록 조회
+    // 쿠팡 상품 추적 API
     @GET("products")
     suspend fun getUserProducts(
         @Query("user_id") userId: String
     ): Response<List<ApiProduct>>
 
-    // 새 쿠팡 상품 추가
     @POST("products")
     suspend fun addProduct(
         @Body request: Map<String, Any>
     ): Response<ApiProduct>
 
-    // 특정 상품 정보 조회
     @GET("products/{productId}")
     suspend fun getProduct(
         @Path("productId") productId: Int
     ): Response<ApiProduct>
 
-    // 상품 가격 히스토리 조회
     @GET("products/{productId}/history")
     suspend fun getProductPriceHistory(
         @Path("productId") productId: Int
     ): Response<List<ApiPriceHistory>>
 
-    // 목표 가격 업데이트
     @PUT("products/{productId}/target")
     suspend fun updateTargetPrice(
         @Path("productId") productId: Int,
         @Body request: Map<String, Any>
     ): Response<ApiProduct>
 
-    // 상품 추적 삭제
     @DELETE("products/{productId}")
     suspend fun deleteProduct(
         @Path("productId") productId: Int
     ): Response<Unit>
 
-    // ✅ FCM 토큰 관리 API
-
-    // FCM 토큰 등록 (기기 익명 가입)
+    // FCM 토큰 관리 API
     @POST("api/push/device")
     suspend fun registerFCMToken(
         @Body request: RegisterDeviceReq
     ): Response<ApiResponse>
 
-    // 테스트 푸시 알림 전송
     @POST("fcm/test")
     suspend fun sendTestPush(
         @Body request: Map<String, String>
     ): Response<ApiResponse>
 
-    // 🔍 키워드 알림 등록
     @POST("alerts/keyword")
     suspend fun registerKeywordAlert(
         @Body request: KeywordAlertRequest
     ): Response<ApiResponse>
 
-    // 💰 가격 추적 등록
     @POST("alerts/price")
     suspend fun registerPriceAlert(
         @Body request: PriceAlertRequest
     ): Response<ApiResponse>
 
-    // 📈 인기 키워드 목록
     @GET("api/community/popular-keywords")
     suspend fun getPopularKeywords(
         @Query("limit") limit: Int = 10
     ): Response<com.ddaeany0919.insightdeal.network.PopularKeywordsResponse>
 
-    // 🏷️ 카테고리 목록
     @GET("categories")
     suspend fun getCategories(): Response<List<Category>>
 
-    // 🌐 지원 사이트 목록
     @GET("sites")
     suspend fun getSupportedSites(): Response<List<Site>>
 
-    // ✅ [Epic 3] 핫딜 푸시 알람 키워드 관리 API
+    // 핫딜 푸시 알람 키워드 관리 API
     @GET("api/push/keywords")
     suspend fun getPushKeywords(
         @Query("device_uuid") deviceUuid: String
@@ -162,7 +143,7 @@ interface ApiService {
     ): Response<ApiResponse>
 
     // ==========================================
-    // 🛍️ Wishlist API (from ApiService)
+    // Wishlist API
     // ==========================================
     @POST("api/wishlist/from-keyword")
     suspend fun createWishlistFromKeyword(@Body request: com.ddaeany0919.insightdeal.data.network.WishlistCreateFromKeywordRequest): com.ddaeany0919.insightdeal.presentation.wishlist.WishlistApiResponse
@@ -221,12 +202,12 @@ interface ApiService {
     suspend fun analyzeLink(@Body request: com.ddaeany0919.insightdeal.data.network.AnalyzeLinkRequest): com.ddaeany0919.insightdeal.data.network.ProductAnalysisResponse
 
     // ==========================================
-    // 🤝 Community API (from ApiService / ApiService)
+    // Monetization & Community API
     // ==========================================
-    @GET("/api/compare")
-    suspend fun comparePrice(
-        @Query("query") query: String
-    ): Response<com.ddaeany0919.insightdeal.models.ComparisonResponse>
+    @POST("api/coupang/track-click")
+    suspend fun trackOutboundClick(
+        @Body request: TrackClickRequest
+    ): Response<TrackClickResponse>
 
     @GET("/api/health")
     suspend fun healthCheck(): Response<HealthResponse>
@@ -237,12 +218,13 @@ interface ApiService {
         @Query("offset") offset: Int = 0,
         @Query("category") category: String? = null,
         @Query("keyword") keyword: String? = null,
-        @Query("platform") platform: String? = null
+        @Query("platform") platform: String? = null,
+        @Query("sort") sort: String = "latest"
     ): Response<HotDealsResponse>
-    
+
     @GET("api/community/top-hot-deals")
     suspend fun getTopHotDeals(): Response<HotDealsResponse>
-    
+
     @GET("api/community/hot-deals")
     suspend fun getHotDealsDto(
         @Query("category") category: String? = null
@@ -314,7 +296,7 @@ interface ApiService {
         @Body req: ApiVoteCreate
     ): Response<ApiDealVotes>
 
-    // ✅ [Epic 2] 실시간 알림 연동 API
+    // 실시간 알림 연동 API
     @GET("api/users/notifications")
     suspend fun getUserNotifications(
         @Query("user_id") userId: String
@@ -358,12 +340,34 @@ interface ApiService {
         @Query("keyword") keyword: String? = request.keyword
     ): Response<ApiResponse>
 
-    // 👤 회원 탈퇴 API (DB 완전 연동)
+    // 회원 탈퇴 API
     @POST("api/auth/withdraw")
     suspend fun withdrawUser(
         @Body request: UserWithdrawRequest
     ): Response<ApiResponse>
 }
+
+/**
+ * 아웃링크 수익화 클릭 트래킹 요청 DTO (/api/coupang/track-click)
+ */
+data class TrackClickRequest(
+    @SerializedName("url") val url: String,
+    @SerializedName("deal_id") val dealId: Int? = null,
+    @SerializedName("price") val price: Int? = 0,
+    @SerializedName("currency") val currency: String? = "KRW",
+    @SerializedName("platform") val platform: String = "android"
+)
+
+/**
+ * 아웃링크 수익화 클릭 트래킹 응답 DTO (/api/coupang/track-click)
+ */
+data class TrackClickResponse(
+    @SerializedName("status") val status: String = "ok",
+    @SerializedName("mall_name") val mallName: String? = null,
+    @SerializedName("affiliate_network") val affiliateNetwork: String? = null,
+    @SerializedName("is_monetized") val isMonetized: Boolean? = null,
+    @SerializedName("estimated_commission_krw") val estimatedCommissionKrw: Double? = null
+)
 
 data class UserWithdrawRequest(
     @SerializedName("username") val username: String,
@@ -393,7 +397,6 @@ data class ApiVoteCreate(
     val vote_type: String
 )
 
-// [Epic 3] 키워드 응답 모델
 data class DetailedKeywordDto(
     val id: Int,
     val keyword: String,
@@ -409,18 +412,12 @@ data class KeywordListResponse(
     val dnd_settings_json: String? = null,
     val night_push_consent: Boolean? = null
 )
+
 data class AddKeywordRequest(
     @SerializedName("user_id") val device_uuid: String,
     val keyword: String
 )
 
-// ApiClient has been removed. Use NetworkModule.createService<ApiService>() instead.
-
-// 📋 API 응답 데이터 모델들
-
-/**
- * 딜 목록 응답
- */
 data class DealsResponse(
     val deals: List<DealItem>,
     val total: Int,
@@ -429,18 +426,12 @@ data class DealsResponse(
     val hasNext: Boolean
 )
 
-/**
- * 공통 API 응답
- */
 data class ApiResponse(
     val success: Boolean,
     val message: String,
     val data: Any? = null
 )
 
-/**
- * 쿠팡 상품 API 모델
- */
 data class ApiProduct(
     val id: Int,
     val title: String,
@@ -456,9 +447,6 @@ data class ApiProduct(
     val last_checked: String?
 )
 
-/**
- * 가격 히스토리 API 모델
- */
 data class ApiPriceHistory(
     val price: Int,
     val original_price: Int?,
@@ -467,9 +455,6 @@ data class ApiPriceHistory(
     val is_available: Boolean
 )
 
-/**
- * 딜 상세 정보 모델
- */
 data class DealDetail(
     val id: Int,
     val title: String,
@@ -486,9 +471,6 @@ data class DealDetail(
     val commentCount: Int
 )
 
-/**
- * 가격 히스토리 항목 모델
- */
 data class PriceHistoryItem(
     val price: Int,
     val originalPrice: Int?,
@@ -496,9 +478,6 @@ data class PriceHistoryItem(
     val recordedAt: String
 )
 
-/**
- * 향상된 딜 정보 모델
- */
 data class EnhancedDealInfo(
     val qualityScore: Int,
     val priceRank: String,
@@ -507,9 +486,6 @@ data class EnhancedDealInfo(
     val recommendation: String?
 )
 
-/**
- * FCM 토큰 등록 요청 (익명 가입)
- */
 data class RegisterDeviceReq(
     val device_uuid: String,
     val fcm_token: String,
@@ -520,9 +496,6 @@ data class RegisterDeviceReq(
     val dnd_settings_json: String? = null
 )
 
-/**
- * 키워드 알림 등록 요청
- */
 data class KeywordAlertRequest(
     val keyword: String,
     val fcmToken: String,
@@ -530,27 +503,18 @@ data class KeywordAlertRequest(
     val maxPrice: Int? = null
 )
 
-/**
- * 가격 추적 등록 요청
- */
 data class PriceAlertRequest(
     val dealId: Long,
     val targetPrice: Int,
     val fcmToken: String
 )
 
-/**
- * 카테고리 모델
- */
 data class Category(
     val id: String,
     val name: String,
     val icon: String? = null
 )
 
-/**
- * 사이트 모델
- */
 data class Site(
     val id: String,
     val name: String,

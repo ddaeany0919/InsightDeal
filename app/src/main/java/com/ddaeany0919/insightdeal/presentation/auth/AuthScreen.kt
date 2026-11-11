@@ -48,7 +48,7 @@ fun AuthScreen(
     val savedNickname by AuthManager.getNickname(ctx).collectAsState(initial = "guest")
     val autoLoginEnabled by AuthManager.isAutoLoginEnabled(ctx).collectAsState(initial = true)
     val rememberIdEnabled by AuthManager.isRememberIdEnabled(ctx).collectAsState(initial = true)
-    val savedId by AuthManager.getSavedId(ctx).collectAsState(initial = "admin")
+    val savedId by AuthManager.getSavedId(ctx).collectAsState(initial = "")
 
     val brandAccent = MaterialTheme.colorScheme.primary
     val isUserGuest = savedUsername == "guest" || savedUsername.isNullOrEmpty()
@@ -106,7 +106,7 @@ fun AuthScreen(
             ) {
                 Column(modifier = Modifier.padding(24.dp)) {
                     var currentUserId by remember(savedUsername, savedId) {
-                        mutableStateOf(if (savedUsername == "guest" || savedUsername.isNullOrEmpty()) (savedId ?: "admin") else savedUsername!!)
+                        mutableStateOf(if (savedUsername == "guest" || savedUsername.isNullOrEmpty()) (savedId ?: "") else savedUsername!!)
                     }
                     var currentNickname by remember(savedNickname) {
                         mutableStateOf(if (savedNickname == "guest" || savedNickname.isNullOrEmpty()) "합리적쇼핑꾼" else savedNickname!!)
@@ -626,8 +626,7 @@ fun AuthScreen(
                                     }
                                     val isMatch = AuthManager.checkUserCredentials(ctx, currentUserId, currentPassword)
                                     if (isMatch) {
-                                        // 로그인 성공 시 세션 복구 및 마이페이지 워프
-                                        val nicknameKey = if (currentUserId == "admin") "최고운영자" else "합리적쇼핑꾼"
+                                        val nicknameKey = AuthManager.getRegisteredNickname(ctx, currentUserId) ?: "합리적쇼핑꾼"
                                         AuthManager.saveUser(ctx, currentUserId, nicknameKey)
                                         android.widget.Toast.makeText(ctx, "로그인되었어요.", android.widget.Toast.LENGTH_SHORT).show()
                                         onBackClick()

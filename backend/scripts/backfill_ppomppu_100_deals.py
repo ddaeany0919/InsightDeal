@@ -373,6 +373,8 @@ async def backfill_remote_api(
 
         # 실제 전송
         if not dry_run and batches_to_push:
+            feeder_token = os.getenv("FEEDER_API_TOKEN", "").strip()
+            feeder_headers = {"X-Feeder-Token": feeder_token} if feeder_token else {}
             for c_name, items in batches_to_push.items():
                 d_name = "뽐뿌" if c_name == "ppomppu" else ("알리뽐뿌" if c_name == "ali_ppomppu" else "뽐뿌해외")
                 base_u = "https://www.ppomppu.co.kr"
@@ -387,6 +389,7 @@ async def backfill_remote_api(
                                 "base_url": base_u,
                                 "deals": chunk,
                             },
+                            headers=feeder_headers or None,
                         )
                         if res.status_code == 200:
                             logger.info(f"🚀 [원격 서버 전송] {d_name} {len(chunk)}건 복구 완료 (/ingest-batch)")

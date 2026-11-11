@@ -19,85 +19,89 @@ class ClienScraper(AsyncBaseScraper):
 
         deals = []
         for item in post_rows:
-            # 광고글 제거
-            if item.select_one('.label_ad'):
-                continue
-
-            is_closed = False
-            sold_out_tag = item.select_one('span.icon_info')
-            if sold_out_tag and '품절' in sold_out_tag.get_text(strip=True):
-                is_closed = True
-            
-            title_element = item.select_one('span.list_subject a')
-            if not title_element:
-                title_element = item.select_one('a[data-role="list-title-text"]')
-            if not title_element:
-                continue
-
-            raw_url = title_element.get('href', '')
-            url = urljoin("https://www.clien.net", raw_url.split('?')[0])
-            full_title = title_element.get_text(strip=True)
-            
-            if '종료' in full_title or '마감' in full_title or '품절' in full_title:
-                is_closed = True
-
-            style = title_element.get('style', '')
-            if 'line-through' in style or title_element.select_one('del, s, strike'):
-                is_closed = True
-                
-            icon_info = item.select_one('.icon_info')
-            if icon_info and ('품절' in icon_info.get_text() or '종료' in icon_info.get_text()):
-                is_closed = True
-            
-            is_super_hotdeal = False
-            symph_el = item.select_one('.list_symph')
-            hit_el = item.select_one('.list_hit')
-            symph = int(symph_el.get_text(strip=True)) if symph_el and symph_el.get_text(strip=True).isdigit() else 0
-            hit_txt = hit_el.get_text(strip=True).replace(',', '') if hit_el else '0'
-            hit = 0
             try:
-                if 'k' in hit_txt.lower():
-                    hit = int(float(re.sub(r'[^0-9.]', '', hit_txt)) * 1000)
-                elif hit_txt.isdigit():
-                    hit = int(hit_txt)
-            except Exception:
+                # 광고글 제거
+                if item.select_one('.label_ad'):
+                    continue
+
+                is_closed = False
+                sold_out_tag = item.select_one('span.icon_info')
+                if sold_out_tag and '품절' in sold_out_tag.get_text(strip=True):
+                    is_closed = True
+                
+                title_element = item.select_one('span.list_subject a')
+                if not title_element:
+                    title_element = item.select_one('a[data-role="list-title-text"]')
+                if not title_element:
+                    continue
+
+                raw_url = title_element.get('href', '')
+                url = urljoin("https://www.clien.net", raw_url.split('?')[0])
+                full_title = title_element.get_text(strip=True)
+                
+                if '종료' in full_title or '마감' in full_title or '품절' in full_title:
+                    is_closed = True
+
+                style = title_element.get('style', '')
+                if 'line-through' in style or title_element.select_one('del, s, strike'):
+                    is_closed = True
+                    
+                icon_info = item.select_one('.icon_info')
+                if icon_info and ('품절' in icon_info.get_text() or '종료' in icon_info.get_text()):
+                    is_closed = True
+                
+                is_super_hotdeal = False
+                symph_el = item.select_one('.list_symph')
+                hit_el = item.select_one('.list_hit')
+                symph = int(symph_el.get_text(strip=True)) if symph_el and symph_el.get_text(strip=True).isdigit() else 0
+                hit_txt = hit_el.get_text(strip=True).replace(',', '') if hit_el else '0'
                 hit = 0
-            if symph >= 5 or (hit >= 10000 and symph >= 3):
-                is_super_hotdeal = True
+                try:
+                    if 'k' in hit_txt.lower():
+                        hit = int(float(re.sub(r'[^0-9.]', '', hit_txt)) * 1000)
+                    elif hit_txt.isdigit():
+                        hit = int(hit_txt)
+                except Exception:
+                    hit = 0
+                if symph >= 5 or (hit >= 10000 and symph >= 3):
+                    is_super_hotdeal = True
 
-            image_url = ""
-            img_tag = item.select_one('div.list_img img')
-            if img_tag and img_tag.has_attr('src'):
-                src = img_tag['src']
-                if 'noimage' not in src:
-                    image_url = src if src.startswith('http') else urljoin("https://www.clien.net", src)
+                image_url = ""
+                img_tag = item.select_one('div.list_img img')
+                if img_tag and img_tag.has_attr('src'):
+                    src = img_tag['src']
+                    if 'noimage' not in src:
+                        image_url = src if src.startswith('http') else urljoin("https://www.clien.net", src)
 
-            # 실제 게시글 작성 시간 추출
-            posted_at_iso = None
-            time_span = item.select_one('span.timestamp, span.time')
-            if time_span:
-                posted_at_iso = self.parse_time_str(time_span.get('title') or time_span.get_text(strip=True))
+                # 실제 게시글 작성 시간 추출
+                posted_at_iso = None
+                time_span = item.select_one('span.timestamp, span.time')
+                if time_span:
+                    posted_at_iso = self.parse_time_str(time_span.get('title') or time_span.get_text(strip=True))
 
-            # 제목 맨 앞의 대괄호 [...] 에서 카테고리 추출
-            category_extracted = None
-            cat_match = re.search(r'^\s*\[([^\]]+)\]', full_title)
-            if cat_match:
-                category_extracted = cat_match.group(1).strip()
+                # 제목 맨 앞의 대괄호 [...] 에서 카테고리 추출
+                category_extracted = None
+                cat_match = re.search(r'^\s*\[([^\]]+)\]', full_title)
+                if cat_match:
+                    category_extracted = cat_match.group(1).strip()
 
-            deals.append({
-                "title": full_title,
-                "url": url,
-                "price": 0,
-                "shop_name": "",
-                "image_url": image_url,
-                "is_closed": is_closed,
-                "is_super_hotdeal": is_super_hotdeal,
-                "posted_at": posted_at_iso,
-                "view_count": hit,
-                "like_count": symph,
-                "comment_count": 0,
-                "category": category_extracted
-            })
+                deals.append({
+                    "title": full_title,
+                    "url": url,
+                    "price": 0,
+                    "shop_name": "",
+                    "image_url": image_url,
+                    "is_closed": is_closed,
+                    "is_super_hotdeal": is_super_hotdeal,
+                    "posted_at": posted_at_iso,
+                    "view_count": hit,
+                    "like_count": symph,
+                    "comment_count": 0,
+                    "category": category_extracted
+                })
+            except Exception as row_err:
+                logger.warning(f"[{self.platform_name}] 행 파싱 오류로 건너뜀: {row_err}")
+                continue
             
         return deals
 
@@ -146,32 +150,10 @@ class ClienScraper(AsyncBaseScraper):
         shipping_fee = ""
         body_text = soup.get_text(separator=' ')
         
-        # 가격 휴리스틱 추출
+        # 가격 휴리스틱 추출 (문맥 숫자 마스킹 포함 단일 정규화 모듈 위임)
         import re
-        
-        # [방어막 추가]: 본문 파싱 전 URL 소거 처리! (링크 내의 숫자 오인 차단)
-        cleaned_body_text = re.sub(r'https?://[^\s]+', '', body_text)
-        
-        usd_match = re.search(r'(?:\$|USD|달러|유로|€)\s*([0-9,.]+)', cleaned_body_text, re.IGNORECASE)
-        if not usd_match:
-            usd_match = re.search(r'([0-9,.]+)\s*(?:\$|USD|달러|유로|€)', cleaned_body_text, re.IGNORECASE)
-            
-        price_matches = re.findall(r'([0-9]{1,3}(?:[,\.][0-9]{3})*|[0-9]+)\s*원', cleaned_body_text)
-        
-        if usd_match:
-            try:
-                val = float(usd_match.group(1).replace(',', ''))
-                price_fallback = int(val * 100)
-                if '유로' in body_text or '€' in body_text:
-                    extracted_currency = "EUR"
-                else:
-                    extracted_currency = "USD"
-            except: pass
-        elif price_matches:
-            try:
-                price_fallback = int(price_matches[0].replace(',', '').replace('.', ''))
-            except:
-                pass
+        from backend.core.deal_normalizer import extract_body_fallback_price
+        price_fallback, extracted_currency = extract_body_fallback_price(body_text, full_title or "")
                 
         # 배송비 휴리스틱 추출
         if re.search(r'(무료배송|무배|택배비\s*무료|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', body_text):

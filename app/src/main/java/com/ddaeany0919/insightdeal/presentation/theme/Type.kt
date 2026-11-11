@@ -6,11 +6,18 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.ddaeany0919.insightdeal.R
 
-// 🔤 폰트 및 타이포그래피 시스템
+val PretendardFontFamily = FontFamily(
+    Font(R.font.pretendard_regular, FontWeight.Normal),
+    Font(R.font.pretendard_medium, FontWeight.Medium),
+    Font(R.font.pretendard_semibold, FontWeight.SemiBold),
+    Font(R.font.pretendard_bold, FontWeight.Bold),
+    Font(R.font.pretendard_bold, FontWeight.ExtraBold),
+    Font(R.font.pretendard_bold, FontWeight.Black)
+)
 
-// 기본 폰트 설정 (시스템 디폴트 사용)
-val DefaultFontFamily = FontFamily.Default
+val DefaultFontFamily = PretendardFontFamily
 
 // InsightDeal 전용 Typography
 val Typography = Typography(

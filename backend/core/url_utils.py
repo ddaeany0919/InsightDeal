@@ -1,12 +1,15 @@
 import html
 import os
 import re
+import threading
 import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse, unquote, quote
 
 _SHORTLINK_UNWRAP_CACHE: dict[str, str] = {}
 _AFFILIATE_DEEPLINK_CACHE: dict[str, str] = {}
 _LINKPRICE_APPROVAL_CACHE: dict[tuple[str, str], tuple[bool, float]] = {}
+_INFLIGHT_LINKPRICE_PROBES: set[tuple[str, str]] = set()
+_LINKPRICE_PROBE_LOCK = threading.Lock()
 
 DEFAULT_LINKPRICE_AFFILIATE_ID = "A100709825"
 DEFAULT_COUPANG_LPTAG = "AF4452088"
@@ -147,12 +150,29 @@ LINKPRICE_MERCHANTS = {
 }
 
 
-def is_linkprice_merchant_approved(m_id: str, lp_aff_id: str, ttl_sec: int = 300) -> bool:
+def _probe_linkprice_merchant_async(m_id: str, lp_aff_id: str, cache_key: tuple[str, str]) -> None:
+    approved = False
+    try:
+        import requests
+        probe_url = f"https://newtip.net/click.php?m={m_id}&a={lp_aff_id}&l=0000"
+        resp = requests.get(probe_url, allow_redirects=False, timeout=1.8)
+        loc = (resp.headers.get("Location") or "").lower()
+        approved = bool(resp.status_code in (301, 302) and "error.php" not in loc)
+    except Exception:
+        approved = False
+    finally:
+        _LINKPRICE_APPROVAL_CACHE[cache_key] = (approved, time.time())
+        with _LINKPRICE_PROBE_LOCK:
+            _INFLIGHT_LINKPRICE_PROBES.discard(cache_key)
+
+
+def is_linkprice_merchant_approved(m_id: str, lp_aff_id: str, ttl_sec: int = 900) -> bool:
     """
-    🛡️ [링크프라이스 머천트 승인 여부 자동 검증기]
-    - 이미 엑셀(Linkprice_DetailMerchantList_20261111.xlsx)에서 '승인' 확인된 80개 머천트는 0ms 즉시 True를 반환합니다.
-    - '승인대기' 머천트(11번가, 알리익스프레스, 쿠팡, GS샵, LGE.COM 등)는 기본링크(l=0000) 응답을 5분 단위로 캐싱하여,
-      미승인 상태에서는 원본 상품 URL로 안전하게 우회시키고, 승인 완료되는 즉시 자동으로 수익화 링크로 전환합니다.
+    링크프라이스 머천트 승인 여부를 논블로킹으로 확인합니다.
+    - 사전 승인 머천트는 즉시 True를 반환합니다.
+    - 캐시(기본 15분)가 유효하면 캐시값을 반환합니다.
+    - 캐시 미스 시 요청 지연을 막기 위해 즉시 False(원본 URL 폴백)를 반환하고
+      백그라운드 데몬 스레드에서 승인 여부를 조회해 캐시를 갱신합니다.
     """
     if not m_id or not lp_aff_id:
         return False
@@ -164,27 +184,26 @@ def is_linkprice_merchant_approved(m_id: str, lp_aff_id: str, ttl_sec: int = 300
     if cached and (now - cached[1]) < ttl_sec:
         return cached[0]
 
-    try:
-        import requests
-        probe_url = f"https://newtip.net/click.php?m={m_id}&a={lp_aff_id}&l=0000"
-        resp = requests.get(probe_url, allow_redirects=False, timeout=1.8)
-        loc = (resp.headers.get("Location") or "").lower()
-        approved = bool(resp.status_code in (301, 302) and "error.php" not in loc)
-        if approved and lp_aff_id == DEFAULT_LINKPRICE_AFFILIATE_ID:
-            _PREAPPROVED_LINKPRICE_MERCHANTS.add(m_id)
-    except Exception:
-        approved = False
+    should_spawn = False
+    with _LINKPRICE_PROBE_LOCK:
+        if cache_key not in _INFLIGHT_LINKPRICE_PROBES:
+            _INFLIGHT_LINKPRICE_PROBES.add(cache_key)
+            should_spawn = True
 
-    _LINKPRICE_APPROVAL_CACHE[cache_key] = (approved, now)
-    return approved
+    if should_spawn:
+        threading.Thread(
+            target=_probe_linkprice_merchant_async,
+            args=(m_id, lp_aff_id, cache_key),
+            daemon=True,
+        ).start()
+
+    return False
 
 
 def unwrap_third_party_affiliate_url(url: str, allow_network: bool = False) -> str:
     """
-    🧼 [타 커뮤니티/원작성자 제휴코드 세탁 엔진]
-    - click.linkprice.com, lpweb.kr, ilikeclick.com, adpick.co.kr 등의 tu=/url= 파라미터를 즉시 해독합니다.
-    - allow_network=True (수집/백필/리다이렉트 시점)일 때는 s.click.aliexpress.com, link.coupang.com, coupa.ng
-      단축 제휴 링크를 실제 쇼핑몰 원본 상품 주소로 복원하고 타인의 lptag/aff_fcid를 100% 제거합니다.
+    외부 커뮤니티/원작성자 제휴 래퍼 및 단축 링크를 원본 상품 URL로 복원합니다.
+    이미 자체 제휴 코드(AF4452088, A100709825)가 적용된 링크는 그대로 보존합니다.
     """
     if not url or not str(url).startswith("http"):
         return url or ""
@@ -193,14 +212,15 @@ def unwrap_third_party_affiliate_url(url: str, allow_network: bool = False) -> s
     if u in _SHORTLINK_UNWRAP_CACHE:
         return _SHORTLINK_UNWRAP_CACHE[u]
 
-    # 이미 인사이트딜 자체 쿠팡 파트너스 게이트웨이(AF4452088) 또는 링크프라이스(A100709825) 링크인 경우 그대로 보존
-    if ("link.coupang.com/re/aff" in u.lower() and DEFAULT_COUPANG_LPTAG.lower() in u.lower()) or (
-        ("newtip.net" in u.lower() or "click.linkprice.com" in u.lower()) and DEFAULT_LINKPRICE_AFFILIATE_ID.lower() in u.lower()
+    u_low_init = u.lower()
+    if DEFAULT_COUPANG_LPTAG.lower() in u_low_init or (
+        ("newtip.net" in u_low_init or "click.linkprice.com" in u_low_init)
+        and DEFAULT_LINKPRICE_AFFILIATE_ID.lower() in u_low_init
     ):
         return u
 
-    # 1. 쿼리 파라미터 기반 제휴 래퍼 (네트워크 요청 없이 0ms 해독)
-    if any(k in u.lower() for k in ("click.linkprice.com", "newtip.net", "lpweb.kr", "ilikeclick.com", "adpick.co.kr")):
+    # 1. 쿼리 파라미터 기반 제휴 래퍼 (네트워크 요청 없이 즉시 해독)
+    if any(k in u_low_init for k in ("click.linkprice.com", "newtip.net", "lpweb.kr", "ilikeclick.com", "adpick.co.kr")):
         m_tu = re.search(r"[?&](?:tu|url)=([^&]+)", u, re.IGNORECASE)
         if m_tu:
             try:
@@ -217,18 +237,34 @@ def unwrap_third_party_affiliate_url(url: str, allow_network: bool = False) -> s
     ):
         try:
             import requests
+            from urllib.parse import urljoin
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
             }
             if "link.coupang.com" in u_lower or "coupa.ng" in u_lower:
-                resp = requests.get(u, headers=headers, allow_redirects=False, timeout=3.5)
-                loc = resp.headers.get("Location") or ""
-                if loc.startswith("http"):
-                    u = loc
+                curr_hop = u
+                for _ in range(3):
+                    hop_low = curr_hop.lower()
+                    if "link.coupang.com" not in hop_low and "coupa.ng" not in hop_low:
+                        break
+                    resp = requests.get(curr_hop, headers=headers, allow_redirects=False, timeout=3.5)
+                    loc = (resp.headers.get("Location") or "").strip()
+                    if not loc:
+                        break
+                    if not loc.startswith("http"):
+                        loc = urljoin(curr_hop, loc)
+                    curr_hop = loc
+                if curr_hop.startswith("http"):
+                    u = curr_hop
             else:
                 resp = requests.get(u, headers=headers, allow_redirects=True, timeout=4.0)
-                if resp.url and resp.url.startswith("http") and "s.click.aliexpress.com" not in resp.url.lower():
-                    u = resp.url
+                resolved_u = (resp.url or "").strip()
+                if (
+                    resolved_u.startswith("http")
+                    and "s.click.aliexpress.com" not in resolved_u.lower()
+                    and "a.aliexpress.com" not in resolved_u.lower()
+                ):
+                    u = resolved_u
         except Exception:
             pass
 
@@ -237,7 +273,6 @@ def unwrap_third_party_affiliate_url(url: str, allow_network: bool = False) -> s
         parsed = urlparse(u)
         host = parsed.netloc.lower()
         if "aliexpress.com" in host and "/item/" in parsed.path:
-            # 알리 상품 페이지는 쿼리 파라미터(aff_fcid 등)를 전부 걷어내면 가장 깨끗한 원본 URL이 됨
             clean_u = f"https://ko.aliexpress.com{parsed.path}"
             _SHORTLINK_UNWRAP_CACHE[str(url).strip()] = clean_u
             return clean_u
@@ -256,6 +291,11 @@ def unwrap_third_party_affiliate_url(url: str, allow_network: bool = False) -> s
             return clean_u
     except Exception:
         pass
+
+    if u != str(url).strip() and not any(
+        sd in u.lower() for sd in ("s.click.aliexpress.com", "a.aliexpress.com", "link.coupang.com", "coupa.ng")
+    ):
+        _SHORTLINK_UNWRAP_CACHE[str(url).strip()] = u
 
     return u
 
@@ -401,6 +441,13 @@ def apply_affiliate_monetization(url: str) -> str:
     if not url or not url.startswith("http"):
         return url
 
+    u_raw_low = url.strip().lower()
+    if DEFAULT_COUPANG_LPTAG.lower() in u_raw_low or (
+        ("newtip.net" in u_raw_low or "click.linkprice.com" in u_raw_low)
+        and DEFAULT_LINKPRICE_AFFILIATE_ID.lower() in u_raw_low
+    ):
+        return url.strip()
+
     try:
         # 0. 타 커뮤니티 제휴 래퍼(click.linkprice.com 등) 및 캐시된 단축링크 해독
         clean_url = unwrap_third_party_affiliate_url(url, allow_network=False)
@@ -490,20 +537,11 @@ def extract_canonical_product_key(url: str) -> str:
     if not url:
         return ""
 
-    import urllib.parse
+    from backend.core.deal_normalizer import unwrap_redirect_target_url
 
-    u = url.strip()
-    # 1. 커뮤니티 아웃링크 래퍼(ruliweb, clien, ppomppu 등) 내부 실제 URL 우선 해독
-    for param_pattern in [r"[?&]ol=([^&]+)", r"[?&]gourl=([^&]+)", r"[?&]url=([^&]+)", r"[?&]target=([^&]+)"]:
-        m_wrap = re.search(param_pattern, u)
-        if m_wrap:
-            try:
-                decoded = urllib.parse.unquote(m_wrap.group(1))
-                if decoded.startswith("http"):
-                    u = decoded
-                    break
-            except Exception:
-                pass
+    u = unwrap_redirect_target_url(url)
+    if not u:
+        return ""
 
     u_lower = u.lower()
 
@@ -527,9 +565,9 @@ def extract_canonical_product_key(url: str) -> str:
         if m:
             return f"11st_{m.group(1)}"
 
-    # 5. 쿠팡 (/vp/products/번호, /vm/products/번호 + itemId 옵션 구분)
+    # 5. 쿠팡 (/vp/products/번호, /vm/products/번호, link.coupang.com AFFSDP pageKey=번호 + itemId 옵션 구분)
     if "coupang.com" in u_lower:
-        m = re.search(r"products/([0-9]+)", u, re.IGNORECASE)
+        m = re.search(r"(?:products/|pageKey=)([0-9]+)", u, re.IGNORECASE)
         if m:
             item_m = re.search(r"itemId=([0-9]+)", u, re.IGNORECASE)
             if item_m:
@@ -594,8 +632,23 @@ def is_search_or_community_url(url: str) -> bool:
     if not url:
         return False
     
-    u = str(url).strip().lower()
+    u = str(url).strip()
+    if ("newtip.net" in u.lower() or "click.linkprice.com" in u.lower()) and "tu=" in u.lower():
+        m_tu = re.search(r"[?&]tu=([^&]+)", u, re.IGNORECASE)
+        if m_tu:
+            try:
+                dec = unquote(m_tu.group(1)).strip()
+                if dec.startswith("http"):
+                    u = dec
+            except Exception:
+                pass
+    u = u.lower()
     if not u.startswith("http"):
+        return False
+
+    if "link.coupang.com/re/affsrp" in u:
+        return True
+    if "link.coupang.com/re/affsdp" in u:
         return False
 
     # 1. 커뮤니티 내부 글 주소 및 리다이렉트 도메인 감지 (최우선 차단)

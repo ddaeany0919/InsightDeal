@@ -70,7 +70,7 @@ fun KeywordManagerScreen(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
-    val username by AuthManager.getUsername(context).collectAsState(initial = "admin")
+    val username by AuthManager.getUsername(context).collectAsState(initial = "guest")
     val isLoggedIn = username != "guest" && !username.isNullOrEmpty()
 
     // ViewModel StateFlow 구독

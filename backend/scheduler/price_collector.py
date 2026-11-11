@@ -232,6 +232,7 @@ class PriceCollectionScheduler:
         """새로운 딜 스크래핑 - 확장된 커뮤니티 커버리지"""
         logger.info("🔍 Scraping new deals from all communities...")
         
+        db_session = None
         try:
             from scrapers.ppomppu_scraper import PpomppuScraper
             from scrapers.ruliweb_scraper import RuliwebScraper
@@ -292,8 +293,6 @@ class PriceCollectionScheduler:
                 except Exception as e:
                     logger.error(f"❌ Scraper {scraper.__class__.__name__} failed: {e}")
             
-            db_session.close()
-            
             if total_new_deals > 0:
                 logger.info(f"✅ Scraping completed: {total_new_deals} total new deals saved")
             else:
@@ -301,6 +300,9 @@ class PriceCollectionScheduler:
                 
         except Exception as e:
             logger.error(f"❌ Deal scraping failed: {e}")
+        finally:
+            if db_session is not None:
+                db_session.close()
     
     async def check_deleted_or_closed_deals(self):
         """삭제되거나 종료된 딜 점검 (과거 핫딜 3일 이내 품절 상태 검증)"""

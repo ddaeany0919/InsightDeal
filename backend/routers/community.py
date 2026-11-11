@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 from backend.database.session import get_db_session
 from fastapi.responses import StreamingResponse
+import hmac
 import httpx
 from backend.database import models
 import logging
@@ -16,6 +17,8 @@ from typing import List, Optional
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
 
 _COMMUNITY_ID_CACHE: dict[int, str] = {}
 
@@ -119,6 +122,14 @@ def _build_direct_mall_search_url(shop_name: str, raw_title: str, post_url: str 
         "LF몰": f"https://www.lfmall.co.kr/app/search/letSearch?searchTerm={q_enc}",
         "하프클럽": f"https://www.halfclub.com/search?keyword={q_enc}",
         "보리보리": f"https://www.boribori.co.kr/search?keyword={q_enc}",
+        "SSG닷컴": f"https://www.ssg.com/search.ssg?target=all&query={q_enc}",
+        "크림": f"https://kream.co.kr/search?keyword={q_enc}",
+        "컴퓨존": f"https://www.compuzone.co.kr/search/search.htm?Seargbl=1&SearchProductKey={q_enc}",
+        "탁탁몰": "https://www.tagtag.co.kr/",
+        "타오바오": f"https://s.taobao.com/search?q={q_enc}",
+        "에픽게임즈": f"https://store.epicgames.com/ko/browse?q={q_enc}",
+        "커버낫": f"https://covernat.net/product/search.html?keyword={q_enc}",
+        "테무": f"https://www.temu.com/search_result.html?search_key={q_enc}",
     }
     from backend.core.url_utils import apply_affiliate_monetization
     target_search_url = mall_search_templates.get(inferred_shop, f"https://search.shopping.naver.com/search/all?query={q_enc}")
@@ -131,7 +142,7 @@ def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
     content_html = getattr(deal, 'content_html', '') or ''
     deal_id = getattr(deal, 'id', None)
     
-    # 모음전/다중 딜 여부 판별 (동일한 뽐뿌 상세 글 주소이거나 제목에 다중 기호가 있는 경우)
+    # 모음전/다중 딜 여부 판별
     is_multi = False
     ecommerce_link = getattr(deal, 'ecommerce_link', None)
     post_link = getattr(deal, 'post_link', None)
@@ -139,8 +150,8 @@ def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
     ai_summary = getattr(deal, 'ai_summary', '') or ''
     shop_name = getattr(deal, 'shop_name', '') or ''
     
-    # 핫딜 복원 실패 시의 동일 주소 매칭 조건은 모음전 판단에서 전격 배제함!
-    if (title and ("," in title or "모음" in title or "선택" in title or "외/" in title or "($86)" in title or "($26)" in title or "($195)" in title or "($324)" in title)) or ("[모음전]" in ai_summary):
+    # 핫딜 복원 실패 시의 동일 주소 매칭 조건은 모음전 판단에서 배제
+    if (title and ("," in title or "모음" in title or "선택" in title or "외/" in title)) or ("[모음전]" in ai_summary):
         is_multi = True
         
     cleaned_ecom_url = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", content_html, deal_id, db, is_multi_item=is_multi)
@@ -328,9 +339,6 @@ def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = Non
         # 2차 실시간 파싱(requests.get)은 API 블로킹(응답 지연 및 새로고침 무한루프)을 유발하므로 제거함.
         if real_url:
             url_str = real_url
-            if "aliexpress" in url_str and "af=" not in url_str:
-                url_str += "&af=insightdeal" if "?" in url_str else "?af=insightdeal"
-                
             if db and deal_id:
                 try:
                     db.execute(
@@ -447,35 +455,84 @@ def extract_price(price_str):
     return 0
 
 
+def _to_krw_equiv(price, currency: Optional[str] = "KRW") -> float:
+    from backend.core.deal_normalizer import to_krw_equivalent
+    return to_krw_equivalent(price, currency)
+
+
+def _normalize_shipping_fee(raw_fee: Optional[str], title_hint: str = "") -> str:
+    from backend.core.deal_normalizer import normalize_shipping_fee
+    return normalize_shipping_fee(raw_fee, title_hint=title_hint)
+
+
+def _resolve_canonical_shop_name(deal, ecom_url: str = "") -> str:
+    from backend.core.deal_normalizer import resolve_canonical_shop_name
+    return resolve_canonical_shop_name(
+        raw_title=getattr(deal, "title", "") or "",
+        ecommerce_url=ecom_url or getattr(deal, "ecommerce_link", "") or "",
+        current_shop=getattr(deal, "shop_name", "") or "",
+        post_url=getattr(deal, "post_link", "") or "",
+        default_empty="",
+    )
+
+
+def _serialize_options_data(raw_options, deal_id: Optional[int] = None) -> list[dict]:
+    if not raw_options:
+        return []
+    try:
+        parsed = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    serialized: list[dict] = []
+    for opt in parsed:
+        if not isinstance(opt, dict):
+            continue
+        item = dict(opt)
+        raw_u = (item.get("url") or "").strip()
+        if raw_u:
+            clean_u = get_clean_ecommerce_url(raw_u, "", deal_id, None, is_multi_item=False)
+            item["url"] = clean_u or raw_u
+        else:
+            item["url"] = ""
+        raw_subs = item.get("sub_urls") or item.get("urls") or []
+        if isinstance(raw_subs, list):
+            item["sub_urls"] = [
+                get_clean_ecommerce_url(su, "", deal_id, None, is_multi_item=False) or su
+                for su in raw_subs
+                if su
+            ]
+        else:
+            item["sub_urls"] = []
+        serialized.append(item)
+    return serialized
+
+
+def _compute_total_price(price_int: int, currency: Optional[str], shipping_fee_str: str) -> int:
+    if not price_int or price_int <= 0:
+        return 0
+    curr = (currency or "KRW").strip().upper()
+    sf = str(shipping_fee_str or "").strip()
+    if curr == "KRW" and not any(sym in sf for sym in ("$", "€", "¥", "￥", "달러", "위안", "엔", "유로")):
+        return price_int + extract_shipping_fee(sf)
+    if curr == "USD" and ("$" in sf or "달러" in sf):
+        return price_int + extract_shipping_fee(sf)
+    return price_int
+
+
 def resolve_deal_price_and_currency(deal) -> tuple[int, str]:
     parsed_price = extract_price(getattr(deal, 'price', 0))
-    currency = getattr(deal, 'currency', 'KRW') or 'KRW'
+    currency = (getattr(deal, 'currency', 'KRW') or 'KRW').strip().upper()
     if parsed_price > 0:
         return parsed_price, currency
     title = getattr(deal, 'title', '') or ''
     if not title:
         return 0, currency
-    m_usd = re.search(r'(?:\$\s*([0-9]+(?:\.[0-9]+)?)|([0-9]+(?:\.[0-9]+)?)\s*(?:달러|불))', title, re.IGNORECASE)
-    if m_usd:
-        val = float(m_usd.group(1) or m_usd.group(2))
-        if 0 < val < 100000:
-            return int(round(val * 100)), 'USD'
-    won_matches = list(
-        re.finditer(
-            r'([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7})\s*원(?!\s*(?:권|이상|할인|적립|페이백|캐시백|청구|한도|증정))',
-            title
-        )
-    )
-    if won_matches:
-        val = int(won_matches[-1].group(1).replace(',', ''))
-        if 100 <= val <= 15000000:
-            return val, 'KRW'
-    m_chun = re.search(
-        r'([0-9]+(?:\.[0-9]+)?)\s*천\s*원(?!\s*(?:권|이상|할인|적립|페이백|캐시백|청구|한도|증정))',
-        title
-    )
-    if m_chun:
-        return int(round(float(m_chun.group(1)) * 1000)), 'KRW'
+    from backend.core.deal_normalizer import parse_title_price_and_shipping
+    tp, tc, _, _ = parse_title_price_and_shipping(title)
+    if tp > 0:
+        return tp, tc
     return 0, currency
 
 
@@ -746,16 +803,17 @@ def has_brand_or_keyword_conflict(words_a, words_b):
             return True
     return False
 
-def has_price_conflict(price_a: int, price_b: int) -> bool:
+def has_price_conflict(
+    price_a: int,
+    price_b: int,
+    curr_a: str = "KRW",
+    curr_b: str = "KRW",
+) -> bool:
     """
-    동일 상품인데 가격이 45% 이상 차이 나면 본품 vs 액세서리/단품 vs 박스 구성일 확률이 높으므로 병합을 차단합니다.
+    통화 단위(KRW/USD/EUR/CNY/JPY)를 원화로 환산한 뒤 45% 이상 차이 나면 병합을 차단합니다.
     """
-    if price_a > 0 and price_b > 0:
-        hi = max(price_a, price_b)
-        lo = min(price_a, price_b)
-        if (hi - lo) / hi > 0.45:
-            return True
-    return False
+    from backend.core.deal_normalizer import has_currency_aware_price_conflict
+    return has_currency_aware_price_conflict(price_a, price_b, curr_a, curr_b, threshold=0.45)
 
 def build_dsu(deals, time_window_days=1):
     dsu = DSU()
@@ -776,7 +834,7 @@ def build_dsu(deals, time_window_days=1):
         n_url = get_normalized_url(deal)
         n_name = get_normalized_base_name(deal)
         deal_time = deal.indexed_at
-        curr_price = extract_price(getattr(deal, 'price', 0))
+        curr_price, curr_currency = resolve_deal_price_and_currency(deal)
         curr_model = (getattr(deal, 'model_code', None) or "").strip().lower()
 
         curr_words_set = set(n_name.split(' ')) if n_name else set()
@@ -787,7 +845,7 @@ def build_dsu(deals, time_window_days=1):
         if n_url and not any(x in n_url for x in ["ppomppu", "fmkorea", "ruliweb", "quasarzone", "clien", "bbasak"]):
             n_url_key = n_url
             if n_url_key in url_to_deal:
-                for past_id, past_words_set, past_core_set, past_price in url_to_deal[n_url_key]:
+                for past_id, past_words_set, past_core_set, past_price, past_currency in url_to_deal[n_url_key]:
                     if curr_words_set and past_words_set:
                         intersection = len(curr_words_set.intersection(past_words_set))
                         union = len(curr_words_set.union(past_words_set))
@@ -802,17 +860,26 @@ def build_dsu(deals, time_window_days=1):
                         )
 
                         if is_exact_id:
-                            # 고유 쇼핑몰 상품번호가 100% 일치하면 옵션/수량/가격 충돌만 없을 때 즉시 동일 상품으로 병합!
-                            if not has_quantity_conflict(curr_words_set, past_words_set) and not has_model_conflict(curr_words_set, past_words_set) and not has_brand_or_keyword_conflict(curr_words_set, past_words_set) and not has_price_conflict(curr_price, past_price):
+                            if (
+                                not has_quantity_conflict(curr_words_set, past_words_set)
+                                and not has_model_conflict(curr_words_set, past_words_set)
+                                and not has_brand_or_keyword_conflict(curr_words_set, past_words_set)
+                                and not has_price_conflict(curr_price, past_price, curr_currency, past_currency)
+                            ):
                                 if core_inter >= 1 and (union == 0 or (intersection / union) >= 0.25):
                                     dsu.union(deal.id, past_id)
                                     break
                         else:
                             if union > 0 and (intersection / union) >= 0.8 and core_inter >= 2:
-                                if not has_quantity_conflict(curr_words_set, past_words_set) and not has_model_conflict(curr_words_set, past_words_set) and not has_brand_or_keyword_conflict(curr_words_set, past_words_set) and not has_price_conflict(curr_price, past_price):
+                                if (
+                                    not has_quantity_conflict(curr_words_set, past_words_set)
+                                    and not has_model_conflict(curr_words_set, past_words_set)
+                                    and not has_brand_or_keyword_conflict(curr_words_set, past_words_set)
+                                    and not has_price_conflict(curr_price, past_price, curr_currency, past_currency)
+                                ):
                                     dsu.union(deal.id, past_id)
                                     break
-            url_to_deal.setdefault(n_url_key, []).append((deal.id, curr_words_set, curr_core_set, curr_price))
+            url_to_deal.setdefault(n_url_key, []).append((deal.id, curr_words_set, curr_core_set, curr_price, curr_currency))
 
         # 2단계: 고유 제조사 모델코드 일치 시 교차 병합
         true_codes = extract_true_model_codes(curr_words_set)
@@ -820,17 +887,17 @@ def build_dsu(deals, time_window_days=1):
             true_codes.update(extract_true_model_codes({curr_model}))
         for code_key in true_codes:
             if code_key in model_to_deal:
-                for past_id, past_words_set, past_core_set, past_price in model_to_deal[code_key]:
+                for past_id, past_words_set, past_core_set, past_price, past_currency in model_to_deal[code_key]:
                     if (
                         len(curr_core_set.intersection(past_core_set)) >= 2
                         and not has_quantity_conflict(curr_words_set, past_words_set)
                         and not has_model_conflict(curr_words_set, past_words_set)
                         and not has_brand_or_keyword_conflict(curr_words_set, past_words_set)
-                        and not has_price_conflict(curr_price, past_price)
+                        and not has_price_conflict(curr_price, past_price, curr_currency, past_currency)
                     ):
                         dsu.union(deal.id, past_id)
                         break
-            model_to_deal.setdefault(code_key, []).append((deal.id, curr_words_set, curr_core_set, curr_price))
+            model_to_deal.setdefault(code_key, []).append((deal.id, curr_words_set, curr_core_set, curr_price, curr_currency))
 
         # 3단계: 정규화 상품명 및 핵심 토큰 유사도 기반 매칭
         if n_name and curr_core_set:
@@ -867,7 +934,12 @@ def build_dsu(deals, time_window_days=1):
                         not has_quantity_conflict(words_set, cluster['words'])
                         and not has_model_conflict(words_set, cluster['words'])
                         and not has_brand_or_keyword_conflict(words_set, cluster['words'])
-                        and not has_price_conflict(curr_price, cluster.get('price', 0))
+                        and not has_price_conflict(
+                            curr_price,
+                            cluster.get('price', 0),
+                            curr_currency,
+                            cluster.get('currency', 'KRW'),
+                        )
                     ):
                         dsu.union(deal.id, cluster['id'])
                         if deal_time:
@@ -882,6 +954,7 @@ def build_dsu(deals, time_window_days=1):
                     'core_words': curr_core_set,
                     'sc': curr_sc,
                     'price': curr_price,
+                    'currency': curr_currency,
                     'times': [deal_time] if deal_time else []
                 })
 
@@ -897,6 +970,9 @@ _FEED_CACHE_TTL_SEC = 20.0
 def invalidate_feed_api_cache():
     _TOP_DEALS_API_CACHE["ts"] = 0.0
     _HOT_DEALS_API_CACHE.clear()
+
+
+invalidate_deals_cache = invalidate_feed_api_cache
 
 def _clean_content_text(raw_text: str, title: str = "") -> str:
     if not raw_text:
@@ -965,28 +1041,10 @@ def _clean_ai_summary(raw_summary: str) -> str:
 
 def clean_deal_title(raw_title: str) -> str:
     """
-    🧹 게시글 제목에서 지름 꼬리표(💰, 🚚, 퀘이사존/지름 등), 울트라 맥스 태그,
-    가격/배송비 절삭 태그 및 미완성 닫히지 않은 괄호(r"\s*\([^)]*$")를 완벽하게 정제합니다.
-    (수원, 강원 등 숫자가 없는 한글 지명 괄호는 안전하게 보존합니다)
+    단일 진실 공급원(deal_normalizer.clean_canonical_title)을 통해 표시용 제목을 정제합니다.
     """
-    if not raw_title:
-        return ""
-    t = str(raw_title).strip()
-    if len(t) > 500:
-        t = t[:500]
-    # 여는 괄호 없이 닫는 대괄호/소괄호로 시작하는 오타 머리말 (예: '광군제특가] ', '잔여공구코드] ', '알리 잔여코드) ')을 표준 '[태그] '로 정규화
-    t = re.sub(r'^\s*([^\[\]\(\)\s][^\[\]\(\)]{0,11})[\]\)]\s*', r'[\1] ', t)
-    t = re.sub(r'[\s/]*[￦₩\\💰].*$', '', t)
-    t = re.sub(r'[\s/]*(?:🚚|퀘이사존/지름|지름&할인정보).*$', '', t)
-    t = re.sub(r'\s*\([^)]*울트라\s*맥스[^)]*\)', '', t)
-    # 1. 가격 표기 괄호 절삭: 화폐단위(원, 달러, 불 등) 앞에 반드시 숫자가 존재하는 경우만 정제하여 한글 지명(수원, 강원 등) 보존
-    t = re.sub(r'\s*\([^)]*(?:[0-9,]+|[0-9]+(?:\.[0-9]+)?)\s*(?:원|달러|불|엔|유로|원\s*대|원\s*상당)[^)]*\)\s*$', '', t)
-    # 2. 배송비 및 카드할인 안내 괄호 절삭
-    t = re.sub(r'\s*\([^)]*(?:무료배송|배송비|무배|유배|카드할인)[^)]*\)\s*$', '', t)
-    # 3. 가격 절삭 후 끝에 남은 미완성 열린 괄호 제거
-    t = re.sub(r'\s*\([^)]*$', '', t)
-    t = re.sub(r'[\s\.,\-\/~]+$', '', t).strip()
-    return t or raw_title.strip()
+    from backend.core.deal_normalizer import clean_canonical_title
+    return clean_canonical_title(raw_title)
 
 
 def _resolve_best_image_url(deal_obj, base_url: str) -> Optional[str]:
@@ -1051,7 +1109,7 @@ def _resolve_best_image_url(deal_obj, base_url: str) -> Optional[str]:
     return None
 
 @router.get("/top-hot-deals")
-async def get_top_hot_deals(db: Session = Depends(get_db_session)):
+def get_top_hot_deals(db: Session = Depends(get_db_session)):
     try:
         from sqlalchemy import and_, or_, not_
         from sqlalchemy.orm import joinedload
@@ -1113,8 +1171,8 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
         for deal in deals:
             comp_name = getattr(deal.community, 'display_name', None) or COMMUNITY_MAP.get(deal.community.name, deal.community.name)
             parsed_price_int, resolved_currency = resolve_deal_price_and_currency(deal)
-            parsed_shipping_fee = extract_shipping_fee(deal.shipping_fee)
-            total_price = parsed_price_int + parsed_shipping_fee if parsed_price_int > 0 else 0
+            norm_shipping_fee = _normalize_shipping_fee(deal.shipping_fee, title_hint=deal.title or "")
+            total_price = _compute_total_price(parsed_price_int, resolved_currency, norm_shipping_fee)
             
             # 모음전/다중 딜 여부 판별
             is_multi = False
@@ -1122,19 +1180,22 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
             post_link = getattr(deal, 'post_link', None)
             title = getattr(deal, 'title', '') or ''
             ai_summary = getattr(deal, 'ai_summary', '') or ''
-            if (ecommerce_link == post_link) or (title and ("," in title or "모음" in title or "선택" in title or "외/" in title or "($86)" in title or "($26)" in title or "($195)" in title or "($324)" in title)) or ("[모음전]" in ai_summary):
+            if (ecommerce_link == post_link) or (title and ("," in title or "모음" in title or "선택" in title or "외/" in title)) or ("[모음전]" in ai_summary):
                 is_multi = True
             
             cluster_key = dsu.find(deal.id)
             image_url = _resolve_best_image_url(deal, BASE_URL)
+            serialized_opts = _serialize_options_data(getattr(deal, "options_data", None), deal.id)
 
             if cluster_key in cluster_map:
                 existing = cluster_map[cluster_key]
                 if total_price > 0:
-                    if existing.get("total_price", 0) == 0 or total_price < existing["total_price"]:
+                    existing_krw = _to_krw_equiv(existing.get("total_price", 0), existing.get("currency", "KRW"))
+                    cand_krw = _to_krw_equiv(total_price, resolved_currency)
+                    if existing_krw <= 0 or cand_krw < existing_krw:
                         # 더 저렴한 딜이 발견되면 대표 가격, 이미지, 제목 갱신
                         existing["price"] = parsed_price_int
-                        existing["shipping_fee"] = deal.shipping_fee or ""
+                        existing["shipping_fee"] = norm_shipping_fee
                         existing["total_price"] = total_price
                         existing["currency"] = resolved_currency
                         clean_title = clean_deal_title(deal.title)
@@ -1149,10 +1210,17 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                             new_ecom_url = _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
                         if new_ecom_url or not existing.get("ecommerce_url"):
                             existing["ecommerce_url"] = new_ecom_url
+                        new_shop = _resolve_canonical_shop_name(deal, new_ecom_url)
+                        if new_shop or not existing.get("shop_name"):
+                            existing["shop_name"] = new_shop
+                        if serialized_opts:
+                            existing["options_data"] = serialized_opts
                         existing["post_url"] = deal.post_link or ""
                     else:
                         if image_url and (not existing.get("image_url") or "ui-avatars.com" in (existing.get("image_url", "") or "")):
                             existing["image_url"] = image_url
+                        if serialized_opts and not existing.get("options_data"):
+                            existing["options_data"] = serialized_opts
                     
                     # 출처 추가 (post_url 기준 중복 방지)
                     if not any(s.get('post_url') == (deal.post_link or "") for s in existing.setdefault("sources", [])):
@@ -1170,7 +1238,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                 
                 # 하나라도 살아있다면 전체 딜을 진행중인 것으로 처리
                 existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
-                existing["has_options"] = existing.get("has_options", False) or bool(getattr(deal, "has_options", False))
+                existing["has_options"] = existing.get("has_options", False) or bool(getattr(deal, "has_options", False)) or bool(serialized_opts)
                     
                 # 다수의 중복 딜 중 하나라도 핫딜이면 핫딜 상태 병합
                 if getattr(deal, 'honey_score', 0) >= 100:
@@ -1192,21 +1260,24 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     buy_count += reaction.positive_reactions
                     save_count = reaction.negative_reactions
 
+                resolved_top_ecom = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi) or _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
                 deal_dict = {
                     "id": deal.id,
                     "title": clean_title,
                     "price": parsed_price_int,
-                    "shipping_fee": deal.shipping_fee or "",
+                    "shipping_fee": norm_shipping_fee,
                     "total_price": total_price,
                     "currency": resolved_currency,
                     "original_price": None,
                     "discount_rate": 0,
                     "image_url": image_url,
-                    "ecommerce_url": get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi) or _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name),
+                    "ecommerce_url": resolved_top_ecom,
+                    "shop_name": _resolve_canonical_shop_name(deal, resolved_top_ecom),
                     "post_url": deal.post_link or "",
                     "site_name": comp_name,
                     "site_names": [comp_name],
                     "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
+                    "options_data": serialized_opts,
                     "category": deal.category or "기타",
                     "created_at": (deal.indexed_at.strftime('%Y-%m-%dT%H:%M:%SZ')) if deal.indexed_at else None,
                     "view_count": deal.view_count or 0,
@@ -1218,7 +1289,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     "honey_score": deal.honey_score or 0,
                     "ai_summary": ai_sum,
                     "content_html": _clean_content_text(deal.content_html or "", clean_title),
-                    "has_options": bool(getattr(deal, "has_options", False)),
+                    "has_options": bool(getattr(deal, "has_options", False) or serialized_opts),
                 }
                 cluster_map[cluster_key] = deal_dict
                 grouped_result.append(deal_dict)
@@ -1249,7 +1320,7 @@ async def get_top_hot_deals(db: Session = Depends(get_db_session)):
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @router.get("/hot-deals")
-async def get_hot_deals(
+def get_hot_deals(
     limit: int = 20,
     offset: int = 0,
     category: str = Query(None, description="분류별 카테고리명(ex: 전자기기, 패션 등)"),
@@ -1527,7 +1598,7 @@ async def get_hot_deals(
             post_link = getattr(deal, 'post_link', None)
             title = getattr(deal, 'title', '') or ''
             ai_summary = getattr(deal, 'ai_summary', '') or ''
-            if (ecommerce_link == post_link) or (title and ("," in title or "모음" in title or "선택" in title or "외/" in title or "($86)" in title or "($26)" in title or "($195)" in title or "($324)" in title)) or ("[모음전]" in ai_summary):
+            if (ecommerce_link == post_link) or (title and ("," in title or "모음" in title or "선택" in title or "외/" in title)) or ("[모음전]" in ai_summary):
                 is_multi = True
 
             cluster_key = dsu.find(deal.id)
@@ -1539,17 +1610,20 @@ async def get_hot_deals(
             clean_title = clean_deal_title(deal.title)
             
             parsed_price_int, resolved_currency = resolve_deal_price_and_currency(deal)
-            parsed_shipping_fee = extract_shipping_fee(deal.shipping_fee)
-            total_price = parsed_price_int + parsed_shipping_fee if parsed_price_int > 0 else 0
+            norm_shipping_fee = _normalize_shipping_fee(deal.shipping_fee, title_hint=deal.title or "")
+            total_price = _compute_total_price(parsed_price_int, resolved_currency, norm_shipping_fee)
+            serialized_opts = _serialize_options_data(getattr(deal, "options_data", None), deal.id)
 
             if cluster_key in cluster_map:
                 existing = cluster_map[cluster_key]
                 
                 if total_price > 0:
-                    if existing.get("total_price", 0) == 0 or total_price < existing["total_price"]:
+                    existing_krw = _to_krw_equiv(existing.get("total_price", 0), existing.get("currency", "KRW"))
+                    cand_krw = _to_krw_equiv(total_price, resolved_currency)
+                    if existing_krw <= 0 or cand_krw < existing_krw:
                         # 더 싼 딜이 발견되면 대표 가격, 이미지, 제목 갱신
                         existing["price"] = parsed_price_int
-                        existing["shipping_fee"] = deal.shipping_fee or ""
+                        existing["shipping_fee"] = norm_shipping_fee
                         existing["total_price"] = total_price
                         existing["currency"] = resolved_currency
                         
@@ -1562,6 +1636,11 @@ async def get_hot_deals(
                             new_ecom_url = _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
                         if new_ecom_url or not existing.get("ecommerce_url"):
                             existing["ecommerce_url"] = new_ecom_url
+                        new_shop = _resolve_canonical_shop_name(deal, new_ecom_url)
+                        if new_shop or not existing.get("shop_name"):
+                            existing["shop_name"] = new_shop
+                        if serialized_opts:
+                            existing["options_data"] = serialized_opts
                         
                         # 사이트 이름(메인 뱃지)도 더 싼 곳이 앞으로 오도록 조정
                         if comp_name in existing.setdefault("site_names", []):
@@ -1572,6 +1651,8 @@ async def get_hot_deals(
                         # 더 비싼 딜이라도 실제 이미지가 있고, 기존 이미지가 없거나 아바타라면 실제 이미지로 보강
                         if image_url and (not existing.get("image_url") or "ui-avatars.com" in (existing.get("image_url", "") or "")):
                             existing["image_url"] = image_url
+                        if serialized_opts and not existing.get("options_data"):
+                            existing["options_data"] = serialized_opts
 
                     
                     # 출처 배지 추가 (post_url 중복 방지)
@@ -1590,7 +1671,7 @@ async def get_hot_deals(
                             
                 # 하나라도 살아있다면 전체 딜을 진행중인 것으로 처리
                 existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
-                existing["has_options"] = existing.get("has_options", False) or bool(getattr(deal, "has_options", False))
+                existing["has_options"] = existing.get("has_options", False) or bool(getattr(deal, "has_options", False)) or bool(serialized_opts)
                 
                 # 다수의 중복 딜 중 하나라도 핫딜이면 핫딜 상태 병합
                 if getattr(deal, 'honey_score', 0) >= 100:
@@ -1630,15 +1711,17 @@ async def get_hot_deals(
                     "id": deal.id,
                     "title": clean_title,
                     "price": parsed_price_int,
-                    "shipping_fee": deal.shipping_fee or "",
+                    "shipping_fee": norm_shipping_fee,
                     "total_price": total_price,
                     "currency": resolved_currency,
                     "image_url": image_url,
                     "ecommerce_url": resolved_ecom_url,
+                    "shop_name": _resolve_canonical_shop_name(deal, resolved_ecom_url),
                     "post_url": deal.post_link or "",
                     "site_name": ", ".join(site_names_list),
                     "site_names": site_names_list,
                     "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
+                    "options_data": serialized_opts,
                     "category": deal.category or "기타",
                     "honey_score": final_honey_score,
                     "is_super_hotdeal": is_hot,
@@ -1651,7 +1734,7 @@ async def get_hot_deals(
                     "like_count": buy_count,
                     "dislike_count": save_count,
                     "tags": extract_deal_benefit_tags(deal.title, deal.content_html),
-                    "has_options": bool(getattr(deal, "has_options", False)),
+                    "has_options": bool(getattr(deal, "has_options", False) or serialized_opts),
                 }
                 cluster_map[cluster_key] = deal_dict
                 grouped_result.append(deal_dict)
@@ -1659,7 +1742,7 @@ async def get_hot_deals(
         if search_max_price is not None and search_max_price > 0:
             grouped_result = [
                 g for g in grouped_result
-                if 0 < int(g.get("price") or 0) <= search_max_price
+                if 0 < _to_krw_equiv(g.get("price"), g.get("currency")) <= search_max_price
             ]
 
         if sort_mode == "popular":
@@ -1675,7 +1758,7 @@ async def get_hot_deals(
             grouped_result.sort(
                 key=lambda x: (
                     0 if int(x.get("price") or 0) > 0 else 1,
-                    int(x.get("price") or 0)
+                    _to_krw_equiv(x.get("price"), x.get("currency")),
                 )
             )
 
@@ -1883,6 +1966,43 @@ def get_popular_keywords(db: Session = Depends(get_db_session)):
             "updated_at": "방금 전"
         }
 
+GENERIC_CATEGORY_STOPWORDS = {
+    # 가전 / 디지털
+    "청소기", "로봇청소기", "로청", "무선청소기", "물걸레", "스틱청소기", "창문로봇청소기",
+    "모니터", "포터블모니터", "휴대용모니터", "tv", "티비", "텔레비전", "oled", "qled",
+    "노트북", "랩탑", "컴퓨터", "데스크탑", "본체", "완본체", "태블릿", "패드", "아이패드", "갤럭시탭",
+    "스마트폰", "핸드폰", "휴대폰", "자급제", "이어폰", "헤드폰", "헤드셋", "스피커", "사운드바",
+    "마우스", "키보드", "기계식키보드", "충전기", "고속충전기", "보조배터리", "보배", "케이블", "거치대",
+    # 생활 / 계절
+    "선풍기", "서큘레이터", "가습기", "제습기", "에어컨", "냉장고", "김치냉장고", "세탁기", "건조기",
+    "공기청정기", "공청기", "밥솥", "에어프라이어", "전자레인지", "식기세척기", "식세기", "인덕션",
+    "의자", "게이밍의자", "책상", "모션데스크", "침대", "매트리스", "토퍼", "전기장판", "온수매트", "카본매트",
+    # 식품 / 패션 / 뷰티
+    "영양제", "비타민", "유산균", "오메가3", "밀크씨슬", "루테인", "단백질", "프로틴",
+    "생수", "음료", "탄산수", "사이다", "콜라", "커피", "원두", "라면", "햇반", "쌀",
+    "신발", "운동화", "슬리퍼", "티셔츠", "바지", "패딩", "코트", "자켓"
+}
+
+_CORE_UNIT_OR_GENERIC_RE = re.compile(
+    r'^(?:\d+(?:\.\d+)?(?:kg|g|ml|l|gb|tb|mb|w|v|a|hz|mah|ah|gsm|in1|인치|inch|개입|개|입|캔|병|팩|봉|포|매|판|박스|세트|롤|정|캡슐|구|미|쪽|호|p|ea|pcs|년|개월|일|시간|원|만원|천원)?|국내산|국산|해외|정품|무료|무배|특가|할인|증정|사은품|단품|혼합|선택|외|모음|한정|출시|신제품|신모델|리뉴얼|끌올)$',
+    re.IGNORECASE
+)
+
+
+def get_core_product_tokens(d_obj) -> set[str]:
+    if isinstance(d_obj, str):
+        norm_str = d_obj
+    else:
+        norm_str = get_normalized_base_name(d_obj) or ""
+    tokens = set()
+    for w in norm_str.split():
+        w_low = w.strip().lower()
+        if len(w_low) < 2 or _CORE_UNIT_OR_GENERIC_RE.match(w_low) or w_low in GENERIC_CATEGORY_STOPWORDS:
+            continue
+        tokens.add(w_low)
+    return tokens
+
+
 @router.get("/deals/{deal_id}")
 def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
     from sqlalchemy.orm import joinedload
@@ -1907,14 +2027,49 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
     else:
         end_time = datetime.utcnow()
         time_limit = end_time - timedelta(days=3)
-        
-    similar_deals = db.query(models.Deal).join(models.Community).options(
+
+    from sqlalchemy import or_
+    from sqlalchemy.orm import defer
+
+    search_clauses = [models.Deal.id == deal.id]
+    n_url = get_normalized_url(deal)
+    if deal.ecommerce_link and len(deal.ecommerce_link) > 12:
+        search_clauses.append(models.Deal.ecommerce_link == deal.ecommerce_link)
+    if n_url:
+        m_id_num = re.search(r"^(?:gmarket|auction|11st|coupang|aliexpress|naver|lotteon|ssg|musinsa|ohouse|kakao|himart)_([A-Za-z0-9]+)", n_url)
+        if m_id_num and len(m_id_num.group(1)) >= 4:
+            search_clauses.append(models.Deal.ecommerce_link.ilike(f"%{m_id_num.group(1)}%"))
+
+    curr_model = (getattr(deal, "model_code", None) or "").strip()
+    if curr_model and len(curr_model) >= 3:
+        search_clauses.append(models.Deal.model_code.ilike(f"%{curr_model}%"))
+        search_clauses.append(models.Deal.title.ilike(f"%{curr_model}%"))
+
+    curr_norm_name = get_normalized_base_name(deal) or ""
+    curr_all_words = set(curr_norm_name.split()) if curr_norm_name else set()
+    for code_tok in list(extract_true_model_codes(curr_all_words))[:3]:
+        if len(code_tok) >= 4:
+            search_clauses.append(models.Deal.title.ilike(f"%{code_tok}%"))
+
+    core_tokens = sorted(get_core_product_tokens(deal), key=lambda x: len(x), reverse=True)
+    for cw in core_tokens[:6]:
+        if len(cw) >= 2:
+            search_clauses.append(models.Deal.title.ilike(f"%{cw}%"))
+            search_clauses.append(models.Deal.base_product_name.ilike(f"%{cw}%"))
+
+    base_sim_q = db.query(models.Deal).join(models.Community).options(
         joinedload(models.Deal.community),
-        joinedload(models.Deal.deal_reactions)
+        joinedload(models.Deal.deal_reactions),
+        defer(models.Deal.content_html),
     ).filter(
         models.Deal.indexed_at >= time_limit,
-        models.Deal.indexed_at <= end_time
-    ).order_by(models.Deal.indexed_at.desc()).limit(450).all()
+        models.Deal.indexed_at <= end_time,
+    )
+
+    if len(search_clauses) > 1:
+        similar_deals = base_sim_q.filter(or_(*search_clauses)).order_by(models.Deal.indexed_at.desc()).limit(150).all()
+    else:
+        similar_deals = [deal]
     
     if not any(d.id == deal.id for d in similar_deals):
         similar_deals.append(deal)
@@ -1937,14 +2092,15 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
 
             c_name = d.community.display_name if d.community and hasattr(d.community, 'display_name') and d.community.display_name else (COMMUNITY_MAP.get(d.community.name, d.community.name) if d.community else "Unknown")
             
-            p_val = extract_price(d.price) if isinstance(d.price, str) else (d.price or 0)
-            s_val = extract_shipping_fee(d.shipping_fee)
-            tot_val = p_val + s_val if p_val > 0 else 0
+            p_val, d_curr = resolve_deal_price_and_currency(d)
+            d_norm_ship = _normalize_shipping_fee(d.shipping_fee, title_hint=d.title or "")
+            tot_val = _compute_total_price(p_val, d_curr, d_norm_ship)
+            tot_krw = _to_krw_equiv(tot_val, d_curr)
             
-            if tot_val > 0 and tot_val < min_total_price:
-                min_total_price = tot_val
+            if tot_krw > 0 and tot_krw < min_total_price:
+                min_total_price = tot_krw
                 best_deal = d
-            elif tot_val == 0 and min_total_price == float('inf'):
+            elif tot_krw == 0 and min_total_price == float('inf'):
                 best_deal = d
             
             if not any(s.get('post_url') == (d.post_link or "") for s in sources):
@@ -1960,7 +2116,7 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
     if not sources:
         c_name = deal.community.display_name if deal.community and hasattr(deal.community, 'display_name') and deal.community.display_name else (COMMUNITY_MAP.get(deal.community.name, deal.community.name) if deal.community else "Unknown")
         site_names = [c_name]
-        p_val = extract_price(deal.price) if isinstance(deal.price, str) else (deal.price or 0)
+        p_val, _ = resolve_deal_price_and_currency(deal)
         sources = get_deal_sources(deal, c_name, p_val, db)
         best_deal = deal
 
@@ -1975,10 +2131,12 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
                 break
     
     # 최저가 계산 (이종 통화 혼선 방지를 위해 대표 통화와 동일한 옵션 가격만 비교)
-    curr = getattr(best_deal, 'currency', 'KRW') or 'KRW'
+    _, curr = resolve_deal_price_and_currency(best_deal)
     same_curr_prices = [s["price"] for s in sources if s.get("price", 0) > 0 and (s.get("currency") or curr) == curr]
     min_price = min(same_curr_prices, default=0)
-    original_price = extract_price(deal.price) if isinstance(deal.price, str) else (deal.price or 0)
+    original_price, orig_curr = resolve_deal_price_and_currency(deal)
+    if orig_curr != curr:
+        original_price, _ = resolve_deal_price_and_currency(best_deal)
     final_price_int = min_price if min_price > 0 and (original_price == 0 or min_price < original_price) else original_price
                      
     detail_ecom_url = get_clean_ecommerce_url(
@@ -1988,18 +2146,27 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
         db, 
         is_multi_item=(
             (getattr(best_deal, 'ecommerce_link', None) == getattr(best_deal, 'post_link', None)) or 
-            (getattr(best_deal, 'title', '') and ("," in best_deal.title or "모음" in best_deal.title or "선택" in best_deal.title or "외/" in best_deal.title or "($86)" in best_deal.title or "($26)" in best_deal.title)) or 
+            (getattr(best_deal, 'title', '') and ("," in best_deal.title or "모음" in best_deal.title or "선택" in best_deal.title or "외/" in best_deal.title)) or 
             ("[모음전]" in (getattr(best_deal, 'ai_summary', '') or ''))
         )
     )
     if not detail_ecom_url:
         detail_ecom_url = _build_direct_mall_search_url(getattr(best_deal, "shop_name", "") or "", getattr(best_deal, "title", "") or deal.title or "", getattr(best_deal, "post_link", "") or "", community_name)
 
+    raw_detail_opts = getattr(best_deal, "options_data", None) or getattr(deal, "options_data", None)
+    serialized_detail_opts = _serialize_options_data(raw_detail_opts, best_deal.id)
+    detail_shipping_fee = _normalize_shipping_fee(
+        getattr(best_deal, "shipping_fee", None) or getattr(deal, "shipping_fee", None),
+        title_hint=getattr(best_deal, "title", "") or deal.title or "",
+    )
+    detail_shop_name = _resolve_canonical_shop_name(best_deal, detail_ecom_url) or _resolve_canonical_shop_name(deal, detail_ecom_url)
+
     return {
         "id": deal.id,
-        "title": re.sub(r'^\s*([^\[\]\(\)\s][^\[\]\(\)]{0,11})[\]\)]\s*', r'[\1] ', deal.title or ''), # 본래 사용자가 클릭한 딜의 제목 유지 (앞머리 닫는 괄호 오타만 보정)
+        "title": clean_deal_title(deal.title or ""),
         "price": final_price_int,
-        "shipping_fee": getattr(best_deal, "shipping_fee", None),
+        "shipping_fee": detail_shipping_fee,
+        "shop_name": detail_shop_name,
         "post_url": best_deal.post_link,
         "ecommerce_url": detail_ecom_url,
         "image_url": _resolve_best_image_url(best_deal, BASE_URL) or _resolve_best_image_url(deal, BASE_URL),
@@ -2007,7 +2174,7 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
         "site_names": site_names,
         "currency": curr,
         "sources": sources,
-        "options_data": getattr(best_deal, "options_data", None) or getattr(deal, "options_data", None),
+        "options_data": serialized_detail_opts,
         "category": getattr(best_deal, "category", "기타") or "기타",
         "author": getattr(best_deal, "author", "익명") or "익명",
         "views": getattr(best_deal, "view_count", 0) or 0,
@@ -2018,25 +2185,8 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
         "score": getattr(best_deal, "honey_score", 0) or getattr(deal, "honey_score", 0),
         "ai_summary": _clean_ai_summary(getattr(best_deal, "ai_summary", "") or getattr(deal, "ai_summary", "") or ""),
         "content_html": _clean_content_text(getattr(best_deal, "content_html", "") or getattr(deal, "content_html", "") or "", deal.title or ""),
-        "has_options": bool(getattr(best_deal, "has_options", False) or getattr(deal, "has_options", False)),
+        "has_options": bool(getattr(best_deal, "has_options", False) or getattr(deal, "has_options", False) or serialized_detail_opts),
     }
-
-GENERIC_CATEGORY_STOPWORDS = {
-    # 가전 / 디지털
-    "청소기", "로봇청소기", "로청", "무선청소기", "물걸레", "스틱청소기", "창문로봇청소기",
-    "모니터", "포터블모니터", "휴대용모니터", "tv", "티비", "텔레비전", "oled", "qled",
-    "노트북", "랩탑", "컴퓨터", "데스크탑", "본체", "완본체", "태블릿", "패드", "아이패드", "갤럭시탭",
-    "스마트폰", "핸드폰", "휴대폰", "자급제", "이어폰", "헤드폰", "헤드셋", "스피커", "사운드바",
-    "마우스", "키보드", "기계식키보드", "충전기", "고속충전기", "보조배터리", "보배", "케이블", "거치대",
-    # 생활 / 계절
-    "선풍기", "서큘레이터", "가습기", "제습기", "에어컨", "냉장고", "김치냉장고", "세탁기", "건조기",
-    "공기청정기", "공청기", "밥솥", "에어프라이어", "전자레인지", "식기세척기", "식세기", "인덕션",
-    "의자", "게이밍의자", "책상", "모션데스크", "침대", "매트리스", "토퍼", "전기장판", "온수매트", "카본매트",
-    # 식품 / 패션 / 뷰티
-    "영양제", "비타민", "유산균", "오메가3", "밀크씨슬", "루테인", "단백질", "프로틴",
-    "생수", "음료", "탄산수", "사이다", "콜라", "커피", "원두", "라면", "햇반", "쌀",
-    "신발", "운동화", "슬리퍼", "티셔츠", "바지", "패딩", "코트", "자켓"
-}
 
 @router.get("/deals/{deal_id}/history")
 def get_deal_history(
@@ -2086,7 +2236,7 @@ def _compute_deal_history(
         except Exception as e:
             logger.debug(f"Error parsing options_data in history: {e}")
 
-    now_kst = datetime.utcnow() + timedelta(hours=10)
+    now_kst = datetime.utcnow() + timedelta(hours=9)
     ref_base_time = deal.indexed_at if deal.indexed_at else now_kst
     end_time = max(now_kst, ref_base_time)
 
@@ -2099,24 +2249,6 @@ def _compute_deal_history(
     }
     days = days_map.get(period, 7)
     time_limit = ref_base_time - timedelta(days=days)
-
-    unit_or_generic_re = re.compile(
-        r'^(?:\d+(?:\.\d+)?(?:kg|g|ml|l|gb|tb|mb|w|v|a|hz|mah|ah|gsm|in1|인치|inch|개입|개|입|캔|병|팩|봉|포|매|판|박스|세트|롤|정|캡슐|구|미|쪽|호|p|ea|pcs|년|개월|일|시간|원|만원|천원)?|국내산|국산|해외|정품|무료|무배|특가|할인|증정|사은품|단품|혼합|선택|외|모음|한정|출시|신제품|신모델|리뉴얼|끌올)$',
-        re.IGNORECASE
-    )
-
-    def get_core_product_tokens(d_obj) -> set[str]:
-        if isinstance(d_obj, str):
-            norm_str = d_obj
-        else:
-            norm_str = get_normalized_base_name(d_obj) or ""
-        tokens = set()
-        for w in norm_str.split():
-            w_low = w.strip().lower()
-            if len(w_low) < 2 or unit_or_generic_re.match(w_low) or w_low in GENERIC_CATEGORY_STOPWORDS:
-                continue
-            tokens.add(w_low)
-        return tokens
 
     if target_opt_name:
         curr_norm_name = target_opt_name
@@ -2297,85 +2429,90 @@ def _compute_deal_history(
     time_format = "%m.%d %H:%M" if days <= 7 else "%y.%m.%d"
 
     community_points = []
-    comm_map = {}
+    raw_comm_events: list[dict] = []
+    ph_by_deal: dict[int, list[tuple[datetime, int]]] = {}
 
-    # 2-1. PriceHistory 데이터 반영 (다중 옵션 딜의 옵션 간 가격 스윙 노이즈는 배제)
+    # 2-1. PriceHistory 데이터 수집 (과거 -> 상승 -> 재하락 반등 곡선 보존, 다중 옵션 딜의 옵션 스윙 노이즈는 배제)
     for h in history:
         try:
             h_deal = deal_obj_map.get(h.deal_id)
+            if target_opt_name:
+                continue
             if h_deal and (getattr(h_deal, "has_options", False) or getattr(h_deal, "options_data", None)):
                 continue
             p_val = int(re.sub(r'[^\d]', '', str(h.price)))
-            if p_val > 0:
-                if target_price_val > 0 and (p_val < target_price_val * 0.40 or p_val > target_price_val * 2.20):
-                    continue
-                if p_val == deal_price_map.get(h.deal_id, 0) and not (target_opt_name and h.deal_id == deal.id and p_val == target_opt_price):
-                    if not (target_opt_price > 0 and p_val == target_opt_price):
-                        continue
-                dt = normalize_kst_dt(h.checked_at)
-                time_key = dt.strftime(time_format)
-                if time_key not in comm_map or p_val < comm_map[time_key]["price"]:
-                    comm_map[time_key] = {"price": p_val, "dt": dt, "source": "community"}
+            if p_val <= 0:
+                continue
+            if target_price_val > 0 and (p_val < target_price_val * 0.40 or p_val > target_price_val * 2.20):
+                continue
+            dt = normalize_kst_dt(h.checked_at)
+            ph_by_deal.setdefault(h.deal_id, []).append((dt, p_val))
         except Exception:
             pass
 
-    # 2-2. 매칭된 각 Deal의 수집 시점 가격 반영
+    # 2-2. 각 매칭 Deal별 시계열 이벤트 구성
+    seq_counter = 0
     for d in matched_deals:
         try:
             is_current = (d.id == deal.id)
-            if is_current and target_opt_price > 0:
-                p_val = target_opt_price
-            else:
-                p_val = deal_price_map.get(d.id, 0)
+            p_val = target_opt_price if (is_current and target_opt_price > 0) else deal_price_map.get(d.id, 0)
+            if not is_current and p_val > 0 and target_price_val > 0:
+                if p_val < target_price_val * 0.40 or p_val > target_price_val * 2.20:
+                    continue
 
-            if p_val > 0:
-                if not is_current and target_price_val > 0:
-                    if p_val < target_price_val * 0.40 or p_val > target_price_val * 2.20:
-                        continue
-                dt = normalize_kst_dt(d.indexed_at)
-                base_time_key = dt.strftime(time_format)
-
-                if is_current:
-                    if base_time_key in comm_map and comm_map[base_time_key]["price"] == p_val:
-                        comm_map[base_time_key]["dt"] = dt
-                    elif base_time_key not in comm_map:
-                        comm_map[base_time_key] = {"price": p_val, "dt": dt, "source": "community"}
-                    else:
-                        alt_label = dt.strftime("%m.%d %H:%M") if dt.strftime("%H:%M") != "00:00" else base_time_key
-                        comm_map[base_time_key + "_current"] = {"price": p_val, "dt": dt, "source": "community", "clean_label": alt_label}
-                else:
-                    if base_time_key not in comm_map or p_val < comm_map[base_time_key]["price"]:
-                        comm_map[base_time_key] = {"price": p_val, "dt": dt, "source": "community"}
+            ph_rows = sorted(ph_by_deal.get(d.id, []), key=lambda item: item[0])
+            if ph_rows:
+                for ph_dt, ph_price in ph_rows:
+                    raw_comm_events.append({
+                        "deal_id": d.id,
+                        "dt": ph_dt,
+                        "price": ph_price,
+                        "seq": seq_counter,
+                    })
+                    seq_counter += 1
+                if p_val > 0 and ph_rows[-1][1] != p_val:
+                    synth_dt = max(normalize_kst_dt(d.indexed_at), ph_rows[-1][0] + timedelta(seconds=1))
+                    raw_comm_events.append({
+                        "deal_id": d.id,
+                        "dt": synth_dt,
+                        "price": p_val,
+                        "seq": seq_counter,
+                    })
+                    seq_counter += 1
+            elif p_val > 0:
+                raw_comm_events.append({
+                    "deal_id": d.id,
+                    "dt": normalize_kst_dt(d.indexed_at),
+                    "price": p_val,
+                    "seq": seq_counter,
+                })
+                seq_counter += 1
         except Exception:
             pass
 
-    # 2-3. 실제 매칭된 동일 상품 딜이 2건 이상인데 같은 날짜에 올라와 날짜 키(comm_map)가 1개로 뭉개진 경우:
-    if len(comm_map) == 1 and len(matched_deals) >= 2:
-        distinct_prices = {deal_price_map.get(d.id, 0) for d in matched_deals if deal_price_map.get(d.id, 0) > 0}
-        distinct_times = {normalize_kst_dt(d.indexed_at).strftime("%m.%d %H:%M") for d in matched_deals}
-        if len(distinct_prices) >= 2 or (len(distinct_times) >= 2 and not any(t.endswith("00:00") for t in distinct_times)):
-            comm_map.clear()
-            sorted_matched = sorted(matched_deals, key=lambda x: (normalize_kst_dt(x.indexed_at), x.id))
-            seen_label_price = set()
-            for idx, d in enumerate(sorted_matched):
-                p_val = target_opt_price if (d.id == deal.id and target_opt_price > 0) else deal_price_map.get(d.id, 0)
-                if p_val > 0:
-                    dt = normalize_kst_dt(d.indexed_at)
-                    label = dt.strftime("%m.%d %H:%M") if dt.strftime("%H:%M") != "00:00" else dt.strftime("%y.%m.%d")
-                    if (label, p_val) in seen_label_price:
-                        continue
-                    seen_label_price.add((label, p_val))
-                    comm_map[f"{label}#{idx}"] = {"price": p_val, "dt": dt, "source": "community", "clean_label": label}
+    raw_comm_events.sort(key=lambda ev: (ev["dt"], ev["seq"]))
 
-    for k, v in comm_map.items():
-        clean_recorded_at = v.get("clean_label") or k.replace(" 00:00", "").replace("_current", "").split("#")[0]
+    for ev in raw_comm_events:
+        dt = ev["dt"]
+        p_val = ev["price"]
+        base_label = dt.strftime(time_format).replace(" 00:00", "")
+
+        if community_points:
+            prev = community_points[-1]
+            # 동일 딜에서 연속된 동일 가격 스냅샷이거나 동일 라벨·동일 가격인 중복 포인트만 병합 (20,000 -> 25,000 -> 20,000 반등 곡선은 모두 유지)
+            if prev["price"] == p_val and (prev["deal_id"] == ev["deal_id"] or prev["recordedAt"] == base_label):
+                continue
+            if prev["recordedAt"] == base_label and dt.strftime("%H:%M") != "00:00":
+                base_label = dt.strftime("%m.%d %H:%M")
+
         community_points.append({
-            "price": v["price"],
+            "price": p_val,
             "originalPrice": None,
             "discountRate": None,
-            "recordedAt": clean_recorded_at,
+            "recordedAt": base_label,
             "source": "community",
-            "dt": v["dt"]
+            "dt": dt,
+            "deal_id": ev["deal_id"],
         })
 
     # 3. 네이버 쇼핑 최저가 히스토리(NaverPriceHistory) 조회 및 병합
@@ -2892,9 +3029,27 @@ class IngestBatchPayload(BaseModel):
 @router.post("/ingest-batch")
 async def ingest_scraped_deals_batch(
     payload: IngestBatchPayload,
+    request: Request,
+    x_feeder_token: Optional[str] = Header(default=None, alias="X-Feeder-Token"),
     db: Session = Depends(get_db_session),
 ):
-    """한국 리전 릴레이/피더로부터 수집된 핫딜 배치를 서버 DB에 즉시 병합하고 통계를 갱신합니다."""
+    """한국 리전 릴레이/피더로부터 수집된 핫딜 배치를 서버 DB에 병합하고 통계를 갱신합니다."""
+    expected_token = os.getenv("FEEDER_API_TOKEN", "").strip()
+    if expected_token:
+        if not hmac.compare_digest(x_feeder_token or "", expected_token):
+            raise HTTPException(status_code=401, detail="Invalid or missing feeder token")
+    else:
+        forwarded_for = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip().lower() if request else ""
+        real_ip = (request.headers.get("x-real-ip") or "").strip().lower() if request else ""
+        client_host = ((request.client.host if request and request.client else "") or "").strip().lower()
+        is_loopback = (
+            client_host in _LOOPBACK_HOSTS
+            and (not forwarded_for or forwarded_for in _LOOPBACK_HOSTS)
+            and (not real_ip or real_ip in _LOOPBACK_HOSTS)
+        )
+        if not is_loopback:
+            raise HTTPException(status_code=503, detail="FEEDER_API_TOKEN is not configured")
+
     from backend.services.aggregator_service import AggregatorService
 
     community = db.query(models.Community).filter(models.Community.name == payload.community_name).first()
@@ -2919,25 +3074,26 @@ async def ingest_scraped_deals_batch(
             db.rollback()
             logger.warning(f"[ingest-batch] item error ({payload.community_name}): {e}")
 
-    # Update scraper_stats.json
-    stats_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scraper_stats.json")
-    try:
-        stats = {}
-        if os.path.exists(stats_file):
-            with open(stats_file, "r", encoding="utf-8") as f:
-                stats = json.load(f)
-        kst_tz = timezone(timedelta(hours=9))
-        stats[payload.display_name] = {
-            "last_count": inserted,
-            "fetched_count": len(payload.deals),
-            "updated_count": inserted,
-            "last_run": datetime.now(kst_tz).strftime("%Y-%m-%d %H:%M:%S"),
-            "status": "Success",
-        }
-        with open(stats_file, "w", encoding="utf-8") as f:
-            json.dump(stats, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    # Update scraper_stats.json (실제 수집 아이템이 있을 때만 통계 파일 갱신)
+    if payload.deals:
+        stats_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scraper_stats.json")
+        try:
+            stats = {}
+            if os.path.exists(stats_file):
+                with open(stats_file, "r", encoding="utf-8") as f:
+                    stats = json.load(f)
+            kst_tz = timezone(timedelta(hours=9))
+            stats[payload.display_name] = {
+                "last_count": inserted,
+                "fetched_count": len(payload.deals),
+                "updated_count": inserted,
+                "last_run": datetime.now(kst_tz).strftime("%Y-%m-%d %H:%M:%S"),
+                "status": "Success",
+            }
+            with open(stats_file, "w", encoding="utf-8") as f:
+                json.dump(stats, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
     invalidate_feed_api_cache()
     return {"status": "ok", "community": payload.display_name, "processed": inserted}

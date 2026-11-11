@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ThumbsUp, ThumbsDown, Share2, MessageSquare, Send, Bell, Copy, ExternalLink, Check, X } from "lucide-react";
-import type { Deal, DealSource } from "../lib/types";
+import type { Deal, DealSource, DealOptionItem } from "../lib/types";
 import {
   formatPrice,
   getProxyImageUrl,
@@ -15,8 +15,12 @@ import {
   getOrCreateWebDeviceUuid,
   ensureWebPushSubscribed,
   getOptionSources,
-  extractOptionTitle,
   cleanOptionTitle,
+  decodeHtmlEntities,
+  resolveDealShopName,
+  stripLeadingShopBracket,
+  normalizeMallAlias,
+  isNonMallLabel,
 } from "../lib/utils";
 import PriceTrendChart, { type PriceTrendStats } from "./PriceTrendChart";
 
@@ -36,13 +40,14 @@ interface DealCommentItem {
 
 export default function DealDetailModal({ deal, onClose, showToast }: DealDetailModalProps) {
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number>(0);
-  const [hasChartData, setHasChartData] = useState(false);
   const [chartStats, setChartStats] = useState<PriceTrendStats | null>(null);
   const [targetPriceInput, setTargetPriceInput] = useState<string>("");
   const [savedTargetPrice, setSavedTargetPrice] = useState<number | null>(null);
   const [savingTargetAlert, setSavingTargetAlert] = useState<boolean>(false);
   const [detailHtml, setDetailHtml] = useState<string>("");
   const [detailSources, setDetailSources] = useState<DealSource[]>([]);
+  const [detailOptionsData, setDetailOptionsData] = useState<DealOptionItem[]>([]);
+  const [detailShopName, setDetailShopName] = useState<string>("");
   const [buyCount, setBuyCount] = useState<number>(0);
   const [saveCount, setSaveCount] = useState<number>(0);
   const [userVote, setUserVote] = useState<string | null>(null);
@@ -52,12 +57,15 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [sheetOffsetY, setSheetOffsetY] = useState<number>(0);
   const [isDraggingSheet, setIsDraggingSheet] = useState<boolean>(false);
+  const sheetOffsetYRef = useRef<number>(0);
   const dragStartYRef = useRef<number | null>(null);
   const closedByPopRef = useRef<boolean>(false);
 
   const getBrowserUserId = () => getOrCreateWebDeviceUuid();
 
   const handleDismiss = useCallback(() => {
+    sheetOffsetYRef.current = 0;
+    dragStartYRef.current = null;
     setSheetOffsetY(0);
     setIsDraggingSheet(false);
     if (
@@ -75,24 +83,31 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
   useEffect(() => {
     setSelectedOptionIndex(0);
-    setHasChartData(false);
     setChartStats(null);
     setDetailHtml(deal?.contentHtml || "");
     setDetailSources(deal?.sources || []);
+    setDetailOptionsData(deal?.options_data || []);
+    setDetailShopName(deal?.shop_name || "");
     setBuyCount(0);
     setSaveCount(0);
     setUserVote(null);
     setComments([]);
     setCommentInput("");
     setCopiedCode(null);
+    sheetOffsetYRef.current = 0;
+    dragStartYRef.current = null;
     setSheetOffsetY(0);
     setIsDraggingSheet(false);
 
     if (!deal) return;
 
-    const isUsd = deal.currency === "USD";
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    const initCurr = (deal.currency || "KRW").toUpperCase();
+    const isSubunitInit = initCurr === "USD" || initCurr === "EUR" || initCurr === "CNY";
     const rawPriceNum = parseInt(String(deal.price || "").replace(/[^0-9]/g, ""), 10) || 0;
-    const defaultTarget = isUsd
+    const defaultTarget = isSubunitInit
       ? rawPriceNum >= 500
         ? Math.max(1, Math.floor((rawPriceNum / 100) * 0.95))
         : 0
@@ -116,45 +131,59 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
     const uid = getBrowserUserId();
 
-    // 1. 단건 조회로 상세 본문(content_html) 및 공구/다중 옵션(sources) 전체 로드
-    fetch(apiUrl(`/api/community/deals/${deal.id}`))
+    // 1. 단건 조회로 상세 본문(content_html) 및 공구/다중 옵션(sources, options_data, shop_name) 전체 로드
+    fetch(apiUrl(`/api/community/deals/${deal.id}`), { signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (!d) return;
+        if (signal.aborted || !d) return;
         if (d.content_html) {
           setDetailHtml(d.content_html);
         }
         if (Array.isArray(d.sources) && d.sources.length > 0) {
           setDetailSources(d.sources);
         }
-      })
-      .catch(() => {});
-
-    // 2. 살까/말까 투표 현황 로드
-    fetch(apiUrl(`/api/community/deals/${deal.id}/votes?user_id=${encodeURIComponent(uid)}`))
-      .then((r) => (r.ok ? r.json() : null))
-      .then((v) => {
-        if (v) {
-          setBuyCount(v.buyCount || 0);
-          setSaveCount(v.saveCount || 0);
-          setUserVote(v.userVote || null);
+        if (Array.isArray(d.options_data) && d.options_data.length > 0) {
+          setDetailOptionsData(d.options_data);
+        } else if (Array.isArray(d.optionsData) && d.optionsData.length > 0) {
+          setDetailOptionsData(d.optionsData);
+        }
+        if (d.shop_name || d.shopName) {
+          setDetailShopName(String(d.shop_name || d.shopName));
         }
       })
       .catch(() => {});
 
+    // 2. 살까/말까 투표 현황 로드
+    fetch(apiUrl(`/api/community/deals/${deal.id}/votes?user_id=${encodeURIComponent(uid)}`), { signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((v) => {
+        if (signal.aborted || !v) return;
+        setBuyCount(v.buyCount || 0);
+        setSaveCount(v.saveCount || 0);
+        setUserVote(v.userVote || null);
+      })
+      .catch(() => {});
+
     // 3. 한줄평 댓글 로드
-    fetch(apiUrl(`/api/community/deals/${deal.id}/comments`))
+    fetch(apiUrl(`/api/community/deals/${deal.id}/comments`), { signal })
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => {
+        if (signal.aborted) return;
         if (Array.isArray(list)) {
           setComments(list);
         }
       })
       .catch(() => {});
+
+    return () => {
+      controller.abort();
+    };
   }, [deal]);
 
+  const dealId = deal?.id ?? null;
+
   useEffect(() => {
-    if (!deal || typeof window === "undefined") return;
+    if (dealId === null || typeof window === "undefined") return;
 
     closedByPopRef.current = false;
     const prevOverflow = document.body.style.overflow;
@@ -162,7 +191,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
     if (!window.history.state?.insightDealModal) {
       try {
-        window.history.pushState({ insightDealModal: deal.id }, "");
+        window.history.pushState({ insightDealModal: dealId }, "");
       } catch {}
     }
 
@@ -171,6 +200,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
     };
     const handlePopState = () => {
       closedByPopRef.current = true;
+      sheetOffsetYRef.current = 0;
       onClose();
     };
 
@@ -181,9 +211,13 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [deal?.id, handleDismiss, onClose]);
+  }, [dealId, handleDismiss, onClose]);
 
-  const preOptionSources = deal ? getOptionSources(detailSources, deal.options_data) : [];
+  const effectiveOptionsData =
+    detailOptionsData.length > 0 ? detailOptionsData : deal?.options_data;
+  const preOptionSources = deal
+    ? getOptionSources(detailSources, effectiveOptionsData)
+    : [];
   const preSelectedOption =
     preOptionSources.length > 0 && selectedOptionIndex < preOptionSources.length
       ? preOptionSources[selectedOptionIndex]
@@ -195,13 +229,14 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
   const preActiveCurrency = preSelectedOption?.currency || deal?.currency || "KRW";
 
   useEffect(() => {
-    if (!deal) return;
-    const isUsd = preActiveCurrency === "USD";
+    if (dealId === null) return;
+    const preCurr = (preActiveCurrency || "KRW").toUpperCase();
+    const isSubunitPre = preCurr === "USD" || preCurr === "EUR" || preCurr === "CNY";
     const rawPriceNum =
       typeof preActivePrice === "number"
         ? preActivePrice
         : parseInt(String(preActivePrice || "").replace(/[^0-9]/g, ""), 10) || 0;
-    const defaultTarget = isUsd
+    const defaultTarget = isSubunitPre
       ? rawPriceNum >= 500
         ? Math.max(1, Math.floor((rawPriceNum / 100) * 0.95))
         : 0
@@ -211,8 +246,8 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
     try {
       const mapStr = localStorage.getItem("insightdeal_target_prices");
       const targetMap = mapStr ? JSON.parse(mapStr) : {};
-      const key = preOptionSources.length > 0 ? `${deal.id}_${selectedOptionIndex}` : String(deal.id);
-      const savedVal = targetMap?.[key] ?? (selectedOptionIndex === 0 ? targetMap?.[deal.id] : undefined);
+      const key = preOptionSources.length > 0 ? `${dealId}_${selectedOptionIndex}` : String(dealId);
+      const savedVal = targetMap?.[key] ?? (selectedOptionIndex === 0 ? targetMap?.[dealId] : undefined);
       if (savedVal) {
         setSavedTargetPrice(Number(savedVal));
         setTargetPriceInput(String(savedVal));
@@ -224,14 +259,14 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
       setSavedTargetPrice(null);
       setTargetPriceInput(defaultTarget > 0 ? String(defaultTarget) : "");
     }
-  }, [deal?.id, selectedOptionIndex, preActivePrice, preActiveCurrency, preOptionSources.length]);
+  }, [dealId, selectedOptionIndex, preActivePrice, preActiveCurrency, preOptionSources.length]);
 
   if (!deal) return null;
 
   // HTML 태그 제거 + 공구 다중 상품 구분선 및 깨진 쿠폰 코드 줄바꿈 자동 다듬기
   const cleanBodyText = polishDealBodyText(detailHtml);
   const promoCodes = extractPromoCodes(cleanBodyText, deal.title);
-  const optionSources = getOptionSources(detailSources, deal.options_data);
+  const optionSources = getOptionSources(detailSources, effectiveOptionsData);
 
   const selectedOption =
     optionSources.length > 0 && selectedOptionIndex < optionSources.length
@@ -260,6 +295,16 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
       ? deal.ecommerce_url
       : deal.post_link;
 
+  const shopBadge = resolveDealShopName({
+    shop_name: detailShopName || deal.shop_name,
+    title: deal.title,
+    ecommerce_url: activeEcommerceUrl,
+  });
+  const displayTitle = stripLeadingShopBracket(deal.title, shopBadge);
+  const displayShipping = deal.shipping_fee
+    ? decodeHtmlEntities(deal.shipping_fee)
+    : null;
+
   const handleVote = async (voteType: "buy" | "save") => {
     try {
       const uid = getBrowserUserId();
@@ -273,10 +318,10 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
         setBuyCount(data.buyCount || 0);
         setSaveCount(data.saveCount || 0);
         setUserVote(data.userVote || voteType);
-        showToast(voteType === "buy" ? "'추천해요'에 투표했습니다." : "'아쉬워요'에 투표했습니다.");
+        showToast(voteType === "buy" ? "'살까'에 투표했어요" : "'말까'에 투표했어요");
       }
-    } catch (e) {
-      showToast("투표 처리 중 오류가 발생했습니다.");
+    } catch {
+      showToast("잠시 후 다시 시도해 주세요");
     }
   };
 
@@ -299,58 +344,62 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
         const created = await res.json();
         setComments((prev) => [created, ...prev]);
         setCommentInput("");
-        showToast("댓글이 등록되었습니다.");
+        showToast("의견을 남겼어요");
       }
-    } catch (e) {
-      showToast("댓글 등록에 실패했습니다.");
+    } catch {
+      showToast("의견을 등록하지 못했어요");
     } finally {
       setSubmittingComment(false);
     }
   };
 
   const handleShare = async () => {
+    const cleanShareTitle = decodeHtmlEntities(deal.title);
     const shareUrl =
       typeof window !== "undefined"
-        ? `${window.location.origin}/?keyword=${encodeURIComponent(deal.title.slice(0, 20))}`
+        ? `${window.location.origin}/?keyword=${encodeURIComponent(cleanShareTitle.slice(0, 20))}`
         : deal.post_link;
-    const shareText = `${deal.title} (${formatPrice(deal.price, deal.currency)})`;
+    const shareText = `${cleanShareTitle} (${formatPrice(deal.price, deal.currency, cleanShareTitle)})`;
 
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
-        await navigator.share({ title: deal.title, text: shareText, url: shareUrl });
+        await navigator.share({ title: cleanShareTitle, text: shareText, url: shareUrl });
         return;
-      } catch (e) {}
+      } catch {}
     }
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
-      showToast("상품 링크가 클립보드에 복사되었습니다.");
+      showToast("상품 주소를 복사했어요");
     }
   };
 
   const handleHeaderTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       dragStartYRef.current = e.touches[0].clientY;
+      sheetOffsetYRef.current = 0;
+      setSheetOffsetY(0);
       setIsDraggingSheet(true);
     }
   };
 
   const handleHeaderTouchMove = (e: React.TouchEvent) => {
-    if (dragStartYRef.current === null || !isDraggingSheet) return;
+    if (dragStartYRef.current === null) return;
     const deltaY = e.touches[0].clientY - dragStartYRef.current;
-    if (deltaY > 0) {
-      setSheetOffsetY(Math.min(260, deltaY));
-    } else {
-      setSheetOffsetY(0);
-    }
+    const nextOffset = deltaY > 0 ? Math.min(260, deltaY) : 0;
+    sheetOffsetYRef.current = nextOffset;
+    setSheetOffsetY(nextOffset);
   };
 
   const handleHeaderTouchEnd = () => {
-    if (!isDraggingSheet) return;
-    setIsDraggingSheet(false);
+    if (dragStartYRef.current === null) return;
+    const currentOffset = sheetOffsetYRef.current;
     dragStartYRef.current = null;
-    if (sheetOffsetY > 75) {
+    setIsDraggingSheet(false);
+    if (currentOffset > 75) {
+      sheetOffsetYRef.current = 0;
       handleDismiss();
     } else {
+      sheetOffsetYRef.current = 0;
       setSheetOffsetY(0);
     }
   };
@@ -374,6 +423,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
           onTouchStart={handleHeaderTouchStart}
           onTouchMove={handleHeaderTouchMove}
           onTouchEnd={handleHeaderTouchEnd}
+          onTouchCancel={handleHeaderTouchEnd}
         >
           <div className="deal-modal-grabber" aria-hidden="true" />
           <div className="deal-modal-header">
@@ -421,10 +471,36 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px", flexWrap: "wrap" }}>
                   <span className="deal-source">{deal.community_name}</span>
+                  {shopBadge && (
+                    <span
+                      style={{
+                        fontSize: "0.73rem",
+                        padding: "3px 9px",
+                        borderRadius: "6px",
+                        background: "var(--badge-bg)",
+                        border: "1px solid var(--card-border)",
+                        color: "var(--text-main)",
+                        fontWeight: 700,
+                        letterSpacing: "-0.01em",
+                      }}
+                    >
+                      {shopBadge}
+                    </span>
+                  )}
                   {deal.tags &&
                     deal.tags.map((t, idx) => {
-                      const cleanTag = String(t).replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]+\s*/gu, "").trim();
+                      const cleanTag = decodeHtmlEntities(String(t))
+                        .replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]+\s*/gu, "")
+                        .trim();
                       if (!cleanTag) return null;
+                      if (shopBadge && normalizeMallAlias(cleanTag) === shopBadge) return null;
+                      if (
+                        isNonMallLabel(cleanTag) &&
+                        cleanTag !== "역대가" &&
+                        cleanTag !== "할인코드"
+                      ) {
+                        return null;
+                      }
                       return (
                         <span
                           key={idx}
@@ -445,7 +521,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                     })}
                 </div>
                 <h3 className="deal-modal-title">
-                  {deal.title}
+                  {displayTitle}
                 </h3>
               </div>
             </div>
@@ -507,9 +583,9 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
             <div style={{ color: "var(--deal-orange)", fontSize: "1.45rem", fontWeight: 900, marginTop: "2px", fontVariantNumeric: "tabular-nums" }}>
               {formatPrice(activePrice, activeCurrency, activeOptionTitle || deal.title)}
             </div>
-            {deal.shipping_fee && (
+            {displayShipping && (
               <div style={{ fontSize: "0.8rem", color: "var(--accent)", marginTop: "2px", fontWeight: 700 }}>
-                배송비: {deal.shipping_fee}
+                배송비: {displayShipping}
               </div>
             )}
           </div>
@@ -523,6 +599,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                 display: "flex",
                 alignItems: "center",
                 gap: "6px",
+                minHeight: "44px",
                 padding: "8px 14px",
                 borderRadius: "12px",
                 cursor: "pointer",
@@ -544,6 +621,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                 display: "flex",
                 alignItems: "center",
                 gap: "6px",
+                minHeight: "44px",
                 padding: "8px 14px",
                 borderRadius: "12px",
                 cursor: "pointer",
@@ -594,7 +672,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                   onClick={async () => {
                     if (typeof navigator !== "undefined" && navigator.clipboard) {
                       await navigator.clipboard.writeText(code);
-                      showToast(`할인코드 '${code}'가 복사되었습니다.`);
+                      showToast(`할인코드 '${code}'를 복사했어요`);
                     }
                   }}
                   className="bounce-click"
@@ -791,7 +869,9 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                               fontVariantNumeric: "tabular-nums",
                             }}
                           >
-                            {src.price && src.price > 0 ? formatPrice(src.price, optionCurrency) : "가격 확인"}
+                            {src.price && src.price > 0
+                              ? formatPrice(src.price, optionCurrency, optionTitle)
+                              : formatPrice(0, optionCurrency, optionTitle)}
                           </span>
 
                           {/* 원클릭 할인코드 복사 칩 */}
@@ -816,9 +896,9 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                                   setTimeout(() => {
                                     setCopiedCode((prev) => (prev === src.code ? null : prev));
                                   }, 2000);
-                                  showToast(`할인코드 '${src.code}'가 복사되었습니다.`);
+                                  showToast(`할인코드 '${src.code}'를 복사했어요`);
                                 } catch {
-                                  showToast("할인코드 복사에 실패했습니다.");
+                                  showToast("할인코드를 복사하지 못했어요");
                                 }
                               }}
                               className="bounce-click"
@@ -839,7 +919,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                               title="클릭하여 할인코드 복사"
                             >
                               {isCopied ? <Check size={11} /> : <Copy size={11} />}
-                              <span>{isCopied ? "✓ 복사됨" : src.code}</span>
+                              <span>{isCopied ? "복사됨" : src.code}</span>
                             </button>
                           )}
 
@@ -885,7 +965,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                           trackOutboundClick(itemUrl, deal.id, src.price || activePrice, optionCurrency);
                           if (src.code && typeof navigator !== "undefined" && navigator.clipboard) {
                             navigator.clipboard.writeText(src.code).catch(() => {});
-                            showToast(`할인코드 '${src.code}' 복사 완료! 쇼핑몰로 이동합니다.`);
+                            showToast(`할인코드 '${src.code}'를 복사했어요`);
                           }
                         }}
                         className="bounce-click"
@@ -930,8 +1010,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
             dealId={deal.id}
             currency={activeCurrency}
             optionName={activeOptionTitle}
-            onHistoryStatus={(hasData, stats) => {
-              setHasChartData(hasData);
+            onHistoryStatus={(_hasData, stats) => {
               if (stats) setChartStats(stats);
             }}
           />
@@ -939,16 +1018,33 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
         {/* 목표가 도달 시 알림 설정 카드 */}
         {(() => {
-          const isUsd = activeCurrency === "USD";
+          const normActiveCurr = (activeCurrency || "KRW").toUpperCase();
+          const isSubunitCurr =
+            normActiveCurr === "USD" || normActiveCurr === "EUR" || normActiveCurr === "CNY";
+          const isForeignCurr = isSubunitCurr || normActiveCurr === "JPY";
+          const currSymbol =
+            normActiveCurr === "USD"
+              ? "$"
+              : normActiveCurr === "EUR"
+                ? "€"
+                : normActiveCurr === "CNY" || normActiveCurr === "JPY"
+                  ? "¥"
+                  : "원";
           const rawPriceNum = typeof activePrice === "number" ? activePrice : parseInt(String(activePrice || "").replace(/[^0-9]/g, ""), 10) || 0;
-          const cleanPriceNum = isUsd ? Math.round(rawPriceNum / 100) : rawPriceNum;
-          if ((isUsd && cleanPriceNum < 5) || (!isUsd && cleanPriceNum < 1000)) return null;
+          const cleanPriceNum = isSubunitCurr ? Math.round(rawPriceNum / 100) : rawPriceNum;
+          if ((isSubunitCurr && cleanPriceNum < 5) || (normActiveCurr === "JPY" && cleanPriceNum < 500) || (!isForeignCurr && cleanPriceNum < 1000)) return null;
 
-          const roundUnit = (v: number) => (isUsd ? Math.max(1, Math.floor(v)) : Math.max(100, Math.round(v / 100) * 100));
-          const formatUnit = (v: number) => (isUsd ? `$${v.toLocaleString()}` : `${v.toLocaleString()}원`);
+          const roundUnit = (v: number) =>
+            isSubunitCurr
+              ? Math.max(1, Math.floor(v))
+              : normActiveCurr === "JPY"
+                ? Math.max(50, Math.round(v / 10) * 10)
+                : Math.max(100, Math.round(v / 100) * 100);
+          const formatUnit = (v: number) =>
+            isForeignCurr ? `${currSymbol}${v.toLocaleString()}` : `${v.toLocaleString()}원`;
           const presets: { label: string; value: number }[] = [];
-          const statMin = chartStats ? (isUsd ? Math.round(chartStats.minPrice / 100) : chartStats.minPrice) : 0;
-          const statAvg = chartStats ? (isUsd ? Math.round(chartStats.avgPrice / 100) : chartStats.avgPrice) : 0;
+          const statMin = chartStats ? (isSubunitCurr ? Math.round(chartStats.minPrice / 100) : chartStats.minPrice) : 0;
+          const statAvg = chartStats ? (isSubunitCurr ? Math.round(chartStats.avgPrice / 100) : chartStats.avgPrice) : 0;
 
           if (statMin > 0 && statMin < cleanPriceNum) {
             presets.push({ label: `역대 최저가 (${formatUnit(statMin)})`, value: statMin });
@@ -974,21 +1070,21 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
 
           const handleSaveTargetAlert = async (e: React.FormEvent) => {
             e.preventDefault();
-            const minValid = isUsd ? 1 : 100;
+            const minValid = isSubunitCurr ? 1 : normActiveCurr === "JPY" ? 50 : 100;
             if (parsedInput < minValid || savingTargetAlert) {
-              showToast("유효한 목표 금액을 입력해 주세요.");
+              showToast("목표 금액을 확인해 주세요");
               return;
             }
             setSavingTargetAlert(true);
             try {
               const { deviceUuid, pushGranted } = await ensureWebPushSubscribed();
-              const keywordToTrack = (activeOptionTitle || deal.title || "")
+              const keywordToTrack = decodeHtmlEntities(activeOptionTitle || deal.title || "")
                 .replace(/\[[^\]]*\]/g, "")
                 .replace(/\([^)]*\)/g, "")
                 .trim()
                 .slice(0, 50);
 
-              const apiTargetPrice = isUsd ? parsedInput * 100 : parsedInput;
+              const apiTargetPrice = isSubunitCurr ? parsedInput * 100 : parsedInput;
               const res = await fetch(apiUrl("/api/wishlist/item-alert"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1104,14 +1200,14 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                     }}
                   />
                   <span style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "0.8rem", color: "var(--text-sub)", fontWeight: 700 }}>
-                    {isUsd ? "$" : "원"}
+                    {currSymbol}
                   </span>
                 </div>
                 <button
                   type="submit"
                   disabled={savingTargetAlert}
                   className="btn-primary"
-                  style={{ padding: "9px 14px", borderRadius: "10px", fontSize: "0.82rem", whiteSpace: "nowrap" }}
+                  style={{ minHeight: "44px", padding: "9px 14px", borderRadius: "10px", fontSize: "0.82rem", whiteSpace: "nowrap" }}
                 >
                   <span>{savedTargetPrice ? "목표가 변경" : "알림 받기"}</span>
                 </button>
@@ -1166,7 +1262,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
               type="submit"
               disabled={submittingComment}
               className="btn-primary"
-              style={{ padding: "8px 14px", borderRadius: "10px", fontSize: "0.82rem" }}
+              style={{ minHeight: "44px", padding: "8px 14px", borderRadius: "10px", fontSize: "0.82rem" }}
             >
               <Send size={14} />
               <span>등록</span>
@@ -1218,7 +1314,7 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                 onClick={async () => {
                   if (typeof navigator !== "undefined" && navigator.clipboard) {
                     await navigator.clipboard.writeText(selectedOption.code!);
-                    showToast(`할인코드 '${selectedOption.code}'가 복사되었습니다.`);
+                    showToast(`할인코드 '${selectedOption.code}'를 복사했어요`);
                   }
                 }}
                 className="bounce-click"
@@ -1256,22 +1352,22 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                 const targetUrl = resolveOutboundUrl(hasValidEcommerceLink ? activeEcommerceUrl : deal.post_link);
                 if (!targetUrl || targetUrl === "#") {
                   e.preventDefault();
-                  showToast("이동할 수 있는 링크가 없습니다.");
+                  showToast("열 수 있는 상품 주소가 없어요");
                   return;
                 }
                 trackOutboundClick(targetUrl, deal.id, activePrice, activeCurrency);
                 const codeToCopy = selectedOption?.code || (promoCodes.length > 0 ? promoCodes[0] : null);
                 if (codeToCopy && typeof navigator !== "undefined" && navigator.clipboard) {
                   navigator.clipboard.writeText(codeToCopy).catch(() => {});
-                  showToast(`할인코드 '${codeToCopy}' 복사 완료! 쇼핑몰로 이동합니다.`);
+                  showToast(`할인코드 '${codeToCopy}'를 복사했어요`);
                 } else if (!hasValidEcommerceLink) {
-                  showToast("쇼핑몰 직접 링크가 없어 원본 게시글로 이동합니다.");
+                  showToast("구매 링크가 없어 원본 글로 이동해요");
                 }
               }}
             >
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {selectedOption
-                  ? `선택 상품 구매 (${formatPrice(activePrice, activeCurrency)})`
+                  ? `선택 상품 구매 (${formatPrice(activePrice, activeCurrency, activeOptionTitle || deal.title)})`
                   : "쇼핑몰 바로가기"}
               </span>
             </a>
