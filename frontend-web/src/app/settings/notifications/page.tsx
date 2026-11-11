@@ -3,6 +3,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { apiUrl, API_BASE_URL, getOrCreateWebDeviceUuid } from '../../lib/utils';
+import {
+  logTossScreen,
+  logTossClick,
+  maybeRequestTossReview,
+} from '../../lib/tossBridge';
 
 interface Keyword {
   id: string;
@@ -87,6 +92,7 @@ export default function NotificationSettingsPage() {
   }, [getBrowserDeviceUuid]);
 
   useEffect(() => {
+    logTossScreen('keyword_settings_view');
     if (
       typeof window !== 'undefined' &&
       'serviceWorker' in navigator &&
@@ -261,6 +267,10 @@ export default function NotificationSettingsPage() {
           JSON.stringify(updated)
         );
       }
+      logTossClick('register_keyword_alert', {
+        button_name: 'settings_keyword_submit',
+      });
+      maybeRequestTossReview();
       setKeywordInput('');
     } catch (e) {
       console.error(e);

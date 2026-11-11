@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { Smartphone, Download } from "lucide-react";
+import { isTossMiniAppEnv } from "../lib/tossBridge";
 
 interface LoginPromptModalProps {
   isOpen: boolean;
@@ -123,35 +124,37 @@ export default function LoginPromptModal({ isOpen, onClose, onNotify }: LoginPro
           </div>
         )}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "4px" }}>
-          <button
-            type="button"
-            className="btn-primary"
-            style={{ width: "100%", minHeight: "44px", justifyContent: "center", padding: "13px", borderRadius: "12px" }}
-            onClick={() => notify("Play Store 출시를 준비하고 있어요")}
-          >
-            <Smartphone size={18} />
-            <span>Google Play 다운로드</span>
-          </button>
-          <button
-            type="button"
-            className="btn-primary"
-            style={{
-              width: "100%",
-              minHeight: "44px",
-              justifyContent: "center",
-              padding: "13px",
-              borderRadius: "12px",
-              background: "var(--surface-subtle)",
-              border: "1px solid var(--card-border)",
-              boxShadow: "none",
-            }}
-            onClick={() => notify("App Store 출시를 준비하고 있어요")}
-          >
-            <Download size={18} color="var(--text-main)" />
-            <span style={{ color: "var(--text-main)" }}>App Store 다운로드</span>
-          </button>
-        </div>
+        {!isTossMiniAppEnv() && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "4px" }}>
+            <button
+              type="button"
+              className="btn-primary"
+              style={{ width: "100%", minHeight: "44px", justifyContent: "center", padding: "13px", borderRadius: "12px" }}
+              onClick={() => notify("Play Store 출시를 준비하고 있어요")}
+            >
+              <Smartphone size={18} />
+              <span>Google Play 다운로드</span>
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              style={{
+                width: "100%",
+                minHeight: "44px",
+                justifyContent: "center",
+                padding: "13px",
+                borderRadius: "12px",
+                background: "var(--surface-subtle)",
+                border: "1px solid var(--card-border)",
+                boxShadow: "none",
+              }}
+              onClick={() => notify("App Store 출시를 준비하고 있어요")}
+            >
+              <Download size={18} color="var(--text-main)" />
+              <span style={{ color: "var(--text-main)" }}>App Store 다운로드</span>
+            </button>
+          </div>
+        )}
 
         <button
           type="button"

@@ -23,6 +23,13 @@ import {
   isNonMallLabel,
 } from "../lib/utils";
 import PriceTrendChart, { type PriceTrendStats } from "./PriceTrendChart";
+import {
+  logTossScreen,
+  logTossClick,
+  maybeRequestTossReview,
+  openExternalUrlInToss,
+  copyTextSafe,
+} from "../lib/tossBridge";
 
 interface DealDetailModalProps {
   deal: Deal | null;
@@ -100,6 +107,11 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
     setIsDraggingSheet(false);
 
     if (!deal) return;
+
+    logTossScreen("deal_detail_view", {
+      deal_id: deal.id,
+      category: deal.category || "기타",
+    });
 
     const controller = new AbortController();
     const { signal } = controller;
@@ -367,8 +379,8 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
         return;
       } catch {}
     }
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+    const copied = await copyTextSafe(`${shareText}\n${shareUrl}`);
+    if (copied) {
       showToast("상품 주소를 복사했어요");
     }
   };
@@ -895,23 +907,14 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                               onClick={async (e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                try {
-                                  if (typeof navigator !== "undefined" && navigator.clipboard) {
-                                    await navigator.clipboard.writeText(src.code!);
-                                  } else {
-                                    const textarea = document.createElement("textarea");
-                                    textarea.value = src.code!;
-                                    document.body.appendChild(textarea);
-                                    textarea.select();
-                                    document.execCommand("copy");
-                                    document.body.removeChild(textarea);
-                                  }
+                                const copied = await copyTextSafe(src.code!);
+                                if (copied) {
                                   setCopiedCode(src.code!);
                                   setTimeout(() => {
                                     setCopiedCode((prev) => (prev === src.code ? null : prev));
                                   }, 2000);
                                   showToast(`할인코드 '${src.code}'를 복사했어요`);
-                                } catch {
+                                } else {
                                   showToast("할인코드를 복사하지 못했어요");
                                 }
                               }}
@@ -951,7 +954,9 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                                   rel="noopener"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    trackOutboundClick(sUrl, deal.id, src.price || activePrice, optionCurrency);
+                                    const resolvedSubUrl = resolveOutboundUrl(sUrl);
+                                    trackOutboundClick(resolvedSubUrl, deal.id, src.price || activePrice, optionCurrency);
+                                    openExternalUrlInToss(resolvedSubUrl, e);
                                   }}
                                   style={{
                                     fontSize: "0.7rem",
@@ -977,10 +982,11 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                         onClick={(e) => {
                           e.stopPropagation();
                           trackOutboundClick(itemUrl, deal.id, src.price || activePrice, optionCurrency);
-                          if (src.code && typeof navigator !== "undefined" && navigator.clipboard) {
-                            navigator.clipboard.writeText(src.code).catch(() => {});
+                          if (src.code) {
+                            void copyTextSafe(src.code);
                             showToast(`할인코드 '${src.code}'를 복사했어요`);
                           }
+                          openExternalUrlInToss(itemUrl, e);
                         }}
                         className="bounce-click"
                         style={{
@@ -1123,6 +1129,11 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                     ? `목표가(${formatUnit(parsedInput)}) 이하 도달 시 브라우저 푸시 알림이 발송돼요.`
                     : `목표가(${formatUnit(parsedInput)}) 알림이 저장되었어요. 브라우저 알림 권한을 허용하면 실시간 푸시를 받을 수 있어요.`
                 );
+                logTossClick("save_target_price_alert", {
+                  button_name: "target_price_alert_button",
+                  deal_id: deal.id,
+                });
+                maybeRequestTossReview();
               } else {
                 showToast("목표가 알림 저장 중 오류가 발생했어요.");
               }
@@ -1326,8 +1337,8 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
               <button
                 type="button"
                 onClick={async () => {
-                  if (typeof navigator !== "undefined" && navigator.clipboard) {
-                    await navigator.clipboard.writeText(selectedOption.code!);
+                  const copied = await copyTextSafe(selectedOption.code!);
+                  if (copied) {
                     showToast(`할인코드 '${selectedOption.code}'를 복사했어요`);
                   }
                 }}
@@ -1371,12 +1382,13 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                 }
                 trackOutboundClick(targetUrl, deal.id, activePrice, activeCurrency);
                 const codeToCopy = selectedOption?.code || (promoCodes.length > 0 ? promoCodes[0] : null);
-                if (codeToCopy && typeof navigator !== "undefined" && navigator.clipboard) {
-                  navigator.clipboard.writeText(codeToCopy).catch(() => {});
+                if (codeToCopy) {
+                  void copyTextSafe(codeToCopy);
                   showToast(`할인코드 '${codeToCopy}'를 복사했어요`);
                 } else if (!hasValidEcommerceLink) {
                   showToast("구매 링크가 없어 원본 글로 이동해요");
                 }
+                openExternalUrlInToss(targetUrl, e);
               }}
             >
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -1390,6 +1402,10 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                 href={resolveOutboundUrl(deal.post_link)}
                 target="_blank"
                 rel="noopener"
+                onClick={(e) => {
+                  const resolvedPostUrl = resolveOutboundUrl(deal.post_link);
+                  openExternalUrlInToss(resolvedPostUrl, e);
+                }}
                 className="bounce-click deal-modal-btn-secondary"
               >
                 <span>원본 게시글 보기</span>

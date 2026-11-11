@@ -30,6 +30,7 @@ import {
   getFallbackProxyImageUrl,
   apiUrl,
   resolveOutboundUrl,
+  trackOutboundClick,
   getOrCreateWebDeviceUuid,
   ensureWebPushSubscribed,
   getOptionSources,
@@ -39,6 +40,14 @@ import {
   normalizeMallAlias,
   isNonMallLabel,
 } from "./lib/utils";
+import {
+  hasTossBridge,
+  logTossScreen,
+  logTossClick,
+  maybeRequestTossReview,
+  openExternalUrlInToss,
+  copyTextSafe,
+} from "./lib/tossBridge";
 
 import PrivacyModal from "./components/PrivacyModal";
 import EulaModal from "./components/EulaModal";
@@ -257,6 +266,10 @@ export default function Home() {
           ? `'${cleanKw}' 새 딜이 올라오면 바로 알려드릴게요`
           : `'${cleanKw}' 알림을 켰어요. 브라우저 알림을 허용하면 푸시로 알려드려요`
       );
+      logTossClick("register_keyword_alert", {
+        button_name: "keyword_alert_submit",
+      });
+      maybeRequestTossReview();
     } catch {
       showToast("알림을 등록하지 못했어요. 잠시 후 다시 시도해 주세요");
     }
@@ -290,8 +303,8 @@ export default function Home() {
         // 사용자 공유 취소 시 클립보드 복사로 넘어가지 않고 종료하거나 폴백
       }
     }
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+    const copied = await copyTextSafe(`${shareText}\n${shareUrl}`);
+    if (copied) {
       showToast("상품 링크를 복사했어요");
     }
   };
@@ -326,8 +339,18 @@ export default function Home() {
         }
         return nextMap;
       });
-      if (isAdded) showToast("찜 목록에서 뺐어요");
-      else showToast("찜 목록에 담았어요");
+      if (isAdded) {
+        showToast("찜 목록에서 뺐어요");
+      } else {
+        showToast("찜 목록에 담았어요");
+        logTossClick("save_wishlist_deal", {
+          button_name: "wishlist_button",
+          deal_id: id,
+        });
+        if (updated.length >= 2) {
+          maybeRequestTossReview();
+        }
+      }
       return updated;
     });
   };
@@ -397,6 +420,11 @@ export default function Home() {
         } else {
           showToast("가격 변동 알림을 켰어요");
         }
+        logTossClick("save_target_price_alert", {
+          button_name: "card_price_alert_button",
+          deal_id: id,
+        });
+        maybeRequestTossReview();
       }
       return updated;
     });
@@ -595,6 +623,13 @@ export default function Home() {
             options_data: optionsDataArr,
           };
         });
+
+        if (offset === 0 && activeKw.trim().length >= 2) {
+          logTossClick("search_deals", {
+            button_name: "search_input",
+            result_count: formatted.length,
+          });
+        }
 
         if (formatted.length > 0) {
           if (offset === 0) {
@@ -901,12 +936,14 @@ export default function Home() {
 
       const ua = navigator.userAgent || "";
       if (
+        hasTossBridge() ||
         ua.includes("TossApp") ||
         window.location.hostname.includes("toss") ||
         urlParams.get("toss") === "1"
       ) {
         setIsTossMiniApp(true);
       }
+      logTossScreen("home_feed_view", { tab: "전체" });
     }
 
     fetch(apiUrl("/api/community/popular-keywords"))
@@ -2266,16 +2303,28 @@ export default function Home() {
                         : undefined
                     }
                     onClick={(e) => {
-                      if (!hasValidEcommerceLink) {
-                        if (!deal.post_link || deal.post_link === "#") {
-                          e.preventDefault();
-                          showToast("이동할 수 있는 상품 주소를 찾지 못했어요");
-                        } else {
-                          showToast(
-                            "구매처 바로가기가 없어 원본 게시글로 이동해요"
-                          );
-                        }
+                      const outboundTarget = hasValidEcommerceLink
+                        ? resolveOutboundUrl(deal.ecommerce_url)
+                        : deal.post_link && deal.post_link !== "#"
+                          ? resolveOutboundUrl(deal.post_link)
+                          : "#";
+                      if (!outboundTarget || outboundTarget === "#") {
+                        e.preventDefault();
+                        showToast("이동할 수 있는 상품 주소를 찾지 못했어요");
+                        return;
                       }
+                      if (!hasValidEcommerceLink) {
+                        showToast(
+                          "구매처 바로가기가 없어 원본 게시글로 이동해요"
+                        );
+                      }
+                      trackOutboundClick(
+                        outboundTarget,
+                        deal.id,
+                        deal.price,
+                        deal.currency
+                      );
+                      openExternalUrlInToss(outboundTarget, e);
                     }}
                   >
                     <div className="deal-image-wrapper">
@@ -2387,11 +2436,20 @@ export default function Home() {
                                       const targetUrl =
                                         source.post_url || deal.post_link;
                                       if (targetUrl && targetUrl !== "#") {
-                                        window.open(
-                                          resolveOutboundUrl(targetUrl),
-                                          "_blank",
-                                          "noopener"
-                                        );
+                                        const resolvedPostUrl =
+                                          resolveOutboundUrl(targetUrl);
+                                        if (
+                                          !openExternalUrlInToss(
+                                            resolvedPostUrl,
+                                            e
+                                          )
+                                        ) {
+                                          window.open(
+                                            resolvedPostUrl,
+                                            "_blank",
+                                            "noopener"
+                                          );
+                                        }
                                       } else {
                                         showToast(
                                           "원본 게시글 주소를 찾지 못했어요"

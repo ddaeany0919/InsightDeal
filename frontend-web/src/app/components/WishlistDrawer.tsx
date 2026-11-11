@@ -9,6 +9,7 @@ import {
   getProxyImageUrl,
   getFallbackProxyImageUrl,
 } from "../lib/utils";
+import { isTossMiniAppEnv } from "../lib/tossBridge";
 
 interface WishlistDrawerProps {
   isOpen: boolean;
@@ -168,46 +169,48 @@ export default function WishlistDrawer({
             >
               이 기기에서 바로 사용하기
             </button>
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%" }}>
-              <button
-                type="button"
-                className="btn-primary"
-                style={{
-                  width: "100%",
-                  minHeight: "44px",
-                  justifyContent: "center",
-                  padding: "10px",
-                  borderRadius: "12px",
-                  background: "var(--surface-subtle)",
-                  border: "1px solid var(--card-border)",
-                  boxShadow: "none",
-                  fontSize: "0.84rem",
-                }}
-                onClick={() => notify("Play Store 출시를 준비하고 있어요")}
-              >
-                <Smartphone size={16} color="var(--text-main)" />
-                <span style={{ color: "var(--text-main)" }}>Google Play</span>
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                style={{
-                  width: "100%",
-                  minHeight: "44px",
-                  justifyContent: "center",
-                  padding: "10px",
-                  borderRadius: "12px",
-                  background: "var(--surface-subtle)",
-                  border: "1px solid var(--card-border)",
-                  boxShadow: "none",
-                  fontSize: "0.84rem",
-                }}
-                onClick={() => notify("App Store 출시를 준비하고 있어요")}
-              >
-                <Download size={16} color="var(--text-main)" />
-                <span style={{ color: "var(--text-main)" }}>App Store</span>
-              </button>
-            </div>
+            {!isTossMiniAppEnv() && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%" }}>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  style={{
+                    width: "100%",
+                    minHeight: "44px",
+                    justifyContent: "center",
+                    padding: "10px",
+                    borderRadius: "12px",
+                    background: "var(--surface-subtle)",
+                    border: "1px solid var(--card-border)",
+                    boxShadow: "none",
+                    fontSize: "0.84rem",
+                  }}
+                  onClick={() => notify("Play Store 출시를 준비하고 있어요")}
+                >
+                  <Smartphone size={16} color="var(--text-main)" />
+                  <span style={{ color: "var(--text-main)" }}>Google Play</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  style={{
+                    width: "100%",
+                    minHeight: "44px",
+                    justifyContent: "center",
+                    padding: "10px",
+                    borderRadius: "12px",
+                    background: "var(--surface-subtle)",
+                    border: "1px solid var(--card-border)",
+                    boxShadow: "none",
+                    fontSize: "0.84rem",
+                  }}
+                  onClick={() => notify("App Store 출시를 준비하고 있어요")}
+                >
+                  <Download size={16} color="var(--text-main)" />
+                  <span style={{ color: "var(--text-main)" }}>App Store</span>
+                </button>
+              </div>
+            )}
           </div>
         ) : wishlistDeals.length === 0 ? (
           /* Empty State 2: 빈 목록 */

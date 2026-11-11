@@ -1,4 +1,5 @@
 import type { DealSource, DealOptionItem } from "./types";
+import { hasTossBridge, logTossClick } from "./tossBridge";
 
 const NAMED_HTML_ENTITIES: Record<string, string> = {
   "&amp;": "&",
@@ -1150,6 +1151,7 @@ export const trackOutboundClick = (
         : parseInt(String(price || "").replace(/[^0-9]/g, ""), 10) || 0;
     const ua = navigator.userAgent || "";
     const isToss =
+      hasTossBridge() ||
       ua.includes("TossApp") ||
       window.location.hostname.includes("toss") ||
       process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true";
@@ -1158,6 +1160,12 @@ export const trackOutboundClick = (
       : /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
         ? "mobile_web"
         : "pc_web";
+
+    logTossClick("click_outbound_deal", {
+      button_name: "buy_now_button",
+      deal_id: dealId ?? 0,
+      currency: (currency || "KRW").toUpperCase(),
+    });
 
     fetch(apiUrl("/api/coupang/track-click"), {
       method: "POST",
