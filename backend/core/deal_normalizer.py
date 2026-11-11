@@ -1505,6 +1505,7 @@ def renormalize_existing_deals(db_session: Any, dry_run: bool = False) -> dict[s
 if __name__ == "__main__":
     import argparse
     import json
+    import os
     import sys
 
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
