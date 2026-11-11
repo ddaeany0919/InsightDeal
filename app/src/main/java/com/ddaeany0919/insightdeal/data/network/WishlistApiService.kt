@@ -18,16 +18,16 @@ import com.ddaeany0919.insightdeal.network.ApiService
 
 // Data classes for API requests and responses
 data class WishlistUpdateRequest(
-    val targetPrice: Int? = null,
-    val isActive: Boolean? = null,
-    val alertEnabled: Boolean? = null
+    @SerializedName("target_price") val targetPrice: Int? = null,
+    @SerializedName("is_active") val isActive: Boolean? = null,
+    @SerializedName("alert_enabled") val alertEnabled: Boolean? = null
 )
 
 data class DeleteRequest(
     @SerializedName("user_id") val userId: String
 )
 
-// ✅ 서버 API에 맞게 분리된 요청 모델
+// 서버 API에 맞게 분리된 요청 모델
 data class WishlistCreateFromKeywordRequest(
     @SerializedName("keyword") val keyword: String,
     @SerializedName("target_price") val targetPrice: Int,
@@ -42,21 +42,21 @@ data class WishlistCreateFromUrlRequest(
 
 // Phase 2 preparation: Link analysis requests
 data class AnalyzeLinkRequest(
-    val url: String,
+    @SerializedName("url") val url: String,
     @SerializedName("user_id") val userId: String
 )
 
 data class LinkAddRequest(
-    val url: String,
+    @SerializedName("url") val url: String,
     @SerializedName("target_price") val targetPrice: Int,
     @SerializedName("user_id") val userId: String
 )
 
 data class ProductAnalysisResponse(
     @SerializedName("product_name") val productName: String,
-    val brand: String?,
-    val category: String?,
+    @SerializedName("brand") val brand: String?,
+    @SerializedName("category") val category: String?,
     @SerializedName("estimated_lowest_price") val estimatedLowestPrice: Int?,
-    val confidence: Float,
+    @SerializedName("confidence") val confidence: Float,
     @SerializedName("analysis_status") val analysisStatus: String
 )

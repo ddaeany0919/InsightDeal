@@ -170,7 +170,7 @@ private fun ScoreBreakdownChart(breakdown: ScoreBreakdown) {
         ScoreBarItem("출처 신뢰도", breakdown.site, Color(0xFFFF9800))
         Spacer(modifier = Modifier.height(8.dp))
         
-        ScoreBarItem("⏰ 정보 신선도", breakdown.freshness, Color(0xFF9C27B0))
+        ScoreBarItem("정보 신선도", breakdown.freshness, Color(0xFF0EA5E9))
     }
 }
 

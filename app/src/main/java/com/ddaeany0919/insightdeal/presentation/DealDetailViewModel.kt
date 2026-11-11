@@ -15,6 +15,7 @@ import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.network.TrackClickRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,6 +48,7 @@ class DealDetailViewModel : ViewModel() {
     private val apiService = NetworkModule.createService<ApiService>()
 
     private var currentDealId: Int? = null
+    private var historyJob: Job? = null
     private val historyCache = ConcurrentHashMap<String, List<PriceHistoryPoint>>()
 
     fun setPeriod(period: String) {
@@ -99,40 +101,11 @@ class DealDetailViewModel : ViewModel() {
         }
     }
 
-    fun resolveMultiOptions(deal: DealItem?): List<DealSource> {
-        if (deal == null) return emptyList()
-        val sourceOptions = deal.sources
-            ?.filter { it.siteName.contains(" - ") && it.siteName.substringAfter(" - ").isNotBlank() }
-            .orEmpty()
-
-        val combined = if (sourceOptions.isNotEmpty()) {
-            sourceOptions
-        } else {
-            deal.optionsData
-                .filter { it.name.isNotBlank() }
-                .map { opt ->
-                    DealSource(
-                        siteName = "${deal.siteName} - ${opt.name}",
-                        postUrl = deal.postUrl.orEmpty(),
-                        ecommerceUrl = opt.url ?: deal.ecommerceUrl,
-                        price = opt.price,
-                        currency = opt.currency ?: deal.currency,
-                        code = opt.code,
-                        imageUrl = opt.imageUrl ?: deal.imageUrl,
-                        subUrls = opt.subUrls ?: emptyList()
-                    )
-                }
-        }
-
-        val seen = mutableSetOf<String>()
-        return combined.filter { src ->
-            val optTitle = cleanOptionTitle(src.siteName).lowercase().replace(" ", "")
-            optTitle.isNotEmpty() && seen.add(optTitle)
-        }
-    }
+    fun resolveMultiOptions(deal: DealItem?): List<DealSource> = extractValidMultiOptions(deal)
 
     private fun loadHistoryData(dealId: Int, period: String) {
-        viewModelScope.launch {
+        historyJob?.cancel()
+        historyJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isHistoryLoading = true)
             try {
                 val deal = _uiState.value.deal
@@ -144,11 +117,12 @@ class DealDetailViewModel : ViewModel() {
                 val cacheKey = "${dealId}_${optQuery ?: "default"}_${optCurrency}_$period"
                 val cached = historyCache[cacheKey]
                 if (cached != null) {
+                    val validCached = cached.filter { it.price > 0 }
                     val currentPrice = selectedOpt?.price ?: deal?.price ?: 0L
-                    val minPrice = cached.minOfOrNull { it.price } ?: Int.MAX_VALUE
-                    val isLow = currentPrice > 0 && currentPrice <= minPrice
+                    val minPrice = validCached.minOfOrNull { it.price } ?: Int.MAX_VALUE
+                    val isLow = currentPrice > 0 && validCached.isNotEmpty() && currentPrice <= minPrice
                     _uiState.value = _uiState.value.copy(
-                        priceHistory = cached,
+                        priceHistory = validCached,
                         isRecordLow = isLow,
                         isHistoryLoading = false
                     )
@@ -162,11 +136,11 @@ class DealDetailViewModel : ViewModel() {
                     currency = optCurrency
                 )
                 if (historyResponse.isSuccessful) {
-                    val history = historyResponse.body() ?: emptyList()
+                    val history = (historyResponse.body() ?: emptyList()).filter { it.price > 0 }
                     historyCache[cacheKey] = history
                     val currentPrice = selectedOpt?.price ?: deal?.price ?: 0L
                     val minPrice = history.minOfOrNull { it.price } ?: Int.MAX_VALUE
-                    val isLow = currentPrice > 0 && currentPrice <= minPrice
+                    val isLow = currentPrice > 0 && history.isNotEmpty() && currentPrice <= minPrice
                     _uiState.value = _uiState.value.copy(
                         priceHistory = history,
                         isRecordLow = isLow,
@@ -185,6 +159,7 @@ class DealDetailViewModel : ViewModel() {
 
     fun loadDealData(dealId: Int) {
         currentDealId = dealId
+        historyJob?.cancel()
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
@@ -233,7 +208,11 @@ class DealDetailViewModel : ViewModel() {
                         } catch (_: Exception) {
                             null
                         }
-                        val history = if (historyResponse?.isSuccessful == true) historyResponse.body() ?: emptyList() else emptyList()
+                        val history = if (historyResponse?.isSuccessful == true) {
+                            (historyResponse.body() ?: emptyList()).filter { it.price > 0 }
+                        } else {
+                            emptyList()
+                        }
 
                         val comments = if (commentsResponse?.isSuccessful == true) commentsResponse.body() ?: emptyList() else emptyList()
                         val votes = if (votesResponse?.isSuccessful == true) votesResponse.body() else null
@@ -340,6 +319,44 @@ class DealDetailViewModel : ViewModel() {
                 throw e
             } catch (_: Exception) {
                 // 투표 실패 무시
+            }
+        }
+    }
+
+    companion object {
+        fun extractValidMultiOptions(deal: DealItem?): List<DealSource> {
+            if (deal == null) return emptyList()
+            val sourceOptions = deal.sources
+                ?.filter {
+                    it.siteName.contains(" - ") &&
+                        it.siteName.substringAfter(" - ").isNotBlank() &&
+                        (it.price ?: 0L) > 0L
+                }
+                .orEmpty()
+
+            val combined = if (sourceOptions.isNotEmpty()) {
+                sourceOptions
+            } else {
+                deal.optionsData
+                    .filter { it.name.isNotBlank() && it.price > 0L }
+                    .map { opt ->
+                        DealSource(
+                            siteName = "${deal.siteName} - ${opt.name}",
+                            postUrl = deal.postUrl.orEmpty(),
+                            ecommerceUrl = opt.url ?: deal.ecommerceUrl,
+                            price = opt.price,
+                            currency = opt.currency ?: deal.currency,
+                            code = opt.code,
+                            imageUrl = opt.imageUrl ?: deal.imageUrl,
+                            subUrls = opt.subUrls ?: emptyList()
+                        )
+                    }
+            }
+
+            val seen = mutableSetOf<String>()
+            return combined.filter { src ->
+                val optTitle = cleanOptionTitle(src.siteName).lowercase().replace(" ", "")
+                optTitle.isNotEmpty() && seen.add(optTitle)
             }
         }
     }

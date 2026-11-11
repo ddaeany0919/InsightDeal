@@ -6,18 +6,18 @@ import retrofit2.http.GET
 import com.ddaeany0919.insightdeal.network.ApiService
 
 data class HotDealResponse(
-    val deals: List<HotDealDto>
+    @com.google.gson.annotations.SerializedName("deals") val deals: List<HotDealDto>
 )
 
 data class HotDealDto(
-    val id: Long,
-    val title: String,
-    val price: Int,
+    @com.google.gson.annotations.SerializedName("id") val id: Long,
+    @com.google.gson.annotations.SerializedName("title") val title: String,
+    @com.google.gson.annotations.SerializedName("price") val price: Int,
     @com.google.gson.annotations.SerializedName("original_price") val originalPrice: Int?,
     @com.google.gson.annotations.SerializedName("discount_rate") val discountRate: Int,
     @com.google.gson.annotations.SerializedName("mall_name") val mallName: String?,
     @com.google.gson.annotations.SerializedName("image_url") val imageUrl: String?,
-    val category: String?,
+    @com.google.gson.annotations.SerializedName("category") val category: String?,
     @com.google.gson.annotations.SerializedName("site_name") val communityName: String?,
     @com.google.gson.annotations.SerializedName("shipping_fee") val shippingFee: String?,
     @com.google.gson.annotations.SerializedName("like_count") val likeCount: Int,

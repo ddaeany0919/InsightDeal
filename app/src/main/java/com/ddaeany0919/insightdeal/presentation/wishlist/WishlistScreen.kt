@@ -164,6 +164,7 @@ fun AddWishlistDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Unit = {}) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -260,6 +261,18 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
                             com.ddaeany0919.insightdeal.presentation.components.StandardWishlistCard(
                                 style = com.ddaeany0919.insightdeal.presentation.components.WishlistCardStyle.DETAILED,
                                 item = item,
+                                onClick = {
+                                    if (item.productUrl.isNotBlank()) {
+                                        com.ddaeany0919.insightdeal.utils.CustomTabLauncher.launchShoppingUrl(context, item.productUrl)
+                                    } else {
+                                        if (expandedItemId == item.id) {
+                                            expandedItemId = null
+                                        } else {
+                                            expandedItemId = item.id
+                                            viewModel.loadItemHistory(item)
+                                        }
+                                    }
+                                },
                                 onDelete = {
                                     viewModel.deleteItem(item)
                                     scope.launch {
@@ -305,7 +318,10 @@ fun WishlistScreen(viewModel: WishlistViewModel = viewModel(), onBack: () -> Uni
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { viewModel.retry() }) { Text("다시 시도") }
+                    Button(onClick = {
+                        lazyPagingItems.retry()
+                        viewModel.retry()
+                    }) { Text("다시 시도") }
                 }
             }
         }

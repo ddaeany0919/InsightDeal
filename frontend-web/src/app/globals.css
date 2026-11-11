@@ -964,6 +964,9 @@ mark.search-highlight {
   min-width: 0;
   min-height: 44px;
   flex: 1;
+  background: transparent;
+  border: none;
+  text-align: left;
   cursor: pointer;
 }
 

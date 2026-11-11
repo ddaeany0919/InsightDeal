@@ -13,6 +13,7 @@ object CustomTabLauncher {
         "coupang" to "com.coupang.mobile",
         "coupangapp" to "com.coupang.mobile",
         "elevenstreet" to "com.elevenst",
+        "elevenst" to "com.elevenst",
         "st11" to "com.elevenst",
         "gmarket" to "com.ebay.kr.gmarket",
         "auction" to "com.ebay.kr.auction",

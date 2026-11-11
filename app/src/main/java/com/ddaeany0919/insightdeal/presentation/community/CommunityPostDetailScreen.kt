@@ -222,13 +222,13 @@ fun CommunityPostDetailScreen(
         AlertDialog(
             onDismissRequest = { showLoginIncentiveDialog = false },
             title = {
-                Text("로그인이 필요합니다", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("로그인이 필요합니다", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
             },
             text = {
                 Text(
                     "댓글 작성 및 투표 참여는 로그인 후 이용할 수 있습니다.",
                     fontSize = 14.sp,
-                    color = NeutralGray700,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 20.sp
                 )
             },
@@ -236,7 +236,7 @@ fun CommunityPostDetailScreen(
                 Button(
                     onClick = {
                         showLoginIncentiveDialog = false
-                        navController?.navigate("settings")
+                        navController?.navigate("auth")
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     shape = RoundedCornerShape(10.dp)
@@ -246,10 +246,10 @@ fun CommunityPostDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showLoginIncentiveDialog = false }) {
-                    Text("닫기", color = NeutralGray500)
+                    Text("닫기", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
-            containerColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(18.dp)
         )
     }
@@ -261,25 +261,32 @@ fun CommunityPostDetailScreen(
                 title = { Text("게시글", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
                 navigationIcon = {
                     IconButton(onClick = {
-                        navController?.navigate("community") {
-                            popUpTo("community") { inclusive = true }
+                        if (navController?.popBackStack() != true) {
+                            navController?.navigate("community") {
+                                popUpTo("community") { inclusive = true }
+                            }
                         }
                     }) {
                         Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "뒤로가기")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground
+                )
             )
         },
         bottomBar = {
             Surface(
-                tonalElevation = 8.dp,
-                color = Color.White
+                tonalElevation = 4.dp,
+                color = MaterialTheme.colorScheme.surface
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     if (replyingToNickname != null || editingCommentId != null) {
                         Row(
@@ -302,7 +309,7 @@ fun CommunityPostDetailScreen(
                                 },
                                 modifier = Modifier.size(24.dp)
                             ) {
-                                Text("✕", fontSize = 14.sp, color = NeutralGray500)
+                                Text("✕", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -312,22 +319,13 @@ fun CommunityPostDetailScreen(
                         verticalAlignment = Alignment.Bottom,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        IconButton(
-                            onClick = {
-                                android.widget.Toast.makeText(context, "이미지 첨부 기능은 준비 중입니다.", android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(imageVector = Icons.Outlined.Image, contentDescription = "이미지 첨부", tint = NeutralGray500)
-                        }
-
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = 40.dp, max = 100.dp)
                                 .clip(RoundedCornerShape(20.dp))
-                                .background(NeutralGray50)
-                                .border(1.dp, NeutralGray200, RoundedCornerShape(20.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
                                 .clickable {
                                     if (!isLoggedIn) {
                                         showLoginIncentiveDialog = true
@@ -339,7 +337,7 @@ fun CommunityPostDetailScreen(
                             if (commentText.isEmpty()) {
                                 Text(
                                     text = if (isLoggedIn) "조언이나 피드백을 남겨주세요..." else "로그인 후 의견을 남겨보세요",
-                                    color = NeutralGray500,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 13.sp
                                 )
                             }
@@ -349,8 +347,9 @@ fun CommunityPostDetailScreen(
                                     onValueChange = { commentText = it },
                                     textStyle = androidx.compose.ui.text.TextStyle(
                                         fontSize = 14.sp,
-                                        color = NeutralGray900
+                                        color = MaterialTheme.colorScheme.onSurface
                                     ),
+                                    cursorBrush = androidx.compose.ui.graphics.SolidColor(AccentOrange),
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
@@ -368,7 +367,7 @@ fun CommunityPostDetailScreen(
                                             postId = postId,
                                             commentId = editingCommentId!!,
                                             userId = currentUserId ?: "guest",
-                                            nickname = currentUserNickname ?: "익명 고수",
+                                            nickname = currentUserNickname ?: "익명",
                                             content = commentText,
                                             dealUrl = null
                                         ) {
@@ -380,7 +379,7 @@ fun CommunityPostDetailScreen(
                                         viewModel.submitComment(
                                             postId = postId,
                                             userId = currentUserId ?: "guest",
-                                            nickname = currentUserNickname ?: "익명 고수",
+                                            nickname = currentUserNickname ?: "익명",
                                             content = commentText,
                                             dealUrl = null,
                                             parentId = replyingToCommentId
@@ -398,8 +397,8 @@ fun CommunityPostDetailScreen(
                             colors = IconButtonDefaults.iconButtonColors(
                                 containerColor = AccentOrange,
                                 contentColor = Color.White,
-                                disabledContainerColor = NeutralGray200,
-                                disabledContentColor = NeutralGray500
+                                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         ) {
                             Icon(imageVector = Icons.Default.Send, contentDescription = "전송", modifier = Modifier.size(16.dp))
@@ -408,7 +407,7 @@ fun CommunityPostDetailScreen(
                 }
             }
         },
-        containerColor = NeutralGray50
+        containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -428,8 +427,8 @@ fun CommunityPostDetailScreen(
                 // 1. 메인 게시글 본문 카드
                 item {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        border = BorderStroke(1.dp, NeutralGray200),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -447,17 +446,17 @@ fun CommunityPostDetailScreen(
                                         text = currentPost.nickname ?: "익명",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = NeutralGray700
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     if (currentPost.isResolved) {
                                         Surface(
-                                            color = NeutralGray50,
-                                            border = BorderStroke(0.5.dp, NeutralGray200),
+                                            color = MaterialTheme.colorScheme.surfaceVariant,
+                                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
                                             shape = RoundedCornerShape(6.dp)
                                         ) {
                                             Text(
                                                 text = "해결됨",
-                                                color = NeutralGray700,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontWeight = FontWeight.SemiBold,
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -473,20 +472,20 @@ fun CommunityPostDetailScreen(
                                     Text(
                                         text = formatRelativeTime(currentPost.createdAt),
                                         fontSize = 11.sp,
-                                        color = NeutralGray500
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
                                             Icons.Outlined.Visibility,
                                             contentDescription = "조회수",
                                             modifier = Modifier.size(13.dp),
-                                            tint = NeutralGray500
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                         Spacer(modifier = Modifier.width(2.dp))
                                         Text(
                                             text = "${currentPost.viewCount}",
                                             fontSize = 11.sp,
-                                            color = NeutralGray500
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
@@ -498,7 +497,7 @@ fun CommunityPostDetailScreen(
                                 text = currentPost.title,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = NeutralGray900
+                                color = MaterialTheme.colorScheme.onSurface
                             )
 
                             Spacer(modifier = Modifier.height(10.dp))
@@ -506,21 +505,21 @@ fun CommunityPostDetailScreen(
                             Text(
                                 text = currentPost.content,
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = NeutralGray700,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 lineHeight = 24.sp
                             )
 
                             if (currentPost.targetPrice != null && currentPost.targetPrice > 0) {
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Surface(
-                                    color = NeutralGray50,
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text(
                                         text = "구매 고민 가격: ${"%,d".format(currentPost.targetPrice)}원",
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = NeutralGray900,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                                     )
                                 }
@@ -531,13 +530,14 @@ fun CommunityPostDetailScreen(
 
                 // 2. 연동된 핫딜 상품 카드
                 linkedDeal?.let { deal ->
+                    val cleanDealTitle = com.ddaeany0919.insightdeal.presentation.decodeHtmlEntities(deal.title)
                     item {
                         Card(
                             onClick = {
                                 navController?.navigate("deal_detail/${deal.id}")
                             },
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            border = BorderStroke(1.dp, NeutralGray200),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -572,7 +572,7 @@ fun CommunityPostDetailScreen(
                                             modifier = Modifier
                                                 .size(68.dp)
                                                 .clip(RoundedCornerShape(8.dp))
-                                                .background(NeutralGray50)
+                                                .background(MaterialTheme.colorScheme.surfaceVariant)
                                         )
                                     }
                                     Column(modifier = Modifier.weight(1f)) {
@@ -581,15 +581,15 @@ fun CommunityPostDetailScreen(
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
                                             Surface(
-                                                color = NeutralGray50,
-                                                border = BorderStroke(0.5.dp, NeutralGray200),
+                                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
                                                 shape = RoundedCornerShape(4.dp)
                                             ) {
                                                 Text(
                                                     text = deal.siteName,
                                                     fontSize = 10.sp,
                                                     fontWeight = FontWeight.SemiBold,
-                                                    color = NeutralGray700,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                                 )
                                             }
@@ -604,25 +604,25 @@ fun CommunityPostDetailScreen(
                                         }
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(
-                                            text = deal.title,
+                                            text = cleanDealTitle,
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = NeutralGray900,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
-                                            text = com.ddaeany0919.insightdeal.presentation.formatPrice(deal.price.toLong(), null, deal.title),
+                                            text = com.ddaeany0919.insightdeal.presentation.formatPrice(deal.price, deal.currency, cleanDealTitle),
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.ExtraBold,
-                                            color = NeutralGray900
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
                                     }
                                     Icon(
                                         imageVector = Icons.Default.ChevronRight,
                                         contentDescription = "이동",
-                                        tint = NeutralGray400
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -634,6 +634,8 @@ fun CommunityPostDetailScreen(
                 item {
                     ShouldIBuyDetailVotePanel(
                         post = currentPost,
+                        isLoggedIn = isLoggedIn,
+                        onRequireLogin = { showLoginIncentiveDialog = true },
                         onVoteSubmit = { viewModel.loadPostDetail(postId, showLoading = false) }
                     )
                 }
@@ -651,7 +653,7 @@ fun CommunityPostDetailScreen(
                             text = "댓글 ${currentPost.comments?.size ?: 0}",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = NeutralGray900
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                     }
                 }
@@ -661,8 +663,8 @@ fun CommunityPostDetailScreen(
                 if (commentList.isEmpty()) {
                     item {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            border = BorderStroke(1.dp, NeutralGray200),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -675,7 +677,7 @@ fun CommunityPostDetailScreen(
                                 Text(
                                     text = "아직 등록된 댓글이 없습니다.",
                                     fontSize = 13.sp,
-                                    color = NeutralGray500,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontWeight = FontWeight.Medium
                                 )
                             }
@@ -690,9 +692,17 @@ fun CommunityPostDetailScreen(
                             }
                             Card(
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (comment.isAccepted) Color(0xFFFFFDF5) else if (isReply) NeutralGray50 else Color.White
+                                    containerColor = when {
+                                        comment.isAccepted -> Color(0xFFF59F00).copy(alpha = 0.12f)
+                                        isReply -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                        else -> MaterialTheme.colorScheme.surface
+                                    }
                                 ),
-                                border = if (comment.isAccepted) BorderStroke(1.5.dp, Color(0xFFF59F00)) else null,
+                                border = if (comment.isAccepted) {
+                                    BorderStroke(1.5.dp, Color(0xFFF59F00))
+                                } else {
+                                    BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                },
                                 shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -711,14 +721,19 @@ fun CommunityPostDetailScreen(
                                                     if (comment.isAccepted) {
                                                         Brush.linearGradient(listOf(Color(0xFFFFE066), Color(0xFFF59F00)))
                                                     } else {
-                                                        Brush.linearGradient(listOf(Color(0xFFE9ECEF), Color(0xFFCED4DA)))
+                                                        Brush.linearGradient(
+                                                            listOf(
+                                                                MaterialTheme.colorScheme.surfaceVariant,
+                                                                MaterialTheme.colorScheme.outlineVariant
+                                                            )
+                                                        )
                                                     }
                                                 ),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
                                                 text = comment.nickname.take(1).uppercase(),
-                                                color = if (comment.isAccepted) Color.White else NeutralGray700,
+                                                color = if (comment.isAccepted) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -728,13 +743,13 @@ fun CommunityPostDetailScreen(
                                             text = comment.nickname,
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = NeutralGray900
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
 
                                         if (comment.isAccepted) {
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Surface(
-                                                color = Color(0xFFFFF9DB),
+                                                color = Color(0xFFF59F00).copy(alpha = 0.2f),
                                                 shape = RoundedCornerShape(4.dp)
                                             ) {
                                                 Text(
@@ -752,13 +767,13 @@ fun CommunityPostDetailScreen(
                                         Text(
                                             text = formatRelativeTime(comment.createdAt),
                                             fontSize = 10.sp,
-                                            color = NeutralGray500
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                         if (comment.userId == currentUserId) {
                                             Text(
                                                 text = "수정",
                                                 fontSize = 10.sp,
-                                                color = NeutralGray500,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.clickable {
                                                     editingCommentId = comment.id
                                                     commentText = comment.content
@@ -769,9 +784,9 @@ fun CommunityPostDetailScreen(
                                             Text(
                                                 text = "삭제",
                                                 fontSize = 10.sp,
-                                                color = NeutralGray500,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.clickable {
-                                                    viewModel.deleteComment(postId, comment.id, currentUserId ?: "admin") {}
+                                                    viewModel.deleteComment(postId, comment.id, currentUserId ?: "guest") {}
                                                 }
                                             )
                                         }
@@ -781,9 +796,13 @@ fun CommunityPostDetailScreen(
                                             color = AccentOrange,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.clickable {
-                                                replyingToCommentId = comment.parentId ?: comment.id
-                                                replyingToNickname = comment.nickname
-                                                editingCommentId = null
+                                                if (!isLoggedIn) {
+                                                    showLoginIncentiveDialog = true
+                                                } else {
+                                                    replyingToCommentId = comment.parentId ?: comment.id
+                                                    replyingToNickname = comment.nickname
+                                                    editingCommentId = null
+                                                }
                                             }
                                         )
                                     }
@@ -794,27 +813,18 @@ fun CommunityPostDetailScreen(
                                 Text(
                                     text = comment.content,
                                     fontSize = 13.sp,
-                                    color = NeutralGray800,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     lineHeight = 20.sp
                                 )
 
                                 if (!comment.dealUrl.isNullOrBlank()) {
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Surface(
-                                        color = NeutralGray50,
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                                         shape = RoundedCornerShape(6.dp),
-                                        border = BorderStroke(0.5.dp, NeutralGray200),
+                                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
                                         modifier = Modifier.clickable {
-                                            try {
-                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(comment.dealUrl)).apply {
-                                                    addCategory(Intent.CATEGORY_BROWSABLE)
-                                                    component = null
-                                                    selector = null
-                                                }
-                                                context.startActivity(intent)
-                                            } catch (e: Exception) {
-                                                // Ignore
-                                            }
+                                            com.ddaeany0919.insightdeal.utils.CustomTabLauncher.launchShoppingUrl(context, comment.dealUrl)
                                         }
                                     ) {
                                         Row(
@@ -872,6 +882,8 @@ fun CommunityPostDetailScreen(
 @Composable
 fun ShouldIBuyDetailVotePanel(
     post: CommunityPostDto,
+    isLoggedIn: Boolean = true,
+    onRequireLogin: (() -> Unit)? = null,
     onVoteSubmit: () -> Unit
 ) {
     val context = LocalContext.current
@@ -896,8 +908,8 @@ fun ShouldIBuyDetailVotePanel(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, NeutralGray200),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
@@ -911,11 +923,11 @@ fun ShouldIBuyDetailVotePanel(
                     text = "구매 투표",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = NeutralGray900
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = if (totalVotes > 0) "${totalVotes}명 참여" else "투표 참여 전",
-                    color = NeutralGray500,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -932,13 +944,13 @@ fun ShouldIBuyDetailVotePanel(
                     Text(
                         text = "살까 ${"%.0f".format(buyRatio * 100)}% (${post.bountyPoints})",
                         fontWeight = FontWeight.SemiBold,
-                        color = if (buyRatio >= skipRatio) AccentOrange else NeutralGray500,
+                        color = if (buyRatio >= skipRatio) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
                     )
                     Text(
                         text = "말까 ${"%.0f".format(skipRatio * 100)}% (${post.likeCount})",
                         fontWeight = FontWeight.SemiBold,
-                        color = if (skipRatio > buyRatio) NeutralGray900 else NeutralGray500,
+                        color = if (skipRatio > buyRatio) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
                     )
                 }
@@ -948,7 +960,7 @@ fun ShouldIBuyDetailVotePanel(
                         .fillMaxWidth()
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp))
-                        .background(NeutralGray200)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Box(
                         modifier = Modifier
@@ -969,6 +981,10 @@ fun ShouldIBuyDetailVotePanel(
 
                 OutlinedButton(
                     onClick = {
+                        if (!isLoggedIn) {
+                            onRequireLogin?.invoke()
+                            return@OutlinedButton
+                        }
                         scope.launch {
                             try {
                                 if (isBuySelected) {
@@ -1004,23 +1020,27 @@ fun ShouldIBuyDetailVotePanel(
                         }
                     },
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isBuySelected) AccentOrangeSoft else Color.Transparent
+                        containerColor = if (isBuySelected) AccentOrange.copy(alpha = 0.14f) else Color.Transparent
                     ),
-                    border = BorderStroke(1.dp, if (isBuySelected) AccentOrange else NeutralGray200),
+                    border = BorderStroke(1.dp, if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.outlineVariant),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.weight(1f)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Filled.ThumbUp, contentDescription = null, tint = if (isBuySelected) AccentOrange else NeutralGray500, modifier = Modifier.size(15.dp))
+                        Icon(Icons.Filled.ThumbUp, contentDescription = null, tint = if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
                         Text(
                             text = if (post.bountyPoints > 0) "살까 ${post.bountyPoints}" else "살까",
-                            color = if (isBuySelected) AccentOrange else NeutralGray700,
+                            color = if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = if (isBuySelected) FontWeight.Bold else FontWeight.Medium
                         )
                     }
                 }
                 OutlinedButton(
                     onClick = {
+                        if (!isLoggedIn) {
+                            onRequireLogin?.invoke()
+                            return@OutlinedButton
+                        }
                         scope.launch {
                             try {
                                 if (isSkipSelected) {
@@ -1056,17 +1076,17 @@ fun ShouldIBuyDetailVotePanel(
                         }
                     },
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isSkipSelected) NeutralGray200.copy(alpha = 0.6f) else Color.Transparent
+                        containerColor = if (isSkipSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
                     ),
-                    border = BorderStroke(1.dp, if (isSkipSelected) NeutralGray700 else NeutralGray200),
+                    border = BorderStroke(1.dp, if (isSkipSelected) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outlineVariant),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.weight(1f)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Filled.ThumbDown, contentDescription = null, tint = if (isSkipSelected) NeutralGray900 else NeutralGray500, modifier = Modifier.size(15.dp))
+                        Icon(Icons.Filled.ThumbDown, contentDescription = null, tint = if (isSkipSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
                         Text(
                             text = if (post.likeCount > 0) "말까 ${post.likeCount}" else "말까",
-                            color = if (isSkipSelected) NeutralGray900 else NeutralGray700,
+                            color = if (isSkipSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = if (isSkipSelected) FontWeight.Bold else FontWeight.Medium
                         )
                     }

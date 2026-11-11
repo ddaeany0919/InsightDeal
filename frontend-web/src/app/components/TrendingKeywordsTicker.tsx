@@ -61,7 +61,8 @@ export default function TrendingKeywordsTicker({
   return (
     <div className="trending-ticker-wrapper">
       <div className="trending-ticker-bar">
-        <div
+        <button
+          type="button"
           className="trending-ticker-left"
           onClick={() => onSelectKeyword(currentItem.keyword)}
           title={`'${currentItem.keyword}' 검색하기`}
@@ -75,7 +76,7 @@ export default function TrendingKeywordsTicker({
           </span>
           <span className="trending-keyword-text">{currentItem.keyword}</span>
           {renderStatusBadge(currentItem.status)}
-        </div>
+        </button>
 
         <button
           type="button"

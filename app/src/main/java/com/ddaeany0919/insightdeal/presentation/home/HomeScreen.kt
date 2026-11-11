@@ -112,9 +112,16 @@ fun HomeScreen(
 
     LaunchedEffect(searchInput) {
         val trimmed = searchInput.trim()
+        if (trimmed.isNotEmpty() && isIncompleteHangulJamoQuery(trimmed)) {
+            return@LaunchedEffect
+        }
         if (trimmed != filterState.keyword.orEmpty()) {
-            kotlinx.coroutines.delay(300L)
-            viewModel.searchDeals(trimmed)
+            if (trimmed.isEmpty()) {
+                viewModel.searchDeals("")
+            } else {
+                kotlinx.coroutines.delay(300L)
+                viewModel.searchDeals(trimmed)
+            }
         }
     }
 
@@ -595,18 +602,36 @@ fun HomeScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            val intent = android.content.Intent().apply {
-                                action = android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS
-                                putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            val intent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                    if (context !is android.app.Activity) {
+                                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                }
+                            } else {
+                                android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = android.net.Uri.fromParts("package", context.packageName, null)
+                                    if (context !is android.app.Activity) {
+                                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                }
                             }
                             try {
                                 context.startActivity(intent)
                             } catch (e: Exception) {
-                                val fallbackIntent = android.content.Intent().apply {
-                                    action = android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
-                                    data = android.net.Uri.fromParts("package", context.packageName, null)
+                                try {
+                                    val fallbackIntent = android.content.Intent().apply {
+                                        action = android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                                        data = android.net.Uri.fromParts("package", context.packageName, null)
+                                        if (context !is android.app.Activity) {
+                                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                    }
+                                    context.startActivity(fallbackIntent)
+                                } catch (_: Exception) {
+                                    android.widget.Toast.makeText(context, "설정 화면을 열 수 없습니다.", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                context.startActivity(fallbackIntent)
                             }
                         },
                     color = if (isDark) Color(0xFF2E7D32).copy(alpha = 0.85f) else Color(0xFFE8F5E9),
@@ -1970,7 +1995,11 @@ fun HomeScreen(
                 title = { Text(text = "이 게시글을 신고할까요?", fontWeight = FontWeight.Bold) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(text = "이 글의 신고 사유를 정밀하게 선택해주세요. 24시간 내 모니터링 후 조치됩니다.", fontSize = 12.sp, color = Color.Gray)
+                        Text(
+                            text = "신고 사유를 선택해 주세요. 확인 후 신속히 처리하겠습니다.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
                         reasons.forEachIndexed { index, reason ->
                             Row(
@@ -2008,14 +2037,14 @@ fun HomeScreen(
             )
         }
 
-        // 🔒 로그인 권유 가드 다이얼로그 (비로그인 사용자 전용 워프 터널)
+        // 로그인 권유 가드 다이얼로그 (비로그인 사용자 안내)
         if (showAuthRequiredDialog) {
             AlertDialog(
                 onDismissRequest = { showAuthRequiredDialog = false },
                 title = { Text(text = "로그인이 필요해요", fontWeight = FontWeight.Bold) },
                 text = {
                     Text(
-                        text = "관심 키워드 알림, 핫딜 숨기기 등 지능형 고관여 활동은 로그인한 회원만 이용할 수 있습니다.\n\n" +
+                        text = "관심 키워드 알림과 핫딜 숨기기 기능은 로그인 후 이용할 수 있습니다.\n\n" +
                                 "로그인 화면으로 이동할까요?",
                         fontSize = 14.sp,
                         lineHeight = 20.sp
@@ -2080,6 +2109,19 @@ fun HomeDealCardSkeleton() {
     }
 }
 
+internal fun isIncompleteHangulJamoQuery(raw: String): Boolean {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return false
+    val tokens = trimmed.split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (tokens.isEmpty()) return false
+    return tokens.any { token ->
+        val target = if (token.startsWith("-") && token.length > 1) token.substring(1) else token
+        target.isNotEmpty() && target.all { ch ->
+            ch in '\u3131'..'\u318E' || ch in '\u1100'..'\u11FF'
+        }
+    }
+}
+
 internal fun buildHighlightedTitle(
     title: String,
     keyword: String?,
@@ -2087,18 +2129,48 @@ internal fun buildHighlightedTitle(
     highlightFg: Color
 ): AnnotatedString {
     val cleanQuery = keyword?.trim().orEmpty()
-    if (cleanQuery.isEmpty()) return AnnotatedString(title)
+    if (cleanQuery.isEmpty() || title.isEmpty()) return AnnotatedString(title)
+
+    val tokens = cleanQuery
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() && !it.startsWith("-") && !it.startsWith(":") }
+        .distinct()
+    if (tokens.isEmpty()) return AnnotatedString(title)
+
+    val rawRanges = mutableListOf<Pair<Int, Int>>()
+    for (token in tokens) {
+        var searchStart = 0
+        while (searchStart < title.length) {
+            val matchIndex = title.indexOf(token, startIndex = searchStart, ignoreCase = true)
+            if (matchIndex < 0) break
+            rawRanges.add(matchIndex to (matchIndex + token.length))
+            searchStart = matchIndex + 1
+        }
+    }
+    if (rawRanges.isEmpty()) return AnnotatedString(title)
+
+    val sortedRanges = rawRanges.sortedWith(
+        compareBy<Pair<Int, Int>> { it.first }.thenByDescending { it.second }
+    )
+    val mergedRanges = mutableListOf<Pair<Int, Int>>()
+    for (range in sortedRanges) {
+        if (mergedRanges.isEmpty()) {
+            mergedRanges.add(range)
+        } else {
+            val last = mergedRanges.last()
+            if (range.first <= last.second) {
+                mergedRanges[mergedRanges.lastIndex] = last.first to maxOf(last.second, range.second)
+            } else {
+                mergedRanges.add(range)
+            }
+        }
+    }
 
     return buildAnnotatedString {
         var cursor = 0
-        while (cursor < title.length) {
-            val matchIndex = title.indexOf(cleanQuery, startIndex = cursor, ignoreCase = true)
-            if (matchIndex < 0) {
-                append(title.substring(cursor))
-                break
-            }
-            if (matchIndex > cursor) {
-                append(title.substring(cursor, matchIndex))
+        for ((start, end) in mergedRanges) {
+            if (start > cursor) {
+                append(title.substring(cursor, start))
             }
             withStyle(
                 SpanStyle(
@@ -2107,9 +2179,12 @@ internal fun buildHighlightedTitle(
                     fontWeight = FontWeight.Bold
                 )
             ) {
-                append(title.substring(matchIndex, matchIndex + cleanQuery.length))
+                append(title.substring(start, end))
             }
-            cursor = matchIndex + cleanQuery.length
+            cursor = end
+        }
+        if (cursor < title.length) {
+            append(title.substring(cursor))
         }
     }
 }
@@ -2728,7 +2803,7 @@ fun DealCardComposable(
                 Box(modifier = Modifier.fillMaxWidth()) {
                     Surface(
                         shape = RoundedCornerShape(bottomStart = 12.dp, topEnd = 12.dp),
-                        color = if (isDark) Color(0xFF3700B3).copy(alpha = 0.2f) else Color(0xFFFFEBEB),
+                        color = if (isDark) Color(0x33FF453A) else Color(0xFFFFEBEB),
                         modifier = Modifier.align(Alignment.TopEnd)
                     ) {
                         Row(
@@ -2738,7 +2813,7 @@ fun DealCardComposable(
                             Text(
                                 text = "인기",
                                 fontSize = 11.sp,
-                                color = if (isDark) Color(0xFFCF6679) else Color(0xFFD32F2F),
+                                color = if (isDark) Color(0xFFFF6961) else Color(0xFFD32F2F),
                                 fontWeight = FontWeight.ExtraBold
                             )
                         }

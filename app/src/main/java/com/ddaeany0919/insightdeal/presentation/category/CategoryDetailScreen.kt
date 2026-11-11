@@ -32,6 +32,7 @@ fun CategoryDetailScreen(
         viewModel.selectCategory(categoryName)
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
     val dealsPagingItems = viewModel.dealsPagingData.collectAsLazyPagingItems()
 
     Scaffold(
@@ -98,9 +99,19 @@ fun CategoryDetailScreen(
                                         navController.navigate("deal_detail/${deal.id}")
                                     },
                                     onOpenUrl = { url ->
-                                        val finalUrl = if (url.startsWith("http")) url else "https://$url"
-                                        val encodedUrl = java.net.URLEncoder.encode(finalUrl, "UTF-8")
-                                        navController.navigate("webview/$encodedUrl")
+                                        val lowerUrl = url.lowercase()
+                                        val isCommunityPost = listOf(
+                                            "ppomppu.co.kr", "fmkorea.com", "quasarzone.com",
+                                            "ruliweb.com", "clien.net", "bbasak.com"
+                                        ).any { lowerUrl.contains(it) }
+                                        if (isCommunityPost) {
+                                            val finalUrl = if (url.startsWith("http")) url else "https://$url"
+                                            val encodedUrl = java.net.URLEncoder.encode(finalUrl, "UTF-8")
+                                            navController.navigate("webview/$encodedUrl")
+                                        } else {
+                                            viewModel.trackOutboundClick(url)
+                                            com.ddaeany0919.insightdeal.utils.CustomTabLauncher.launchShoppingUrl(context, url)
+                                        }
                                     }
                                 )
                             }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useId, useMemo } from "react";
 import { RefreshCw, BarChart3 } from "lucide-react";
 import type { PriceHistoryItem } from "../lib/types";
 import { apiUrl, formatPrice } from "../lib/utils";
@@ -29,141 +29,326 @@ const PERIOD_OPTIONS = [
 
 type PeriodKey = (typeof PERIOD_OPTIONS)[number]["key"];
 
+interface ParsedHistoryDate {
+  label: string;
+  daySerial: number | null;
+  isLongRangeFormat: boolean;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/**
+ * iOS Safari / 토스 WebView(WebKit)에서 "YYYY-MM-DD HH:mm:ss" 공백 구분자 문자열에
+ * new Date() 호출 시 Invalid Date(NaN)가 반환되는 이슈를 원천 차단하는 순수 정규식 파서
+ */
+function parseSafeHistoryDate(raw: string | null | undefined): ParsedHistoryDate {
+  const s = String(raw ?? "").trim();
+  if (!s) {
+    return { label: "", daySerial: null, isLongRangeFormat: false };
+  }
+
+  // 1) 4자리 연도 타임스탬프 (예: "2026-11-11 12:30:00", "2026-11-11T12:30:00Z", "2026.11.11")
+  const fullMatch = s.match(
+    /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/
+  );
+  if (fullMatch) {
+    const yyyy = Number(fullMatch[1]);
+    const mm = Number(fullMatch[2]);
+    const dd = Number(fullMatch[3]);
+    const hh = fullMatch[4] !== undefined ? Number(fullMatch[4]) : null;
+    const mi = fullMatch[5] !== undefined ? Number(fullMatch[5]) : null;
+    if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+      const daySerial = Math.floor(Date.UTC(yyyy, mm - 1, dd) / 86400000);
+      const label =
+        hh !== null && mi !== null && !(hh === 0 && mi === 0)
+          ? `${pad2(mm)}.${pad2(dd)} ${pad2(hh)}:${pad2(mi)}`
+          : `${String(yyyy).slice(-2)}.${pad2(mm)}.${pad2(dd)}`;
+      return { label, daySerial, isLongRangeFormat: false };
+    }
+  }
+
+  // 2) 백엔드 3m/6m 포맷 "YY.MM.DD" (예: "26.09.15")
+  const shortYmdMatch = s.match(
+    /^(\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}))?$/
+  );
+  if (shortYmdMatch) {
+    const yy = Number(shortYmdMatch[1]);
+    const mm = Number(shortYmdMatch[2]);
+    const dd = Number(shortYmdMatch[3]);
+    if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+      const yyyy = 2000 + yy;
+      const daySerial = Math.floor(Date.UTC(yyyy, mm - 1, dd) / 86400000);
+      return {
+        label: `${pad2(yy)}.${pad2(mm)}.${pad2(dd)}`,
+        daySerial,
+        isLongRangeFormat: true,
+      };
+    }
+  }
+
+  // 3) 백엔드 7d 포맷 "MM.DD HH:mm" / "MM.DD" / "MM/DD" (예: "11.11 12:30", "11.11")
+  const mdMatch = s.match(
+    /^(\d{1,2})[./-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}))?$/
+  );
+  if (mdMatch) {
+    const mm = Number(mdMatch[1]);
+    const dd = Number(mdMatch[2]);
+    const hh = mdMatch[3] !== undefined ? Number(mdMatch[3]) : null;
+    const mi = mdMatch[4] !== undefined ? Number(mdMatch[4]) : null;
+    if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+      const refYear = new Date().getUTCFullYear();
+      const daySerial = Math.floor(Date.UTC(refYear, mm - 1, dd) / 86400000);
+      const label =
+        hh !== null && mi !== null && !(hh === 0 && mi === 0)
+          ? `${pad2(mm)}.${pad2(dd)} ${pad2(hh)}:${pad2(mi)}`
+          : `${pad2(mm)}.${pad2(dd)}`;
+      return { label, daySerial, isLongRangeFormat: false };
+    }
+  }
+
+  // 4) 상대 날짜 문자열 ("3일 전", "어제", "오늘" 등) 그대로 안전 반환
+  return { label: s, daySerial: null, isLongRangeFormat: false };
+}
+
+function parseBasePriceToRawUnit(
+  pVal: string | number | null | undefined,
+  normCurrency: string
+): number {
+  if (pVal === null || pVal === undefined) return 0;
+  if (typeof pVal === "number") {
+    return Number.isFinite(pVal) && pVal > 0 ? Math.round(pVal) : 0;
+  }
+  const trimmed = String(pVal).trim();
+  if (
+    !trimmed ||
+    trimmed === "0" ||
+    trimmed === "0원" ||
+    trimmed === "무료" ||
+    trimmed === "가격 확인" ||
+    trimmed === "가격 문의" ||
+    trimmed === "정보 없음"
+  ) {
+    return 0;
+  }
+  const clean = trimmed.replace(/[^0-9.-]/g, "");
+  if (!clean) return 0;
+  const num = parseFloat(clean);
+  if (!Number.isFinite(num) || num <= 0) return 0;
+
+  const isSubunit =
+    normCurrency === "USD" || normCurrency === "EUR" || normCurrency === "CNY";
+  if (isSubunit && trimmed.includes(".")) {
+    return Math.round(num * 100);
+  }
+  return Math.round(num);
+}
+
 // [react-patterns] React StrictMode 이중 마운트 및 탭 재전환 시 중복 네트워크 호출 방지용 인플라이트 캐시
 const historyPromiseCache = new Map<string, { ts: number; promise: Promise<PriceHistoryItem[]> }>();
 
-export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", optionName, onHistoryStatus }: PriceTrendChartProps) {
-  const [userPeriod, setUserPeriod] = useState<PeriodKey | null>(null);
-  const [autoFellBackTo3m, setAutoFellBackTo3m] = useState(false);
-  const [chartData, setChartData] = useState<{ price: number; date: string }[]>([]);
-  const [isRealData, setIsRealData] = useState(false);
-  const [loading, setLoading] = useState(false);
+export default function PriceTrendChart({
+  basePrice,
+  dealId,
+  currency = "KRW",
+  optionName,
+  onHistoryStatus,
+}: PriceTrendChartProps) {
+  const gradientId = useId().replace(/:/g, "");
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const normCurrency = (currency || "KRW").trim().toUpperCase();
+  const cleanOpt = optionName ? optionName.trim() : "";
+
+  // 딜 ID / 옵션 / 통화 변경 시 이전 옵션 상태가 남지 않도록 스코프 키 기반 상태 격리
+  const scopeKey = `${dealId ?? "preview"}:${cleanOpt}:${normCurrency}`;
+
+  const [periodByScope, setPeriodByScope] = useState<{
+    scope: string;
+    value: PeriodKey | null;
+  }>({ scope: scopeKey, value: null });
+  const [fallbackByScope, setFallbackByScope] = useState<{
+    scope: string;
+    fellBack: boolean;
+  }>({ scope: scopeKey, fellBack: false });
+  const [activePointByScope, setActivePointByScope] = useState<{
+    scope: string;
+    index: number | null;
+  }>({ scope: scopeKey, index: null });
+  const [fetchedState, setFetchedState] = useState<{
+    requestKey: string;
+    points: { price: number; date: string }[];
+  } | null>(null);
+
+  const userPeriod =
+    periodByScope.scope === scopeKey ? periodByScope.value : null;
+  const autoFellBackTo3m =
+    fallbackByScope.scope === scopeKey ? fallbackByScope.fellBack : false;
+  const activePointIdx =
+    activePointByScope.scope === scopeKey ? activePointByScope.index : null;
 
   const period: PeriodKey = userPeriod ?? (autoFellBackTo3m ? "3m" : "7d");
   const setPeriod = (nextPeriod: PeriodKey) => {
-    setUserPeriod(nextPeriod);
+    setPeriodByScope({ scope: scopeKey, value: nextPeriod });
+    setActivePointByScope({ scope: scopeKey, index: null });
   };
 
-  const getCleanPrice = (pVal: string | number | null | undefined) => {
-    if (pVal === null || pVal === undefined) return 10000;
-    const clean = String(pVal).replace(/[^0-9.]/g, "");
-    if (!clean) return 10000;
-    const num = parseFloat(clean);
-    if (num <= 0) return 10000;
-    return num;
-  };
+  // [android-e2e-sequence-audit Gate 2] 최초 진입 시 7d_auto 단일 왕복(1-RTT) API를 호출하여 7d -> 3m 순차 Waterfall 차단
+  const queryPeriod = userPeriod ?? "7d_auto";
+  const requestKey = dealId ? `${scopeKey}:${queryPeriod}` : null;
 
-  const base = getCleanPrice(basePrice);
-  const dummyBase = dealId ? 0 : base;
+  const previewBase = useMemo(
+    () => (dealId ? 0 : parseBasePriceToRawUnit(basePrice, normCurrency)),
+    [dealId, basePrice, normCurrency]
+  );
+
+  const previewPoints = useMemo(() => {
+    if (dealId || previewBase <= 0) return [];
+    const dummyPrices = [
+      Math.max(1, Math.round(previewBase * 1.15)),
+      Math.max(1, Math.round(previewBase * 1.08)),
+      previewBase,
+    ];
+    const dummyDates = ["3일 전", "어제", "오늘"];
+    return dummyPrices.map((p, idx) => ({ price: p, date: dummyDates[idx] }));
+  }, [dealId, previewBase]);
+
   const onHistoryStatusRef = useRef(onHistoryStatus);
-
   useEffect(() => {
     onHistoryStatusRef.current = onHistoryStatus;
   }, [onHistoryStatus]);
 
   useEffect(() => {
-    if (!dealId) {
-      const dummyPrices = [Math.round(dummyBase * 1.15), Math.round(dummyBase * 1.08), Math.round(dummyBase * 1.0)];
-      const dummyDates = ["3일 전", "어제", "오늘"];
-      setChartData(dummyPrices.map((p, idx) => ({ price: p, date: dummyDates[idx] })));
-      setIsRealData(false);
-      onHistoryStatusRef.current?.(true, {
-        minPrice: Math.min(...dummyPrices),
-        avgPrice: Math.round(dummyPrices.reduce((a, b) => a + b, 0) / dummyPrices.length),
-        maxPrice: Math.max(...dummyPrices),
-        latestPrice: dummyPrices[dummyPrices.length - 1],
-      });
+    if (!dealId || !requestKey) {
+      if (previewPoints.length >= 2) {
+        const pVals = previewPoints.map((d) => d.price);
+        onHistoryStatusRef.current?.(true, {
+          minPrice: Math.min(...pVals),
+          avgPrice: Math.round(pVals.reduce((a, b) => a + b, 0) / pVals.length),
+          maxPrice: Math.max(...pVals),
+          latestPrice: pVals[pVals.length - 1],
+        });
+      } else {
+        onHistoryStatusRef.current?.(false);
+      }
       return;
     }
 
     let isMounted = true;
-    setLoading(true);
-
-    // [android-e2e-sequence-audit Gate 2] 최초 진입 시 7d_auto 단일 왕복(1-RTT) API를 호출하여 7d -> 3m 순차 Waterfall 차단
-    const queryPeriod = userPeriod ?? "7d_auto";
-    const cleanOpt = optionName ? optionName.trim() : "";
-    const cacheKey = `${dealId}:${queryPeriod}:${cleanOpt}:${currency || ""}`;
 
     (async () => {
       try {
         const now = Date.now();
-        let cached = historyPromiseCache.get(cacheKey);
+        let cached = historyPromiseCache.get(requestKey);
         if (!cached || now - cached.ts > 15000) {
-          const optParam = cleanOpt ? `&option_name=${encodeURIComponent(cleanOpt)}` : "";
-          const currParam = currency ? `&currency=${encodeURIComponent(currency)}` : "";
-          const targetUrl = apiUrl(`/api/community/deals/${dealId}/history?period=${queryPeriod}${optParam}${currParam}`);
+          const optParam = cleanOpt
+            ? `&option_name=${encodeURIComponent(cleanOpt)}`
+            : "";
+          const currParam = normCurrency
+            ? `&currency=${encodeURIComponent(normCurrency)}`
+            : "";
+          const targetUrl = apiUrl(
+            `/api/community/deals/${dealId}/history?period=${queryPeriod}${optParam}${currParam}`
+          );
           const promise = fetch(targetUrl).then((res) => {
             if (!res.ok) throw new Error("Failed to fetch");
             return res.json() as Promise<PriceHistoryItem[]>;
           });
           cached = { ts: now, promise };
-          historyPromiseCache.set(cacheKey, cached);
+          historyPromiseCache.set(requestKey, cached);
         }
-        const data: PriceHistoryItem[] = await cached.promise;
+
+        const rawData: PriceHistoryItem[] = await cached.promise;
         if (!isMounted) return;
-        if (data && data.length >= 2) {
+
+        // 0원 이하 또는 비정상(NaN/Infinity) 데이터 포인트 원천 필터링
+        const validItems = Array.isArray(rawData)
+          ? rawData.filter(
+              (item) =>
+                item &&
+                typeof item.price === "number" &&
+                Number.isFinite(item.price) &&
+                item.price > 0
+            )
+          : [];
+
+        if (validItems.length >= 2) {
+          const parsedDates = validItems.map((item) =>
+            parseSafeHistoryDate(item.recordedAt)
+          );
+
           if (userPeriod === null) {
-            // 7d_auto가 3m 데이터로 자동 확장되었는지 판별 (첫 기록과 마지막 기록의 날짜 차이가 7일 초과인지 확인)
-            const parseMmDd = (s: string) => {
-              const parts = s.split("/").map(Number);
-              if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-                return parts[0] * 31 + parts[1];
+            const firstParsed = parsedDates[0];
+            const lastParsed = parsedDates[parsedDates.length - 1];
+            let fellBack = parsedDates.some((d) => d.isLongRangeFormat);
+            if (
+              !fellBack &&
+              firstParsed.daySerial !== null &&
+              lastParsed.daySerial !== null
+            ) {
+              let daySpan = lastParsed.daySerial - firstParsed.daySerial;
+              if (daySpan < -180) {
+                daySpan += 365;
               }
-              return null;
-            };
-            const firstDay = parseMmDd(data[0].recordedAt);
-            const lastDay = parseMmDd(data[data.length - 1].recordedAt);
-            if (firstDay !== null && lastDay !== null && Math.abs(lastDay - firstDay) > 8) {
-              setAutoFellBackTo3m(true);
-            } else {
-              setAutoFellBackTo3m(false);
+              if (Math.abs(daySpan) > 7) {
+                fellBack = true;
+              }
             }
+            setFallbackByScope({ scope: scopeKey, fellBack });
           }
-          const formatted = data.map(item => ({
-            price: item.price,
-            date: item.recordedAt
+
+          const formatted = validItems.map((item, idx) => ({
+            price: Math.round(item.price),
+            date: parsedDates[idx].label || String(item.recordedAt || "").trim(),
           }));
-          setChartData(formatted);
-          setIsRealData(true);
-          const pVals = formatted.map(d => d.price);
+
+          setFetchedState({ requestKey, points: formatted });
+          const pVals = formatted.map((d) => d.price);
           onHistoryStatusRef.current?.(true, {
             minPrice: Math.min(...pVals),
-            avgPrice: Math.round(pVals.reduce((a, b) => a + b, 0) / pVals.length),
+            avgPrice: Math.round(
+              pVals.reduce((a, b) => a + b, 0) / pVals.length
+            ),
             maxPrice: Math.max(...pVals),
             latestPrice: pVals[pVals.length - 1],
           });
         } else {
-          setChartData([]);
-          setIsRealData(false);
+          setFetchedState({ requestKey, points: [] });
           onHistoryStatusRef.current?.(false);
         }
       } catch {
         if (!isMounted) return;
-        setChartData([]);
-        setIsRealData(false);
+        setFetchedState({ requestKey, points: [] });
         onHistoryStatusRef.current?.(false);
-      } finally {
-        if (isMounted) setLoading(false);
       }
     })();
 
     return () => {
       isMounted = false;
     };
-  }, [dealId, dummyBase, userPeriod, optionName, currency]);
+  }, [dealId, requestKey, queryPeriod, cleanOpt, normCurrency, userPeriod, scopeKey, previewPoints]);
 
-  const normCurrency = (currency || "KRW").trim().toUpperCase();
+  const loading =
+    requestKey !== null && fetchedState?.requestKey !== requestKey;
+  const chartData = dealId
+    ? fetchedState?.requestKey === requestKey
+      ? fetchedState.points
+      : []
+    : previewPoints;
+  const isRealData = Boolean(dealId && chartData.length >= 2);
+
   const formatPriceNum = (num: number) => {
     if (!Number.isFinite(num) || num <= 0) return "가격 확인";
+    const rounded = Math.round(num);
     if (
       normCurrency === "USD" ||
       normCurrency === "EUR" ||
       normCurrency === "CNY" ||
       normCurrency === "JPY"
     ) {
-      return formatPrice(Math.round(num), normCurrency);
+      return formatPrice(rounded, normCurrency);
     }
-    return `${Math.round(num).toLocaleString()}원`;
+    return `${rounded.toLocaleString()}원`;
   };
 
   // 1. 로딩 상태
@@ -247,7 +432,7 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             <span style={{ fontSize: "0.92rem", fontWeight: 900, color: "var(--text-main)" }}>
-              {optionName?.trim() ? `"${optionName.trim()}" 핫딜 기록을 모으고 있어요` : "가격 기록을 모으고 있어요"}
+              {cleanOpt ? `"${cleanOpt}" 핫딜 기록을 모으고 있어요` : "가격 기록을 모으고 있어요"}
             </span>
             <p style={{ fontSize: "0.8rem", color: "var(--text-sub)", lineHeight: "1.5", maxWidth: "340px", margin: "0 auto", fontWeight: 600 }}>
               동일 상품의 핫딜 기록이 2건 이상 쌓이면 가격 변동 추이를 한눈에 볼 수 있어요.
@@ -258,14 +443,17 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
     );
   }
 
-  // 3. 데이터가 정상 존재할 때 (핫구사 스타일 명확한 KPI + 평균 기준선 + 최고/최저 마커)
-  const prices = chartData.map(d => d.price);
-  const dates = chartData.map(d => d.date);
+  // 3. 데이터가 정상 존재할 때
+  const prices = chartData.map((d) => d.price);
+  const dates = chartData.map((d) => d.date);
 
   const width = 500;
-  const height = 210;
-  const paddingX = 56;
+  const height = 214;
+  const paddingLeft = 68;
+  const paddingRight = 22;
   const paddingY = 32;
+  const plotWidth = width - paddingLeft - paddingRight;
+  const plotHeight = height - paddingY * 2;
 
   const maxPrice = Math.max(...prices);
   const minPrice = Math.min(...prices);
@@ -273,30 +461,71 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
   const latestPrice = prices[prices.length - 1];
   const vsAvgPercent = avgPrice > 0 ? Math.round(((latestPrice - avgPrice) / avgPrice) * 100) : 0;
 
-  const priceRange = maxPrice - minPrice || Math.max(1000, maxPrice * 0.1);
-  const yMax = maxPrice + priceRange * 0.22;
-  const yMin = Math.max(0, minPrice - priceRange * 0.22);
-  const yRange = yMax - yMin || 1000;
+  // 소액 외화 센트 단위($0.99 = 99) 평행선에서도 바닥으로 찌그러지지 않고 NaN이 발생하지 않도록 비례 스케일 적용
+  const priceRange =
+    maxPrice > minPrice ? maxPrice - minPrice : Math.max(1, maxPrice * 0.12);
+  const yMax = maxPrice + priceRange * 0.24;
+  const yMin = Math.max(0, minPrice - priceRange * 0.24);
+  const yRange = Math.max(1e-6, yMax - yMin);
+  const xStepDenom = Math.max(1, prices.length - 1);
 
   const points = prices.map((price, i) => {
-    const x = paddingX + (i * (width - paddingX * 2)) / Math.max(1, prices.length - 1);
-    const y = height - paddingY - ((price - yMin) * (height - paddingY * 2)) / yRange;
+    const x =
+      prices.length === 1
+        ? paddingLeft + plotWidth / 2
+        : paddingLeft + (i * plotWidth) / xStepDenom;
+    const y = height - paddingY - ((price - yMin) * plotHeight) / yRange;
     return { x, y, price, date: dates[i] };
   });
 
-  const avgY = height - paddingY - ((avgPrice - yMin) * (height - paddingY * 2)) / yRange;
+  const avgY = height - paddingY - ((avgPrice - yMin) * plotHeight) / yRange;
   const minIdx = prices.lastIndexOf(minPrice);
   const maxIdx = prices.indexOf(maxPrice);
 
-  const polylinePoints = points.map(p => `${p.x},${p.y}`).join(" ");
+  const polylinePoints = points.map((p) => `${p.x},${p.y}`).join(" ");
 
   const areaPath = `
-    M ${points[0].x} ${height - paddingY} 
+    M ${points[0].x} ${height - paddingY}
     L ${points[0].x} ${points[0].y}
-    ${points.slice(1).map(p => `L ${p.x} ${p.y}`).join(" ")}
+    ${points.slice(1).map((p) => `L ${p.x} ${p.y}`).join(" ")}
     L ${points[points.length - 1].x} ${height - paddingY}
     Z
   `;
+
+  const getCalloutAnchor = (x: number): "start" | "middle" | "end" => {
+    if (x <= paddingLeft + 52) return "start";
+    if (x >= width - paddingRight - 52) return "end";
+    return "middle";
+  };
+
+  const selectNearestPoint = (clientX: number) => {
+    const svgEl = svgRef.current;
+    if (!svgEl || points.length === 0) return;
+    const rect = svgEl.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const svgX = ((clientX - rect.left) / rect.width) * width;
+    let nearestIdx = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const dist = Math.abs(points[i].x - svgX);
+      if (dist < minDist) {
+        minDist = dist;
+        nearestIdx = i;
+      }
+    }
+    setActivePointByScope({ scope: scopeKey, index: nearestIdx });
+  };
+
+  const activePoint =
+    activePointIdx !== null &&
+    activePointIdx >= 0 &&
+    activePointIdx < points.length
+      ? points[activePointIdx]
+      : null;
+  const activeDiffPct =
+    activePoint && avgPrice > 0
+      ? Math.round(((activePoint.price - avgPrice) / avgPrice) * 100)
+      : 0;
 
   return (
     <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -343,7 +572,7 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
         </div>
       </div>
 
-      {/* 핫구사(Hotgusa) 스타일 3대 요약 지표 바 (역대 최저가 / 평균 핫딜가 / 기간 최고가) */}
+      {/* 3대 요약 지표 바 (역대 최저가 / 평균 핫딜가 / 기간 최고가) */}
       <div style={{
         display: "grid",
         gridTemplateColumns: "repeat(3, 1fr)",
@@ -354,17 +583,17 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
         borderRadius: "12px",
         textAlign: "center"
       }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: "0.72rem", color: "var(--text-sub)", fontWeight: 700 }}>역대 최저가</div>
-          <div style={{ fontSize: "0.9rem", color: "#10b981", fontWeight: 900, marginTop: "2px" }}>{formatPriceNum(minPrice)}</div>
+          <div style={{ fontSize: "0.88rem", color: "#10b981", fontWeight: 900, marginTop: "2px", fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{formatPriceNum(minPrice)}</div>
         </div>
-        <div style={{ borderLeft: "1px solid var(--card-border)", borderRight: "1px solid var(--card-border)" }}>
+        <div style={{ minWidth: 0, borderLeft: "1px solid var(--card-border)", borderRight: "1px solid var(--card-border)", padding: "0 4px" }}>
           <div style={{ fontSize: "0.72rem", color: "var(--text-sub)", fontWeight: 700 }}>평균 핫딜가</div>
-          <div style={{ fontSize: "0.9rem", color: "var(--text-main)", fontWeight: 800, marginTop: "2px" }}>{formatPriceNum(avgPrice)}</div>
+          <div style={{ fontSize: "0.88rem", color: "var(--text-main)", fontWeight: 800, marginTop: "2px", fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{formatPriceNum(avgPrice)}</div>
         </div>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: "0.72rem", color: "var(--text-sub)", fontWeight: 700 }}>기간 최고가</div>
-          <div style={{ fontSize: "0.9rem", color: "#f59e0b", fontWeight: 800, marginTop: "2px" }}>{formatPriceNum(maxPrice)}</div>
+          <div style={{ fontSize: "0.88rem", color: "#f59e0b", fontWeight: 800, marginTop: "2px", fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{formatPriceNum(maxPrice)}</div>
         </div>
       </div>
 
@@ -383,12 +612,12 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
             border: "1px solid var(--card-border)",
             borderRadius: "12px"
           }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.72rem", fontWeight: 700 }}>
-              <span style={{ color: "#10b981" }}>최저가 구간</span>
-              <span style={{ color: pinColor, fontWeight: 800 }}>
-                {posPct === 0 ? "현재 역대 최저가 (0%)" : `현재 가격 위치 상위 ${100 - posPct}% (하위 ${posPct}%)`}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", fontSize: "0.72rem", fontWeight: 700 }}>
+              <span style={{ color: "#10b981", flexShrink: 0 }}>최저가 구간</span>
+              <span style={{ color: pinColor, fontWeight: 800, textAlign: "center" }}>
+                {posPct === 0 ? "현재 역대 최저가 (0%)" : `하위 ${posPct}% 구간`}
               </span>
-              <span style={{ color: "#f59e0b" }}>최고가 구간</span>
+              <span style={{ color: "#f59e0b", flexShrink: 0 }}>최고가 구간</span>
             </div>
             <div style={{ position: "relative", height: "8px", borderRadius: "999px", background: "linear-gradient(90deg, rgba(16,185,129,0.85) 0%, rgba(59,130,246,0.85) 50%, rgba(245,158,11,0.85) 100%)", margin: "4px 0" }}>
               {/* 평균 위치 눈금 */}
@@ -425,84 +654,213 @@ export default function PriceTrendChart({ basePrice, dealId, currency = "KRW", o
         );
       })()}
 
-      {/* 현재가 포지션 한줄 요약 (이모지 대신 시맨틱 도트 + 텍스트) */}
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.78rem", fontWeight: 800, color: latestPrice <= minPrice || vsAvgPercent < 0 ? "#10b981" : "var(--accent)" }}>
-        <span style={{
-          width: "6px",
-          height: "6px",
-          borderRadius: "50%",
-          backgroundColor: latestPrice <= minPrice || vsAvgPercent < 0 ? "#10b981" : "var(--accent)",
-          display: "inline-block",
-          flexShrink: 0
-        }} />
-        <span>
-          {latestPrice <= minPrice && maxPrice > minPrice
-            ? `최근 ${chartData.length}건 중 가장 낮은 가격이에요${vsAvgPercent < 0 ? ` · 평균보다 ${-vsAvgPercent}% 저렴` : ""}`
-            : vsAvgPercent < 0
-            ? `평균가보다 ${-vsAvgPercent}% 저렴해요`
-            : vsAvgPercent > 0
-            ? `평균가보다 ${vsAvgPercent}% 높아요`
-            : `최근 ${chartData.length}건 가격이 일정하게 유지되고 있어요`}
-        </span>
-      </div>
+      {/* 선택 포인트 인라인 툴팁 바 또는 현재가 포지션 요약 (360px 소형 화면 잘림 제로) */}
+      {activePoint ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "8px",
+            flexWrap: "wrap",
+            padding: "8px 12px",
+            borderRadius: "10px",
+            background: "var(--card-bg)",
+            border: "1px solid rgba(var(--accent-rgb), 0.35)",
+            fontSize: "0.78rem",
+            fontWeight: 700,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span style={{ color: "var(--text-sub)", fontVariantNumeric: "tabular-nums" }}>
+              {activePoint.date}
+            </span>
+            <span style={{ color: "var(--text-main)", fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>
+              {formatPriceNum(activePoint.price)}
+            </span>
+            {activeDiffPct !== 0 && (
+              <span
+                style={{
+                  color: activeDiffPct < 0 ? "#10b981" : "#f59e0b",
+                  fontWeight: 800,
+                  fontSize: "0.74rem",
+                }}
+              >
+                {activeDiffPct < 0
+                  ? `평균보다 ${-activeDiffPct}% 저렴`
+                  : `평균보다 +${activeDiffPct}%`}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setActivePointByScope({ scope: scopeKey, index: null })}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--text-sub)",
+              fontSize: "0.72rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              padding: "2px 4px",
+            }}
+          >
+            닫기
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.78rem", fontWeight: 800, color: latestPrice <= minPrice || vsAvgPercent < 0 ? "#10b981" : "var(--accent)" }}>
+          <span style={{
+            width: "6px",
+            height: "6px",
+            borderRadius: "50%",
+            backgroundColor: latestPrice <= minPrice || vsAvgPercent < 0 ? "#10b981" : "var(--accent)",
+            display: "inline-block",
+            flexShrink: 0
+          }} />
+          <span>
+            {latestPrice <= minPrice && maxPrice > minPrice
+              ? `최근 ${chartData.length}건 중 가장 낮은 가격이에요${vsAvgPercent < 0 ? ` · 평균보다 ${-vsAvgPercent}% 저렴` : ""}`
+              : vsAvgPercent < 0
+              ? `평균가보다 ${-vsAvgPercent}% 저렴해요`
+              : vsAvgPercent > 0
+              ? `평균가보다 ${vsAvgPercent}% 높아요`
+              : `최근 ${chartData.length}건 가격이 일정하게 유지되고 있어요`}
+          </span>
+        </div>
+      )}
 
-      <div style={{ position: "relative", width: "100%", overflow: "visible" }}>
-        <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", overflow: "visible" }}>
+      <div style={{ position: "relative", width: "100%", overflow: "hidden" }}>
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${width} ${height}`}
+          style={{ width: "100%", height: "auto", display: "block", touchAction: "pan-y", userSelect: "none" }}
+          onMouseMove={(e) => selectNearestPoint(e.clientX)}
+          onMouseLeave={() => setActivePointByScope({ scope: scopeKey, index: null })}
+          onTouchStart={(e) => {
+            if (e.touches.length > 0) {
+              selectNearestPoint(e.touches[0].clientX);
+            }
+          }}
+          onTouchMove={(e) => {
+            if (e.touches.length > 0) {
+              selectNearestPoint(e.touches[0].clientX);
+            }
+          }}
+        >
           <defs>
-            <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.28" />
               <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
             </linearGradient>
           </defs>
 
           {/* 평균가 수평 점선 기준선 */}
-          <line x1={paddingX} y1={avgY} x2={width - paddingX} y2={avgY} stroke="rgba(148,163,184,0.45)" strokeWidth="1.2" strokeDasharray="4,4" />
-          <text x={width - paddingX} y={Math.max(14, avgY - 5)} fill="var(--text-sub)" fontSize="8.5" fontWeight="700" textAnchor="end">
-            평균 {formatPriceNum(avgPrice)}
-          </text>
+          <line x1={paddingLeft} y1={avgY} x2={width - paddingRight} y2={avgY} stroke="rgba(148,163,184,0.45)" strokeWidth="1.2" strokeDasharray="4,4" />
+          {maxPrice > minPrice && (
+            <text x={width - paddingRight} y={Math.max(14, avgY - 5)} fill="var(--text-sub)" fontSize="8.5" fontWeight="700" textAnchor="end">
+              평균 {formatPriceNum(avgPrice)}
+            </text>
+          )}
 
-          <line x1={paddingX} y1={height - paddingY} x2={width - paddingX} y2={height - paddingY} stroke="var(--card-border)" />
+          <line x1={paddingLeft} y1={height - paddingY} x2={width - paddingRight} y2={height - paddingY} stroke="var(--card-border)" />
 
-          <path d={areaPath} fill="url(#chartGrad)" />
+          <path d={areaPath} fill={`url(#${gradientId})`} />
 
           <polyline fill="none" stroke="#3b82f6" strokeWidth="2.5" points={polylinePoints} strokeLinecap="round" strokeLinejoin="round" />
+
+          {/* 터치/호버 활성 수직 가이드선 */}
+          {activePoint && (
+            <line
+              x1={activePoint.x}
+              y1={paddingY - 6}
+              x2={activePoint.x}
+              y2={height - paddingY}
+              stroke="var(--accent)"
+              strokeWidth="1.2"
+              strokeDasharray="3,3"
+              opacity="0.7"
+            />
+          )}
 
           {points.map((p, i) => {
             const isMin = i === minIdx;
             const isMax = i === maxIdx && maxPrice > minPrice;
+            const isActive = i === activePointIdx;
             const dotColor = isMin ? "#10b981" : isMax ? "#f59e0b" : "#3b82f6";
             return (
               <g key={i}>
-                <circle cx={p.x} cy={p.y} r={isMin || isMax ? "5" : "3.8"} fill={dotColor} stroke="var(--card-bg)" strokeWidth="1.5" />
+                {isActive && (
+                  <circle
+                    cx={p.x}
+                    cy={p.y}
+                    r="8"
+                    fill={dotColor}
+                    opacity="0.2"
+                  />
+                )}
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={isActive ? "5.8" : isMin || isMax ? "5" : "3.8"}
+                  fill={dotColor}
+                  stroke="var(--card-bg)"
+                  strokeWidth="1.5"
+                />
               </g>
             );
           })}
 
-          {/* 최저가 / 최고가 콜아웃 라벨 */}
-          {minIdx >= 0 && (
-            <text x={points[minIdx].x} y={Math.min(height - paddingY - 4, points[minIdx].y + 15)} fill="#10b981" fontSize="9.5" fontWeight="800" textAnchor="middle">
+          {/* 최저가 / 최고가 콜아웃 라벨 (좌우 경계 클리핑 방지 동적 textAnchor) */}
+          {minIdx >= 0 && maxPrice > minPrice && (
+            <text
+              x={points[minIdx].x}
+              y={Math.min(height - paddingY - 4, points[minIdx].y + 15)}
+              fill="#10b981"
+              fontSize="9.5"
+              fontWeight="800"
+              textAnchor={getCalloutAnchor(points[minIdx].x)}
+            >
               최저 {formatPriceNum(minPrice)}
             </text>
           )}
           {maxIdx >= 0 && maxPrice > minPrice && maxIdx !== minIdx && (
-            <text x={points[maxIdx].x} y={Math.max(14, points[maxIdx].y - 9)} fill="#f59e0b" fontSize="9.5" fontWeight="800" textAnchor="middle">
+            <text
+              x={points[maxIdx].x}
+              y={Math.max(14, points[maxIdx].y - 9)}
+              fill="#f59e0b"
+              fontSize="9.5"
+              fontWeight="800"
+              textAnchor={getCalloutAnchor(points[maxIdx].x)}
+            >
               최고 {formatPriceNum(maxPrice)}
             </text>
           )}
 
-          <text x={paddingX - 8} y={paddingY + 4} fill="var(--text-sub)" fontSize="9" fontWeight="600" textAnchor="end">
-            {formatPriceNum(maxPrice)}
-          </text>
-          <text x={paddingX - 8} y={height - paddingY + 4} fill="var(--text-sub)" fontSize="9" fontWeight="600" textAnchor="end">
-            {formatPriceNum(minPrice)}
-          </text>
+          {/* 좌측 Y축 눈금 (평행선일 때는 중앙 기준값 1개만 표시) */}
+          {maxPrice > minPrice ? (
+            <>
+              <text x={paddingLeft - 8} y={paddingY + 4} fill="var(--text-sub)" fontSize="9" fontWeight="600" textAnchor="end">
+                {formatPriceNum(maxPrice)}
+              </text>
+              <text x={paddingLeft - 8} y={height - paddingY + 4} fill="var(--text-sub)" fontSize="9" fontWeight="600" textAnchor="end">
+                {formatPriceNum(minPrice)}
+              </text>
+            </>
+          ) : (
+            <text x={paddingLeft - 8} y={avgY + 3} fill="var(--text-sub)" fontSize="9" fontWeight="700" textAnchor="end">
+              {formatPriceNum(avgPrice)}
+            </text>
+          )}
 
-          <text x={points[0].x} y={height - paddingY + 18} fill="var(--text-sub)" fontSize="9" fontWeight="600" textAnchor="middle">
+          <text x={points[0].x} y={height - paddingY + 18} fill="var(--text-sub)" fontSize="9" fontWeight="600" textAnchor="start">
             {points[0].date}
           </text>
-          <text x={points[points.length - 1].x} y={height - paddingY + 18} fill="var(--text-sub)" fontSize="9" fontWeight="600" textAnchor="middle">
-            {points[points.length - 1].date}
-          </text>
+          {points.length > 1 && (
+            <text x={points[points.length - 1].x} y={height - paddingY + 18} fill="var(--text-sub)" fontSize="9" fontWeight="600" textAnchor="end">
+              {points[points.length - 1].date}
+            </text>
+          )}
         </svg>
       </div>
     </div>

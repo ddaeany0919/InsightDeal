@@ -1,9 +1,10 @@
 package com.ddaeany0919.insightdeal.presentation.components
 
 import android.content.Context
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
-import androidx.compose.ui.graphics.graphicsLayer
+import android.content.ContextWrapper
+import android.widget.Toast
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,15 +12,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -29,8 +28,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
 import kotlinx.coroutines.delay
+
+private tailrec fun Context.findFragmentActivity(): FragmentActivity? = when (this) {
+    is FragmentActivity -> this
+    is ContextWrapper -> baseContext.findFragmentActivity()
+    else -> null
+}
 
 @Composable
 fun PinLockDialog(
@@ -42,21 +49,68 @@ fun PinLockDialog(
     onSuccess: (String) -> Unit // 올바른 PIN 입력 시 혹은 설정 완료 시 콜백
 ) {
     val context = LocalContext.current
+    val activity = remember(context) { context.findFragmentActivity() }
     val prefs = remember { EncryptedPrefsManager.getEncryptedPrefs(context) }
-    
+
     var pinInput by remember { mutableStateOf("") }
     var errorCount by remember { prefs.getInt("app_lock_fail_count", 0).let { mutableStateOf(it) } }
     var setupStep by remember { mutableStateOf(1) } // 1: 첫 입력, 2: 확인 입력
     var firstPinInput by remember { mutableStateOf("") }
-    
+
     // 차단(락다운) 상태 관리
     var blockedUntil by remember { prefs.getLong("app_lock_blocked_until", 0L).let { mutableStateOf(it) } }
     var isBlocked by remember { mutableStateOf(false) }
     var remainingSeconds by remember { mutableStateOf(0L) }
-    
-    var showBiometricDialog by remember { mutableStateOf(false) }
+
     var instructionText by remember { mutableStateOf(subtitle) }
-    
+
+    val canUseBiometric = remember(activity, isSetupMode) {
+        if (isSetupMode || activity == null) {
+            false
+        } else {
+            val biometricManager = BiometricManager.from(activity)
+            biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
+        }
+    }
+
+    val launchHardwareBiometricAuth = {
+        val hostActivity = activity
+        if (hostActivity == null || !canUseBiometric) {
+            Toast.makeText(context, "기기에 등록된 생체 인증 정보가 없습니다. PIN 번호를 입력해 주세요.", Toast.LENGTH_SHORT).show()
+        } else {
+            val executor = ContextCompat.getMainExecutor(hostActivity)
+            val biometricPrompt = BiometricPrompt(
+                hostActivity,
+                executor,
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        super.onAuthenticationError(errorCode, errString)
+                        if (errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON &&
+                            errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
+                            errorCode != BiometricPrompt.ERROR_CANCELED
+                        ) {
+                            Toast.makeText(hostActivity, errString, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                        super.onAuthenticationSucceeded(result)
+                        prefs.edit().putInt("app_lock_fail_count", 0).apply()
+                        errorCount = 0
+                        onSuccess(correctPin)
+                    }
+                }
+            )
+            val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                .setTitle("앱 보안 잠금 해제")
+                .setSubtitle("등록된 생체 정보로 본인 인증을 진행합니다.")
+                .setNegativeButtonText("PIN 번호 입력")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .build()
+            biometricPrompt.authenticate(promptInfo)
+        }
+    }
+
     val mainColor = Color(0xFFFF3B30)
     val gradientColors = listOf(Color(0xFFFF5722), Color(0xFFFF3B30))
 
@@ -211,7 +265,7 @@ fun PinLockDialog(
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             for (key in row) {
-                                val isEnabled = key.isNotEmpty() && !isBlocked && (key != "biometric" || !isSetupMode)
+                                val isEnabled = key.isNotEmpty() && !isBlocked && (key != "biometric" || canUseBiometric)
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
@@ -227,7 +281,7 @@ fun PinLockDialog(
                                                     pinInput = pinInput.dropLast(1)
                                                 }
                                             } else if (key == "biometric") {
-                                                showBiometricDialog = true
+                                                launchHardwareBiometricAuth()
                                             } else {
                                                 if (pinInput.length < 4) {
                                                     pinInput += key
@@ -306,142 +360,6 @@ fun PinLockDialog(
                                     }
                                 }
                             }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // ✨ 신규 피처: 생체 인증 프리미엄 에뮬레이션 바텀 다이얼로그
-    if (showBiometricDialog) {
-        Dialog(
-            onDismissRequest = { showBiometricDialog = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f)),
-                contentAlignment = Alignment.BottomCenter
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .animateContentSize()
-                        .shadow(elevation = 16.dp, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
-                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                    color = MaterialTheme.colorScheme.surface
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(28.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp, 4.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        Text(
-                            text = "InsightDeal 생체 인증",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "기기에 등록된 지문 또는 Face ID로 본인 인증을 수행합니다.",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(36.dp))
-                        
-                        // 지문 물결 모션 박스
-                        var isFingerprintScanSuccess by remember { mutableStateOf(false) }
-                        
-                        LaunchedEffect(Unit) {
-                            delay(1800)
-                            isFingerprintScanSuccess = true
-                            delay(600)
-                            showBiometricDialog = false
-                            // 올바른 PIN 인증 성공 처리 연동
-                            prefs.edit().putInt("app_lock_fail_count", 0).apply()
-                            errorCount = 0
-                            onSuccess(if (correctPin.isNotEmpty()) correctPin else "0000")
-                        }
-
-                        Box(
-                            modifier = Modifier.size(90.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (!isFingerprintScanSuccess) {
-                                // 파동 서클
-                                val infiniteTransition = rememberInfiniteTransition(label = "BiometricScan")
-                                val scale by infiniteTransition.animateFloat(
-                                    initialValue = 0.8f,
-                                    targetValue = 1.4f,
-                                    animationSpec = infiniteRepeatable(
-                                        animation = tween(1200, easing = EaseInOutCubic),
-                                        repeatMode = RepeatMode.Restart
-                                    ),
-                                    label = "WaveScale"
-                                )
-                                val alpha by infiniteTransition.animateFloat(
-                                    initialValue = 0.6f,
-                                    targetValue = 0.0f,
-                                    animationSpec = infiniteRepeatable(
-                                        animation = tween(1200, easing = EaseInOutCubic),
-                                        repeatMode = RepeatMode.Restart
-                                    ),
-                                    label = "WaveAlpha"
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .size(72.dp)
-                                        .graphicsLayer {
-                                            scaleX = scale
-                                            scaleY = scale
-                                            this.alpha = alpha
-                                        }
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.Fingerprint,
-                                    contentDescription = "지문 대기",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(56.dp)
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "성공",
-                                    tint = Color(0xFF4CAF50),
-                                    modifier = Modifier.size(64.dp)
-                                )
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(36.dp))
-                        Text(
-                            text = if (!isFingerprintScanSuccess) "센서에 지문을 접촉해 주세요..." else "지문 인증 성공!",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isFingerprintScanSuccess) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        TextButton(
-                            onClick = { showBiometricDialog = false },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("비밀번호(PIN) 입력으로 전환", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }

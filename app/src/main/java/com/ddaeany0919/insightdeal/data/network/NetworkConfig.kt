@@ -56,6 +56,11 @@ object NetworkConfig {
      * Tests connectivity to multiple IPs and returns the first working one
      */
     suspend fun findBestServerUrl(forceScan: Boolean = false): String = withContext(Dispatchers.IO) {
+        // 릴리스 빌드에서는 로컬/사설 평문 포트(8080) 스캔을 수행하지 않고 즉시 운영 HTTPS 서버 반환
+        if (!com.ddaeany0919.insightdeal.BuildConfig.DEBUG_MODE) {
+            return@withContext com.ddaeany0919.insightdeal.BuildConfig.BASE_URL
+        }
+
         // 캐시된 URL이 존재하고 연결이 유효하면 즉각 반환 (0ms 가속)
         val cached = cachedServerUrl
         if (!forceScan && cached != null) {

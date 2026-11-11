@@ -47,7 +47,7 @@ fun StandardWishlistCard(
     priceHistory: com.ddaeany0919.insightdeal.data.PriceHistory? = null
 ) {
     val context = LocalContext.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.red < 0.2f
 
     Card(
         modifier = Modifier
@@ -144,12 +144,11 @@ fun StandardWishlistCard(
                         try {
                             val url = checkResult?.productUrl ?: ""
                             if (url.startsWith("http://") || url.startsWith("https://")) {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                                    addCategory(Intent.CATEGORY_BROWSABLE)
-                                    component = null
-                                    selector = null
-                                }
-                                ContextCompat.startActivity(context, intent, null)
+
+
+
+
+                                com.ddaeany0919.insightdeal.utils.CustomTabLauncher.launchShoppingUrl(context, url)
                             }
                         } catch (_: Exception) {}
                     },
@@ -174,7 +173,7 @@ fun StandardWishlistCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                 } else {
-                    Text("초기화됨", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                    Text("가격 확인 전", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

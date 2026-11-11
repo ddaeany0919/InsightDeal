@@ -757,7 +757,21 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
                       key={`${src.site_name}-${idx}`}
                       role="button"
                       tabIndex={0}
-                      onClick={() => setSelectedOptionIndex(idx)}
+                      onClick={() => {
+                        if (selectedOptionIndex !== idx) {
+                          setChartStats(null);
+                          setSelectedOptionIndex(idx);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          if (selectedOptionIndex !== idx) {
+                            setChartStats(null);
+                            setSelectedOptionIndex(idx);
+                          }
+                        }
+                      }}
                       className="bounce-click"
                       style={{
                         display: "flex",
@@ -1010,8 +1024,8 @@ export default function DealDetailModal({ deal, onClose, showToast }: DealDetail
             dealId={deal.id}
             currency={activeCurrency}
             optionName={activeOptionTitle}
-            onHistoryStatus={(_hasData, stats) => {
-              if (stats) setChartStats(stats);
+            onHistoryStatus={(hasData, stats) => {
+              setChartStats(hasData && stats ? stats : null);
             }}
           />
         </div>

@@ -63,6 +63,11 @@ class HotDealsRemoteMediator(
                 val endOfPaginationReached = deals.isEmpty() || deals.size < limit
 
                 database.withTransaction {
+                    if (loadType == LoadType.REFRESH) {
+                        database.dealRemoteKeysDao().clearRemoteKeys()
+                        database.dealDao().clearAllDeals()
+                    }
+
                     val prevKey = if (offset == 0) null else offset - limit
                     val nextKey = if (endOfPaginationReached) null else offset + deals.size
 

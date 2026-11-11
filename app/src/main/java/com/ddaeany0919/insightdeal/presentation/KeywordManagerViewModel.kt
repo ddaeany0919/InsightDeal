@@ -49,19 +49,19 @@ class KeywordManagerViewModel(
     val dndEndTime: StateFlow<String> = _dndEndTime.asStateFlow()
 
     data class DayDndSetting(
-        val enabled: Boolean = false,
-        val start: String = "22:00",
-        val end: String = "08:00"
+        @com.google.gson.annotations.SerializedName("enabled") val enabled: Boolean = false,
+        @com.google.gson.annotations.SerializedName("start") val start: String = "22:00",
+        @com.google.gson.annotations.SerializedName("end") val end: String = "08:00"
     )
 
     data class WeekDndSettings(
-        val mon: DayDndSetting = DayDndSetting(),
-        val tue: DayDndSetting = DayDndSetting(),
-        val wed: DayDndSetting = DayDndSetting(),
-        val thu: DayDndSetting = DayDndSetting(),
-        val fri: DayDndSetting = DayDndSetting(),
-        val sat: DayDndSetting = DayDndSetting(),
-        val sun: DayDndSetting = DayDndSetting()
+        @com.google.gson.annotations.SerializedName("mon") val mon: DayDndSetting = DayDndSetting(),
+        @com.google.gson.annotations.SerializedName("tue") val tue: DayDndSetting = DayDndSetting(),
+        @com.google.gson.annotations.SerializedName("wed") val wed: DayDndSetting = DayDndSetting(),
+        @com.google.gson.annotations.SerializedName("thu") val thu: DayDndSetting = DayDndSetting(),
+        @com.google.gson.annotations.SerializedName("fri") val fri: DayDndSetting = DayDndSetting(),
+        @com.google.gson.annotations.SerializedName("sat") val sat: DayDndSetting = DayDndSetting(),
+        @com.google.gson.annotations.SerializedName("sun") val sun: DayDndSetting = DayDndSetting()
     )
 
     private val _weekDndSettings = MutableStateFlow(WeekDndSettings())

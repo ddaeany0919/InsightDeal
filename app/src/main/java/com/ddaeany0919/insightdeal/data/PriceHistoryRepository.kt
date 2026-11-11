@@ -55,22 +55,22 @@ interface PriceHistoryApi {
  * 💬 가격 히스토리 API 응답
  */
 data class ApiHistoryResponse(
-    val product_name: String,
-    val period_days: Int,
-    val data_points: List<ApiPricePoint>,
-    val platforms: List<String>,
-    val lowest_ever: Int,
-    val highest_ever: Int,
-    val current_trend: String,
-    val last_updated: String,
-    val trace_id: String
+    @com.google.gson.annotations.SerializedName("product_name") val product_name: String = "",
+    @com.google.gson.annotations.SerializedName("period_days") val period_days: Int = 30,
+    @com.google.gson.annotations.SerializedName("data_points") val data_points: List<ApiPricePoint> = emptyList(),
+    @com.google.gson.annotations.SerializedName("platforms") val platforms: List<String> = emptyList(),
+    @com.google.gson.annotations.SerializedName("lowest_ever") val lowest_ever: Int = 0,
+    @com.google.gson.annotations.SerializedName("highest_ever") val highest_ever: Int = 0,
+    @com.google.gson.annotations.SerializedName("current_trend") val current_trend: String = "stable",
+    @com.google.gson.annotations.SerializedName("last_updated") val last_updated: String = "",
+    @com.google.gson.annotations.SerializedName("trace_id") val trace_id: String = ""
 )
 
 data class ApiPricePoint(
-    val date: String,
-    val price: Int,
-    val platform: String,
-    val is_available: Boolean
+    @com.google.gson.annotations.SerializedName("date") val date: String = "",
+    @com.google.gson.annotations.SerializedName("price") val price: Int = 0,
+    @com.google.gson.annotations.SerializedName("platform") val platform: String = "",
+    @com.google.gson.annotations.SerializedName("is_available") val is_available: Boolean = true
 )
 
 /**

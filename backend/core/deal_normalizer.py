@@ -1333,16 +1333,324 @@ def extract_body_fallback_price(body_text: Optional[str], title_text: str = "") 
     return 0, "KRW"
 
 
+KOR_ENG_SEARCH_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "갤럭시": ("galaxy",),
+    "galaxy": ("갤럭시",),
+    "버즈": ("buds",),
+    "buds": ("버즈",),
+    "폴드": ("fold",),
+    "fold": ("폴드",),
+    "플립": ("flip",),
+    "flip": ("플립",),
+    "워치": ("watch",),
+    "watch": ("워치",),
+    "애플": ("apple",),
+    "apple": ("애플",),
+    "아이폰": ("iphone",),
+    "iphone": ("아이폰",),
+    "아이패드": ("ipad",),
+    "ipad": ("아이패드",),
+    "맥북": ("macbook",),
+    "macbook": ("맥북",),
+    "맥미니": ("macmini",),
+    "macmini": ("맥미니",),
+    "에어팟": ("airpods",),
+    "airpods": ("에어팟",),
+    "삼성": ("samsung",),
+    "samsung": ("삼성",),
+    "엘지": ("lg",),
+    "lg": ("엘지",),
+    "로지텍": ("logitech",),
+    "logitech": ("로지텍",),
+    "지슈라": ("superlight", "gpro"),
+    "샥즈": ("shokz",),
+    "shokz": ("샥즈",),
+    "오픈런": ("openrun",),
+    "openrun": ("오픈런",),
+    "오픈핏": ("openfit",),
+    "openfit": ("오픈핏",),
+    "오픈닷": ("opendots",),
+    "opendots": ("오픈닷",),
+    "레노버": ("lenovo",),
+    "lenovo": ("레노버",),
+    "샤오신": ("xiaoxin",),
+    "xiaoxin": ("샤오신",),
+    "샤오미": ("xiaomi",),
+    "xiaomi": ("샤오미",),
+    "다이슨": ("dyson",),
+    "dyson": ("다이슨",),
+    "로보락": ("roborock",),
+    "roborock": ("로보락",),
+    "드리미": ("dreame",),
+    "dreame": ("드리미",),
+    "유그린": ("ugreen",),
+    "ugreen": ("유그린",),
+    "베이스어스": ("baseus",),
+    "baseus": ("베이스어스",),
+    "앤커": ("anker",),
+    "anker": ("앤커",),
+    "아수스": ("asus", "에이수스"),
+    "에이수스": ("asus", "아수스"),
+    "asus": ("아수스", "에이수스"),
+    "기가바이트": ("gigabyte",),
+    "gigabyte": ("기가바이트",),
+    "닌텐도": ("nintendo",),
+    "nintendo": ("닌텐도",),
+    "스위치": ("switch",),
+    "switch": ("스위치",),
+    "플스": ("ps5", "playstation"),
+    "ps5": ("플스", "플레이스테이션"),
+    "소니": ("sony",),
+    "sony": ("소니",),
+    "보스": ("bose",),
+    "bose": ("보스",),
+}
+
+
+def build_search_keywords(
+    raw_title: str,
+    brand: str = "",
+    base_name: str = "",
+    model_code: str = "",
+) -> str:
+    """
+    띄어쓰기 변형, 영숫자 분리/결합, 한/영 브랜드·시리즈 동의어를 결합한 검색 색인 문자열을 생성합니다.
+    """
+    src = html.unescape(f"{raw_title or ''} {brand or ''} {base_name or ''} {model_code or ''}").strip()
+    if not src:
+        return ""
+    clean = re.sub(r"\[[^\]]*\]", " ", src)
+    tokens: list[str] = []
+    seen: set[str] = set()
+
+    def _add(tok: str) -> None:
+        t = tok.strip().lower()
+        if len(t) >= 2 and t not in seen:
+            seen.add(t)
+            tokens.append(t)
+
+    compact_title = re.sub(r"[\s\-_/]+", "", clean).lower()
+    if 2 <= len(compact_title) <= 80:
+        _add(compact_title)
+
+    words = re.findall(r"[가-힣a-zA-Z0-9]+", clean.lower())
+    for w in words:
+        _add(w)
+        # 영문+숫자 경계 분해 (예: rtx5070ti -> rtx, 5070, rtx5070)
+        alnum_parts = re.findall(r"[a-z]+|\d+|[가-힣]+", w)
+        if len(alnum_parts) >= 2:
+            for p in alnum_parts:
+                _add(p)
+            if len(alnum_parts) >= 3:
+                _add(alnum_parts[0] + alnum_parts[1])
+        for key, syns in KOR_ENG_SEARCH_SYNONYMS.items():
+            if key in w:
+                for s in syns:
+                    _add(s)
+
+    joined = " ".join(tokens)
+    return joined[:480]
+
+
+POPULAR_KEYWORD_STOPWORDS: frozenset[str] = frozenset(
+    {
+        # 쇼핑몰 / 플랫폼 / 커머스 채널
+        "쿠팡", "알리", "알리익스프레스", "aliexpress", "네이버", "네이버페이", "네페", "스마트스토어",
+        "지마켓", "g마켓", "gmarket", "옥션", "11번가", "11마존", "롯데온", "티몬", "위메프",
+        "카카오", "카카오톡", "톡딜", "카카오선물하기", "우체국", "무신사", "올리브영", "컴퓨존",
+        "하이마트", "다이소", "다이소몰", "컬리", "마켓컬리", "오아시스", "오늘의집", "신세계",
+        "신세계몰", "이마트", "이마트몰", "홈플러스", "코스트코", "쓱닷컴", "ssg", "타오바오",
+        "테무", "temu", "아마존", "amazon", "이베이", "ebay", "큐텐", "qoo10", "스팀", "steam",
+        "에픽", "배민", "배달의민족", "요기요", "쿠팡이츠", "토스", "토스쇼핑", "페이코",
+        "인터파크", "예스24", "yes24", "교보문고", "알라딘", "동원몰", "cj더마켓", "더마켓",
+        "그립", "보고", "패션플러스", "하프클럽", "에이블리", "지그재그", "크림", "kream",
+        "넾다", "네쇼라", "쇼핑라이브", "뽐뿌", "펨코", "퀘이사존", "루리웹", "클리앙", "빠삭",
+        # 배송 / 할인 / 핫딜 상투어
+        "무료", "무배", "무료배송", "와우", "와우무배", "와우무료", "네멤", "네멤무배", "네멤무료",
+        "배송", "배송비", "택배", "직배", "직구", "해외직구", "해외", "국내", "관부가세", "관세",
+        "특가", "초특가", "핫딜", "역대가", "역대급", "최저가", "할인", "할인가", "추가할인",
+        "즉시할인", "중복할인", "쿠폰", "쿠폰가", "코드", "할인코드", "프로모션", "체감", "체감가",
+        "최종", "최종가", "혜택", "혜택가", "실구매가", "구매가", "정상가", "판매가",
+        "카드", "카드할인", "카할", "청구할인", "적립", "포인트", "페이백", "캐시", "스마일캐시",
+        "선착순", "타임딜", "원데이", "광군제", "블프", "빅스", "빅스마일", "빅스마일데이",
+        "설빅세일", "썸머세일", "감사제", "기획전", "모음전", "모음", "이벤트", "행사", "공구",
+        "공동구매", "예약", "사전예약", "재입고", "끌올", "품절", "마감", "종료", "임박", "한정",
+        "한정수량", "단독", "공식", "정품", "인증", "국내정발", "정발", "자급제", "리퍼", "새상품",
+        "이월", "클리어런스", "떨이", "처분", "랜덤", "라방", "라이브", "상품권", "기프티콘", "금액권",
+        # 보관상태 / 원산지 / 일반 수식어 / 규격 노이즈
+        "냉장", "냉동", "실온", "상온", "해동", "생물", "자숙", "훈제", "손질", "슬라이스", "세척",
+        "무세척", "유기농", "무농약", "친환경", "무항생제", "국내산", "국산", "수입", "수입산",
+        "미국산", "호주산", "칠레산", "노르웨이", "당일", "당일발송", "당일출고", "당일작업", "산지직송",
+        "프리미엄", "오리지널", "클래식", "베이직", "스탠다드", "플러스", "울트라", "맥스", "미니",
+        "라이트", "프로", "세트", "패키지", "구성", "묶음", "번들", "대용량", "소포장", "개별포장",
+        "증정", "사은품", "덤증정", "본품", "리필", "교체용", "호환", "전용", "공용", "남성", "여성",
+        "남녀공용", "아동", "키즈", "유아", "성인", "대형", "중형", "소형", "특대", "점보",
+        "블랙", "화이트", "실버", "그레이", "네이비", "베이지", "브라운", "핑크", "블루", "그린",
+        "옐로우", "레드", "골드", "투명", "혼합", "선택", "옵션", "종류", "다양", "인기", "추천",
+        "베스트", "신상", "신제품", "출시", "기념", "최대", "최소", "이상", "이하", "미만", "초과",
+        "포함", "제외", "별도", "기준", "적용", "가능", "불가", "필수", "전원", "무조건", "선물",
+        "선물세트", "메가", "추가", "가격", "결제", "구매", "전용가", "회원", "멤버십",
+        # 깨진 HTML 엔티티 잔재 및 URL 파편
+        "amp", "nbsp", "quot", "apos", "lt", "gt", "039", "http", "https", "www", "com", "kr", "html", "php",
+    }
+)
+
+
+def unescape_and_strip_html_entities(text: str) -> str:
+    """이중 이스케이프 및 세미콜론 누락 깨진 HTML 엔티티(&amp;, &#039;, &nbsp; 등)를 안전하게 정화합니다."""
+    if not text:
+        return ""
+    s = html.unescape(html.unescape(text))
+    s = re.sub(r"&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z]{2,8});?", " ", s)
+    return s.replace("\xa0", " ")
+
+
+def is_valid_popular_keyword(raw_kw: str) -> bool:
+    """
+    인기 검색어로 노출 가능한 순수 브랜드/상품 키워드인지 검증합니다.
+    쇼핑몰명, 할인/배송 상투어, 보관 수식어(냉장/냉동), 깨진 HTML 엔티티, 숫자/단위/비율(100g, 2026, 1+1, 50%)을 차단합니다.
+    """
+    if not raw_kw or not isinstance(raw_kw, str):
+        return False
+    # 원본에 깨진 엔티티나 특수기호(&, +, %)가 포함된 경우 즉시 배제
+    if "&" in raw_kw or "+" in raw_kw or "%" in raw_kw:
+        return False
+    kw = unescape_and_strip_html_entities(raw_kw).strip()
+    if not (2 <= len(kw) <= 15):
+        return False
+    if not re.fullmatch(r"[가-힣a-zA-Z0-9]+", kw):
+        return False
+    # 숫자로 시작하는 모든 토큰(11번가, 100g, 500ml, 2026, 256gb, 3개입, 039 등) 및 순수 숫자 배제
+    if re.match(r"^\d", kw) or kw.isdigit():
+        return False
+    if not re.search(r"[가-힣a-zA-Z]", kw):
+        return False
+    kw_low = kw.lower()
+    if kw_low in POPULAR_KEYWORD_STOPWORDS:
+        return False
+    # 숫자+단위 접미 결합형(예: g500 등 비정상 패턴 포함) 및 가격 표기 잔재 배제
+    if re.search(r"\d+(?:원|만원|천원|달러|불|위안|개|입|팩|봉|병|캔|박스|세트|종|kg|g|mg|ml|l|gb|tb|mb|mah|w|hz|mm|cm|인치)$", kw_low):
+        return False
+    if kw.endswith(("으로", "에서", "까지", "부터", "하기", "있는", "없는", "입니다")):
+        return False
+    return True
+
+
+def _clean_body_text(raw_html: str) -> str:
+    if not raw_html:
+        return ""
+    s = html.unescape(str(raw_html))
+    s = re.sub(r"<[^>]+>", " ", s)
+    s = re.sub(r"\[첨부된 이미지 링크들\][\s\S]*$", " ", s)
+    s = re.sub(r"\[상품이미지\s*:[^\]]*\]", " ", s)
+    s = re.sub(r"https?://[^\s\)\]\'\"<>]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def infer_currency_from_deal_context(
+    raw_title: str,
+    raw_price_int: int,
+    current_currency: Optional[str] = "KRW",
+    content_html: str = "",
+    ecommerce_url: str = "",
+) -> str:
+    """
+    제목에 가격 단위가 생략되고 본문에만 소수점 외화($82.93 등)가 적힌 해외직구 딜이
+    서브유닛 정수(8293) 상태로 KRW로 잘못 태깅된 경우 실제 통화(USD/EUR/CNY)를 복원합니다.
+    """
+    curr = (current_currency or "KRW").strip().upper()
+    if curr != "KRW" or not raw_price_int or raw_price_int < 100 or raw_price_int > 1_000_000:
+        return curr
+
+    title_txt = html.unescape(raw_title or "")
+    # 제목에 명시적 원화 표기가 있으면 원화 딜로 유지
+    if re.search(r"(?:\d\s*(?:만\s*원?|천\s*원?|원)|[₩￦]\s*\d)", title_txt):
+        return "KRW"
+
+    body_txt = _clean_body_text(content_html or "")
+    if not body_txt:
+        return curr
+
+    # 본문에 동일한 숫자의 명시적 원화 표기(예: '176원', '8,293원')가 있으면 실제 원화 딜이므로 보존
+    formatted_p = f"{raw_price_int:,}"
+    if re.search(rf"(?<![0-9,])(?:{raw_price_int}|{re.escape(formatted_p)})\s*원", body_txt):
+        return "KRW"
+
+    # 1) 소수점 USD 표기($82.93, 82.93달러 등)와 센트 단위 정밀 일치 검사
+    for m_usd in re.finditer(
+        r"(?:\$\s*([0-9]{1,4}\.[0-9]{1,2})|([0-9]{1,4}\.[0-9]{1,2})\s*(?:\$|달러|불(?!가|량|능)|USD))",
+        body_txt,
+        re.IGNORECASE,
+    ):
+        usd_val = float(m_usd.group(1) or m_usd.group(2))
+        if abs(round(usd_val * 100) - raw_price_int) <= 1:
+            return "USD"
+
+    # 해외몰 링크이면서 정수 달러($82 -> 8200)가 본문에 정확히 명시된 경우
+    if raw_price_int % 100 == 0 and any(
+        d in (ecommerce_url or "").lower() for d in ("aliexpress.", "amazon.", "ebay.", "newegg.")
+    ):
+        whole_usd = raw_price_int // 100
+        if 5 <= whole_usd <= 5000 and re.search(
+            rf"(?:\$\s*{whole_usd}(?!\.[0-9]|\d)|(?<!\d){whole_usd}\s*(?:\$|달러|USD))",
+            body_txt,
+            re.IGNORECASE,
+        ):
+            return "USD"
+
+    # 2) 소수점 EUR 표기(€25.87, 25.87유로) 일치 검사
+    for m_eur in re.finditer(
+        r"(?:€\s*([0-9]{1,4}\.[0-9]{1,2})|([0-9]{1,4}\.[0-9]{1,2})\s*(?:€|유로|EUR))",
+        body_txt,
+        re.IGNORECASE,
+    ):
+        eur_val = float(m_eur.group(1) or m_eur.group(2))
+        if abs(round(eur_val * 100) - raw_price_int) <= 1:
+            return "EUR"
+
+    # 3) 소수점 CNY 표기(¥189.00, 189.50위안) 일치 검사
+    for m_cny in re.finditer(
+        r"(?:[¥￥]\s*([0-9]{1,5}\.[0-9]{1,2})|([0-9]{1,5}\.[0-9]{1,2})\s*(?:위안|CNY|RMB))",
+        body_txt,
+        re.IGNORECASE,
+    ):
+        cny_val = float(m_cny.group(1) or m_cny.group(2))
+        if abs(round(cny_val * 100) - raw_price_int) <= 1:
+            return "CNY"
+
+    return curr
+
+
+def is_suspicious_price_history_value(
+    price_val: int,
+    currency: Optional[str] = "KRW",
+    raw_title: str = "",
+) -> bool:
+    """
+    PriceHistory 레코드가 과거 오파싱 잔재(<=0, 15,000,000 초과, 모음전 777원 더미, 비적립 초소액 10원 등)인지 판별합니다.
+    """
+    if not price_val or price_val <= 0 or price_val > 15_000_000:
+        return True
+    curr = (currency or "KRW").strip().upper()
+    if is_collection_dummy_price(price_val, raw_title or "", curr):
+        return True
+    if curr == "KRW" and 0 < price_val < 100 and not is_micro_point_deal(price_val, raw_title or ""):
+        return True
+    return False
+
+
 def renormalize_existing_deals(db_session: Any, dry_run: bool = False) -> dict[str, Any]:
     """
-    운영 DB에 이미 적재된 오염 레코드들을 멱등(Idempotent)하게 일괄 치유합니다.
+    운영 DB에 이미 적재된 오염 레코드(Deal 및 PriceHistory)를 멱등(Idempotent)하게 일괄 치유합니다.
     - 날짜 괄호 오파싱(10원), 모음전 더미 가격(777원/999원 등), 스펙/연도 오파싱(2026원/5070원/$15.60),
-      본문 추가금 오파싱(200원), 원화 알리 딜의 USD*100 폭주($2,500 -> 2,500원), 타오바오 위안화(189원 -> CNY 18900) 교정
+      본문 추가금 오파싱(200원), 원화 알리 딜의 USD*100 폭주($2,500 -> 2,500원),
+      본문 달러 서브유닛의 KRW 오저장($82.93 -> USD 8293), 타오바오 위안화(189원 -> CNY 18900) 교정
+    - PriceHistory 테이블 내 0원 딜 잔재(777원 등), 초소액 오파싱(10원), 스케일/통화 불일치 이상치 일괄 정화
     - 제목 내 '1,000단위 구분 쉼표', '(... \\d+w 택배배송)' 제거 (_post_link_title_uc 유니크 제약 안전 준수)
     - shop_name 표준화 및 도메인 역추론 (비쇼핑몰 말머리/'기타' 정화)
     - shipping_fee 표준화 ('와우무료', '네멤무료', '무료배송', '2,500원')
     """
-    from backend.database.models import Deal
+    from backend.database.models import Deal, PriceHistory
 
     deals = db_session.query(Deal).order_by(Deal.id.asc()).all()
     occupied_pairs: set[tuple[str, str]] = {
@@ -1357,8 +1665,11 @@ def renormalize_existing_deals(db_session: Any, dry_run: bool = False) -> dict[s
         "currency_fixed": 0,
         "shop_fixed": 0,
         "shipping_fixed": 0,
+        "price_history_cleaned": 0,
         "dry_run": bool(dry_run),
     }
+
+    deal_state_map: dict[int, dict[str, Any]] = {}
 
     for deal in deals:
         changed = False
@@ -1446,8 +1757,17 @@ def renormalize_existing_deals(db_session: Any, dry_run: bool = False) -> dict[s
         else:
             # 제목에 가격이 없는 상태에서 오염된 가격 패턴 치유
             combined_hint = f"{effective_title} {body_html[:600]}"
+            inferred_ctx_curr = infer_currency_from_deal_context(
+                raw_title=effective_title,
+                raw_price_int=curr_price,
+                current_currency=curr_currency,
+                content_html=body_html,
+                ecommerce_url=deal.ecommerce_link or "",
+            )
+            if inferred_ctx_curr != curr_currency:
+                new_currency = inferred_ctx_curr
             # 본문에 ¥/위안 또는 타오바오 링크가 있는데 KRW 저가(예: 189원)로 저장된 케이스 (ID=19198)
-            if (
+            elif (
                 curr_currency == "KRW"
                 and 1 <= curr_price <= 5000
                 and (canon_shop == "타오바오" or re.search(r"[¥￥]\s*\d|\d\s*위안|\b(?:cny|rmb)\b", combined_hint, re.IGNORECASE))
@@ -1496,7 +1816,49 @@ def renormalize_existing_deals(db_session: Any, dry_run: bool = False) -> dict[s
         if changed:
             stats["updated"] += 1
 
-    if stats["updated"] > 0 and not dry_run:
+        deal_state_map[deal.id] = {
+            "new_price": new_price,
+            "new_currency": new_currency,
+            "old_price": curr_price,
+            "old_currency": curr_currency,
+            "title": effective_title,
+            "has_options": bool(getattr(deal, "has_options", False) or getattr(deal, "options_data", None)),
+        }
+
+    # 4) PriceHistory 오염 레코드 전수 정화 (0원 딜 더미 잔재, 초소액 오파싱 10원, 통화/단위 괴리 이상치)
+    all_ph_rows = db_session.query(PriceHistory).order_by(PriceHistory.id.asc()).all()
+    for ph in all_ph_rows:
+        d_info = deal_state_map.get(ph.deal_id)
+        if d_info is None:
+            if not dry_run:
+                db_session.delete(ph)
+            stats["price_history_cleaned"] += 1
+            continue
+
+        d_price = d_info["new_price"]
+        d_curr = d_info["new_currency"]
+        d_title = d_info["title"]
+        ph_val = extract_numeric_price(ph.price)
+
+        should_remove = False
+        if d_price <= 0 and not d_info["has_options"]:
+            # 가격이 0원('가격 확인')인 딜에 매달린 과거 오파싱 히스토리(예: 777원 더미, 10원 등) 제거
+            should_remove = True
+        elif is_suspicious_price_history_value(ph_val, d_curr, d_title):
+            should_remove = True
+        elif d_price > 0 and not d_info["has_options"]:
+            # 부모 딜이 치유되기 전의 오염 가격(예: 189원, 200원, 250000 USD)이거나 현재가와 3배 이상 괴리된 이종 통화 잔재(예: USD 2587 딜의 CNY 18900) 제거
+            if (d_info["old_price"] != d_price or d_info["old_currency"] != d_curr) and ph_val == d_info["old_price"] and ph_val != d_price:
+                should_remove = True
+            elif ph_val < d_price * 0.25 or ph_val > d_price * 3.50:
+                should_remove = True
+
+        if should_remove:
+            if not dry_run:
+                db_session.delete(ph)
+            stats["price_history_cleaned"] += 1
+
+    if (stats["updated"] > 0 or stats["price_history_cleaned"] > 0) and not dry_run:
         db_session.commit()
 
     return stats

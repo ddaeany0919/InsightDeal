@@ -12,19 +12,25 @@ function extractHighlightTokens(rawQuery?: string): string[] {
   const trimmed = rawQuery.trim();
   if (!trimmed) return [];
 
-  const tokens = trimmed
+  const seenLower = new Set<string>();
+  const uniqueRawTokens = trimmed
     .split(/\s+/)
     .map((token) => token.trim())
     .filter((token) => {
       if (!token) return false;
       // 고급 검색 연산자(-제외어, :상한가격)는 제목 하이라이트 대상에서 제외
       if (token.startsWith("-") || token.startsWith(":")) return false;
+      const lower = token.toLowerCase();
+      if (seenLower.has(lower)) return false;
+      seenLower.add(lower);
       return true;
     })
-    .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    // 이스케이프 문자(\)로 인한 길이 왜곡을 막기 위해 원본 길이 기준으로 내림차순 정렬
+    .sort((a, b) => b.length - a.length);
 
-  // 긴 키워드가 먼저 매칭되도록 내림차순 정렬 및 중복 제거
-  return Array.from(new Set(tokens)).sort((a, b) => b.length - a.length);
+  return uniqueRawTokens.map((token) =>
+    token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  );
 }
 
 export default function HighlightedTitle({ title, query }: HighlightedTitleProps) {

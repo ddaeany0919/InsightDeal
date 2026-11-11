@@ -268,11 +268,21 @@ export default function WishlistDrawer({
                       try {
                         const mapStr = typeof window !== "undefined" ? localStorage.getItem("insightdeal_target_prices") : null;
                         const targetMap = mapStr ? JSON.parse(mapStr) : {};
-                        const targetVal = targetMap?.[deal.id];
-                        if (targetVal) {
+                        const targetVal = targetMap?.[deal.id] ?? targetMap?.[`${deal.id}_0`];
+                        const numericTarget = Number(targetVal);
+                        if (Number.isFinite(numericTarget) && numericTarget > 0) {
+                          const normCurr = (deal.currency || "KRW").trim().toUpperCase();
+                          const formattedTarget =
+                            normCurr === "USD"
+                              ? `$${numericTarget.toLocaleString("en-US")}`
+                              : normCurr === "EUR"
+                                ? `€${numericTarget.toLocaleString("en-US")}`
+                                : normCurr === "CNY" || normCurr === "JPY"
+                                  ? `¥${numericTarget.toLocaleString("en-US")}`
+                                  : `${Math.round(numericTarget).toLocaleString()}원`;
                           return (
                             <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#10b981", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", padding: "1px 6px", borderRadius: "999px" }}>
-                              목표가 {Number(targetVal).toLocaleString()}원
+                              목표가 {formattedTarget}
                             </span>
                           );
                         }

@@ -163,6 +163,7 @@ export default function Home() {
   const [sortBy, setSortBy] = useState<"latest" | "popular" | "price_asc">(
     "latest"
   );
+  const sortByRef = useRef<"latest" | "popular" | "price_asc">("latest");
   const [hideKeywordBanner, setHideKeywordBanner] = useState(false);
   const [isTossMiniApp, setIsTossMiniApp] = useState(
     process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true"
@@ -178,6 +179,15 @@ export default function Home() {
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveDealsAbortRef = useRef<AbortController | null>(null);
+  const isComposingRef = useRef(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearSearchDebounce = useCallback(() => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
+  }, []);
 
   const updateAppliedSearch = useCallback((nextQuery: string) => {
     const trimmed = nextQuery.trim();
@@ -407,7 +417,8 @@ export default function Home() {
       offset = 0,
       targetTab = "전체",
       targetPlatform = "전체",
-      overrideKeyword?: string
+      overrideKeyword?: string,
+      overrideSort?: "latest" | "popular" | "price_asc"
     ) => {
       if (liveDealsAbortRef.current) {
         liveDealsAbortRef.current.abort();
@@ -432,13 +443,15 @@ export default function Home() {
           overrideKeyword !== undefined
             ? overrideKeyword
             : appliedSearchRef.current;
+        const activeSort = overrideSort ?? sortByRef.current;
         const queryParam = activeKw.trim()
           ? `&keyword=${encodeURIComponent(activeKw.trim())}`
           : "";
+        const sortParam = `&sort=${encodeURIComponent(activeSort)}`;
         const url = apiUrl(
           `/api/community/hot-deals?limit=${limit}&offset=${offset}${
             apiCategory ? `&category=${encodeURIComponent(apiCategory)}` : ""
-          }${platformParam}${queryParam}`
+          }${platformParam}${queryParam}${sortParam}`
         );
 
         let res: Response | null = null;
@@ -590,7 +603,8 @@ export default function Home() {
               typeof window !== "undefined" &&
               targetTab === "전체" &&
               targetPlatform === "전체" &&
-              !activeKw.trim()
+              !activeKw.trim() &&
+              activeSort === "latest"
             ) {
               localStorage.setItem(
                 "insightdeal_cached_deals",
@@ -622,16 +636,30 @@ export default function Home() {
         ) {
           return;
         }
+        const activeKwOnErr =
+          overrideKeyword !== undefined
+            ? overrideKeyword
+            : appliedSearchRef.current;
+        const activeSortOnErr = overrideSort ?? sortByRef.current;
         if (offset === 0 && typeof window !== "undefined") {
-          try {
-            const cached = localStorage.getItem("insightdeal_cached_deals");
-            if (cached) {
-              const parsed = JSON.parse(cached);
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                setDeals(parsed);
+          if (
+            !activeKwOnErr.trim() &&
+            targetTab === "전체" &&
+            targetPlatform === "전체" &&
+            activeSortOnErr === "latest"
+          ) {
+            try {
+              const cached = localStorage.getItem("insightdeal_cached_deals");
+              if (cached) {
+                const parsed = JSON.parse(cached);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  setDeals(parsed);
+                }
               }
-            }
-          } catch {}
+            } catch {}
+          } else {
+            setDeals([]);
+          }
         }
         setHasMore(false);
       } finally {
@@ -671,6 +699,7 @@ export default function Home() {
 
   const handleTabChange = (tab: string) => {
     if (tab === activeTab) return;
+    clearSearchDebounce();
     setActiveTab(tab);
     setNewDealsCount(0);
     setIsFetchingMore(false);
@@ -681,6 +710,7 @@ export default function Home() {
 
   const handlePlatformChange = (platform: string) => {
     if (platform === activePlatform) return;
+    clearSearchDebounce();
     setActivePlatform(platform);
     setNewDealsCount(0);
     setIsFetchingMore(false);
@@ -727,8 +757,62 @@ export default function Home() {
     }
   };
 
+  const isAutoSearchableQuery = (raw: string): boolean => {
+    const trimmed = raw.trim();
+    if (!trimmed) return true;
+    // 미완성 한글 자모만 있거나 1글자 영문, 연산자 기호만 입력 중일 때는 자동 검색을 보류하여 빈 화면 깜빡임 방지
+    if (/^[ㄱ-ㅎㅏ-ㅣ]+$/.test(trimmed)) return false;
+    if (/^[a-zA-Z]$/.test(trimmed)) return false;
+    if (/^[-:]+$/.test(trimmed)) return false;
+    return true;
+  };
+
+  const scheduleDebouncedSearch = (
+    nextValue: string,
+    targetTab: string,
+    targetPlatform: string
+  ) => {
+    clearSearchDebounce();
+    if (isComposingRef.current) return;
+    if (!isAutoSearchableQuery(nextValue)) return;
+
+    searchDebounceRef.current = setTimeout(() => {
+      searchDebounceRef.current = null;
+      const trimmed = nextValue.trim();
+      if (appliedSearchRef.current === trimmed) return;
+      updateAppliedSearch(trimmed);
+      setIsFetchingMore(false);
+      setDeals([]);
+      setHasMore(true);
+      fetchLiveDeals(true, 0, targetTab, targetPlatform, trimmed);
+    }, 300);
+  };
+
+  const handleClearSearch = () => {
+    clearSearchDebounce();
+    isComposingRef.current = false;
+    setSearchQuery("");
+    updateAppliedSearch("");
+    setIsFetchingMore(false);
+    setDeals([]);
+    setHasMore(true);
+    fetchLiveDeals(true, 0, activeTab, activePlatform, "");
+  };
+
+  const handleSortChange = (nextSort: "latest" | "popular" | "price_asc") => {
+    if (sortByRef.current === nextSort) return;
+    sortByRef.current = nextSort;
+    setSortBy(nextSort);
+    setIsFetchingMore(false);
+    setDeals([]);
+    setHasMore(true);
+    fetchLiveDeals(true, 0, activeTab, activePlatform, undefined, nextSort);
+  };
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    clearSearchDebounce();
+    isComposingRef.current = false;
     const trimmed = searchQuery.trim();
     if (trimmed) {
       saveRecentSearch(trimmed);
@@ -741,6 +825,8 @@ export default function Home() {
   };
 
   const handleSelectPopularKeyword = (kw: string) => {
+    clearSearchDebounce();
+    isComposingRef.current = false;
     const trimmed = kw.trim();
     if (appliedSearchRef.current === trimmed) {
       setSearchQuery("");
@@ -763,17 +849,20 @@ export default function Home() {
   };
 
   const handleResetAllFilters = () => {
+    clearSearchDebounce();
+    isComposingRef.current = false;
     setSearchQuery("");
     updateAppliedSearch("");
     setActiveTab("전체");
     setActivePlatform("전체");
     setOnlyHotDeals(false);
     setHideClosedDeals(false);
+    sortByRef.current = "latest";
     setSortBy("latest");
     setIsFetchingMore(false);
     setDeals([]);
     setHasMore(true);
-    fetchLiveDeals(true, 0, "전체", "전체", "");
+    fetchLiveDeals(true, 0, "전체", "전체", "", "latest");
     showToast("필터를 초기화했어요");
   };
 
@@ -822,7 +911,7 @@ export default function Home() {
 
     fetch(apiUrl("/api/community/popular-keywords"))
       .then((r) => (r.ok ? r.json() : null))
-      .then(async (data) => {
+      .then((data) => {
         if (!data) return;
         if (data.updated_at) {
           setPopularUpdatedAt(String(data.updated_at));
@@ -835,13 +924,8 @@ export default function Home() {
         )
           ? data.rankings.slice(0, 12)
           : [];
-        if (rawKeywords.length > 0) {
-          setPopularKeywords(rawKeywords.slice(0, 10));
-        }
-        if (rawRankings.length > 0) {
-          setPopularRankings(rawRankings.slice(0, 10));
-        }
 
+        // 백엔드 /popular-keywords가 이미 매칭 딜 건수를 검증해 내려주므로 N+1 중복 조회 없이 즉시 반영
         const candidateList =
           rawRankings.length > 0
             ? rawRankings
@@ -856,30 +940,16 @@ export default function Home() {
                   | "NEW"
                   | "SAME",
               }));
-        const verified = await Promise.all(
-          candidateList.map(async (item) => {
+
+        const validRankings = candidateList
+          .filter((item) => {
             const kw = (item.keyword || "").trim();
-            if (!kw || kw === "일시") return null;
-            try {
-              const r = await fetch(
-                apiUrl(
-                  `/api/community/hot-deals?limit=1&keyword=${encodeURIComponent(kw)}`
-                )
-              );
-              if (!r.ok) return item;
-              const j = await r.json();
-              const arr = Array.isArray(j) ? j : j.deals || [];
-              return arr.length > 0 ? item : null;
-            } catch {
-              return item;
-            }
+            return Boolean(kw && kw !== "일시");
           })
-        );
-        const validRankings = verified
-          .filter((x): x is PopularKeywordRanking => x !== null)
           .slice(0, 10)
           .map((item, idx) => ({
             ...item,
+            keyword: item.keyword.trim(),
             rank: idx + 1,
             status: (idx === 0 ? "HOT" : item.status) as
               | "HOT"
@@ -887,6 +957,7 @@ export default function Home() {
               | "NEW"
               | "SAME",
           }));
+
         if (validRankings.length > 0) {
           setPopularRankings(validRankings);
           setPopularKeywords(validRankings.map((v) => v.keyword));
@@ -961,6 +1032,7 @@ export default function Home() {
 
     return () => {
       clearInterval(timer);
+      clearSearchDebounce();
       if (liveDealsAbortRef.current) {
         liveDealsAbortRef.current.abort();
       }
@@ -974,7 +1046,7 @@ export default function Home() {
         );
       }
     };
-  }, [fetchLiveDeals, getOrCreateBrowserUserId, updateAppliedSearch]);
+  }, [clearSearchDebounce, fetchLiveDeals, getOrCreateBrowserUserId, updateAppliedSearch]);
 
   useEffect(() => {
     if (!isMounted || !hasMore || loading || isRefreshing) return;
@@ -1224,11 +1296,21 @@ export default function Home() {
       }
       if (sortBy === "price_asc") {
         const toApproxKrw = (item: Deal) => {
-          const raw =
-            parseFloat(String(item.price || "").replace(/[^0-9.]/g, "")) || 0;
-          if (raw <= 0) return 0;
-          const curr = (item.currency || "KRW").toUpperCase();
-          const hasDec = String(item.price || "").includes(".");
+          const priceStr = String(item.price ?? "").trim();
+          if (
+            !priceStr ||
+            priceStr === "0" ||
+            priceStr === "0원" ||
+            priceStr === "가격 확인" ||
+            priceStr === "가격 문의" ||
+            priceStr === "정보 없음"
+          ) {
+            return 0;
+          }
+          const raw = parseFloat(priceStr.replace(/[^0-9.-]/g, "")) || 0;
+          if (!Number.isFinite(raw) || raw <= 0) return 0;
+          const curr = (item.currency || "KRW").trim().toUpperCase();
+          const hasDec = priceStr.includes(".");
           if (curr === "USD") return (hasDec ? raw : raw / 100) * 1400;
           if (curr === "EUR") return (hasDec ? raw : raw / 100) * 1500;
           if (curr === "CNY") return (hasDec ? raw : raw / 100) * 195;
@@ -1298,14 +1380,20 @@ export default function Home() {
             gap: "8px",
           }}
           onClick={() => {
+            clearSearchDebounce();
+            isComposingRef.current = false;
             setSearchQuery("");
             updateAppliedSearch("");
             setActiveTab("전체");
             setActivePlatform("전체");
             setOnlyHotDeals(false);
             setHideClosedDeals(false);
+            sortByRef.current = "latest";
+            setSortBy("latest");
             setIsFetchingMore(false);
-            fetchLiveDeals(true, 0, "전체", "전체", "");
+            setDeals([]);
+            setHasMore(true);
+            fetchLiveDeals(true, 0, "전체", "전체", "", "latest");
           }}
         >
           <svg
@@ -1605,7 +1693,7 @@ export default function Home() {
                       key={opt.key}
                       type="button"
                       className="sort-segment-btn"
-                      onClick={() => setSortBy(opt.key)}
+                      onClick={() => handleSortChange(opt.key)}
                       style={{
                         background: active ? "var(--accent)" : "transparent",
                         color: active ? "#FFFFFF" : "var(--text-sub)",
@@ -1672,21 +1760,32 @@ export default function Home() {
                 type="text"
                 placeholder="상품명·조건 검색 (예: 맥북 에어 -파우치 / 제로콜라 :15000)"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onCompositionStart={() => {
+                  isComposingRef.current = true;
+                  clearSearchDebounce();
+                }}
+                onCompositionEnd={(e) => {
+                  isComposingRef.current = false;
+                  const composedVal = e.currentTarget.value;
+                  setSearchQuery(composedVal);
+                  scheduleDebouncedSearch(composedVal, activeTab, activePlatform);
+                }}
+                onChange={(e) => {
+                  const nextVal = e.target.value;
+                  setSearchQuery(nextVal);
+                  const nativeEvt = e.nativeEvent as InputEvent;
+                  if (nativeEvt?.isComposing || isComposingRef.current) {
+                    return;
+                  }
+                  scheduleDebouncedSearch(nextVal, activeTab, activePlatform);
+                }}
                 className="search-input"
               />
               {(searchQuery || appliedSearch) && (
                 <button
                   type="button"
                   aria-label="검색어 지우기"
-                  onClick={() => {
-                    setSearchQuery("");
-                    updateAppliedSearch("");
-                    setIsFetchingMore(false);
-                    setDeals([]);
-                    setHasMore(true);
-                    fetchLiveDeals(true, 0, activeTab, activePlatform, "");
-                  }}
+                  onClick={handleClearSearch}
                   className="search-clear-btn"
                 >
                   <X size={16} />
@@ -1807,7 +1906,7 @@ export default function Home() {
             </div>
           )}
 
-          {searchQuery.trim() && (
+          {searchQuery.trim() && isAutoSearchableQuery(searchQuery) && (
             <div
               style={{
                 display: "flex",
@@ -1944,14 +2043,7 @@ export default function Home() {
                 {appliedSearch && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setSearchQuery("");
-                      updateAppliedSearch("");
-                      setIsFetchingMore(false);
-                      setDeals([]);
-                      setHasMore(true);
-                      fetchLiveDeals(true, 0, activeTab, activePlatform, "");
-                    }}
+                    onClick={handleClearSearch}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",

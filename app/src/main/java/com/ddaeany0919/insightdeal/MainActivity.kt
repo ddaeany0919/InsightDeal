@@ -286,8 +286,8 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                         launchSingleTop = true
                     }
                 }
-                navigateTo == "watchlist" -> {
-                    Log.d(TAG_UI, "🚀 Deep Linking to watchlist")
+                navigateTo == "watchlist" || navigateTo == "price_tracking" -> {
+                    Log.d(TAG_UI, "Deep Linking to watchlist (source=$navigateTo)")
                     intent.removeExtra("navigate_to")
                     navController.navigate("watchlist") {
                         launchSingleTop = true

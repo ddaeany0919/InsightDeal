@@ -24,7 +24,19 @@ if "pytest" not in sys.modules and "PYTEST_CURRENT_TEST" not in os.environ:
 import logging
 import ipaddress
 import httpx
-from routers import wishlist, product, community, health, push, admin, auth, users, coupang
+from backend.routers import wishlist, product, community, health, push, admin, auth, users, coupang
+for _router_mod_name, _router_mod in (
+    ("wishlist", wishlist),
+    ("product", product),
+    ("community", community),
+    ("health", health),
+    ("push", push),
+    ("admin", admin),
+    ("auth", auth),
+    ("users", users),
+    ("coupang", coupang),
+):
+    sys.modules.setdefault(f"routers.{_router_mod_name}", _router_mod)
 
 import firebase_admin
 from firebase_admin import credentials

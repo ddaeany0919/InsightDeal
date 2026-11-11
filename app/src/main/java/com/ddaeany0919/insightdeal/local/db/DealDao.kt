@@ -21,7 +21,20 @@ interface DealDao {
     @Query("""
         SELECT * FROM deals 
         WHERE (:category IS NULL OR :category = '전체' OR :category = '핫딜모음' OR category = :category)
-          AND (:keyword IS NULL OR :keyword = '' OR title LIKE '%' || :keyword || '%')
+          AND (
+              :keyword IS NULL
+              OR TRIM(:keyword) = ''
+              OR INSTR(TRIM(:keyword), ' ') > 0
+              OR INSTR(:keyword, '-') > 0
+              OR INSTR(:keyword, ':') > 0
+              OR title LIKE '%' || TRIM(:keyword) || '%'
+              OR COALESCE(shopName, '') LIKE '%' || TRIM(:keyword) || '%'
+              OR COALESCE(category, '') LIKE '%' || TRIM(:keyword) || '%'
+              OR COALESCE(siteName, '') LIKE '%' || TRIM(:keyword) || '%'
+              OR COALESCE(ecommerceUrl, '') LIKE '%' || TRIM(:keyword) || '%'
+              OR COALESCE(contentHtml, '') LIKE '%' || TRIM(:keyword) || '%'
+              OR COALESCE(aiSummary, '') LIKE '%' || TRIM(:keyword) || '%'
+          )
           AND (:platform IS NULL OR :platform = '전체' OR :platform = '' OR (
               (INSTR(',' || :platform || ',', ',뽐뿌,') > 0 AND INSTR(REPLACE(REPLACE(siteName, '알리뽐뿌', ''), '뽐뿌해외', ''), '뽐뿌') > 0) OR
               (INSTR(',' || :platform || ',', ',퀘이사존,') > 0 AND INSTR(siteName, '퀘이사존') > 0) OR
@@ -40,7 +53,15 @@ interface DealDao {
           CASE WHEN :sort = 'popular' THEN likeCount END DESC,
           CASE WHEN :sort = 'popular' THEN commentCount END DESC,
           CASE WHEN :sort = 'price_asc' THEN (CASE WHEN price > 0 THEN 0 ELSE 1 END) END ASC,
-          CASE WHEN :sort = 'price_asc' THEN price END ASC,
+          CASE WHEN :sort = 'price_asc' THEN (
+              CASE UPPER(TRIM(COALESCE(currency, 'KRW')))
+                  WHEN 'USD' THEN price * 1400.0 / 100.0
+                  WHEN 'EUR' THEN price * 1500.0 / 100.0
+                  WHEN 'CNY' THEN price * 195.0 / 100.0
+                  WHEN 'JPY' THEN price * 9.5
+                  ELSE price * 1.0
+              END
+          ) END ASC,
           createdAt DESC,
           id DESC
     """)

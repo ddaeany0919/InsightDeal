@@ -44,6 +44,7 @@
 -keep class com.ddaeany0919.insightdeal.local.db.** { *; }
 -keep class com.ddaeany0919.insightdeal.domain.** { *; }
 -keep class com.ddaeany0919.insightdeal.presentation.wishlist.** { *; }
+-keep class com.ddaeany0919.insightdeal.presentation.mypage.history.** { *; }
 -keep class com.ddaeany0919.insightdeal.presentation.KeywordManagerViewModel$DayDndSetting { *; }
 -keep class com.ddaeany0919.insightdeal.presentation.KeywordManagerViewModel$WeekDndSettings { *; }
 -keep class com.google.gson.reflect.TypeToken

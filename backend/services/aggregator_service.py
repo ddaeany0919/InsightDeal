@@ -1495,9 +1495,12 @@ class AggregatorService:
         
         # 0. 단일 진실 공급원(deal_normalizer)을 통한 1차 가격/통화/배송비 정밀 추출
         from backend.core.deal_normalizer import (
+            build_search_keywords,
+            infer_currency_from_deal_context,
             is_collection_dummy_price,
             is_micro_point_deal,
             is_pure_coupon_guide_post,
+            is_suspicious_price_history_value,
             normalize_shipping_fee,
             parse_title_price_and_shipping,
             to_krw_equivalent,
@@ -1558,7 +1561,7 @@ class AggregatorService:
         if currency == "KRW" and 100 <= final_price <= 99999 and not re.search(r'[0-9,]+\s*원', raw_title):
             combined_curr_txt = f"{raw_title}\n{content_html_for_opts}"
             for m_usd_c in re.finditer(
-                r'(?:\$\s*([0-9]{1,3}\.[0-9]{1,2})|([0-9]{1,3}\.[0-9]{1,2})\s*(?:\$|달러|불(?!가|량|능)|USD))',
+                r'(?:\$\s*([0-9]{1,4}\.[0-9]{1,2})|([0-9]{1,4}\.[0-9]{1,2})\s*(?:\$|달러|불(?!가|량|능)|USD))',
                 combined_curr_txt,
                 re.IGNORECASE,
             ):
@@ -1567,6 +1570,14 @@ class AggregatorService:
                     currency = "USD"
                     final_price = round(usd_f * 100)
                     break
+        if currency == "KRW" and final_price > 0:
+            currency = infer_currency_from_deal_context(
+                raw_title=raw_title,
+                raw_price_int=final_price,
+                current_currency=currency,
+                content_html=content_html_for_opts,
+                ecommerce_url=scraped_data.get("ecommerce_link") or "",
+            )
 
         # 다중 상품/옵션 규칙 기반 정밀 추출 (타이틀 다중 옵션 & 본문 멀티 링크/라인 옵션)
         structured_opts = extract_structured_multi_options(
@@ -1866,7 +1877,9 @@ class AggregatorService:
                     return False
                 cand_tokens = get_clean_tokens(candidate.title)
                 cand_price = int(candidate.price) if str(candidate.price or "").isdigit() else 0
-                cand_curr = getattr(candidate, "currency", "KRW") or "KRW"
+                cand_curr = (getattr(candidate, "currency", "KRW") or "KRW").strip().upper()
+                if cand_curr != (currency or "KRW").strip().upper():
+                    return False
                 if has_quantity_conflict(input_tokens, cand_tokens):
                     return False
                 if has_model_conflict(input_tokens, cand_tokens):
@@ -2025,6 +2038,13 @@ class AggregatorService:
                              existing_deal.model_code = brand_info.get("model_code")
                      except Exception as e:
                          logger.error(f"Error extracting brand/model for recycled deal: {e}")
+
+                     existing_deal.search_keywords = build_search_keywords(
+                         existing_deal.title or raw_title,
+                         existing_deal.brand or "",
+                         existing_deal.base_product_name or "",
+                         existing_deal.model_code or "",
+                     )
 
                      # 카테고리/통화/종료상태 최신화
                      if final_category:
@@ -2234,8 +2254,20 @@ class AggregatorService:
                  if existing_deal.category != final_category and final_category:
                      existing_deal.category = final_category
 
-                 if getattr(existing_deal, 'currency', None) != currency:
-                     existing_deal.currency = currency
+                 old_curr_norm = (getattr(existing_deal, 'currency', None) or 'KRW').strip().upper()
+                 new_curr_norm = (currency or 'KRW').strip().upper()
+                 if is_same_post_url and old_curr_norm != new_curr_norm:
+                     existing_deal.currency = new_curr_norm
+                     self.db.query(PriceHistory).filter(PriceHistory.deal_id == existing_deal.id).delete(synchronize_session=False)
+                     if price > 0:
+                         price_changed = True
+
+                 existing_deal.search_keywords = build_search_keywords(
+                     existing_deal.title or raw_title,
+                     existing_deal.brand or "",
+                     existing_deal.base_product_name or "",
+                     existing_deal.model_code or "",
+                 )
 
                  existing_deal.is_closed = is_closed
 
@@ -2622,6 +2654,12 @@ class AggregatorService:
                         comment_count=comment_count,
                         brand=brand_info.get("brand"),
                         model_code=brand_info.get("model_code"),
+                        search_keywords=build_search_keywords(
+                            derived_title,
+                            brand_info.get("brand") or "",
+                            item.get("name", normalized.name) or "",
+                            brand_info.get("model_code") or "",
+                        ),
                         indexed_at=posted_dt if posted_dt else func.now()
                     )
                     self.db.add(new_deal)
@@ -2702,6 +2740,12 @@ class AggregatorService:
                     has_options=has_options,
                     brand=brand_info.get("brand"),
                     model_code=brand_info.get("model_code"),
+                    search_keywords=build_search_keywords(
+                        raw_title,
+                        brand_info.get("brand") or "",
+                        normalized.name or "",
+                        brand_info.get("model_code") or "",
+                    ),
                     indexed_at=posted_dt if posted_dt else func.now()
                 )
                 self.db.add(new_deal)
@@ -2769,9 +2813,19 @@ class AggregatorService:
         return inserted_deals[0] if inserted_deals else None
 
     def _insert_price_history(self, deal_id: int, price: int):
-        """특정 Deal의 가격 변동(골든타임)을 추적합니다 (동일 가격 중복 인서트 및 10분 쿨다운 가드)."""
-        if price <= 0:
+        """특정 Deal의 가격 변동(골든타임)을 추적합니다 (동일 가격 중복 인서트, 이상치 및 10분 쿨다운 가드)."""
+        if not price or price <= 0 or price > 15_000_000:
             return
+
+        from backend.core.deal_normalizer import is_suspicious_price_history_value
+        parent_deal = self.db.query(Deal).filter(Deal.id == deal_id).first()
+        if parent_deal is not None:
+            if is_suspicious_price_history_value(
+                price,
+                getattr(parent_deal, "currency", "KRW"),
+                getattr(parent_deal, "title", "") or "",
+            ):
+                return
 
         # 직전 최신 히스토리 조회
         last_ph = self.db.query(PriceHistory).filter(
@@ -2785,8 +2839,13 @@ class AggregatorService:
         # 동일 가격이 아니더라도 10분 이내의 미세 진동(< 5%)은 방어
         from datetime import datetime, timedelta
         if last_ph and last_ph.checked_at:
-            last_dt = last_ph.checked_at.replace(tzinfo=None) if hasattr(last_ph.checked_at, 'replace') else last_ph.checked_at
-            if (datetime.utcnow() - last_dt) < timedelta(minutes=10):
+            raw_last_dt = last_ph.checked_at
+            if getattr(raw_last_dt, "tzinfo", None) is not None:
+                last_dt = raw_last_dt.astimezone(timezone.utc).replace(tzinfo=None)
+            else:
+                last_dt = raw_last_dt
+            now_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+            if (now_utc_naive - last_dt) < timedelta(minutes=10):
                 old_p_str = re.sub(r'[^\d]', '', str(last_ph.price))
                 old_p = int(old_p_str) if old_p_str.isdigit() else 0
                 if old_p > 0 and abs(price - old_p) / old_p < 0.05:
@@ -2798,4 +2857,4 @@ class AggregatorService:
         )
         self.db.add(history)
         self.db.commit()
-        logger.info(f"[Price History] 가격 변동 확정 기록: Deal ID {deal_id} -> {price:,}원")
+        logger.info(f"[Price History] 가격 변동 확정 기록: Deal ID {deal_id} -> {price:,}")

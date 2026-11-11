@@ -26,7 +26,9 @@ fun PriceHistoryGraph(
 ) {
     if (dataPoints.isEmpty()) return
 
-    val prices = remember(dataPoints) { dataPoints.map { it.price } }
+    val prices = remember(dataPoints) { dataPoints.map { it.price }.filter { it > 0 } }
+    if (prices.isEmpty()) return
+
     val minPrice = prices.minOrNull() ?: 0
     val maxPrice = prices.maxOrNull() ?: 0
     
@@ -47,17 +49,24 @@ fun PriceHistoryGraph(
         
         val points = prices.mapIndexed { index, price ->
             val x = width * index / (prices.size - 1).coerceAtLeast(1)
-            val y = paddingY + usableHeight - (usableHeight * (price - minPrice) / priceRange)
+            val y = if (maxPrice == minPrice) {
+                height / 2f
+            } else {
+                paddingY + usableHeight - (usableHeight * (price - minPrice).toFloat() / priceRange.toFloat())
+            }
             Offset(x, y)
         }
 
         val path = Path().apply {
-            if (points.isNotEmpty()) {
+            if (points.size == 1) {
+                moveTo(0f, points.first().y)
+                lineTo(width, points.first().y)
+            } else if (points.size > 1) {
                 moveTo(points.first().x, points.first().y)
                 for (i in 0 until points.size - 1) {
                     val start = points[i]
                     val end = points[i + 1]
-                    val midX = (start.x + end.x) / 2
+                    val midX = (start.x + end.x) / 2f
                     cubicTo(
                         x1 = midX, y1 = start.y,
                         x2 = midX, y2 = end.y,

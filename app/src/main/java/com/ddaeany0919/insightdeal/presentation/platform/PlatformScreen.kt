@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import com.ddaeany0919.insightdeal.presentation.home.DealCardComposable
 import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
 
@@ -21,7 +22,6 @@ fun PlatformScreen(
     onNavigateToDetail: (Int) -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val filterState by viewModel.filterState.collectAsState()
     val currentPlatform = filterState.platform ?: "전체"
     val dealsPagingItems = viewModel.dealsPagingData.collectAsLazyPagingItems()
@@ -80,17 +80,20 @@ fun PlatformScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 80.dp)
                 ) {
-                    items(dealsPagingItems.itemCount) { index ->
+                    items(
+                        count = dealsPagingItems.itemCount,
+                        key = dealsPagingItems.itemKey { it.id },
+                        contentType = { "platform_deal_item" }
+                    ) { index ->
                         val deal = dealsPagingItems[index]
                         if (deal != null) {
                             DealCardComposable(
                                 deal = deal,
                                 onDetailClick = { onNavigateToDetail(deal.id) },
                                 onOpenUrl = { url ->
-                                    try {
-                                        if (url.isNotBlank()) uriHandler.openUri(url)
-                                    } catch (_: Exception) {
-                                        android.widget.Toast.makeText(context, "브라우저를 열 수 없습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                                    if (url.isNotBlank()) {
+                                        viewModel.trackOutboundClick(url)
+                                        com.ddaeany0919.insightdeal.utils.CustomTabLauncher.launchShoppingUrl(context, url)
                                     }
                                 }
                             )

@@ -1,13 +1,23 @@
 package com.ddaeany0919.insightdeal
 
+import androidx.compose.ui.graphics.Color
+import com.ddaeany0919.insightdeal.data.ApiHistoryResponse
+import com.ddaeany0919.insightdeal.data.network.WishlistUpdateRequest
 import com.ddaeany0919.insightdeal.models.ApiDeal
 import com.ddaeany0919.insightdeal.models.DealItem
+import com.ddaeany0919.insightdeal.models.DealOptionItem
 import com.ddaeany0919.insightdeal.models.DealSource
+import com.ddaeany0919.insightdeal.network.TrackClickRequest
+import com.ddaeany0919.insightdeal.network.TrackClickResponse
+import com.ddaeany0919.insightdeal.presentation.DealDetailViewModel
+import com.ddaeany0919.insightdeal.presentation.KeywordManagerViewModel
 import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
 import com.ddaeany0919.insightdeal.presentation.decodeHtmlEntities
 import com.ddaeany0919.insightdeal.presentation.formatEditableTargetInput
 import com.ddaeany0919.insightdeal.presentation.formatPrice
 import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
+import com.ddaeany0919.insightdeal.presentation.home.buildHighlightedTitle
+import com.ddaeany0919.insightdeal.presentation.home.isIncompleteHangulJamoQuery
 import com.ddaeany0919.insightdeal.presentation.isCentScaledCurrency
 import com.ddaeany0919.insightdeal.presentation.parseBackendTimestampToKst
 import com.ddaeany0919.insightdeal.presentation.parseEditableTargetInput
@@ -172,5 +182,149 @@ class InsightDealCoreUnitTest {
 
         val defaultAll = HomeViewModel.FilterState(communityChip = "전체")
         assertNull(defaultAll.resolvedPlatformQuery())
+    }
+
+    @Test
+    fun gsonDtoContracts_preserveBackendSnakeCaseKeysForR8Safety() {
+        val gson = Gson()
+
+        val wishlistReqJson = gson.toJson(
+            WishlistUpdateRequest(targetPrice = 45000, isActive = true, alertEnabled = false)
+        )
+        assertTrue(wishlistReqJson.contains("\"target_price\":45000"))
+        assertTrue(wishlistReqJson.contains("\"is_active\":true"))
+        assertTrue(wishlistReqJson.contains("\"alert_enabled\":false"))
+
+        val trackReqJson = gson.toJson(
+            TrackClickRequest(
+                url = "https://www.coupang.com/vp/products/1",
+                dealId = 777,
+                price = 19900,
+                currency = "KRW",
+                platform = "android"
+            )
+        )
+        assertTrue(trackReqJson.contains("\"deal_id\":777"))
+        assertTrue(trackReqJson.contains("\"currency\":\"KRW\""))
+
+        val trackRes = gson.fromJson(
+            """{"status":"ok","mall_name":"쿠팡","affiliate_network":"coupang_partners","is_monetized":true,"estimated_commission_krw":597.0}""",
+            TrackClickResponse::class.java
+        )
+        assertEquals("쿠팡", trackRes.mallName)
+        assertEquals(true, trackRes.isMonetized)
+
+        val historyRes = gson.fromJson(
+            """{"product_name":"맥북 에어","period_days":90,"data_points":[{"date":"2026-05-01","price":1290000,"platform":"쿠팡","is_available":true}],"lowest_ever":1190000,"highest_ever":1490000,"current_trend":"down"}""",
+            ApiHistoryResponse::class.java
+        )
+        assertEquals("맥북 에어", historyRes.product_name)
+        assertEquals(1, historyRes.data_points.size)
+        assertEquals(1190000, historyRes.lowest_ever)
+
+        val dnd = KeywordManagerViewModel.WeekDndSettings(
+            mon = KeywordManagerViewModel.DayDndSetting(enabled = true, start = "23:00", end = "07:00")
+        )
+        val roundTrippedDnd = gson.fromJson(gson.toJson(dnd), KeywordManagerViewModel.WeekDndSettings::class.java)
+        assertTrue(roundTrippedDnd.mon.enabled)
+        assertEquals("23:00", roundTrippedDnd.mon.start)
+    }
+
+    @Test
+    fun formatPrice_formatsCnyCentsAndJpyDiffWithoutKrwInflation() {
+        assertEquals("¥25.87", formatPrice(2587L, "CNY"))
+        assertEquals("¥1,500", formatPrice(1500L, "JPY"))
+        assertEquals("$0.99", formatPrice(99L, "USD"))
+        assertEquals("€3.50", formatPrice(350L, "EUR"))
+        assertEquals("12,000원", formatPrice(12000L, "KRW"))
+    }
+
+    @Test
+    fun extractValidMultiOptions_excludesZeroPriceEntriesForIndexParity() {
+        val sourceDeal = DealItem(
+            id = 801,
+            title = "멀티 옵션 테스트 딜",
+            price = 25900L,
+            currency = "KRW",
+            siteName = "뽐뿌",
+            sources = listOf(
+                DealSource(siteName = "뽐뿌 - 품절더미", postUrl = "https://ppomppu.co.kr/1", price = 0L),
+                DealSource(siteName = "뽐뿌 - 본품 500ml", postUrl = "https://ppomppu.co.kr/1", price = 25900L),
+                DealSource(siteName = "뽐뿌 - 리필 세트", postUrl = "https://ppomppu.co.kr/1", price = 32900L)
+            )
+        )
+        val resolvedSources = DealDetailViewModel.extractValidMultiOptions(sourceDeal)
+        assertEquals(2, resolvedSources.size)
+        assertEquals(25900L, resolvedSources[0].price)
+        assertEquals(32900L, resolvedSources[1].price)
+
+        val optionsDataDeal = DealItem(
+            id = 802,
+            title = "옵션 데이터 기반 딜",
+            price = 1990L,
+            currency = "USD",
+            siteName = "알리뽐뿌",
+            optionsData = listOf(
+                DealOptionItem(name = "무효옵션", price = 0L, currency = "USD"),
+                DealOptionItem(name = "128GB", price = 1990L, currency = "USD"),
+                DealOptionItem(name = "256GB", price = 2990L, currency = "USD")
+            )
+        )
+        val resolvedOptionsData = DealDetailViewModel.extractValidMultiOptions(optionsDataDeal)
+        assertEquals(2, resolvedOptionsData.size)
+        assertEquals(1990L, resolvedOptionsData[0].price)
+        assertEquals("USD", resolvedOptionsData[0].currency)
+    }
+
+    @Test
+    fun buildHighlightedTitle_highlightsMultipleTokensAndMergesOverlaps() {
+        val title = "[쿠팡] 삼성 갤럭시 프로3 버즈 특가"
+        val highlighted = buildHighlightedTitle(
+            title = title,
+            keyword = "갤럭시 버즈 -케이스 :200000",
+            highlightBg = Color.Yellow,
+            highlightFg = Color.Black
+        )
+        assertEquals(title, highlighted.text)
+        assertEquals(2, highlighted.spanStyles.size)
+        assertEquals(
+            "갤럭시",
+            highlighted.text.substring(highlighted.spanStyles[0].start, highlighted.spanStyles[0].end)
+        )
+        assertEquals(
+            "버즈",
+            highlighted.text.substring(highlighted.spanStyles[1].start, highlighted.spanStyles[1].end)
+        )
+
+        val overlapTitle = "삼성 갤럭시북4 프로 16인치"
+        val overlapHighlighted = buildHighlightedTitle(
+            title = overlapTitle,
+            keyword = "갤럭시 갤럭시북",
+            highlightBg = Color.Yellow,
+            highlightFg = Color.Black
+        )
+        assertEquals(overlapTitle, overlapHighlighted.text)
+        assertEquals(1, overlapHighlighted.spanStyles.size)
+        assertEquals(
+            "갤럭시북",
+            overlapHighlighted.text.substring(
+                overlapHighlighted.spanStyles[0].start,
+                overlapHighlighted.spanStyles[0].end
+            )
+        )
+    }
+
+    @Test
+    fun isIncompleteHangulJamoQuery_detectsSingleJamoTokensAccurately() {
+        assertTrue(isIncompleteHangulJamoQuery("ㄱ"))
+        assertTrue(isIncompleteHangulJamoQuery("ㅏ"))
+        assertTrue(isIncompleteHangulJamoQuery("갤럭시 ㅂ"))
+        assertTrue(isIncompleteHangulJamoQuery("맥북 -ㅍ"))
+
+        assertFalse(isIncompleteHangulJamoQuery(""))
+        assertFalse(isIncompleteHangulJamoQuery("쌀"))
+        assertFalse(isIncompleteHangulJamoQuery("맥북"))
+        assertFalse(isIncompleteHangulJamoQuery("갤럭시 버즈"))
+        assertFalse(isIncompleteHangulJamoQuery("맥북 -파우치 :1200000"))
     }
 }

@@ -27,6 +27,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,8 +53,14 @@ fun AdvancedSearchScreen(
     initialQuery: String = "",
     viewModel: HomeViewModel = viewModel()
 ) {
-    var searchQuery by androidx.compose.runtime.saveable.rememberSaveable(stateSaver = androidx.compose.ui.text.input.TextFieldValue.Saver) { 
-        mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(initialQuery)) 
+    var searchQuery by androidx.compose.runtime.saveable.rememberSaveable(stateSaver = androidx.compose.ui.text.input.TextFieldValue.Saver) {
+        val initTrimmed = initialQuery.trim()
+        mutableStateOf(
+            androidx.compose.ui.text.input.TextFieldValue(
+                text = initTrimmed,
+                selection = TextRange(initTrimmed.length)
+            )
+        )
     }
     var isSearching by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(initialQuery.isNotBlank()) }
     val focusRequester = remember { FocusRequester() }
@@ -94,12 +101,16 @@ fun AdvancedSearchScreen(
     fun performSearch(query: String) {
         val trimmed = query.trim()
         if (isMeaningfulQuery(trimmed)) {
-            searchQuery = androidx.compose.ui.text.input.TextFieldValue(trimmed)
+            searchQuery = androidx.compose.ui.text.input.TextFieldValue(
+                text = trimmed,
+                selection = TextRange(trimmed.length)
+            )
             isSearching = true
             keyboardController?.hide()
             searchAutoComplete.addToSearchHistory(trimmed)
             viewModel.searchDeals(trimmed)
         } else if (trimmed.isEmpty()) {
+            searchQuery = androidx.compose.ui.text.input.TextFieldValue("")
             isSearching = false
             viewModel.searchDeals("")
         }
@@ -108,7 +119,10 @@ fun AdvancedSearchScreen(
     LaunchedEffect(initialQuery) {
         if (initialQuery.isNotBlank() && isMeaningfulQuery(initialQuery)) {
             val trimmed = initialQuery.trim()
-            searchQuery = androidx.compose.ui.text.input.TextFieldValue(trimmed)
+            searchQuery = androidx.compose.ui.text.input.TextFieldValue(
+                text = trimmed,
+                selection = TextRange(trimmed.length)
+            )
             isSearching = true
             searchAutoComplete.addToSearchHistory(trimmed)
             viewModel.searchDeals(trimmed)
@@ -156,9 +170,10 @@ fun AdvancedSearchScreen(
                         ),
                         trailingIcon = {
                             if (searchQuery.text.isNotEmpty()) {
-                                IconButton(onClick = { 
-                                    searchQuery = androidx.compose.ui.text.input.TextFieldValue("") 
+                                IconButton(onClick = {
+                                    searchQuery = androidx.compose.ui.text.input.TextFieldValue("")
                                     isSearching = false
+                                    viewModel.searchDeals("")
                                 }) {
                                     Icon(Icons.Default.Clear, contentDescription = "지우기")
                                 }

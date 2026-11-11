@@ -42,18 +42,30 @@ fun PriceChart(
     modifier: Modifier = Modifier,
     currency: String = "KRW"
 ) {
-    if (prices.isEmpty()) return
+    val validPairs = remember(prices, dates) {
+        prices.mapIndexedNotNull { idx, p ->
+            if (p.isFinite() && p > 0f) {
+                p to (dates.getOrNull(idx) ?: "")
+            } else {
+                null
+            }
+        }
+    }
+    val safePrices = remember(validPairs) { validPairs.map { it.first } }
+    val safeDates = remember(validPairs) { validPairs.map { it.second } }
 
-    var selectedIndex by remember(prices) { mutableStateOf<Int?>(null) }
+    if (safePrices.isEmpty()) return
 
-    val maxPrice = remember(prices) { prices.maxOrNull() ?: 0f }
-    val minPrice = remember(prices) { prices.minOrNull() ?: 0f }
-    val avgPrice = remember(prices) { if (prices.isNotEmpty()) prices.average().toFloat() else 0f }
-    val minIndex = remember(prices, minPrice) { prices.indexOfLast { it == minPrice }.coerceAtLeast(0) }
-    val maxIndex = remember(prices, maxPrice) { prices.indexOfFirst { it == maxPrice }.coerceAtLeast(0) }
+    var selectedIndex by remember(safePrices) { mutableStateOf<Int?>(null) }
+
+    val maxPrice = remember(safePrices) { safePrices.maxOrNull() ?: 0f }
+    val minPrice = remember(safePrices) { safePrices.minOrNull() ?: 0f }
+    val avgPrice = remember(safePrices) { if (safePrices.isNotEmpty()) safePrices.average().toFloat() else 0f }
+    val minIndex = remember(safePrices, minPrice) { safePrices.indexOfLast { it == minPrice }.coerceAtLeast(0) }
+    val maxIndex = remember(safePrices, maxPrice) { safePrices.indexOfFirst { it == maxPrice }.coerceAtLeast(0) }
 
     val range = remember(maxPrice, minPrice) {
-        if (maxPrice - minPrice == 0f) max(1000f, maxPrice * 0.1f) else maxPrice - minPrice
+        if (maxPrice - minPrice == 0f) max(1f, maxPrice * 0.12f) else maxPrice - minPrice
     }
     val padding = remember(range) { range * 0.30f } // 상하 30% 여백 확보 (최고/최저 콜아웃 짤림 방지)
 
@@ -129,7 +141,7 @@ fun PriceChart(
 
     // 진입 시 애니메이션 그리기
     val lineProgress = remember { Animatable(0f) }
-    LaunchedEffect(prices) {
+    LaunchedEffect(safePrices) {
         lineProgress.snapTo(0f)
         lineProgress.animateTo(1f, animationSpec = tween(900))
     }
@@ -138,16 +150,16 @@ fun PriceChart(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(prices) {
+                .pointerInput(safePrices) {
                     awaitPointerEventScope {
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
                             val pointer = event.changes.firstOrNull()
                             if (pointer != null && pointer.pressed) {
-                                val itemWidth = size.width / max(1, prices.size - 1)
+                                val itemWidth = size.width / max(1, safePrices.size - 1)
                                 val index = ((pointer.position.x + itemWidth / 2f) / itemWidth)
                                     .toInt()
-                                    .coerceIn(0, prices.lastIndex)
+                                    .coerceIn(0, safePrices.lastIndex)
                                 selectedIndex = index
                             } else {
                                 selectedIndex = null
@@ -159,14 +171,14 @@ fun PriceChart(
             val width = size.width
             val bottomLabelSpace = 26.dp.toPx()
             val height = size.height - bottomLabelSpace
-            val xStep = if (prices.size > 1) width / (prices.size - 1) else width
-            val yRange = (chartMax - chartMin).coerceAtLeast(1f)
+            val xStep = if (safePrices.size > 1) width / (safePrices.size - 1) else width
+            val yRange = (chartMax - chartMin).coerceAtLeast(0.001f)
 
             linePath.reset()
             fillPath.reset()
-            val points = ArrayList<Offset>(prices.size)
+            val points = ArrayList<Offset>(safePrices.size)
 
-            prices.forEachIndexed { i, price ->
+            safePrices.forEachIndexed { i, price ->
                 val x = i * xStep
                 val y = height - ((price - chartMin) / yRange) * height
                 points.add(Offset(x, y))
@@ -175,13 +187,13 @@ fun PriceChart(
                     linePath.moveTo(x, y)
                     fillPath.moveTo(x, height)
                     fillPath.lineTo(x, y)
-                    if (prices.size == 1) {
+                    if (safePrices.size == 1) {
                         linePath.lineTo(width, y)
                         fillPath.lineTo(width, y)
                     }
                 } else {
                     val prev = points[i - 1]
-                    if (prices.size < 5) {
+                    if (safePrices.size < 5) {
                         linePath.lineTo(x, y)
                         fillPath.lineTo(x, y)
                     } else {
@@ -230,7 +242,7 @@ fun PriceChart(
             }
 
             // 3. 각 데이터 포인트 도트 표시 (포인트가 15개 이하일 때 명확히 표시)
-            if (prices.size <= 15 && lineProgress.value > 0.85f) {
+            if (safePrices.size <= 15 && lineProgress.value > 0.85f) {
                 points.forEachIndexed { idx, pt ->
                     val dotColor = when (idx) {
                         minIndex -> lowBadgeColor
@@ -244,12 +256,12 @@ fun PriceChart(
 
             // 4. X축 날짜 라벨 렌더링 (겹침 방지)
             val indicesToDraw = mutableListOf<Int>()
-            if (dates.isNotEmpty()) {
-                indicesToDraw.add(dates.lastIndex)
-                var lastAddedLeftEdge = width - axisPaint.measureText(dates.last())
+            if (safeDates.isNotEmpty()) {
+                indicesToDraw.add(safeDates.lastIndex)
+                var lastAddedLeftEdge = width - axisPaint.measureText(safeDates.last())
 
-                for (i in dates.lastIndex - 1 downTo 0) {
-                    val safeDate = dates[i]
+                for (i in safeDates.lastIndex - 1 downTo 0) {
+                    val safeDate = safeDates[i]
                     val x = i * xStep
                     val textWidth = axisPaint.measureText(safeDate)
                     val safeX = x.coerceIn(textWidth / 2f, width - textWidth / 2f)
@@ -264,7 +276,7 @@ fun PriceChart(
             indicesToDraw.reverse()
 
             indicesToDraw.forEach { i ->
-                val safeDate = dates[i]
+                val safeDate = safeDates[i]
                 val x = i * xStep
                 val textWidth = axisPaint.measureText(safeDate)
                 val safeX = x.coerceIn(textWidth / 2f, width - textWidth / 2f)
@@ -318,7 +330,7 @@ fun PriceChart(
             }
 
             // 6. 터치 시 인터랙티브 툴팁 렌더링
-            selectedIndex?.let { index ->
+            selectedIndex?.takeIf { it in points.indices && it in safePrices.indices }?.let { index ->
                 val point = points[index]
 
                 drawLine(
@@ -332,7 +344,7 @@ fun PriceChart(
                 drawCircle(color = primaryColor, radius = 6.5.dp.toPx(), center = point)
                 drawCircle(color = Color.White, radius = 3.dp.toPx(), center = point)
 
-                val selectedPrice = prices[index]
+                val selectedPrice = safePrices[index]
                 val diffPct = if (avgPrice > 0f) (((selectedPrice - avgPrice) / avgPrice) * 100f).roundToInt() else 0
                 val diffSuffix = when {
                     diffPct < 0 -> " (평균 ${diffPct}%)"
@@ -340,7 +352,7 @@ fun PriceChart(
                     else -> ""
                 }
                 val priceText = formatPrice(selectedPrice.toLong(), currency) + diffSuffix
-                val dateText = if (dates.isNotEmpty() && index < dates.size) dates[index] else ""
+                val dateText = if (safeDates.isNotEmpty() && index < safeDates.size) safeDates[index] else ""
 
                 val maxTextWidth = max(tooltipPricePaint.measureText(priceText), tooltipDatePaint.measureText(dateText))
                 val boxHalfW = maxTextWidth / 2f + 10.dp.toPx()

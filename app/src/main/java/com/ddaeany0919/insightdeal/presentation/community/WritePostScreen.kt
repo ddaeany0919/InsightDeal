@@ -104,8 +104,9 @@ class WritePostViewModel : ViewModel() {
                             keyword = if (query.isBlank()) null else query,
                             platform = null
                         )
-                        if (response.isSuccessful && response.body() != null) {
-                            _deals.value = response.body()!!.deals
+                        val body = response.body()
+                        if (response.isSuccessful && body != null) {
+                            _deals.value = body.deals
                         }
                     } catch (e: Exception) {
                         // 에러 로그 무시
@@ -227,12 +228,6 @@ class WritePostViewModel : ViewModel() {
 }
 
 private val AccentOrange = Color(0xFFFF6B35)
-private val AccentOrangeSoft = Color(0xFFFFF0EB)
-private val NeutralGray50 = Color(0xFFF8F9FA)
-private val NeutralGray200 = Color(0xFFE9ECEF)
-private val NeutralGray500 = Color(0xFF868E96)
-private val NeutralGray700 = Color(0xFF495057)
-private val NeutralGray900 = Color(0xFF212529)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -298,10 +293,15 @@ fun WritePostScreen(
                     ) {
                         Text(if (postId == null) "등록" else "수정", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground
+                )
             )
         },
-        containerColor = NeutralGray50
+        containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -332,11 +332,12 @@ fun WritePostScreen(
             }
 
             // 핫딜 상품 연동 영역
-            if (selectedDeal == null) {
+            val currentSelectedDeal = selectedDeal
+            if (currentSelectedDeal == null) {
                 Card(
                     onClick = { showBottomSheet = true },
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(1.dp, NeutralGray200),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -349,14 +350,14 @@ fun WritePostScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = NeutralGray50,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
                             modifier = Modifier.size(38.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Outlined.ShoppingCart,
                                     contentDescription = null,
-                                    tint = NeutralGray700,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(19.dp)
                                 )
                             }
@@ -366,23 +367,24 @@ fun WritePostScreen(
                                 text = "핫딜 상품 첨부 (선택)",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = NeutralGray900
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "고민 중인 상품을 연결해 의견을 물어보세요.",
                                 fontSize = 12.sp,
-                                color = NeutralGray500
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                 }
             } else {
-                val deal = selectedDeal!!
+                val deal = currentSelectedDeal
+                val cleanSelectedTitle = com.ddaeany0919.insightdeal.presentation.decodeHtmlEntities(deal.title)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(1.dp, NeutralGray200),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -395,7 +397,7 @@ fun WritePostScreen(
                                 text = "첨부된 상품",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = NeutralGray700
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
                             IconButton(
@@ -405,7 +407,7 @@ fun WritePostScreen(
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "연동 해제",
-                                    tint = NeutralGray500,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -443,20 +445,20 @@ fun WritePostScreen(
                                     modifier = Modifier
                                         .size(60.dp)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(NeutralGray50)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
                                 )
                             } else {
                                 Box(
                                     modifier = Modifier
                                         .size(60.dp)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(NeutralGray50),
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.ShoppingCart,
                                         contentDescription = null,
-                                        tint = NeutralGray500,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(24.dp)
                                     )
                                 }
@@ -468,7 +470,7 @@ fun WritePostScreen(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Surface(
-                                        color = AccentOrangeSoft,
+                                        color = AccentOrange.copy(alpha = 0.14f),
                                         shape = RoundedCornerShape(4.dp)
                                     ) {
                                         Text(
@@ -490,19 +492,19 @@ fun WritePostScreen(
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = deal.title,
+                                    text = cleanSelectedTitle,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = NeutralGray900,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = com.ddaeany0919.insightdeal.presentation.formatPrice(deal.price.toLong(), null, deal.title),
+                                    text = com.ddaeany0919.insightdeal.presentation.formatPrice(deal.price, deal.currency, cleanSelectedTitle),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = NeutralGray900
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -556,13 +558,13 @@ fun WritePostScreen(
         }
     }
 
-    // 🛍️ 핫딜 상품 선택 바텀 시트
+    // 핫딜 상품 선택 바텀 시트
     if (showBottomSheet) {
         ModalBottomSheet(
             onDismissRequest = { showBottomSheet = false },
             sheetState = sheetState,
             dragHandle = { BottomSheetDefaults.DragHandle() },
-            containerColor = Color.White
+            containerColor = MaterialTheme.colorScheme.surface
         ) {
             Column(
                 modifier = Modifier
@@ -581,10 +583,14 @@ fun WritePostScreen(
                         text = "연동할 핫딜 상품 선택",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = NeutralGray900
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     IconButton(onClick = { showBottomSheet = false }) {
-                        Icon(imageVector = Icons.Default.Close, contentDescription = "닫기", tint = NeutralGray500)
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "닫기",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
@@ -592,17 +598,25 @@ fun WritePostScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { viewModel.setSearchQuery(it) },
-                    placeholder = { Text("핫딜 상품명 검색...", color = NeutralGray500) },
+                    placeholder = { Text("핫딜 상품명 검색...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 8.dp),
                     leadingIcon = {
-                        Icon(imageVector = Icons.Default.Search, contentDescription = "검색", tint = NeutralGray500)
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "검색",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                                Icon(imageVector = Icons.Default.Clear, contentDescription = "지우기", tint = NeutralGray500)
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "지우기",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     },
@@ -638,13 +652,13 @@ fun WritePostScreen(
                                 text = "검색 결과가 없습니다",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = NeutralGray700
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "다른 단어로 검색해 보세요",
                                 fontSize = 13.sp,
-                                color = NeutralGray500
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -655,6 +669,7 @@ fun WritePostScreen(
                             .weight(1f)
                     ) {
                         items(items = deals, key = { it.id }, contentType = { "deal_select_item" }) { deal ->
+                            val cleanSheetTitle = com.ddaeany0919.insightdeal.presentation.decodeHtmlEntities(deal.title)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -692,20 +707,20 @@ fun WritePostScreen(
                                         modifier = Modifier
                                             .size(56.dp)
                                             .clip(RoundedCornerShape(8.dp))
-                                            .background(NeutralGray50)
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
                                     )
                                 } else {
                                     Box(
                                         modifier = Modifier
                                             .size(56.dp)
                                             .clip(RoundedCornerShape(8.dp))
-                                            .background(NeutralGray50),
+                                            .background(MaterialTheme.colorScheme.surfaceVariant),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
                                             imageVector = Icons.Outlined.ShoppingCart,
                                             contentDescription = null,
-                                            tint = NeutralGray500,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.size(24.dp)
                                         )
                                     }
@@ -717,15 +732,15 @@ fun WritePostScreen(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         Surface(
-                                            color = NeutralGray50,
-                                            border = BorderStroke(1.dp, NeutralGray200),
+                                            color = MaterialTheme.colorScheme.surfaceVariant,
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                                             shape = RoundedCornerShape(4.dp)
                                         ) {
                                             Text(
                                                 text = deal.siteName,
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = NeutralGray700,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                             )
                                         }
@@ -740,23 +755,23 @@ fun WritePostScreen(
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = deal.title,
+                                        text = cleanSheetTitle,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = NeutralGray900,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = com.ddaeany0919.insightdeal.presentation.formatPrice(deal.price.toLong(), null, deal.title),
+                                        text = com.ddaeany0919.insightdeal.presentation.formatPrice(deal.price, deal.currency, cleanSheetTitle),
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = NeutralGray700
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
-                            HorizontalDivider(color = NeutralGray200, thickness = 0.5.dp)
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), thickness = 0.5.dp)
                         }
                     }
                 }

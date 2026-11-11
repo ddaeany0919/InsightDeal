@@ -6,6 +6,7 @@ import com.ddaeany0919.insightdeal.presentation.wishlist.model.Period
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
@@ -133,6 +134,21 @@ class WishlistViewModel(
     }
 
     fun retry() {
+        viewModelScope.launch {
+            _uiState.value = WishlistUiState.Loading
+            try {
+                val items = wishlistRepository.getWishlistFlow().firstOrNull().orEmpty()
+                _uiState.value = if (items.isEmpty()) {
+                    WishlistUiState.Empty
+                } else {
+                    WishlistUiState.Success(items)
+                }
+                loadPriceHistory()
+            } catch (e: Exception) {
+                Log.e("WishlistViewModel", "위시리스트 재시도 실패", e)
+                _uiState.value = WishlistUiState.Error(e.message ?: "목록을 다시 불러오지 못했습니다.")
+            }
+        }
     }
 
     private fun loadPriceHistory() {

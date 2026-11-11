@@ -38,6 +38,7 @@ private val SHOPPING_SCHEME_PACKAGES = mapOf(
     "coupang" to "com.coupang.mobile",
     "coupangapp" to "com.coupang.mobile",
     "elevenstreet" to "com.elevenst",
+    "elevenst" to "com.elevenst",
     "st11" to "com.elevenst",
     "gmarket" to "com.ebay.kr.gmarket",
     "auction" to "com.ebay.kr.auction",
@@ -171,6 +172,9 @@ fun DealWebViewScreen(
                                         addCategory(Intent.CATEGORY_BROWSABLE)
                                         component = null
                                         selector = null
+                                        if (context !is android.app.Activity) {
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
                                     }
                                     val fallbackUrl = intent.getStringExtra("browser_fallback_url")?.takeIf {
                                         it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true)
@@ -188,6 +192,9 @@ fun DealWebViewScreen(
                                                         addCategory(Intent.CATEGORY_BROWSABLE)
                                                         component = null
                                                         selector = null
+                                                        if (context !is android.app.Activity) {
+                                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                        }
                                                     }
                                                     context.startActivity(playStoreIntent)
                                                 } catch (_: Exception) {
@@ -212,6 +219,9 @@ fun DealWebViewScreen(
                                         addCategory(Intent.CATEGORY_BROWSABLE)
                                         component = null
                                         selector = null
+                                        if (context !is android.app.Activity) {
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
                                     }
                                     context.startActivity(intent)
                                 } catch (_: ActivityNotFoundException) {
@@ -222,6 +232,9 @@ fun DealWebViewScreen(
                                                 addCategory(Intent.CATEGORY_BROWSABLE)
                                                 component = null
                                                 selector = null
+                                                if (context !is android.app.Activity) {
+                                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                }
                                             }
                                             context.startActivity(marketIntent)
                                         }

@@ -7,13 +7,14 @@ data class PriceHistoryPoint(
     val date: String,
     @SerializedName("price")
     val price: Int,
+    @SerializedName("platform")
     val platform: String = ""
 )
 
 data class MallPrice(
-    val platform: String,
-    val price: Int,
-    val currency: String? = "KRW",
-    val url: String,
-    val isLowest: Boolean = false
+    @SerializedName("platform") val platform: String,
+    @SerializedName("price") val price: Int,
+    @SerializedName("currency") val currency: String? = "KRW",
+    @SerializedName("url") val url: String,
+    @SerializedName("isLowest") val isLowest: Boolean = false
 )

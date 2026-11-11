@@ -51,7 +51,7 @@ fun MyPostsScreen(
                 }
             )
         },
-        containerColor = Color(0xFFF8F9FA)
+        containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
         if (uiState is CommunityBoardUiState.Loading) {
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {

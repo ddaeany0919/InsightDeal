@@ -375,177 +375,177 @@ data class UserWithdrawRequest(
 )
 
 data class ApiDealComment(
-    val id: Int,
-    val user_id: String,
-    val content: String,
-    val created_at: String
+    @SerializedName("id") val id: Int,
+    @SerializedName("user_id") val user_id: String,
+    @SerializedName("content") val content: String,
+    @SerializedName("created_at") val created_at: String
 )
 
 data class ApiDealVotes(
-    val buy_count: Int,
-    val pass_count: Int,
-    val user_vote: String? = null
+    @SerializedName("buy_count") val buy_count: Int,
+    @SerializedName("pass_count") val pass_count: Int,
+    @SerializedName("user_vote") val user_vote: String? = null
 )
 
 data class ApiCommentCreate(
-    val user_id: String,
-    val content: String
+    @SerializedName("user_id") val user_id: String,
+    @SerializedName("content") val content: String
 )
 
 data class ApiVoteCreate(
-    val user_id: String,
-    val vote_type: String
+    @SerializedName("user_id") val user_id: String,
+    @SerializedName("vote_type") val vote_type: String
 )
 
 data class DetailedKeywordDto(
-    val id: Int,
-    val keyword: String,
-    val is_active: Boolean
+    @SerializedName("id") val id: Int,
+    @SerializedName("keyword") val keyword: String,
+    @SerializedName("is_active") val is_active: Boolean
 )
 
 data class KeywordListResponse(
-    val keywords: List<String>,
-    val detailed_keywords: List<DetailedKeywordDto>? = null,
-    val dnd_enabled: Boolean? = null,
-    val dnd_start_time: String? = null,
-    val dnd_end_time: String? = null,
-    val dnd_settings_json: String? = null,
-    val night_push_consent: Boolean? = null
+    @SerializedName("keywords") val keywords: List<String>,
+    @SerializedName("detailed_keywords") val detailed_keywords: List<DetailedKeywordDto>? = null,
+    @SerializedName("dnd_enabled") val dnd_enabled: Boolean? = null,
+    @SerializedName("dnd_start_time") val dnd_start_time: String? = null,
+    @SerializedName("dnd_end_time") val dnd_end_time: String? = null,
+    @SerializedName("dnd_settings_json") val dnd_settings_json: String? = null,
+    @SerializedName("night_push_consent") val night_push_consent: Boolean? = null
 )
 
 data class AddKeywordRequest(
     @SerializedName("user_id") val device_uuid: String,
-    val keyword: String
+    @SerializedName("keyword") val keyword: String
 )
 
 data class DealsResponse(
-    val deals: List<DealItem>,
-    val total: Int,
-    val page: Int,
-    val totalPages: Int,
-    val hasNext: Boolean
+    @SerializedName("deals") val deals: List<DealItem>,
+    @SerializedName("total") val total: Int,
+    @SerializedName("page") val page: Int,
+    @SerializedName("totalPages") val totalPages: Int,
+    @SerializedName("hasNext") val hasNext: Boolean
 )
 
 data class ApiResponse(
-    val success: Boolean,
-    val message: String,
-    val data: Any? = null
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("message") val message: String = "",
+    @SerializedName("data") val data: Any? = null
 )
 
 data class ApiProduct(
-    val id: Int,
-    val title: String,
-    val brand: String?,
-    val image_url: String?,
-    val current_price: Int?,
-    val original_price: Int?,
-    val lowest_price: Int?,
-    val highest_price: Int?,
-    val target_price: Int?,
-    val url: String,
-    val created_at: String,
-    val last_checked: String?
+    @SerializedName("id") val id: Int,
+    @SerializedName("title") val title: String,
+    @SerializedName("brand") val brand: String?,
+    @SerializedName("image_url") val image_url: String?,
+    @SerializedName("current_price") val current_price: Int?,
+    @SerializedName("original_price") val original_price: Int?,
+    @SerializedName("lowest_price") val lowest_price: Int?,
+    @SerializedName("highest_price") val highest_price: Int?,
+    @SerializedName("target_price") val target_price: Int?,
+    @SerializedName("url") val url: String,
+    @SerializedName("created_at") val created_at: String,
+    @SerializedName("last_checked") val last_checked: String?
 )
 
 data class ApiPriceHistory(
-    val price: Int,
-    val original_price: Int?,
-    val discount_rate: Int?,
-    val tracked_at: String,
-    val is_available: Boolean
+    @SerializedName("price") val price: Int,
+    @SerializedName("original_price") val original_price: Int?,
+    @SerializedName("discount_rate") val discount_rate: Int?,
+    @SerializedName("tracked_at") val tracked_at: String,
+    @SerializedName("is_available") val is_available: Boolean
 )
 
 data class DealDetail(
-    val id: Int,
-    val title: String,
-    val description: String?,
-    val price: Int,
-    val originalPrice: Int?,
-    val discountRate: Int?,
-    val imageUrl: String?,
-    val url: String,
-    val siteName: String,
-    val createdAt: String,
-    val viewCount: Int,
-    val likeCount: Int,
-    val commentCount: Int
+    @SerializedName("id") val id: Int,
+    @SerializedName("title") val title: String,
+    @SerializedName("description") val description: String?,
+    @SerializedName("price") val price: Int,
+    @SerializedName("originalPrice") val originalPrice: Int?,
+    @SerializedName("discountRate") val discountRate: Int?,
+    @SerializedName("imageUrl") val imageUrl: String?,
+    @SerializedName("url") val url: String,
+    @SerializedName("siteName") val siteName: String,
+    @SerializedName("createdAt") val createdAt: String,
+    @SerializedName("viewCount") val viewCount: Int,
+    @SerializedName("likeCount") val likeCount: Int,
+    @SerializedName("commentCount") val commentCount: Int
 )
 
 data class PriceHistoryItem(
-    val price: Int,
-    val originalPrice: Int?,
-    val discountRate: Int?,
-    val recordedAt: String
+    @SerializedName("price") val price: Int,
+    @SerializedName("originalPrice") val originalPrice: Int?,
+    @SerializedName("discountRate") val discountRate: Int?,
+    @SerializedName("recordedAt") val recordedAt: String
 )
 
 data class EnhancedDealInfo(
-    val qualityScore: Int,
-    val priceRank: String,
-    val similarDeals: List<DealItem>,
-    val priceAlert: String?,
-    val recommendation: String?
+    @SerializedName("qualityScore") val qualityScore: Int,
+    @SerializedName("priceRank") val priceRank: String,
+    @SerializedName("similarDeals") val similarDeals: List<DealItem>,
+    @SerializedName("priceAlert") val priceAlert: String?,
+    @SerializedName("recommendation") val recommendation: String?
 )
 
 data class RegisterDeviceReq(
-    val device_uuid: String,
-    val fcm_token: String,
-    val night_push_consent: Boolean = false,
-    val dnd_enabled: Boolean = false,
-    val dnd_start_time: String = "21:00",
-    val dnd_end_time: String = "08:00",
-    val dnd_settings_json: String? = null
+    @SerializedName("device_uuid") val device_uuid: String,
+    @SerializedName("fcm_token") val fcm_token: String,
+    @SerializedName("night_push_consent") val night_push_consent: Boolean = false,
+    @SerializedName("dnd_enabled") val dnd_enabled: Boolean = false,
+    @SerializedName("dnd_start_time") val dnd_start_time: String = "21:00",
+    @SerializedName("dnd_end_time") val dnd_end_time: String = "08:00",
+    @SerializedName("dnd_settings_json") val dnd_settings_json: String? = null
 )
 
 data class KeywordAlertRequest(
-    val keyword: String,
-    val fcmToken: String,
-    val minDiscount: Int? = null,
-    val maxPrice: Int? = null
+    @SerializedName("keyword") val keyword: String,
+    @SerializedName("fcmToken") val fcmToken: String,
+    @SerializedName("minDiscount") val minDiscount: Int? = null,
+    @SerializedName("maxPrice") val maxPrice: Int? = null
 )
 
 data class PriceAlertRequest(
-    val dealId: Long,
-    val targetPrice: Int,
-    val fcmToken: String
+    @SerializedName("dealId") val dealId: Long,
+    @SerializedName("targetPrice") val targetPrice: Int,
+    @SerializedName("fcmToken") val fcmToken: String
 )
 
 data class Category(
-    val id: String,
-    val name: String,
-    val icon: String? = null
+    @SerializedName("id") val id: String,
+    @SerializedName("name") val name: String,
+    @SerializedName("icon") val icon: String? = null
 )
 
 data class Site(
-    val id: String,
-    val name: String,
-    val url: String,
-    val icon: String? = null
+    @SerializedName("id") val id: String,
+    @SerializedName("name") val name: String,
+    @SerializedName("url") val url: String,
+    @SerializedName("icon") val icon: String? = null
 )
 
 data class UserCommentDto(
-    val id: Int,
-    val post_id: Int,
-    val post_title: String,
-    val user_id: String,
-    val nickname: String,
-    val content: String,
-    val deal_url: String?,
-    val is_accepted: Boolean,
-    val parent_id: Int?,
-    val created_at: String?
+    @SerializedName("id") val id: Int,
+    @SerializedName("post_id") val post_id: Int,
+    @SerializedName("post_title") val post_title: String,
+    @SerializedName("user_id") val user_id: String,
+    @SerializedName("nickname") val nickname: String,
+    @SerializedName("content") val content: String,
+    @SerializedName("deal_url") val deal_url: String?,
+    @SerializedName("is_accepted") val is_accepted: Boolean,
+    @SerializedName("parent_id") val parent_id: Int?,
+    @SerializedName("created_at") val created_at: String?
 )
 
 data class NotificationAlertDto(
-    val id: String,
-    val title: String,
-    val keyword: String,
-    val receivedAt: Long,
-    val dealUrl: String
+    @SerializedName("id") val id: String,
+    @SerializedName("title") val title: String,
+    @SerializedName("keyword") val keyword: String,
+    @SerializedName("receivedAt") val receivedAt: Long,
+    @SerializedName("dealUrl") val dealUrl: String
 )
 
 data class AddNotificationRequest(
-    val user_id: String,
-    val title: String,
-    val keyword: String,
-    val deal_url: String
+    @SerializedName("user_id") val user_id: String,
+    @SerializedName("title") val title: String,
+    @SerializedName("keyword") val keyword: String,
+    @SerializedName("deal_url") val deal_url: String
 )

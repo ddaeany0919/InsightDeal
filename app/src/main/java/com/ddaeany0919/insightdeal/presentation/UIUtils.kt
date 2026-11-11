@@ -143,7 +143,7 @@ fun CommunityBadge(community: String) {
     val badgeColor = when (community.lowercase()) {
         "ppomppu", "뽐뿌" -> Color(0xFFE65100)
         "clien", "클리앙" -> Color(0xFF1565C0)
-        "ruliweb", "루리웹" -> Color(0xFF6A1B9A)
+        "ruliweb", "루리웹" -> Color(0xFF0D47A1)
         "eleventh", "11번가" -> Color(0xFF2E7D32)
         else -> MaterialTheme.colorScheme.primary
     }

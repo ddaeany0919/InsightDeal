@@ -107,8 +107,8 @@ fun CommunityBoardScreen(
                         showLoginIncentiveDialog = true
                     }
                 },
-                containerColor = NeutralGray900,
-                contentColor = Color.White,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = RoundedCornerShape(14.dp),
                 elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 3.dp)
             ) {
@@ -225,7 +225,8 @@ fun CommunityBoardScreen(
                                     onVoteSubmit = { viewModel.loadPosts(showLoading = false) },
                                     navController = navController,
                                     onClick = { navController?.navigate("community_detail/${post.id}") },
-                                    viewModel = viewModel
+                                    viewModel = viewModel,
+                                    onLoginRequired = { showLoginIncentiveDialog = true }
                                 )
                             }
                             item { Spacer(modifier = Modifier.height(80.dp)) }
@@ -243,7 +244,7 @@ fun CommunityBoardScreen(
                 Text("로그인이 필요해요", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
             },
             text = {
-                Text("커뮤니티 게시글 작성 및 투표 참여는 로그인 후 이용할 수 있어요.", fontSize = 14.sp, color = NeutralGray700)
+                Text("커뮤니티 게시글 작성 및 투표 참여는 로그인 후 이용할 수 있어요.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             },
             confirmButton = {
                 Button(
@@ -277,7 +278,8 @@ fun ShouldIBuyVoteCard(
     onVoteSubmit: () -> Unit,
     navController: NavController? = null,
     onClick: (() -> Unit)? = null,
-    viewModel: CommunityBoardViewModel
+    viewModel: CommunityBoardViewModel,
+    onLoginRequired: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -451,7 +453,7 @@ fun ShouldIBuyVoteCard(
                                 text = deal.siteName,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = NeutralGray700,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
                         }
@@ -486,13 +488,13 @@ fun ShouldIBuyVoteCard(
                         Text(
                             text = "살까 ${"%.0f".format(buyRatio * 100)}% (${post.bountyPoints})",
                             fontWeight = FontWeight.SemiBold,
-                            color = if (buyRatio >= skipRatio) AccentOrange else NeutralGray500,
+                            color = if (buyRatio >= skipRatio) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
                         )
                         Text(
                             text = "말까 ${"%.0f".format(skipRatio * 100)}% (${post.likeCount})",
                             fontWeight = FontWeight.SemiBold,
-                            color = if (skipRatio > buyRatio) NeutralGray900 else NeutralGray500,
+                            color = if (skipRatio > buyRatio) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
                         )
                     }
@@ -502,7 +504,7 @@ fun ShouldIBuyVoteCard(
                             .fillMaxWidth()
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            .background(NeutralGray200)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         Box(
                             modifier = Modifier
@@ -525,6 +527,10 @@ fun ShouldIBuyVoteCard(
                 OutlinedButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (currentUserId == "guest" || currentUserId.isBlank()) {
+                            if (onLoginRequired != null) onLoginRequired() else navController?.navigate("auth")
+                            return@OutlinedButton
+                        }
                         if (isBuySelected) {
                             viewModel.cancelVotePost(post, "BUY") {
                                 userVote = null
@@ -538,8 +544,8 @@ fun ShouldIBuyVoteCard(
                         }
                     },
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isBuySelected) AccentOrangeSoft else Color.Transparent,
-                        contentColor = if (isBuySelected) AccentOrange else NeutralGray700
+                        containerColor = if (isBuySelected) AccentOrange.copy(alpha = 0.14f) else Color.Transparent,
+                        contentColor = if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant
                     ),
                     border = BorderStroke(
                         1.dp,
@@ -553,7 +559,7 @@ fun ShouldIBuyVoteCard(
                         Icon(
                             imageVector = Icons.Default.ThumbUp,
                             contentDescription = null,
-                            tint = if (isBuySelected) AccentOrange else NeutralGray500,
+                            tint = if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
                                 .size(14.dp)
                                 .graphicsLayer {
@@ -564,7 +570,7 @@ fun ShouldIBuyVoteCard(
                         )
                         Text(
                             text = if (post.bountyPoints > 0) "살까 ${post.bountyPoints}" else "살까",
-                            color = if (isBuySelected) AccentOrange else NeutralGray700,
+                            color = if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = if (isBuySelected) FontWeight.Bold else FontWeight.Medium,
                             fontSize = 13.sp
                         )
@@ -574,6 +580,10 @@ fun ShouldIBuyVoteCard(
                 OutlinedButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (currentUserId == "guest" || currentUserId.isBlank()) {
+                            if (onLoginRequired != null) onLoginRequired() else navController?.navigate("auth")
+                            return@OutlinedButton
+                        }
                         if (isSkipSelected) {
                             viewModel.cancelVotePost(post, "SKIP") {
                                 userVote = null
@@ -587,12 +597,12 @@ fun ShouldIBuyVoteCard(
                         }
                     },
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isSkipSelected) NeutralGray200.copy(alpha = 0.6f) else Color.Transparent,
-                        contentColor = if (isSkipSelected) NeutralGray900 else NeutralGray700
+                        containerColor = if (isSkipSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+                        contentColor = if (isSkipSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                     ),
                     border = BorderStroke(
                         1.dp,
-                        if (isSkipSelected) NeutralGray700 else MaterialTheme.colorScheme.outlineVariant
+                        if (isSkipSelected) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outlineVariant
                     ),
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(vertical = 8.dp),
@@ -602,7 +612,7 @@ fun ShouldIBuyVoteCard(
                         Icon(
                             imageVector = Icons.Default.ThumbDown,
                             contentDescription = null,
-                            tint = if (isSkipSelected) NeutralGray900 else NeutralGray500,
+                            tint = if (isSkipSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
                                 .size(14.dp)
                                 .graphicsLayer {
@@ -613,7 +623,7 @@ fun ShouldIBuyVoteCard(
                         )
                         Text(
                             text = if (post.likeCount > 0) "말까 ${post.likeCount}" else "말까",
-                            color = if (isSkipSelected) NeutralGray900 else NeutralGray700,
+                            color = if (isSkipSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = if (isSkipSelected) FontWeight.Bold else FontWeight.Medium,
                             fontSize = 13.sp
                         )

@@ -671,9 +671,17 @@ fun MyPageScreen(
                 showKeywordDialog = true
             },
             onOpenUrlInWebView = { url ->
-                if (navController != null) {
+                showNotificationHistory = false
+                val lowerUrl = url.lowercase()
+                val isCommunityPost = listOf(
+                    "ppomppu.co.kr", "fmkorea.com", "quasarzone.com",
+                    "ruliweb.com", "clien.net", "bbasak.com"
+                ).any { lowerUrl.contains(it) }
+                if (isCommunityPost && navController != null) {
                     val encodedUrl = URLEncoder.encode(url, "UTF-8")
                     navController.navigate("webview/$encodedUrl")
+                } else {
+                    com.ddaeany0919.insightdeal.utils.CustomTabLauncher.launchShoppingUrl(context, url)
                 }
             }
         )

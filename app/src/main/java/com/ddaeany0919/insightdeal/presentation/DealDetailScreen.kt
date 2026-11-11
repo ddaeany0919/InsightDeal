@@ -225,13 +225,47 @@ fun DealDetailRoute(
         com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager.addRecentDeal(localContext, deal)
     }
 
+    val multiOptions = remember(deal.id, deal.sources, deal.optionsData) {
+        viewModel.resolveMultiOptions(deal)
+    }
+    val selectedOption = remember(multiOptions, uiState.selectedOptionIndex) {
+        if (multiOptions.isNotEmpty() && uiState.selectedOptionIndex in multiOptions.indices) {
+            multiOptions[uiState.selectedOptionIndex]
+        } else {
+            null
+        }
+    }
+    val effectivePrice = remember(selectedOption, deal.price) {
+        selectedOption?.price?.takeIf { it > 0L } ?: deal.price
+    }
+    val effectiveCurrency = remember(selectedOption, deal.currency) {
+        selectedOption?.currency?.takeIf { it.isNotBlank() } ?: deal.currency
+    }
+    val rootTargetUrl = deal.ecommerceUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl ?: ""
+    val effectiveTargetUrl = remember(selectedOption, rootTargetUrl) {
+        selectedOption?.ecommerceUrl?.takeIf { it.isNotBlank() }
+            ?: selectedOption?.postUrl?.takeIf { it.isNotBlank() }
+            ?: rootTargetUrl
+    }
+    val selectedOptionLabel = remember(selectedOption) {
+        selectedOption?.let { cleanOptionTitle(it.siteName) }?.takeIf { it.isNotBlank() }
+    }
+    val effectiveTitle = remember(deal.title, selectedOptionLabel) {
+        if (selectedOptionLabel != null && !deal.title.contains(selectedOptionLabel)) {
+            "${deal.title} ($selectedOptionLabel)"
+        } else {
+            deal.title
+        }
+    }
+
     val currentPriceInt = deal.price.toInt()
-    val targetUrl = deal.ecommerceUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl ?: ""
-    val existingWishlistItem = (wishlistState as? WishlistUiState.Success)?.items?.find { it.productUrl == targetUrl }
+    val existingWishlistItem = (wishlistState as? WishlistUiState.Success)?.items?.find {
+        it.productUrl == effectiveTargetUrl || (effectiveTargetUrl.isBlank() && it.productUrl == rootTargetUrl)
+    }
     val isBookmarked = existingWishlistItem != null
 
     // 다중 옵션(sources) 각각의 실제 가격(source.price), 구매처 링크(source.ecommerceUrl), 통화(source.currency) 반영
-    val pricesList = remember(deal.sources, deal.siteName, deal.price, deal.currency, targetUrl) {
+    val pricesList = remember(deal.sources, deal.siteName, deal.price, deal.currency, rootTargetUrl) {
         deal.sources?.map { source ->
             val optionPrice = source.price?.toInt()?.takeIf { it > 0 } ?: currentPriceInt
             val optionUrl = source.ecommerceUrl?.takeIf { it.isNotBlank() } ?: source.postUrl
@@ -243,7 +277,7 @@ fun DealDetailRoute(
                 currency = optionCurrency
             )
         }?.takeIf { it.isNotEmpty() } ?: listOf(
-            MallPrice(platform = deal.siteName, price = currentPriceInt, url = targetUrl, currency = deal.currency)
+            MallPrice(platform = deal.siteName, price = currentPriceInt, url = rootTargetUrl, currency = deal.currency)
         )
     }
 
@@ -267,11 +301,12 @@ fun DealDetailRoute(
                     wishlistViewModel.deleteItem(existingWishlistItem)
                 }
             } else {
+                val activePriceInt = effectivePrice.coerceAtLeast(0L).toInt()
                 wishlistViewModel.addItem(
-                    keyword = deal.title,
-                    productUrl = targetUrl,
-                    targetPrice = deal.price.toInt(),
-                    currentLowestPrice = deal.price.toInt(),
+                    keyword = effectiveTitle,
+                    productUrl = effectiveTargetUrl,
+                    targetPrice = activePriceInt,
+                    currentLowestPrice = activePriceInt,
                     currentLowestPlatform = deal.siteName
                 )
                 scope.launch {
@@ -290,15 +325,16 @@ fun DealDetailRoute(
             if (existingWishlistItem != null) {
                 wishlistViewModel.deleteItem(existingWishlistItem)
             }
+            val activePriceInt = effectivePrice.coerceAtLeast(0L).toInt()
             wishlistViewModel.addItem(
-                keyword = deal.title,
-                productUrl = targetUrl,
+                keyword = effectiveTitle,
+                productUrl = effectiveTargetUrl,
                 targetPrice = targetPrice,
-                currentLowestPrice = deal.price.toInt(),
+                currentLowestPrice = activePriceInt,
                 currentLowestPlatform = deal.siteName
             )
             scope.launch {
-                val formattedTarget = formatPrice(targetPrice.toLong(), deal.currency)
+                val formattedTarget = formatPrice(targetPrice.toLong(), effectiveCurrency, effectiveTitle)
                 val result = snackbarHostState.showSnackbar(
                     message = "목표가($formattedTarget) 이하로 내려가면 알려드릴게요",
                     actionLabel = "찜 목록 보기",
@@ -310,19 +346,28 @@ fun DealDetailRoute(
             }
         },
         onShare = {
-            val formattedSharePrice = formatPrice(deal.price, deal.currency)
+            val formattedSharePrice = formatPrice(effectivePrice, effectiveCurrency, effectiveTitle)
             val shareText = buildString {
                 append("[인사이트딜 핫딜 공유]\n")
-                append("${deal.title}\n")
+                append("$effectiveTitle\n")
                 append("현재 핫딜가: $formattedSharePrice\n")
-                if (targetUrl.isNotBlank()) append(targetUrl)
+                if (effectiveTargetUrl.isNotBlank()) append(effectiveTargetUrl)
             }
             val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(android.content.Intent.EXTRA_SUBJECT, deal.title)
+                putExtra(android.content.Intent.EXTRA_SUBJECT, effectiveTitle)
                 putExtra(android.content.Intent.EXTRA_TEXT, shareText)
             }
-            localContext.startActivity(android.content.Intent.createChooser(sendIntent, "핫딜 공유하기"))
+            val chooserIntent = android.content.Intent.createChooser(sendIntent, "핫딜 공유하기").apply {
+                if (localContext !is android.app.Activity) {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            try {
+                localContext.startActivity(chooserIntent)
+            } catch (_: Exception) {
+                android.widget.Toast.makeText(localContext, "공유할 수 있는 앱을 찾지 못했습니다.", android.widget.Toast.LENGTH_SHORT).show()
+            }
         },
         onOpenOrigin = onOpenUrl,
         onOpenPurchaseUrl = { purchaseUrl, purchasePrice, purchaseCurrency ->
@@ -362,7 +407,11 @@ fun DealDetailScreen(
 ) {
     val context = LocalContext.current
     val multiOptions = remember(deal.id, deal.sources, deal.optionsData) {
-        val fromSources = deal.sources?.filter { it.siteName.contains(" - ") && (it.price ?: 0L) > 0L }.orEmpty()
+        val fromSources = deal.sources?.filter {
+            it.siteName.contains(" - ") &&
+                it.siteName.substringAfter(" - ").isNotBlank() &&
+                (it.price ?: 0L) > 0L
+        }.orEmpty()
         val rawList = if (fromSources.isNotEmpty()) {
             fromSources
         } else {
@@ -1470,12 +1519,13 @@ private fun AIBuyerGuide(
     currentPrice: Int,
     currencyOverride: String? = null
 ) {
-    if (currentPrice == 0) return
+    if (currentPrice <= 0) return
 
+    val validHistory = remember(priceHistory) { priceHistory.filter { it.price > 0 } }
     val currency = remember(currencyOverride, deal.currency) { currencyOverride ?: deal.currency }
-    val minPrice = remember(priceHistory, currentPrice) { priceHistory.minOfOrNull { it.price } ?: currentPrice }
-    val maxPrice = remember(priceHistory, currentPrice) { priceHistory.maxOfOrNull { it.price } ?: currentPrice }
-    val isRecordLow = remember(currentPrice, minPrice, priceHistory) { currentPrice <= minPrice && priceHistory.size > 1 }
+    val minPrice = remember(validHistory, currentPrice) { validHistory.minOfOrNull { it.price } ?: currentPrice }
+    val maxPrice = remember(validHistory, currentPrice) { validHistory.maxOfOrNull { it.price } ?: currentPrice }
+    val isRecordLow = remember(currentPrice, minPrice, validHistory) { currentPrice <= minPrice && validHistory.size > 1 }
 
     val isGoodDeal = deal.honeyScore >= 80
 
@@ -1504,14 +1554,19 @@ private fun AIBuyerGuide(
         }
     }
 
-    // 통화별 가격 차이 포매팅 헬퍼 함수
+    // 통화별 가격 차이 포매팅 헬퍼 함수 (USD/EUR/CNY 센트 단위 및 JPY/KRW 모두 formatPrice로 일원화)
     val formatDiff = remember(currency) {
         { diffVal: Int ->
-            val safeCurr = currency.uppercase(Locale.getDefault())
-            when (safeCurr) {
-                "USD" -> String.format(Locale.US, "$%.2f", diffVal / 100.0)
-                "EUR" -> String.format(Locale.US, "€%.2f", diffVal / 100.0)
-                else -> String.format(Locale.getDefault(), "%,d원", diffVal)
+            val absDiff = kotlin.math.abs(diffVal.toLong())
+            if (absDiff == 0L) {
+                when (currency.trim().uppercase(Locale.US)) {
+                    "USD" -> "$0"
+                    "EUR" -> "€0"
+                    "CNY", "JPY" -> "¥0"
+                    else -> "0원"
+                }
+            } else {
+                formatPrice(absDiff, currency)
             }
         }
     }
@@ -1565,7 +1620,7 @@ private fun AIBuyerGuide(
             HorizontalDivider(color = borderColor.copy(alpha = 0.5f))
             Spacer(Modifier.height(16.dp))
 
-            if (priceHistory.size <= 1) {
+            if (validHistory.size <= 1) {
                 Text(
                     text = "커뮤니티 추천도 ${deal.honeyScore}점",
                     style = MaterialTheme.typography.titleMedium,
@@ -1602,7 +1657,7 @@ private fun AIBuyerGuide(
                 )
                 Spacer(Modifier.height(8.dp))
                 val diffFromMax = maxPrice - currentPrice
-                val formattedDiff = remember(diffFromMax) { formatDiff(diffFromMax) }
+                val formattedDiff = remember(diffFromMax, formatDiff) { formatDiff(diffFromMax) }
                 Text(
                     text = "이전 최고가보다 약 ${formattedDiff} 저렴한 역대 최저가예요. 구매를 고민 중이었다면 좋은 타이밍이에요.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -1611,14 +1666,14 @@ private fun AIBuyerGuide(
                     letterSpacing = (-0.2).sp
                 )
             } else {
-                val prevPrice = remember(priceHistory) {
-                    if (priceHistory.size >= 2) priceHistory[priceHistory.size - 2].price else currentPrice
+                val prevPrice = remember(validHistory) {
+                    if (validHistory.size >= 2) validHistory[validHistory.size - 2].price else currentPrice
                 }
                 val diffFromPrev = currentPrice - prevPrice
                 val diffFromMin = currentPrice - minPrice
 
-                val formattedDiffPrev = remember(diffFromPrev) { formatDiff(Math.abs(diffFromPrev)) }
-                val formattedDiffMin = remember(diffFromMin) { formatDiff(diffFromMin) }
+                val formattedDiffPrev = remember(diffFromPrev, formatDiff) { formatDiff(kotlin.math.abs(diffFromPrev)) }
+                val formattedDiffMin = remember(diffFromMin, formatDiff) { formatDiff(diffFromMin) }
 
                 val dynamicMessage = remember(diffFromPrev, diffFromMin, formattedDiffPrev, formattedDiffMin) {
                     when {

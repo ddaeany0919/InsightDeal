@@ -653,6 +653,13 @@ def start_scheduler():
     # 과거 딜 품절/종료 검증 데몬 (10분 주기)
     scheduler.add_job(validate_closed_deals, 'interval', minutes=10, id='hotdeal_validator')
     # 펨코 실시간 급상승 검색어 수집 (1시간 주기, 정각 실행)
+    scheduler.add_job(
+        update_fmkorea_trending_keywords,
+        'cron',
+        minute=0,
+        id='fmkorea_trending_keywords',
+        replace_existing=True,
+    )
     # 🧹 DB 유지보수 및 이미지 캐시 LRU 정제 통합 배치 (매일 새벽 4시 실행)
     scheduler.add_job(db_maintenance_job, 'cron', hour=4, minute=0, id='db_maintenance')
     scheduler.start()
