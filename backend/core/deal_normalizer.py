@@ -922,7 +922,7 @@ def parse_price_string(
         return val, "KRW"
 
     if "만" in s_no_ship and not re.search(r"만\s*(?:mAh|개|명|원\s*이상)", s_no_ship, re.IGNORECASE):
-        m_man = re.search(r"([0-9,]+(?:\.[0-9]+)?)\s*만", s_no_ship)
+        m_man = re.search(r"(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*만", s_no_ship)
         if m_man:
             val = int(round(float(m_man.group(1).replace(",", "")) * 10000))
             return val, "KRW"
@@ -1148,28 +1148,28 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
         # 2-a) 외화 기호/단위 ($ 17.97, 17.97달러, ¥189, 189위안, 3,980엔, €49.50)
         m_usd_all = list(
             re.finditer(
-                r"(?:\$\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*(?:달러|USD|불(?!가|량|능|편|안|발|포함)))",
+                r"(?:\$\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:달러|USD|불(?!가|량|능|편|안|발|포함|빛)))",
                 masked,
                 re.IGNORECASE,
             )
         )
         m_eur_all = list(
             re.finditer(
-                r"(?:€\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*(?:유로|EUR))",
+                r"(?:€\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:유로|EUR))",
                 masked,
                 re.IGNORECASE,
             )
         )
         m_cny_all = list(
             re.finditer(
-                r"(?:[¥￥]\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*(?:위안|CNY|RMB))",
+                r"(?:[¥￥]\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:위안|CNY|RMB))",
                 masked,
                 re.IGNORECASE,
             )
         )
         m_jpy_all = list(
             re.finditer(
-                r"(?:JPY\s*([0-9,]+)|([0-9,]+)\s*(?:엔(?!진|터|드|젤)|円|JPY))",
+                r"(?:JPY\s*(\d(?:[\d,]*\d)?)|(\d(?:[\d,]*\d)?)\s*(?:엔(?!진|터|드|젤)|円|JPY))",
                 masked,
                 re.IGNORECASE,
             )
@@ -1181,7 +1181,7 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
             masked,
         )
         m_man = re.search(
-            r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)([\d,]*\.[\d]+|[\d,]+)\s*만(?!\s*(?:원\s*)?(?:할인|적립|쿠폰|캐시백|페이백|이상|권|mAh|mah|암페어|개|명))",
+            r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)(\d(?:[\d,]*\d)?(?:\.[\d]+)?)\s*만(?!\s*(?:원\s*)?(?:할인|적립|쿠폰|캐시백|페이백|이상|권|mAh|mah|암페어|개|명))",
             masked,
         )
         if m_man and ("$" in masked and "만원" not in masked and "만 원" not in masked):
@@ -1285,7 +1285,7 @@ def extract_body_fallback_price(body_text: Optional[str], title_text: str = "") 
 
     # 외화 표기 탐색
     m_usd = re.search(
-        r"(?:\$\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*(?:달러|USD|불(?!가|량|능|편|안|발|포함)))",
+        r"(?:\$\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:달러|USD|불(?!가|량|능|편|안|발|포함|빛)))",
         cleaned,
         re.IGNORECASE,
     )
@@ -1295,7 +1295,7 @@ def extract_body_fallback_price(body_text: Optional[str], title_text: str = "") 
             return round(val * 100), "USD"
 
     m_eur = re.search(
-        r"(?:€\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*(?:유로|EUR))",
+        r"(?:€\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:유로|EUR))",
         cleaned,
         re.IGNORECASE,
     )
@@ -1305,7 +1305,7 @@ def extract_body_fallback_price(body_text: Optional[str], title_text: str = "") 
             return round(val * 100), "EUR"
 
     m_cny = re.search(
-        r"(?:[¥￥]\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*(?:위안|CNY|RMB))",
+        r"(?:[¥￥]\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:위안|CNY|RMB))",
         cleaned,
         re.IGNORECASE,
     )
@@ -1315,7 +1315,7 @@ def extract_body_fallback_price(body_text: Optional[str], title_text: str = "") 
             return round(val * 100), "CNY"
 
     m_jpy = re.search(
-        r"(?:JPY\s*([0-9,]+)|([0-9,]+)\s*(?:엔(?!진|터|드|젤)|円|JPY))",
+        r"(?:JPY\s*(\d(?:[\d,]*\d)?)|(\d(?:[\d,]*\d)?)\s*(?:엔(?!진|터|드|젤)|円|JPY))",
         cleaned,
         re.IGNORECASE,
     )
