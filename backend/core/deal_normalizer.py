@@ -1516,7 +1516,6 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Renormalize existing Deal rows in DB.")
     parser.add_argument("--apply", action="store_true", help="Commit changes (default is dry-run)")
-    parser.add_argument("--limit", type=int, default=0, help="Optional max rows to inspect")
     args = parser.parse_args()
 
     from backend.database.session import SessionLocal
@@ -1524,7 +1523,7 @@ if __name__ == "__main__":
 
     session = SessionLocal()
     try:
-        result = renormalize_existing_deals(session, dry_run=not args.apply, limit=args.limit or None)
+        result = renormalize_existing_deals(session, dry_run=not args.apply)
         if args.apply:
             invalidate_feed_api_cache()
         print(json.dumps(result, ensure_ascii=False, indent=2))
