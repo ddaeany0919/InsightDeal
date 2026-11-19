@@ -1,10 +1,15 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from backend.database.session import get_db_session
 from fastapi.responses import StreamingResponse
 import hmac
 import httpx
 from backend.database import models
+from backend.core.categories import normalize_category_key
+from backend.core.device_auth import assert_device_owner, require_device_token
+from backend.core.utils import to_utc_iso
+from backend.routers.admin import _verify_admin_key
 import logging
 import os
 import re
@@ -100,8 +105,8 @@ def _safe_loaded_attr(obj, attr_name: str, default=""):
         insp = sa_inspect(obj)
         if attr_name in insp.unloaded:
             return default
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(f"_safe_loaded_attr inspect skipped for {attr_name}: {exc}")
     val = getattr(obj, attr_name, default)
     return val if val is not None else default
 
@@ -123,8 +128,8 @@ def get_community_display_name_by_id(cid: int, db=None) -> Optional[str]:
                 _COMMUNITY_ID_CACHE[c.id] = c.display_name or COMMUNITY_MAP.get(c.name, c.name)
             if cid in _COMMUNITY_ID_CACHE:
                 return _COMMUNITY_ID_CACHE[cid]
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(f"get_community_display_name_by_id DB lookup fallback (cid={cid}): {exc}")
     fallback_id_map = {
         1: "뽐뿌", 2: "루리웹", 3: "클리앙", 4: "알리뽐뿌",
         5: "퀘이사존", 6: "펨코", 7: "빠삭국내", 8: "빠삭해외", 9: "빠삭육아"
@@ -300,7 +305,8 @@ def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
             try:
                 cid = int(parts[0])
                 merge_post_url = parts[1] if len(parts) > 1 else deal.post_link
-            except:
+            except (ValueError, TypeError) as exc:
+                logger.debug(f"Invalid merged_communities entry {merge_item!r}: {exc}")
                 continue
             
             m_name = get_community_display_name_by_id(cid, db)
@@ -333,7 +339,8 @@ def get_scraper_stats():
         try:
             with open(stats_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning(f"Failed to load scraper_stats.json: {exc}")
             return {}
     return {}
 
@@ -411,8 +418,8 @@ def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = Non
                                     if decoded.startswith("http"):
                                         real_url = decoded
                                         break
-                                except:
-                                    pass
+                                except (ValueError, UnicodeDecodeError) as exc:
+                                    logger.debug(f"s.ppomppu base64 decode skipped: {exc}")
                         elif "fmkorea" not in m and "ppomppu" not in m:
                             if "naver.com" in m and any(x in m for x in ["saedu", "log", "adbiz", "ad.naver", "click.link"]):
                                 continue
@@ -444,8 +451,8 @@ def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = Non
                 decoded = urllib.parse.unquote(match.group(1))
                 if decoded.startswith("http"):
                     url_str = decoded
-            except:
-                pass
+            except Exception as exc:
+                logger.debug(f"fmkorea link unquote skipped: {exc}")
                 
     # 2. 뽐뿌 (m.ppomppu.co.kr/new/out_link.php?link=...)
     elif "out_link.php" in url_str:
@@ -455,8 +462,8 @@ def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = Non
                 decoded = urllib.parse.unquote(match.group(1))
                 if decoded.startswith("http"):
                     url_str = decoded
-            except:
-                pass
+            except Exception as exc:
+                logger.debug(f"ppomppu out_link unquote skipped: {exc}")
                 
     # 3. 뽐뿌 PC (view_gourl_show.php?gourl=...)
     elif "view_gourl_show.php" in url_str:
@@ -466,8 +473,8 @@ def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = Non
                 decoded = urllib.parse.unquote(match.group(1))
                 if decoded.startswith("http"):
                     url_str = decoded
-            except:
-                pass
+            except Exception as exc:
+                logger.debug(f"ppomppu view_gourl unquote skipped: {exc}")
                 
     # 4. 루리웹 (ruliweb.com/link.php?ol=...)
     elif "ruliweb.com/link.php" in url_str or "ruliweb.daum.net/link.php" in url_str:
@@ -477,8 +484,8 @@ def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = Non
                 decoded = urllib.parse.unquote(match.group(1))
                 if decoded.startswith("http"):
                     url_str = decoded
-            except:
-                pass
+            except Exception as exc:
+                logger.debug(f"ruliweb link unquote skipped: {exc}")
                 
     # 5. 클리앙 (clien.net/service/popup/outlink?url=...)
     elif "popup/outlink" in url_str:
@@ -488,8 +495,8 @@ def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = Non
                 decoded = urllib.parse.unquote(match.group(1))
                 if decoded.startswith("http"):
                     url_str = decoded
-            except:
-                pass
+            except Exception as exc:
+                logger.debug(f"clien outlink unquote skipped: {exc}")
                 
     # 모바일 도메인을 표준 PC/표준 주소 도메인으로 규격 다듬기
     url_str = url_str.replace("m.gmarket.co.kr", "item.gmarket.co.kr")
@@ -1407,8 +1414,8 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     "site_names": [comp_name],
                     "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
                     "options_data": serialized_opts,
-                    "category": deal.category or "기타",
-                    "created_at": (_to_utc_naive(deal.indexed_at).strftime('%Y-%m-%dT%H:%M:%SZ')) if deal.indexed_at else None,
+                    "category": normalize_category_key(deal.category),
+                    "created_at": to_utc_iso(deal.indexed_at),
                     "view_count": deal.view_count or 0,
                     "like_count": buy_count,
                     "comment_count": deal.comment_count or 0,
@@ -1445,19 +1452,25 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
         _TOP_DEALS_API_CACHE["data"] = final_top_result
         
         return {"deals": final_top_result}
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error fetching top hot deals: {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail="Database unavailable")
     except Exception as e:
-        logger.error(f"Error fetching top hot deals: {e}")
+        logger.error(f"Error fetching top hot deals: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @router.get("/hot-deals")
 def get_hot_deals(
     limit: int = 20,
     offset: int = 0,
-    category: str = Query(None, description="분류별 카테고리명(ex: 전자기기, 패션 등)"),
+    category: str = Query(None, description="분류별 카테고리명(ex: 가전제품, 패션 등)"),
     keyword: str = Query(None, description="검색어 (공백 AND, -제외단어, :상한가격 지원)"),
     platform: str = Query(None, description="커뮤니티/사이트 필터"),
     source: Optional[str] = Query(None, description="커뮤니티/사이트 필터 (alias for platform)"),
     sort: str = Query("latest", description="정렬 기준: latest | popular | price_asc"),
+    popular_only: bool = Query(False, description="인기 딜(honey_score >= 100)만 필터링"),
     db: Session = Depends(get_db_session)
 ):
     try:
@@ -1466,13 +1479,19 @@ def get_hot_deals(
         now_ts = _feed_time.time()
         db_bind_id = id(db.get_bind())
         sort_mode = (sort or "latest").strip().lower()
-        cache_key = (db_bind_id, (category or "").strip(), (keyword or "").strip(), (target_platform or "").strip(), sort_mode)
+        cat_raw = (category or "").strip()
+        cache_key = (db_bind_id, cat_raw, (keyword or "").strip(), (target_platform or "").strip(), sort_mode, bool(popular_only))
         cached_entry = _HOT_DEALS_API_CACHE.get(cache_key)
         if (
             cached_entry is not None
             and (now_ts - cached_entry["ts"]) < _FEED_CACHE_TTL_SEC
         ):
-            return {"deals": cached_entry["grouped"][offset:offset+limit]}
+            cached_grouped = cached_entry["grouped"]
+            cached_slice = cached_grouped[offset:offset+limit]
+            return {
+                "deals": cached_slice,
+                "has_more": (offset + len(cached_slice)) < len(cached_grouped),
+            }
 
         query = db.query(models.Deal).join(models.Community).options(
             joinedload(models.Deal.community),
@@ -1486,44 +1505,60 @@ def get_hot_deals(
             models.Deal.is_closed == False
         )
         
-        if category and category not in ["전체", ""]:
+        if cat_raw and cat_raw != "전체":
+            cat_lower = cat_raw.lower()
             # 탭 카테고리명을 스크래퍼 카테고리/키워드 배열로 매핑
             target_keywords = []
-            if category == "음식":
+            if cat_raw in ("음식", "식품/건강"):
+                canonical_cat = "음식"
                 target_keywords = ["음식", "식품", "먹거리", "간식", "음료수", "건강"]
-            elif category == "SW/게임":
+            elif cat_lower in ("sw/게임",):
+                canonical_cat = "SW/게임"
                 target_keywords = ["게임", "sw", "소프트웨어", "콘솔"]
-            elif category == "PC용품":
+            elif cat_lower in ("pc용품", "pc/하드웨어"):
+                canonical_cat = "PC용품"
                 target_keywords = ["pc", "하드웨어", "노트북", "컴퓨터", "데스크탑", "모니터"]
-            elif category == "가전제품":
-                target_keywords = ["가전", "냉장고", "tv", "음향"]
-            elif category == "생활용품":
+            elif cat_lower in ("가전제품", "가전/tv", "가전", "가전/디지털"):
+                canonical_cat = "가전제품"
+                target_keywords = ["가전제품", "가전", "냉장고", "tv", "음향", "가전/tv", "디지털"]
+            elif cat_raw == "생활용품":
+                canonical_cat = "생활용품"
                 target_keywords = ["생활", "생필품", "주방", "가구", "인테리어"]
-            elif category == "패션":
+            elif cat_raw in ("패션", "의류/패션"):
+                canonical_cat = "패션"
                 target_keywords = ["패션", "의류", "신발", "잡화", "가방", "화장품"]
-            elif category == "뷰티":
+            elif cat_raw == "뷰티":
+                canonical_cat = "뷰티"
                 target_keywords = ["뷰티", "미용", "화장품"]
-            elif category == "모바일/기프티콘":
+            elif cat_raw == "모바일/기프티콘":
+                canonical_cat = "모바일/기프티콘"
                 target_keywords = ["모바일", "스마트폰", "태블릿", "기프티콘", "쿠폰", "e쿠폰", "e-쿠폰"]
-            elif category == "상품권":
+            elif cat_raw == "상품권":
+                canonical_cat = "상품권"
                 target_keywords = ["상품권", "이용권", "패키지", "기프티콘", "커피", "이커머스"]
-            elif category == "적립":
+            elif cat_raw in ("적립", "적립/포인트"):
+                canonical_cat = "적립"
                 target_keywords = ["적립", "사인업", "하이패스", "리퀘스트"]
-            elif category == "이벤트":
-                target_keywords = ["이벤트", "추석", "명절", "무료증정", "리뷰", "체험단", "선착순", "이벤트", "무료배포"]
-            elif category == "육아/유아용품":
+            elif cat_raw == "이벤트":
+                canonical_cat = "이벤트"
+                target_keywords = ["이벤트", "추석", "명절", "무료증정", "리뷰", "체험단", "선착순", "무료배포"]
+            elif cat_raw == "육아/유아용품":
+                canonical_cat = "육아/유아용품"
                 target_keywords = ["유아용품", "육아"]
-            elif category == "여행.해외핫딜":
-                target_keywords = ["여행", "해외", "호텔", "프리미엄", "항공", "직구"]
-            elif category == "핫딜모음":
-                target_keywords = [] # 핫딜모음은 아래에서 별도로 필터링 (honey_score >= 100 or 🔥)
+            elif cat_raw in ("해외직구", "여행.해외핫딜", "해외핫딜", "여행/해외핫딜", "여행/해외"):
+                canonical_cat = "해외직구"
+                target_keywords = ["해외직구", "해외핫딜", "여행.해외핫딜", "여행", "해외", "호텔", "프리미엄", "항공", "직구"]
+            elif cat_raw == "핫딜모음":
+                canonical_cat = "핫딜모음"
+                target_keywords = []  # 핫딜모음은 아래에서 별도로 필터링 (honey_score >= 100)
             else:
-                target_keywords = [category]
+                canonical_cat = cat_raw
+                target_keywords = [cat_raw]
 
             from sqlalchemy import or_, and_
-            if category == "핫딜모음":
+            if canonical_cat == "핫딜모음":
                 query = query.filter(models.Deal.honey_score >= 100)
-            elif category == "육아/유아용품":
+            elif canonical_cat == "육아/유아용품":
                 parenting_title_kws = ["기저귀", "분유", "아기", "유아", "키즈", "하기스", "팸퍼스", "젖병", "카시트", "유모차", "베베", "아동"]
                 query = query.filter(
                     or_(
@@ -1533,7 +1568,7 @@ def get_hot_deals(
                         *[models.Deal.title.ilike(f"%{kw}%") for kw in parenting_title_kws]
                     )
                 )
-            elif category == "적립":
+            elif canonical_cat == "적립":
                 point_title_kws = ["네이버페이", "적립", "네이버포인트", "페이포인트", "라방", "클릭", "출석"]
                 query = query.filter(
                     or_(
@@ -1541,7 +1576,7 @@ def get_hot_deals(
                         *[models.Deal.title.ilike(f"%{kw}%") for kw in point_title_kws]
                     )
                 )
-            elif category == "이벤트":
+            elif canonical_cat == "이벤트":
                 event_title_kws = ["이벤트", "선착순", "무료배포", "일시무료", "프로모션", "체험단", "응모"]
                 query = query.filter(
                     or_(
@@ -1549,7 +1584,7 @@ def get_hot_deals(
                         *[models.Deal.title.ilike(f"%{kw}%") for kw in event_title_kws]
                     )
                 )
-            elif category == "뷰티":
+            elif canonical_cat == "뷰티":
                 beauty_title_kws = ["선크림", "바디워시", "샴푸", "트리트먼트", "클렌징", "토너", "세럼", "로션", "올리브영", "이니스프리", "닥터지", "달바"]
                 query = query.filter(
                     or_(
@@ -1557,7 +1592,7 @@ def get_hot_deals(
                         *[models.Deal.title.ilike(f"%{kw}%") for kw in beauty_title_kws]
                     )
                 )
-            elif category == "가전제품":
+            elif canonical_cat == "가전제품":
                 appliance_title_kws = [
                     "선풍기", "에어컨", "청소기", "로봇청소기", "냉장고", "세탁기", "건조기", "공기청정기",
                     "제습기", "가습기", "전자레인지", "오븐", "에어프라이어", "밥솥", "식기세척기", "블렌더",
@@ -1615,10 +1650,10 @@ def get_hot_deals(
                     tok = raw_tok.strip()
                     # 와일드카드/특수기호만 있는 입력('%', '_', '[]' 등) 차단
                     if not re.search(r"[가-힣a-zA-Z0-9]", tok):
-                        return {"deals": []}
+                        return {"deals": [], "has_more": False}
                     # 단일 영문 알파벳(예: 'f'), 단일 숫자, 단일 한글 자모(예: 'ㄱ')는 노이즈 매칭을 유발하므로 차단
                     if len(tok) == 1 and (tok.isascii() or re.match(r'^[ㄱ-ㅎㅏ-ㅣ]$', tok)):
-                        return {"deals": []}
+                        return {"deals": [], "has_more": False}
                     positive_tokens.append(tok)
 
             def _build_positive_keyword_clause(pt: str):
@@ -1897,8 +1932,8 @@ def get_hot_deals(
                             m_name = get_community_display_name_by_id(cid, db)
                             if m_name and m_name not in site_names_list:
                                 site_names_list.append(m_name)
-                        except:
-                            pass
+                        except (ValueError, TypeError) as exc:
+                            logger.debug(f"Invalid merged_communities cid token {cid_str!r}: {exc}")
 
                 resolved_ecom_url = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
                 if not resolved_ecom_url:
@@ -1921,13 +1956,13 @@ def get_hot_deals(
                     "site_names": site_names_list,
                     "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
                     "options_data": serialized_opts,
-                    "category": deal.category or "기타",
+                    "category": normalize_category_key(deal.category),
                     "honey_score": final_honey_score,
                     "is_super_hotdeal": is_hot,
                     "ai_summary": _clean_ai_summary(deal.ai_summary or ""),
                     "content_html": _clean_content_text(deal.content_html or "", clean_title),
                     "is_closed": getattr(deal, 'is_closed', False),
-                    "created_at": (_to_utc_naive(deal.indexed_at).strftime('%Y-%m-%dT%H:%M:%SZ')) if deal.indexed_at else None,
+                    "created_at": to_utc_iso(deal.indexed_at),
                     "view_count": deal.view_count or 0,
                     "comment_count": deal.comment_count or 0,
                     "like_count": buy_count,
@@ -1942,6 +1977,12 @@ def get_hot_deals(
             grouped_result = [
                 g for g in grouped_result
                 if 0 < _to_krw_equiv(g.get("price"), g.get("currency")) <= search_max_price
+            ]
+
+        if popular_only:
+            grouped_result = [
+                g for g in grouped_result
+                if int(g.get("honey_score") or 0) >= 100
             ]
 
         if sort_mode == "popular":
@@ -1971,11 +2012,19 @@ def get_hot_deals(
 
         # 그룹핑된 결과에서 페이지네이션 수행
         final_result = grouped_result[offset:offset+limit]
-        return {"deals": final_result}
+        return {
+            "deals": final_result,
+            "has_more": (offset + len(final_result)) < len(grouped_result),
+        }
 
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error fetching hot deals: {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail="Database unavailable")
     except Exception as e:
         logger.error(f"Error fetching hot deals: {e}", exc_info=True)
-        return {"deals": []}
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 from fastapi import BackgroundTasks
 import time as _time
@@ -2000,7 +2049,7 @@ def run_scraper_script():
     finally:
         _SCRAPE_RUNNING_LOCK = False
 
-@router.post("/force-scrape")
+@router.post("/force-scrape", dependencies=[Depends(_verify_admin_key)])
 def force_scrape_deals(background_tasks: BackgroundTasks):
     global _LAST_SCRAPE_TRIGGER_TS
     try:
@@ -2217,7 +2266,11 @@ def get_core_product_tokens(d_obj) -> set[str]:
 
 
 @router.get("/deals/{deal_id}")
-def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
+def get_deal(
+    deal_id: int,
+    user_id: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db_session),
+):
     from sqlalchemy.orm import joinedload
     deal = db.query(models.Deal).options(
         joinedload(models.Deal.community),
@@ -2357,7 +2410,7 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
         original_price, _ = resolve_deal_price_and_currency(best_deal)
     final_price_int = min_price if min_price > 0 and (original_price == 0 or min_price < original_price) else original_price
                      
-    detail_ecom_url = get_clean_ecommerce_url(
+    clean_detail_ecom_url = get_clean_ecommerce_url(
         best_deal.ecommerce_link or best_deal.post_link, 
         getattr(best_deal, "content_html", "") or "", 
         best_deal.id, 
@@ -2368,8 +2421,42 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
             ("[모음전]" in (getattr(best_deal, 'ai_summary', '') or ''))
         )
     )
+    detail_ecom_url = clean_detail_ecom_url
     if not detail_ecom_url:
         detail_ecom_url = _build_direct_mall_search_url(getattr(best_deal, "shop_name", "") or "", getattr(best_deal, "title", "") or deal.title or "", getattr(best_deal, "post_link", "") or "", community_name)
+    is_search_fallback = (not bool(clean_detail_ecom_url)) and bool(detail_ecom_url)
+
+    from backend.core.deal_normalizer import parse_title_price_and_shipping
+    title_for_free = getattr(best_deal, "title", None) or getattr(deal, "title", "") or ""
+    _, _, _, is_explicit_free = parse_title_price_and_shipping(title_for_free)
+    if not is_explicit_free and getattr(deal, "title", None) and deal.title != title_for_free:
+        _, _, _, is_explicit_free = parse_title_price_and_shipping(deal.title)
+    is_free = bool(is_explicit_free and final_price_int == 0)
+
+    deal_votes = db.query(models.DealVote).filter(models.DealVote.deal_id == deal_id).all()
+    buy_count = sum(1 for v in deal_votes if v.vote_type == "buy")
+    pass_count = sum(1 for v in deal_votes if v.vote_type in ("save", "pass"))
+    user_vote = None
+    if user_id:
+        uv = next((v for v in deal_votes if v.user_id == user_id), None)
+        if uv:
+            user_vote = uv.vote_type
+
+    active_comment_count = db.query(models.DealComment).filter(
+        models.DealComment.deal_id == deal_id,
+        models.DealComment.is_deleted == False,
+    ).count()
+
+    try:
+        hist_points = _compute_deal_history(deal_id, "7d_auto", db)
+        if isinstance(hist_points, list) and len(hist_points) <= 1:
+            hist_3m = _compute_deal_history(deal_id, "3m", db)
+            if isinstance(hist_3m, list) and len(hist_3m) >= 2:
+                hist_points = hist_3m
+        history_count = len(hist_points) if isinstance(hist_points, list) else 0
+    except Exception as hist_exc:
+        logger.debug(f"[get_deal] history_count fallback (deal_id={deal_id}): {hist_exc}")
+        history_count = 0
 
     raw_detail_opts = getattr(best_deal, "options_data", None) or getattr(deal, "options_data", None)
     serialized_detail_opts = _serialize_options_data(raw_detail_opts, best_deal.id)
@@ -2393,17 +2480,30 @@ def get_deal(deal_id: int, db: Session = Depends(get_db_session)):
         "currency": curr,
         "sources": sources,
         "options_data": serialized_detail_opts,
-        "category": getattr(best_deal, "category", "기타") or "기타",
+        "category": normalize_category_key(getattr(best_deal, "category", None) or getattr(deal, "category", None)),
         "author": getattr(best_deal, "author", "익명") or "익명",
         "views": getattr(best_deal, "view_count", 0) or 0,
         "recommendations": getattr(best_deal, "like_count", 0) or 0,
         "comments": getattr(best_deal, "comment_count", 0) or 0,
-        "indexed_at": _to_kst_aware(deal.indexed_at).isoformat(timespec="seconds") if deal.indexed_at else None,
+        "indexed_at": to_utc_iso(deal.indexed_at),
         "is_closed": is_closed,
         "score": getattr(best_deal, "honey_score", 0) or getattr(deal, "honey_score", 0),
         "ai_summary": _clean_ai_summary(getattr(best_deal, "ai_summary", "") or getattr(deal, "ai_summary", "") or ""),
         "content_html": _clean_content_text(getattr(best_deal, "content_html", "") or getattr(deal, "content_html", "") or "", deal.title or ""),
         "has_options": bool(getattr(best_deal, "has_options", False) or getattr(deal, "has_options", False) or serialized_detail_opts),
+        "buy_count": buy_count,
+        "buyCount": buy_count,
+        "pass_count": pass_count,
+        "saveCount": pass_count,
+        "passCount": pass_count,
+        "user_vote": user_vote,
+        "userVote": user_vote,
+        "comment_count": active_comment_count,
+        "commentCount": active_comment_count,
+        "history_count": history_count,
+        "historyCount": history_count,
+        "is_search_fallback": is_search_fallback,
+        "is_free": is_free,
     }
 
 @router.get("/deals/{deal_id}/history")
@@ -2650,8 +2750,8 @@ def _compute_deal_history(
                             p = int(opt.get("price", 0) or 0)
                             if p > 0:
                                 return p
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"resolve_deal_effective_price options_data parse skipped: {exc}")
         d_p, d_c = resolve_deal_price_and_currency(d_obj)
         if effective_currency and d_c != effective_currency:
             return 0
@@ -2702,8 +2802,8 @@ def _compute_deal_history(
                 continue
             dt = normalize_kst_dt(h.checked_at)
             ph_by_deal.setdefault(h.deal_id, []).append((dt, p_val))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(f"_compute_deal_history price_history row skipped: {exc}")
 
     # 2-2. 각 매칭 Deal별 시계열 이벤트 구성
     seq_counter = 0
@@ -2742,8 +2842,8 @@ def _compute_deal_history(
                     "seq": seq_counter,
                 })
                 seq_counter += 1
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(f"_compute_deal_history deal row skipped: {exc}")
 
     raw_comm_events.sort(key=lambda ev: (ev["dt"], ev["seq"]))
 
@@ -2792,8 +2892,8 @@ def _compute_deal_history(
                     time_key = dt.strftime(time_format)
                     if time_key not in naver_map or p_val < naver_map[time_key]["price"]:
                         naver_map[time_key] = {"price": p_val, "dt": dt, "source": "naver"}
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(f"_compute_deal_history naver_history row skipped: {exc}")
 
             for k, v in naver_map.items():
                 naver_points.append({
@@ -2809,18 +2909,18 @@ def _compute_deal_history(
     all_points = community_points + naver_points
     all_points.sort(key=lambda x: x["dt"])
 
-    # 5. 최종 반환 형태 정제 (currency 및 iOS Safari/WebKit 호환 ISO-8601 KST 타임스탬프 포함)
+    # 5. 최종 반환 형태 정제 (currency 및 UTC Z ISO-8601 타임스탬프 + KST 차트 라벨 recordedAt 유지)
     result = []
     for p in all_points:
-        iso_kst = p["dt"].isoformat(timespec="seconds")
+        iso_utc = to_utc_iso(p["dt"])
         result.append({
             "price": p["price"],
             "currency": effective_currency,
             "originalPrice": p["originalPrice"],
             "discountRate": p["discountRate"],
             "recordedAt": p["recordedAt"],
-            "timestamp": iso_kst,
-            "recorded_at": iso_kst,
+            "timestamp": iso_utc,
+            "recorded_at": iso_utc,
             "source": p["source"],
             "platform": p["source"],
         })
@@ -2830,13 +2930,41 @@ def _compute_deal_history(
 # --- 소비 참견 거지방 API ---
 
 class CommentCreate(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
     nickname: str = "익명의찰떡이"
     content: str
 
 class VoteCreate(BaseModel):
-    user_id: str
-    vote_type: str # "buy" or "save"
+    user_id: Optional[str] = None
+    vote_type: str # "buy" or "save" (or "pass")
+
+
+def _serialize_deal_comment(c: models.DealComment) -> dict:
+    created_utc = to_utc_iso(c.created_at)
+    return {
+        "id": c.id,
+        "deal_id": c.deal_id,
+        "dealId": c.deal_id,
+        "user_id": c.user_id,
+        "userId": c.user_id,
+        "nickname": c.nickname,
+        "content": c.content,
+        "created_at": created_utc,
+        "createdAt": created_utc,
+    }
+
+
+def _serialize_deal_votes(buy_count: int, pass_count: int, user_vote: Optional[str]) -> dict:
+    return {
+        "buy_count": buy_count,
+        "buyCount": buy_count,
+        "pass_count": pass_count,
+        "saveCount": pass_count,
+        "passCount": pass_count,
+        "user_vote": user_vote,
+        "userVote": user_vote,
+    }
+
 
 @router.get("/deals/{deal_id}/comments")
 def get_deal_comments(deal_id: int, db: Session = Depends(get_db_session)):
@@ -2844,141 +2972,173 @@ def get_deal_comments(deal_id: int, db: Session = Depends(get_db_session)):
         models.DealComment.deal_id == deal_id,
         models.DealComment.is_deleted == False
     ).order_by(models.DealComment.created_at.desc()).all()
-    
-    return [
-        {
-            "id": c.id,
-            "userId": c.user_id,
-            "nickname": c.nickname,
-            "content": c.content,
-            "createdAt": c.created_at.isoformat() if c.created_at else None
-        }
-        for c in comments
-    ]
+
+    return [_serialize_deal_comment(c) for c in comments]
+
 
 @router.post("/deals/{deal_id}/comments")
-def add_deal_comment(deal_id: int, comment: CommentCreate, db: Session = Depends(get_db_session)):
+def add_deal_comment(
+    deal_id: int,
+    comment: CommentCreate,
+    auth_uuid: str = Depends(require_device_token),
+    db: Session = Depends(get_db_session),
+):
+    owner_uuid = assert_device_owner(auth_uuid, comment.user_id)
     deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
-        
+
     new_comment = models.DealComment(
         deal_id=deal_id,
-        user_id=comment.user_id,
+        user_id=owner_uuid,
         nickname=comment.nickname,
         content=comment.content
     )
     db.add(new_comment)
-    
+
     # 딜 반응 업데이트
     reaction = db.query(models.DealReaction).filter(models.DealReaction.deal_id == deal_id).first()
     if not reaction:
         reaction = models.DealReaction(deal_id=deal_id, comment_count=1)
         db.add(reaction)
     else:
-        reaction.comment_count += 1
-        
-    deal.comment_count += 1
-    
+        reaction.comment_count = (reaction.comment_count or 0) + 1
+
+    deal.comment_count = (deal.comment_count or 0) + 1
+
     db.commit()
     db.refresh(new_comment)
-    
+
+    return _serialize_deal_comment(new_comment)
+
+
+@router.delete("/deals/{deal_id}/comments/{comment_id}")
+def delete_deal_comment(
+    deal_id: int,
+    comment_id: int,
+    auth_uuid: str = Depends(require_device_token),
+    db: Session = Depends(get_db_session),
+):
+    comment = db.query(models.DealComment).filter(
+        models.DealComment.id == comment_id,
+        models.DealComment.deal_id == deal_id,
+        models.DealComment.is_deleted == False,
+    ).first()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if comment.user_id != auth_uuid:
+        raise HTTPException(status_code=403, detail="Only the comment creator can delete")
+
+    comment.is_deleted = True
+
+    deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
+    if deal:
+        deal.comment_count = max(0, (deal.comment_count or 0) - 1)
+
+    reaction = db.query(models.DealReaction).filter(models.DealReaction.deal_id == deal_id).first()
+    if reaction:
+        reaction.comment_count = max(0, (reaction.comment_count or 0) - 1)
+
+    db.commit()
     return {
-        "id": new_comment.id,
-        "userId": new_comment.user_id,
-        "nickname": new_comment.nickname,
-        "content": new_comment.content,
-        "createdAt": new_comment.created_at.isoformat() if new_comment.created_at else None
+        "status": "ok",
+        "message": "Comment deleted successfully",
+        "id": comment.id,
+        "deal_id": deal_id,
+        "dealId": deal_id,
     }
 
+
 @router.get("/deals/{deal_id}/votes")
-def get_deal_votes(deal_id: int, user_id: str = None, db: Session = Depends(get_db_session)):
+def get_deal_votes(deal_id: int, user_id: Optional[str] = None, db: Session = Depends(get_db_session)):
     votes = db.query(models.DealVote).filter(models.DealVote.deal_id == deal_id).all()
-    
+
     buy_count = sum(1 for v in votes if v.vote_type == "buy")
-    save_count = sum(1 for v in votes if v.vote_type == "save")
-    
+    pass_count = sum(1 for v in votes if v.vote_type in ("save", "pass"))
+
     user_vote = None
     if user_id:
         uv = next((v for v in votes if v.user_id == user_id), None)
         if uv:
             user_vote = uv.vote_type
-            
-    return {
-        "buyCount": buy_count,
-        "saveCount": save_count,
-        "userVote": user_vote
-    }
+
+    return _serialize_deal_votes(buy_count, pass_count, user_vote)
+
 
 @router.post("/deals/{deal_id}/votes")
-def add_deal_vote(deal_id: int, vote: VoteCreate, db: Session = Depends(get_db_session)):
+def add_deal_vote(
+    deal_id: int,
+    vote: VoteCreate,
+    auth_uuid: str = Depends(require_device_token),
+    db: Session = Depends(get_db_session),
+):
+    owner_uuid = assert_device_owner(auth_uuid, vote.user_id)
     deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
-        
-    if vote.vote_type not in ["buy", "save"]:
+
+    if vote.vote_type not in ("buy", "save", "pass"):
         raise HTTPException(status_code=400, detail="Invalid vote_type. Must be 'buy' or 'save'")
-        
+    normalized_vote = "save" if vote.vote_type == "pass" else vote.vote_type
+
     existing_vote = db.query(models.DealVote).filter(
         models.DealVote.deal_id == deal_id,
-        models.DealVote.user_id == vote.user_id
+        models.DealVote.user_id == owner_uuid
     ).first()
-    
+
     if existing_vote:
         # 기존 투표 변경 또는 취소
-        if existing_vote.vote_type == vote.vote_type:
+        if existing_vote.vote_type == normalized_vote or (
+            existing_vote.vote_type in ("save", "pass") and normalized_vote == "save"
+        ):
             # 같은 투표 한 번 더 누르면 취소
             db.delete(existing_vote)
         else:
             # 다른 투표로 변경
-            existing_vote.vote_type = vote.vote_type
+            existing_vote.vote_type = normalized_vote
     else:
         # 새로 투표
         new_vote = models.DealVote(
             deal_id=deal_id,
-            user_id=vote.user_id,
-            vote_type=vote.vote_type
+            user_id=owner_uuid,
+            vote_type=normalized_vote
         )
         db.add(new_vote)
-        
+
     db.commit()
-    
+
     # 갱신된 투표 수 계산
     all_votes = db.query(models.DealVote).filter(models.DealVote.deal_id == deal_id).all()
     buy_count = sum(1 for v in all_votes if v.vote_type == "buy")
-    save_count = sum(1 for v in all_votes if v.vote_type == "save")
-    
+    pass_count = sum(1 for v in all_votes if v.vote_type in ("save", "pass"))
+
     # 딜 반응 업데이트
     reaction = db.query(models.DealReaction).filter(models.DealReaction.deal_id == deal_id).first()
     if not reaction:
         reaction = models.DealReaction(
-            deal_id=deal_id, 
+            deal_id=deal_id,
             positive_reactions=buy_count,
-            negative_reactions=save_count
+            negative_reactions=pass_count
         )
         db.add(reaction)
     else:
         reaction.positive_reactions = buy_count
-        reaction.negative_reactions = save_count
-        
+        reaction.negative_reactions = pass_count
+
     db.commit()
-    
+
     uv = db.query(models.DealVote).filter(
         models.DealVote.deal_id == deal_id,
-        models.DealVote.user_id == vote.user_id
+        models.DealVote.user_id == owner_uuid
     ).first()
-    
-    return {
-        "buyCount": buy_count,
-        "saveCount": save_count,
-        "userVote": uv.vote_type if uv else None
-    }
+
+    return _serialize_deal_votes(buy_count, pass_count, uv.vote_type if uv else None)
 
 # --- UGC Community Features (역경매 & 오프라인 핫딜) ---
 
 class CommunityPostCreate(BaseModel):
     post_type: str
-    user_id: str
+    user_id: Optional[str] = None
     nickname: str
     title: str
     content: str
@@ -2988,19 +3148,60 @@ class CommunityPostCreate(BaseModel):
     location: Optional[str] = None
 
 class CommunityPostCommentCreate(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
     nickname: str
     content: str
     deal_url: Optional[str] = None
     parent_id: Optional[int] = None
 
 
+def _serialize_community_post(p: models.CommunityPost) -> dict:
+    created_utc = to_utc_iso(p.created_at)
+    return {
+        "id": p.id,
+        "post_type": p.post_type,
+        "user_id": p.user_id,
+        "userId": p.user_id,
+        "nickname": p.nickname,
+        "title": p.title,
+        "content": p.content,
+        "target_price": p.target_price,
+        "bounty_points": p.bounty_points,
+        "is_resolved": p.is_resolved,
+        "location": p.location,
+        "view_count": p.view_count,
+        "like_count": p.like_count,
+        "created_at": created_utc,
+        "createdAt": created_utc,
+    }
+
+
+def _serialize_community_post_comment(c: models.CommunityPostComment) -> dict:
+    created_utc = to_utc_iso(c.created_at)
+    return {
+        "id": c.id,
+        "user_id": c.user_id,
+        "userId": c.user_id,
+        "nickname": c.nickname,
+        "content": c.content,
+        "deal_url": c.deal_url,
+        "is_accepted": c.is_accepted,
+        "parent_id": c.parent_id,
+        "created_at": created_utc,
+        "createdAt": created_utc,
+    }
+
 
 @router.post("/posts")
-def create_community_post(post: CommunityPostCreate, db: Session = Depends(get_db_session)):
+def create_community_post(
+    post: CommunityPostCreate,
+    auth_uuid: str = Depends(require_device_token),
+    db: Session = Depends(get_db_session),
+):
+    owner_uuid = assert_device_owner(auth_uuid, post.user_id)
     new_post = models.CommunityPost(
         post_type=post.post_type,
-        user_id=post.user_id,
+        user_id=owner_uuid,
         nickname=post.nickname,
         title=post.title,
         content=post.content,
@@ -3012,21 +3213,24 @@ def create_community_post(post: CommunityPostCreate, db: Session = Depends(get_d
     db.add(new_post)
     db.commit()
     db.refresh(new_post)
-    return new_post
+    return _serialize_community_post(new_post)
+
 
 @router.put("/posts/{post_id}")
 def update_community_post(
-    post_id: int, 
-    post_data: CommunityPostCreate, 
+    post_id: int,
+    post_data: CommunityPostCreate,
+    auth_uuid: str = Depends(require_device_token),
     db: Session = Depends(get_db_session)
 ):
+    owner_uuid = assert_device_owner(auth_uuid, post_data.user_id)
     post = db.query(models.CommunityPost).filter(models.CommunityPost.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-        
-    if post.user_id != post_data.user_id:
+
+    if post.user_id != owner_uuid:
         raise HTTPException(status_code=403, detail="Only the post creator can edit")
-        
+
     post.title = post_data.title
     post.content = post_data.content
     post.target_price = post_data.target_price
@@ -3035,10 +3239,10 @@ def update_community_post(
         post.like_count = post_data.like_count
     post.location = post_data.location
     post.post_type = post_data.post_type
-    
+
     db.commit()
     db.refresh(post)
-    return post
+    return _serialize_community_post(post)
 
 
 @router.get("/posts")
@@ -3051,90 +3255,57 @@ def get_community_posts(
     query = db.query(models.CommunityPost)
     if post_type:
         query = query.filter(models.CommunityPost.post_type == post_type)
-        
+
     posts = query.order_by(models.CommunityPost.created_at.desc()).offset(skip).limit(limit).all()
-    
+
     result = []
     for p in posts:
-        result.append({
-            "id": p.id,
-            "post_type": p.post_type,
-            "user_id": p.user_id,
-            "nickname": p.nickname,
-            "title": p.title,
-            "content": p.content,
-            "target_price": p.target_price,
-            "bounty_points": p.bounty_points,
-            "is_resolved": p.is_resolved,
-            "location": p.location,
-            "view_count": p.view_count,
-            "like_count": p.like_count,
-            "created_at": p.created_at.isoformat() if p.created_at else None,
-            "comment_count": len(p.comments)
-        })
+        item = _serialize_community_post(p)
+        item["comment_count"] = len(p.comments)
+        result.append(item)
     return result
+
 
 @router.get("/posts/{post_id}")
 def get_community_post(post_id: int, db: Session = Depends(get_db_session)):
     post = db.query(models.CommunityPost).filter(models.CommunityPost.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-        
+
     # 조회수 증가
     post.view_count += 1
     db.commit()
     db.refresh(post)
-    
-    # 댓글 정렬: 먼저 COALESCE(parent_id, id) 로 그룹화하고, 
+
+    # 댓글 정렬: 먼저 COALESCE(parent_id, id) 로 그룹화하고,
     # parent_id가 없는(부모) 댓글이 먼저 오고 그 다음 자식 댓글들이 작성순으로 오도록 정렬
     sorted_comments = sorted(
-        post.comments, 
+        post.comments,
         key=lambda c: (c.parent_id if c.parent_id is not None else c.id, c.parent_id is not None, c.created_at)
     )
-    
-    comments = []
-    for c in sorted_comments:
-        comments.append({
-            "id": c.id,
-            "user_id": c.user_id,
-            "nickname": c.nickname,
-            "content": c.content,
-            "deal_url": c.deal_url,
-            "is_accepted": c.is_accepted,
-            "parent_id": c.parent_id,
-            "created_at": c.created_at.isoformat() if c.created_at else None
-        })
-        
-    return {
-        "id": post.id,
-        "post_type": post.post_type,
-        "user_id": post.user_id,
-        "nickname": post.nickname,
-        "title": post.title,
-        "content": post.content,
-        "target_price": post.target_price,
-        "bounty_points": post.bounty_points,
-        "is_resolved": post.is_resolved,
-        "location": post.location,
-        "view_count": post.view_count,
-        "like_count": post.like_count,
-        "created_at": post.created_at.isoformat() if post.created_at else None,
-        "comments": comments
-    }
+
+    comments = [_serialize_community_post_comment(c) for c in sorted_comments]
+
+    res = _serialize_community_post(post)
+    res["comments"] = comments
+    return res
+
 
 @router.post("/posts/{post_id}/comments")
 def create_community_post_comment(
-    post_id: int, 
-    comment: CommunityPostCommentCreate, 
+    post_id: int,
+    comment: CommunityPostCommentCreate,
+    auth_uuid: str = Depends(require_device_token),
     db: Session = Depends(get_db_session)
 ):
+    owner_uuid = assert_device_owner(auth_uuid, comment.user_id)
     post = db.query(models.CommunityPost).filter(models.CommunityPost.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-        
+
     new_comment = models.CommunityPostComment(
         post_id=post_id,
-        user_id=comment.user_id,
+        user_id=owner_uuid,
         nickname=comment.nickname,
         content=comment.content,
         deal_url=comment.deal_url,
@@ -3143,110 +3314,102 @@ def create_community_post_comment(
     db.add(new_comment)
     db.commit()
     db.refresh(new_comment)
-    
-    return {
-        "id": new_comment.id,
-        "user_id": new_comment.user_id,
-        "nickname": new_comment.nickname,
-        "content": new_comment.content,
-        "deal_url": new_comment.deal_url,
-        "is_accepted": new_comment.is_accepted,
-        "parent_id": new_comment.parent_id,
-        "created_at": new_comment.created_at.isoformat() if new_comment.created_at else None
-    }
+
+    return _serialize_community_post_comment(new_comment)
+
 
 @router.put("/posts/{post_id}/comments/{comment_id}")
 def update_community_post_comment(
-    post_id: int, 
+    post_id: int,
     comment_id: int,
-    comment_data: CommunityPostCommentCreate, 
+    comment_data: CommunityPostCommentCreate,
+    auth_uuid: str = Depends(require_device_token),
     db: Session = Depends(get_db_session)
 ):
+    owner_uuid = assert_device_owner(auth_uuid, comment_data.user_id)
     comment = db.query(models.CommunityPostComment).filter(
         models.CommunityPostComment.id == comment_id,
         models.CommunityPostComment.post_id == post_id
     ).first()
-    
+
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
-        
-    if comment.user_id != comment_data.user_id:
+
+    if comment.user_id != owner_uuid:
         raise HTTPException(status_code=403, detail="Only the comment creator can edit")
-        
+
     comment.content = comment_data.content
     if comment_data.deal_url is not None:
         comment.deal_url = comment_data.deal_url
-        
+
     db.commit()
     db.refresh(comment)
-    
-    return {
-        "id": comment.id,
-        "user_id": comment.user_id,
-        "nickname": comment.nickname,
-        "content": comment.content,
-        "deal_url": comment.deal_url,
-        "is_accepted": comment.is_accepted,
-        "parent_id": comment.parent_id,
-        "created_at": comment.created_at.isoformat() if comment.created_at else None
-    }
+
+    return _serialize_community_post_comment(comment)
+
 
 @router.delete("/posts/{post_id}/comments/{comment_id}")
 def delete_community_post_comment(
-    post_id: int, 
+    post_id: int,
     comment_id: int,
-    user_id: str = Query(...),
+    user_id: Optional[str] = Query(default=None),
+    auth_uuid: str = Depends(require_device_token),
     db: Session = Depends(get_db_session)
 ):
+    owner_uuid = assert_device_owner(auth_uuid, user_id)
     comment = db.query(models.CommunityPostComment).filter(
         models.CommunityPostComment.id == comment_id,
         models.CommunityPostComment.post_id == post_id
     ).first()
-    
+
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
-        
-    if comment.user_id != user_id:
+
+    if comment.user_id != owner_uuid:
         raise HTTPException(status_code=403, detail="Only the comment creator can delete")
-        
+
     # 만약 자식 댓글이 있으면 삭제 상태로만 마킹 (또는 내용만 변경)
     # 여기서는 간단히 삭제 처리
     db.delete(comment)
     db.commit()
-    
+
     return {"message": "Comment deleted successfully"}
+
 
 @router.post("/posts/{post_id}/comments/{comment_id}/accept")
 def accept_community_post_comment(
-    post_id: int, 
+    post_id: int,
     comment_id: int,
-    user_id: str = Query(...),
+    user_id: Optional[str] = Query(default=None),
+    auth_uuid: str = Depends(require_device_token),
     db: Session = Depends(get_db_session)
 ):
+    owner_uuid = assert_device_owner(auth_uuid, user_id)
     post = db.query(models.CommunityPost).filter(models.CommunityPost.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-        
-    if post.user_id != user_id:
+
+    if post.user_id != owner_uuid:
         raise HTTPException(status_code=403, detail="Only the post creator can accept comments")
-        
+
     if post.is_resolved:
         raise HTTPException(status_code=400, detail="Post is already resolved")
-        
+
     comment = db.query(models.CommunityPostComment).filter(
         models.CommunityPostComment.id == comment_id,
         models.CommunityPostComment.post_id == post_id
     ).first()
-    
+
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
-        
+
     comment.is_accepted = True
     post.is_resolved = True
-    
+
     db.commit()
-    
+
     return {"message": "Comment accepted successfully", "bounty_points_awarded": post.bounty_points}
+
 
 @router.get("/users/{user_id}/comments")
 def get_user_comments(
@@ -3259,25 +3422,28 @@ def get_user_comments(
         .filter(models.CommunityPostComment.user_id == user_id)\
         .order_by(models.CommunityPostComment.created_at.desc())\
         .offset(skip).limit(limit).all()
-        
+
     result = []
     for c in comments:
         # Get parent post for context
         post = db.query(models.CommunityPost).filter(models.CommunityPost.id == c.post_id).first()
-        
+        created_utc = to_utc_iso(c.created_at)
+
         result.append({
             "id": c.id,
             "post_id": c.post_id,
             "post_title": post.title if post else "삭제된 게시글",
             "user_id": c.user_id,
+            "userId": c.user_id,
             "nickname": c.nickname,
             "content": c.content,
             "deal_url": c.deal_url,
             "is_accepted": c.is_accepted,
             "parent_id": c.parent_id,
-            "created_at": c.created_at.isoformat() if c.created_at else None
+            "created_at": created_utc,
+            "createdAt": created_utc,
         })
-        
+
     return result
 
 
@@ -3354,8 +3520,8 @@ async def ingest_scraped_deals_batch(
             }
             with open(stats_file, "w", encoding="utf-8") as f:
                 json.dump(stats, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning(f"[ingest-batch] failed to update scraper_stats.json: {exc}")
 
     invalidate_feed_api_cache()
     return {"status": "ok", "community": payload.display_name, "processed": inserted}

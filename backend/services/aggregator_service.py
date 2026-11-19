@@ -1941,6 +1941,7 @@ class AggregatorService:
         if existing_deals:
              # 이미 수집했던 글이거나, 클러스터링으로 묶인 글이라면 가격 등 메타정보 갱신 (Upsert)
              # 만약 AI가 다중 분할한 상품들이라면, 모든 split deal에 대해 종료 상태 등을 일괄 갱신합니다.
+             upsert_push_deal_ids: list[int] = []
              for idx_d, existing_deal in enumerate(existing_deals):
                  # 새로 수집된 진짜 작성 시간 정보(posted_dt)가 존재하면, 기존의 잘못된 수집 시간을 진짜 시간으로 강제 갱신/보정
                  if posted_dt:
@@ -2138,6 +2139,8 @@ class AggregatorService:
                  if is_same_post_url and price > 0 and str(existing_deal.price) != str(price):
                      existing_deal.price = str(price)
                      price_changed = True
+                     if 0 < price < old_price and old_price != float('inf'):
+                         lowest_price_dropped = True
                  elif len(existing_deals) == 1 and price > 0:
                      if price < old_price:
                          logger.info(f"[Lowest Price Updated!] 기존 {old_price}원 -> 새 핫딜 {price}원 (URL 교체: {url})")
@@ -2385,43 +2388,13 @@ class AggregatorService:
                  if price_changed and price > 0:
                      self._insert_price_history(existing_deal.id, price)
 
-                 if lowest_price_dropped and price > 0:
-                     try:
-                         import asyncio
-                         from concurrent.futures import ThreadPoolExecutor
-                         from backend.services.notification_service import NotificationService
-                         if not hasattr(self.__class__, '_push_executor'):
-                             self.__class__._push_executor = ThreadPoolExecutor(max_workers=5)
-                         def _trigger_upsert_push(did, dtitle, dprice, dshop, dlink):
-                             from backend.database.session import SessionLocal
-                             s = SessionLocal()
-                             try:
-                                 NotificationService.process_new_deal(
-                                     deal_id=did,
-                                     title=dtitle,
-                                     price=int(dprice),
-                                     site_name=dshop or "HotDeal",
-                                     deal_url=dlink,
-                                     db=s
-                                 )
-                             except Exception as ex:
-                                 logger.error(f"Upsert push dispatch error: {ex}")
-                             finally:
-                                 s.close()
-                         asyncio.get_event_loop().run_in_executor(
-                             self.__class__._push_executor,
-                             _trigger_upsert_push,
-                             existing_deal.id,
-                             existing_deal.title,
-                             price,
-                             existing_deal.shop_name,
-                             existing_deal.post_link
-                         )
-                     except Exception as push_err:
-                         logger.warning(f"Upsert push schedule warning: {push_err}")
+                 if lowest_price_dropped and price > 0 and existing_deal.id not in upsert_push_deal_ids:
+                     upsert_push_deal_ids.append(existing_deal.id)
 
              logger.debug(f"🔄 기존 Deal 가격/상태 업데이트 (Upsert) - 총 {len(existing_deals)}개 항목: {url}")
              self.db.commit()
+             if upsert_push_deal_ids:
+                 self._schedule_push_for_deal_ids(upsert_push_deal_ids)
              
              return existing_deals[0]
 
@@ -2766,51 +2739,61 @@ class AggregatorService:
                 "post_link": new_deal.post_link
             })
             
-        # [Epic 3] 신규 인서트된 모든 딜(AI 분할 딜 포함)에 대해 푸시 알림 비동기 격발
+        # [Epic 3] 신규 인서트된 모든 딜(AI 분할 딜 포함)에 대해 푸시 알림 비동기 격발 (단일 통합 진입점)
         if deals_to_push:
-            import asyncio
-            from concurrent.futures import ThreadPoolExecutor
-            from backend.services.notification_service import NotificationService
-            
-            if not hasattr(self.__class__, '_push_executor'):
-                self.__class__._push_executor = ThreadPoolExecutor(max_workers=5)
-            
-            def trigger_push_task(deal_id, title, price, shop_name, post_link):
-                from backend.database.session import SessionLocal
-                db_session = SessionLocal()
-                try:
-                    price_val = 0
-                    try:
-                        price_val = int(price) if str(price).isdigit() else 0
-                    except Exception:
-                        pass
-                    NotificationService.process_new_deal(
-                        deal_id=deal_id,
-                        title=title,
-                        price=price_val,
-                        site_name=shop_name or "HotDeal",
-                        deal_url=post_link,
-                        db=db_session
-                    )
-                except Exception as ex:
-                    logger.error(f"Push dispatch error in executor: {ex}")
-                finally:
-                    db_session.close()
-
-            loop = asyncio.get_event_loop()
-            for d_info in deals_to_push:
-                loop.run_in_executor(
-                    self.__class__._push_executor, 
-                    trigger_push_task, 
-                    d_info["id"], 
-                    d_info["title"], 
-                    d_info["price"], 
-                    d_info["shop_name"], 
-                    d_info["post_link"]
-                )
+            self._schedule_push_for_deal_ids([d_info["id"] for d_info in deals_to_push if d_info.get("id")])
 
         logger.debug(f"[Merge Complete] Deal analysis and DB merge completed: {len(inserted_deals)} inserted")
         return inserted_deals[0] if inserted_deals else None
+
+    def _build_push_session_factory(self):
+        try:
+            bind = self.db.get_bind() if self.db is not None else None
+        except Exception:
+            bind = None
+        if bind is not None:
+            from sqlalchemy.orm import sessionmaker
+            return sessionmaker(
+                autocommit=False,
+                autoflush=False,
+                expire_on_commit=False,
+                bind=bind,
+            )
+        from backend.database.session import SessionLocal
+        return SessionLocal
+
+    def _schedule_push_for_deal_ids(self, deal_ids: list[int]) -> list:
+        if not deal_ids:
+            return []
+        futures = []
+        try:
+            import asyncio
+            from concurrent.futures import ThreadPoolExecutor
+            from backend.services.push_worker import background_trigger_keyword_alarms
+
+            if not hasattr(self.__class__, "_push_executor"):
+                self.__class__._push_executor = ThreadPoolExecutor(max_workers=5)
+
+            session_factory = self._build_push_session_factory()
+
+            def _trigger_unified_push(did: int):
+                try:
+                    background_trigger_keyword_alarms(did, session_factory=session_factory)
+                except Exception as ex:
+                    logger.error(f"Unified push dispatch error (deal_id={did}): {ex}")
+
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.get_event_loop()
+
+            for did in deal_ids:
+                fut = loop.run_in_executor(self.__class__._push_executor, _trigger_unified_push, did)
+                futures.append(fut)
+            self._last_push_futures = futures
+        except Exception as push_err:
+            logger.warning(f"Push schedule warning: {push_err}")
+        return futures
 
     def _insert_price_history(self, deal_id: int, price: int):
         """특정 Deal의 가격 변동(골든타임)을 추적합니다 (동일 가격 중복 인서트, 이상치 및 10분 쿨다운 가드)."""

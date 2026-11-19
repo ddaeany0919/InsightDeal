@@ -1,20 +1,23 @@
 # -*- coding: utf-8 -*-
+import datetime
 import json
 import logging
-import datetime
-from sqlalchemy.orm import Session
-from backend.database import models
+import os
+from typing import Optional
+
 import firebase_admin
 from firebase_admin import credentials, messaging
+from sqlalchemy.orm import Session
+
+from backend.database import models
+from backend.services.push_worker import should_suppress_push
 
 logger = logging.getLogger(__name__)
 
 # Firebase Admin SDK 초기화 (최초 1회 실행)
 try:
     if not firebase_admin._apps:
-        # firebase-service-account.json 파일이 존재하면 크레덴셜 로드, 없으면 앱 디폴트 사용
-        import os
-        cred_path = "firebase-service-account.json"
+        cred_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "").strip() or "firebase-service-account.json"
         if os.path.exists(cred_path):
             cred = credentials.Certificate(cred_path)
             firebase_admin.initialize_app(cred)
@@ -28,6 +31,7 @@ except Exception as e:
 _keyword_cache = {}
 _cache_last_updated = None
 
+
 def refresh_keyword_cache(db: Session):
     global _keyword_cache, _cache_last_updated
     kst = datetime.timezone(datetime.timedelta(hours=9))
@@ -35,21 +39,20 @@ def refresh_keyword_cache(db: Session):
     # 5초 주기로 캐시를 자동 리프레시하여 DB I/O 부하 억제
     if _cache_last_updated and (now - _cache_last_updated).total_seconds() < 5:
         return
-        
+
     try:
-        # 활성 상태인 키워드들과 디바이스 토큰 조인 조회
         active_keywords = db.query(models.PushKeyword).filter(models.PushKeyword.is_active == True).all()
-        
+
         new_cache = {}
         for kw in active_keywords:
             device = kw.device_token
             if not device or not device.is_active:
                 continue
-                
+
             kw_str = kw.keyword.strip().lower()
             if kw_str not in new_cache:
                 new_cache[kw_str] = []
-                
+
             new_cache[kw_str].append({
                 "device_id": device.id,
                 "device_uuid": device.device_uuid,
@@ -59,13 +62,21 @@ def refresh_keyword_cache(db: Session):
                 "dnd_enabled": device.dnd_enabled,
                 "dnd_start_time": device.dnd_start_time,
                 "dnd_end_time": device.dnd_end_time,
-                "dnd_settings_json": device.dnd_settings_json
+                "dnd_settings_json": device.dnd_settings_json,
             })
         _keyword_cache = new_cache
         _cache_last_updated = now
         logger.info(f"Notification keyword cache refreshed. Total unique keywords: {len(_keyword_cache)}")
     except Exception as e:
         logger.error(f"Error refreshing keyword cache: {str(e)}")
+
+
+_PLACEHOLDER_VAPID_KEYS = {
+    "your_vapid_private_key",
+    "placeholder",
+    "change_me",
+}
+
 
 class NotificationService:
     @staticmethod
@@ -112,31 +123,28 @@ class NotificationService:
     @staticmethod
     def process_new_deal(deal_id: int, title: str, price: int, site_name: str, deal_url: str, db: Session):
         """새로운 핫딜 수집 완료 시점 고속 매칭 및 발송 트리거"""
-        # 1. 고속 인메모리 키워드 캐시 갱신
         refresh_keyword_cache(db)
-        
+
         title_lower = title.lower()
         matched_targets = []
-        
-        # 2. 0.001초 인메모리 고속 텍스트 & 조건(제외어/목표가) 매칭
+
         for kw_str, devices in _keyword_cache.items():
             if NotificationService._matches_keyword_rule(kw_str, title_lower, price):
                 for dev in devices:
                     matched_targets.append((kw_str, dev))
-                    
+
         if not matched_targets:
             return
-            
+
         logger.info(f"Deal {deal_id} matched {len(matched_targets)} push notification targets")
-        
-        # 3. 매칭 대상에 대해 알림 내역 DB 적재 및 발송 릴레이
+
         for keyword, dev in matched_targets:
             try:
                 alert_record = models.NotificationAlert(
                     user_id=dev.get("device_uuid") or dev.get("fcm_token") or "default",
                     title=f"[{site_name}] {title} ({price:,}원)" if price > 0 else f"[{site_name}] {title}",
                     keyword=keyword,
-                    deal_url=deal_url
+                    deal_url=deal_url,
                 )
                 db.add(alert_record)
                 db.commit()
@@ -151,47 +159,33 @@ class NotificationService:
                 price=price,
                 site_name=site_name,
                 deal_url=deal_url,
-                device=dev
+                device=dev,
+                db=db,
             )
 
     @staticmethod
-    def dispatch_alert(deal_id: int, keyword: str, title: str, price: int, site_name: str, deal_url: str, device: dict):
-        """FCM 및 Web Push 발송 라우팅 및 야간 방해금지 홀딩 루프"""
-        # ⏰ 야간 시간대 체크 (KST 기준 21:00 ~ 익일 08:00)
-        # UTC 시차 방지를 위해 KST 타임존(UTC+9)을 명시적으로 적용
+    def dispatch_alert(
+        deal_id: int,
+        keyword: str,
+        title: str,
+        price: int,
+        site_name: str,
+        deal_url: str,
+        device: dict,
+        db: Optional[Session] = None,
+        now_kst: Optional[datetime.datetime] = None,
+    ):
+        """FCM 및 Web Push 발송 라우팅 및 공통 DND/야간 방해금지 차단"""
         kst = datetime.timezone(datetime.timedelta(hours=9))
-        now = datetime.datetime.now(kst)
-        hour = now.hour
-        is_night_time = hour >= 21 or hour < 8
-        
-        # DND 활성화 여부 및 야간 수신 동의 체크
-        if is_night_time:
-            # 요일별 상세 DND 설정 파싱 가드
-            day_key = now.strftime('%a').lower()[:3] # mon, tue, wed...
-            is_dnd_active_for_today = device["dnd_enabled"]
-            
-            if device["dnd_settings_json"]:
-                try:
-                    dnd_settings = json.loads(device["dnd_settings_json"])
-                    day_setting = dnd_settings.get(day_key, {})
-                    if day_setting.get("enabled", False):
-                        is_dnd_active_for_today = True
-                except Exception:
-                    pass
-            
-            if is_dnd_active_for_today:
-                # 야간 전송 홀딩 스케줄러 보관 (스킵 처리하고 로그 보존, 혹은 Celery 스케줄러로 아침 8시 발송 릴레이 예약)
-                logger.info(f"[Night DND Active] Holding alert for {device['device_uuid']} | Keyword: {keyword}")
-                # 실시간 유실 없이 아침 8시 순차 발송을 위한 스케줄 큐 이식 (이곳에서는 예약 로그 적재로 가드 완료)
-                return
-                
-            if not device["night_push_consent"]:
-                # 야간 전송 비동의 시 알림 스킵
-                logger.info(f"[Night push denied] Skip alert for {device['device_uuid']}")
-                return
+        now = now_kst if now_kst is not None else datetime.datetime.now(kst)
+        is_night_time = now.hour >= 21 or now.hour < 8
 
-        # 3-1. 스마트폰 FCM 알림 송출
-        if device["fcm_token"]:
+        suppressed, reason = should_suppress_push(device, now)
+        if suppressed:
+            logger.info(f"[{reason} drop_with_history] Holding alert for {device.get('device_uuid')} | Keyword: {keyword}")
+            return
+
+        if device.get("fcm_token"):
             NotificationService.send_fcm_notification(
                 token=device["fcm_token"],
                 keyword=keyword,
@@ -200,11 +194,10 @@ class NotificationService:
                 site_name=site_name,
                 deal_id=deal_id,
                 deal_url=deal_url,
-                is_night_time=is_night_time
+                is_night_time=is_night_time,
             )
-            
-        # 3-2. 브라우저 Web Push 알림 송출
-        if device["web_push_subscription"]:
+
+        if device.get("web_push_subscription"):
             NotificationService.send_web_push_notification(
                 subscription_json=device["web_push_subscription"],
                 keyword=keyword,
@@ -213,25 +206,33 @@ class NotificationService:
                 site_name=site_name,
                 deal_id=deal_id,
                 deal_url=deal_url,
-                is_night_time=is_night_time
+                is_night_time=is_night_time,
+                db=db,
             )
 
     @staticmethod
-    def send_fcm_notification(token: str, keyword: str, title: str, price: int, site_name: str, deal_id: int, deal_url: str, is_night_time: bool):
+    def send_fcm_notification(
+        token: str,
+        keyword: str,
+        title: str,
+        price: int,
+        site_name: str,
+        deal_id: int,
+        deal_url: str,
+        is_night_time: bool,
+    ):
         """파이어베이스 Admin SDK를 통한 고성능 FCM 알림 전송"""
         try:
-            # 1. 고순위 FCM 알림 설정 및 소리/진동 제어 (야간에는 무음 가드)
             android_config = messaging.AndroidConfig(
-                priority='high',
+                priority="high",
                 notification=messaging.AndroidNotification(
-                    sound='default' if not is_night_time else None,
-                    click_action='OPEN_DEAL_DETAIL',
+                    sound="default" if not is_night_time else None,
+                    click_action="OPEN_DEAL_DETAIL",
                     default_sound=not is_night_time,
-                    default_vibrate_timings=not is_night_time
-                )
+                    default_vibrate_timings=not is_night_time,
+                ),
             )
 
-            # 2. 페이로드 바인딩
             message = messaging.Message(
                 token=token,
                 data={
@@ -240,48 +241,92 @@ class NotificationService:
                     "keyword": keyword,
                     "title": f"키워드 알림: {keyword}",
                     "body": f"[{site_name}] {title} | {price}원 특가!",
-                    "ecommerce_url": deal_url
+                    "ecommerce_url": deal_url,
                 },
-                android=android_config
+                android=android_config,
             )
 
-            # 3. 비동기 발송 격발
             response = messaging.send(message)
             logger.info(f"FCM alert successfully sent. Response: {response}")
         except Exception as e:
             logger.error(f"Error sending FCM notification: {str(e)}")
 
     @staticmethod
-    def send_web_push_notification(subscription_json: str, keyword: str, title: str, price: int, site_name: str, deal_id: int, deal_url: str, is_night_time: bool):
-        """webpush 라이브러리를 통한 웹 브라우저 Web Push 송출"""
+    def send_web_push_notification(
+        subscription_json: str,
+        keyword: str,
+        title: str,
+        price: int,
+        site_name: str,
+        deal_id: int,
+        deal_url: str,
+        is_night_time: bool = False,
+        *,
+        db: Optional[Session] = None,
+        device: Optional[models.DeviceToken] = None,
+        custom_title: Optional[str] = None,
+        custom_body: Optional[str] = None,
+    ) -> bool:
+        """pywebpush 라이브러리를 통한 웹 브라우저 Web Push 송출 (VAPID_PRIVATE_KEY 미설정 시 즉시 차단)"""
+        vapid_private_key = (os.getenv("VAPID_PRIVATE_KEY") or "").strip()
+        lowered_key = vapid_private_key.lower()
+        if (
+            not vapid_private_key
+            or lowered_key in _PLACEHOLDER_VAPID_KEYS
+            or lowered_key.startswith(("your_", "placeholder", "change_me"))
+            or "..." in vapid_private_key
+        ):
+            logger.warning("VAPID_PRIVATE_KEY가 설정되지 않아 Web Push 발송을 건너뜁니다.")
+            return False
+
         try:
-            from pywebpush import webpush, WebPushException
-            
-            subscription_info = json.loads(subscription_json)
-            
+            from pywebpush import WebPushException, webpush
+        except ImportError as imp_err:
+            logger.warning(f"pywebpush 패키지를 로드할 수 없어 Web Push를 건너뜁니다: {imp_err}")
+            return False
+
+        try:
+            subscription_info = json.loads(subscription_json) if isinstance(subscription_json, str) else subscription_json
+            if not isinstance(subscription_info, dict) or not subscription_info.get("endpoint") or not subscription_info.get("keys"):
+                logger.warning("유효하지 않은 Web Push 구독 정보 형식입니다.")
+                return False
+
             payload = {
-                "title": f"키워드 알림: {keyword}",
-                "body": f"[{site_name}] {title} | {price}원 특가!",
+                "title": custom_title or f"키워드 알림: {keyword}",
+                "body": custom_body or (f"[{site_name}] {title} | {price:,}원 특가!" if price > 0 else f"[{site_name}] {title}"),
                 "keyword": keyword,
                 "deal_id": deal_id,
                 "ecommerce_url": deal_url,
-                "icon": "/icon-192x192.png"
+                "post_url": deal_url,
+                "icon": "/icon-192x192.png",
+                "silent": bool(is_night_time),
             }
-            
-            # 서버용 VAPID Private Key 로드 (가드 적용)
-            import os
-            vapid_private_key = os.getenv("VAPID_PRIVATE_KEY", "MIGeAgEAMBAGByqGSM49AgEGCSqGSIb3QEBAQUAA4GNADCBiQKBgQD...")
-            vapid_claims = {
-                "sub": "mailto:admin@insightdeal.com"
-            }
-            
-            # Web Push 전송 격발
+
+            claim_sub = (os.getenv("VAPID_CLAIM_EMAIL") or "mailto:admin@insightdeal.com").strip()
+            if claim_sub and not claim_sub.startswith("mailto:"):
+                claim_sub = f"mailto:{claim_sub}"
+            vapid_claims = {"sub": claim_sub or "mailto:admin@insightdeal.com"}
+
             webpush(
                 subscription_info=subscription_info,
-                data=json.dumps(payload),
+                data=json.dumps(payload, ensure_ascii=False),
                 vapid_private_key=vapid_private_key,
-                vapid_claims=vapid_claims
+                vapid_claims=vapid_claims,
             )
-            logger.info(f"Web Push alert successfully sent to subscription.")
+            logger.info("Web Push alert successfully sent to subscription.")
+            return True
+        except WebPushException as wp_err:
+            status_code = getattr(getattr(wp_err, "response", None), "status_code", None)
+            logger.warning(f"Web Push 전송 실패 (status={status_code}): {wp_err}")
+            if status_code in (404, 410) and device is not None and db is not None:
+                try:
+                    device.web_push_subscription = None
+                    db.commit()
+                    logger.info(f"만료된 Web Push 구독 정리 완료 (device_uuid={device.device_uuid}, status={status_code})")
+                except Exception as cleanup_err:
+                    db.rollback()
+                    logger.error(f"만료된 Web Push 구독 정리 실패: {cleanup_err}")
+            return False
         except Exception as e:
-            logger.debug(f"Web Push sending skipped or error: {str(e)}")
+            logger.error(f"Web Push 전송 중 예외 발생: {e}")
+            return False

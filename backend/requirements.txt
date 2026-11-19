@@ -2,8 +2,9 @@
 fastapi==0.104.1
 uvicorn[standard]>=0.24.0
 
-# Database (SQLite + SQLAlchemy 1.4)
+# Database (SQLite + PostgreSQL + SQLAlchemy 1.4)
 sqlalchemy==1.4.53
+psycopg2-binary>=2.9.9
 
 # Environment
 python-dotenv>=1.0.0
@@ -25,8 +26,9 @@ pillow>=10.3.0
 # AI Integration
 google-generativeai>=0.3.1
 
-# Firebase/FCM for Push Notifications
+# Firebase/FCM & Web Push for Push Notifications
 firebase-admin>=6.2.0
+pywebpush>=2.0.0
 
 # Scheduling
 apscheduler>=3.10.4

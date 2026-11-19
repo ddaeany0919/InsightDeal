@@ -8,7 +8,7 @@ import com.ddaeany0919.insightdeal.local.db.KeywordEntity
 import com.ddaeany0919.insightdeal.network.AddKeywordRequest
 import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.network.NetworkModule
-import com.ddaeany0919.insightdeal.network.RegisterDeviceReq
+import com.ddaeany0919.insightdeal.network.UpdateDndReq
 import com.google.gson.Gson
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -77,7 +77,6 @@ class KeywordManagerViewModel(
         }
 
         fetchKeywords()
-        syncDndWithServer()
     }
 
     private fun loadLocalSettings() {
@@ -165,16 +164,17 @@ class KeywordManagerViewModel(
         viewModelScope.launch {
             try {
                 val json = gson.toJson(_weekDndSettings.value)
-                val req = RegisterDeviceReq(
+                val req = UpdateDndReq(
                     device_uuid = deviceUuid,
-                    fcm_token = "",
-                    night_push_consent = false,
                     dnd_enabled = _dndEnabled.value,
                     dnd_start_time = _dndStartTime.value,
                     dnd_end_time = _dndEndTime.value,
                     dnd_settings_json = json
                 )
-                apiService.registerFCMToken(req)
+                val response = apiService.updateDndSettings(req)
+                if (!response.isSuccessful) {
+                    _errorMessage.value = "알림 시간 설정 동기화에 실패했어요."
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

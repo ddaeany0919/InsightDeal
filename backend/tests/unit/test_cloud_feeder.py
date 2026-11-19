@@ -9,9 +9,13 @@ cloud_feeder 및 backfill_ppomppu_100_deals 단위 테스트:
 - backfill_ppomppu_100_deals 스크래퍼 라우팅 및 dry-run / DB 원자적 갱신 검증
 """
 
+import hashlib
+import hmac
 import os
 import re
 import sys
+import time
+from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 from sqlalchemy import create_engine
@@ -243,3 +247,164 @@ async def test_backfill_direct_db_dry_run_and_update():
             PpomppuScraper.get_detail = original_get_detail
     finally:
         db.close()
+
+
+def _verify_v1_hmac(token: str, secret: str, target_url: str) -> bool:
+    parts = (token or "").split(".")
+    if len(parts) != 3 or parts[0] != "v1":
+        return False
+    ts_str, sig_hex = parts[1], parts[2]
+    if not ts_str.isdigit() or len(sig_hex) != 64:
+        return False
+    ts = int(ts_str)
+    if abs(int(time.time()) - ts) > 300:
+        return False
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        f"{ts}:{target_url}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(sig_hex.lower(), expected)
+
+
+@pytest.mark.asyncio
+async def test_base_scraper_seoul_relay_hmac_and_rss_fallback(monkeypatch):
+    from backend.scrapers.base_scraper import AsyncBaseScraper
+
+    class DummyRelayScraper(AsyncBaseScraper):
+        async def parse_list(self, html):
+            return []
+
+        async def get_detail(self, url, title=""):
+            return {}
+
+    scraper = DummyRelayScraper("ppomppu")
+    target_url = "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu"
+    expected_rss_target = "https://www.ppomppu.co.kr/rss.php?id=ppomppu"
+
+    # 1. FEEDER_API_TOKEN 설정 시 일반 요청 + RSS 폴백 각각 타깃 URL 기준으로 독립 서명 검증
+    monkeypatch.setenv("FEEDER_API_TOKEN", "relay-secret-xyz")
+    monkeypatch.delenv("SCRAPER_RELAY_SECRET", raising=False)
+    calls = []
+
+    async def fake_get(self, url, headers=None, **kwargs):
+        calls.append({"url": url, "headers": dict(headers or {})})
+        resp = MagicMock()
+        if len(calls) == 1:
+            resp.status_code = 502
+            resp.text = "Bad Gateway"
+        else:
+            resp.status_code = 200
+            resp.text = "<rss><channel><item><title>테스트 딜</title></item></channel></rss>"
+        return resp
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    result = await scraper._fetch_via_seoul_relay(target_url)
+
+    assert result is not None and "<item>" in result
+    assert len(calls) == 2
+
+    tok_main = calls[0]["headers"].get("X-Feeder-Token", "")
+    tok_rss = calls[1]["headers"].get("X-Feeder-Token", "")
+    assert _verify_v1_hmac(tok_main, "relay-secret-xyz", target_url)
+    assert _verify_v1_hmac(tok_rss, "relay-secret-xyz", expected_rss_target)
+    # 타깃 URL이 다르므로 RSS 폴백 서명은 1차 요청 서명과 달라야 함
+    assert tok_main != tok_rss
+    assert not _verify_v1_hmac(tok_rss, "relay-secret-xyz", target_url)
+
+    # 2. 시크릿 미설정 시 X-Feeder-Token 헤더 미첨부 확인
+    monkeypatch.delenv("FEEDER_API_TOKEN", raising=False)
+    monkeypatch.delenv("SCRAPER_RELAY_SECRET", raising=False)
+    calls.clear()
+    await scraper._fetch_via_seoul_relay(target_url)
+    assert len(calls) == 2
+    assert "X-Feeder-Token" not in calls[0]["headers"]
+    assert "X-Feeder-Token" not in calls[1]["headers"]
+
+
+@pytest.mark.asyncio
+async def test_cloud_feeder_rss_1rtt_attaches_hmac_and_ingest_stays_plaintext(monkeypatch):
+    import backend.scheduler.cloud_feeder as cf
+
+    monkeypatch.setenv("FEEDER_API_TOKEN", "feeder-hmac-secret")
+    monkeypatch.setattr(cf, "IS_CLOUD_ENV", True)
+    monkeypatch.setattr(cf, "_preload_existing_urls", AsyncMock())
+    monkeypatch.setattr(cf, "_fetch_jsmon_and_hotgusa_enrichment", AsyncMock(return_value={}))
+    cf._SEEN_DETAIL_CACHE.clear()
+
+    captured_gets = []
+    captured_posts = []
+
+    sample_rss = """<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0"><channel><item>
+      <title><![CDATA[[11번가] 테스트 핫딜 상품 (12,000원/무료)]]></title>
+      <link>https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&amp;no=90909</link>
+      <description><![CDATA[상세 테스트 본문입니다.]]></description>
+    </item></channel></rss>"""
+
+    class FakeResp:
+        def __init__(self, status_code, text="", json_data=None):
+            self.status_code = status_code
+            self.text = text
+            self._json = json_data or {}
+
+        def json(self):
+            return self._json
+
+    class FakeHttpClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, url, headers=None, **kwargs):
+            captured_gets.append({"url": url, "headers": dict(headers or {})})
+            if "id%3Dppomppu" in url and "id%3Dppomppu8" not in url and "id%3Dppomppu4" not in url:
+                return FakeResp(200, text=sample_rss)
+            return FakeResp(200, text="")
+
+        async def post(self, url, json=None, headers=None, **kwargs):
+            captured_posts.append({"url": url, "json": json, "headers": dict(headers or {})})
+            return FakeResp(200, json_data={"processed": len((json or {}).get("deals", []))})
+
+    async def fake_run(self, url=None):
+        return []
+
+    async def fake_get_detail(self, url, title=""):
+        return {
+            "content_html": "<p>" + ("충분히 긴 상세 본문 내용입니다. " * 10) + "</p>",
+            "ecommerce_link": "https://www.11st.co.kr/products/90909",
+            "image_url": "https://cdn.ppomppu.co.kr/thumb.jpg",
+            "shipping_fee": "무료배송",
+            "is_closed": False,
+            "price": 12000,
+        }
+
+    monkeypatch.setattr(cf.httpx, "AsyncClient", FakeHttpClient)
+    from backend.scrapers.base_scraper import AsyncBaseScraper
+    monkeypatch.setattr(AsyncBaseScraper, "run", fake_run)
+    monkeypatch.setattr(PpomppuScraper, "get_detail", fake_get_detail)
+
+    await cf.scrape_and_push_once()
+
+    rss_relay_gets = [g for g in captured_gets if "scraper-relay" in g["url"] and "id%3Dppomppu" in g["url"]]
+    assert len(rss_relay_gets) >= 1
+    ppomppu_rss_target = "https://www.ppomppu.co.kr/rss.php?id=ppomppu"
+    matched_main = [
+        g for g in rss_relay_gets
+        if g["url"].endswith(f"url=https%3A%2F%2Fwww.ppomppu.co.kr%2Frss.php%3Fid%3Dppomppu")
+    ]
+    assert len(matched_main) == 1
+    assert _verify_v1_hmac(
+        matched_main[0]["headers"].get("X-Feeder-Token", ""),
+        "feeder-hmac-secret",
+        ppomppu_rss_target,
+    )
+
+    # /ingest-batch 전송은 여전히 평문 FEEDER_API_TOKEN 유지
+    assert len(captured_posts) >= 1
+    assert captured_posts[0]["headers"].get("X-Feeder-Token") == "feeder-hmac-secret"

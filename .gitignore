@@ -1,6 +1,8 @@
 # 1. [Security] 보안 및 개인 설정 차단 (가장 중요)
 .env
 *.env
+.env.*
+!.env.example
 local.properties
 google-services.json
 *.jks
@@ -39,9 +41,18 @@ Thumbs.db
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
 *.sqlite
 *.sqlite3
 firebase-service-account.json
+*service-account*.json
+*-firebase-adminsdk-*.json
+*.pem
+*.key
+vapid*.json
+vapid_keys*
+secrets/
+*.secret
 .mcp.json
 
 # 7. [bkit/Swarm] AI 스웜 회의록 및 임시 작업 폴더 차단

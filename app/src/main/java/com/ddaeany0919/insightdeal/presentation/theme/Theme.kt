@@ -2,19 +2,20 @@ package com.ddaeany0919.insightdeal.presentation.theme
 
 import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
-import com.ddaeany0919.insightdeal.presentation.theme.AppColorScheme
-import com.ddaeany0919.insightdeal.presentation.theme.ThemeMode
-import com.ddaeany0919.insightdeal.presentation.theme.ThemeManager
 
 // 🎨 InsightDeal Toss × Karrot SEED Design Hybrid Palette (DESIGN.md v2.0)
 val White = Color(0xFFFFFFFF)
@@ -42,18 +43,18 @@ val PriceDecrease = AccentBlue
 val PriceTarget = AccentGreen
 val PriceBest = AccentOrange
 
-private val LightColorScheme = lightColorScheme(
-    primary = PrimaryDark,
+internal val LightColorScheme = lightColorScheme(
+    primary = Color(0xFF1B64DA),
     onPrimary = White,
     primaryContainer = Color(0xFFE8F3FF),
     onPrimaryContainer = Color(0xFF1B64DA),
-    secondary = AccentOrange,
+    secondary = Color(0xFFB84500),
     onSecondary = White,
     secondaryContainer = Color(0xFFFFF3E8),
-    onSecondaryContainer = Color(0xFFE05900),
-    tertiary = AccentBlue,
+    onSecondaryContainer = Color(0xFFB54200),
+    tertiary = Color(0xFF1B64DA),
     onTertiary = White,
-    error = AccentRed,
+    error = Color(0xFFC92A37),
     onError = White,
     background = BackgroundLight,
     onBackground = TextPrimaryLight,
@@ -64,19 +65,19 @@ private val LightColorScheme = lightColorScheme(
     outline = Color(0xFFE5E8EB)
 )
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF4593FC),
-    onPrimary = White,
+internal val DarkColorScheme = darkColorScheme(
+    primary = Color(0xFF5BA4FC),
+    onPrimary = Color(0xFF081B33),
     primaryContainer = Color(0xFF1E3A5F),
     onPrimaryContainer = Color(0xFFD1E5FF),
     secondary = Color(0xFFFF8433),
-    onSecondary = White,
+    onSecondary = Color(0xFF3B1800),
     secondaryContainer = Color(0xFF3D2210),
     onSecondaryContainer = Color(0xFFFFD8BE),
-    tertiary = Color(0xFF4593FC),
-    onTertiary = White,
-    error = AccentRed,
-    onError = White,
+    tertiary = Color(0xFF5BA4FC),
+    onTertiary = Color(0xFF081B33),
+    error = Color(0xFFFF6B77),
+    onError = Color(0xFF3D070C),
     background = BackgroundDark,
     onBackground = TextPrimaryDark,
     surface = SurfaceDark,
@@ -86,19 +87,19 @@ private val DarkColorScheme = darkColorScheme(
     outline = Color(0xFF2B333E)
 )
 
-private val AmoledColorScheme = darkColorScheme(
-    primary = White,
-    onPrimary = PrimaryDark,
-    primaryContainer = Black,
-    onPrimaryContainer = White,
-    secondary = AccentOrange,
-    onSecondary = White,
+internal val AmoledColorScheme = darkColorScheme(
+    primary = Color(0xFF60A5FA),
+    onPrimary = Color(0xFF08203E),
+    primaryContainer = Color(0xFF1E3A5F),
+    onPrimaryContainer = Color(0xFFD1E5FF),
+    secondary = Color(0xFFFF8C3B),
+    onSecondary = Color(0xFF3B1800),
     secondaryContainer = Color(0xFF3E2723),
     onSecondaryContainer = Color(0xFFFFCCBC),
-    tertiary = AccentBlue,
-    onTertiary = White,
-    error = AccentRed,
-    onError = White,
+    tertiary = Color(0xFF60A5FA),
+    onTertiary = Color(0xFF08203E),
+    error = Color(0xFFFF6B77),
+    onError = Color(0xFF3D070C),
     background = Black,
     onBackground = White,
     surface = Black,
@@ -107,6 +108,11 @@ private val AmoledColorScheme = darkColorScheme(
     onSurfaceVariant = TextSecondaryDark,
     outline = Color(0xFF333333)
 )
+
+val LocalIsDarkTheme = staticCompositionLocalOf { false }
+
+val ColorScheme.isDarkTheme: Boolean
+    get() = background.luminance() < 0.5f
 
 @Composable
 fun InsightDealTheme(
@@ -125,8 +131,10 @@ fun InsightDealTheme(
         ThemeMode.SYSTEM -> darkTheme
     }
 
+    val isAmoled = themeMode == ThemeMode.AMOLED || (useDarkTheme && amoledMode)
+
     val finalColorScheme = when {
-        useDarkTheme && amoledMode -> AmoledColorScheme
+        isAmoled -> AmoledColorScheme
         useDarkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
@@ -142,11 +150,13 @@ fun InsightDealTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = finalColorScheme,
-        typography = Typography,
-        content = content
-    )
+    CompositionLocalProvider(LocalIsDarkTheme provides useDarkTheme) {
+        MaterialTheme(
+            colorScheme = finalColorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }
 
 @Composable

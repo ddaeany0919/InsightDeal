@@ -1,7 +1,6 @@
 package com.ddaeany0919.insightdeal.presentation.home
 
 import android.util.Log
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.ExperimentalPagingApi
@@ -12,6 +11,7 @@ import androidx.paging.cachedIn
 import androidx.paging.filter
 import androidx.paging.map
 import com.ddaeany0919.insightdeal.data.LocalDataProvider
+import com.ddaeany0919.insightdeal.models.CategoryCatalog
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.network.NetworkModule
@@ -31,8 +31,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class HomeViewModel : ViewModel() {
-
-    val listState = LazyListState()
 
     private val apiService = NetworkModule.createService<ApiService>()
 
@@ -61,6 +59,9 @@ class HomeViewModel : ViewModel() {
         fetchPopularKeywords()
         fetchTopHotDeals()
         startRealtimeDealWatcher()
+        viewModelScope.launch {
+            CategoryCatalog.syncWithServer(apiService)
+        }
     }
 
     private fun startRealtimeDealWatcher() {
@@ -257,7 +258,7 @@ class HomeViewModel : ViewModel() {
         } else {
             pagingData.filter { item ->
                 val passClosed = !state.hideClosed || (!item.isClosed && !item.title.contains("종료") && !item.title.contains("품절"))
-                val passPopular = !state.popularOnly || (item.honeyScore >= 80 || item.tags.any { t -> t.contains("인기") || t.contains("역대") })
+                val passPopular = !state.popularOnly || isPopularDeal(item)
                 val passFreeShip = !state.freeShippingOnly || (item.shippingFee?.contains("무료") == true || item.shippingFee?.contains("무배") == true || item.tags.any { t -> t.contains("무료배송") })
                 passClosed && passPopular && passFreeShip
             }
@@ -265,8 +266,13 @@ class HomeViewModel : ViewModel() {
     }.cachedIn(viewModelScope)
 
     fun selectCategory(category: String) {
-        if (_filterState.value.category != category) {
-            _filterState.value = _filterState.value.copy(category = category)
+        val normalized = if (category.isBlank() || category == "전체") {
+            "전체"
+        } else {
+            CategoryCatalog.normalizeCategoryKey(category)
+        }
+        if (_filterState.value.category != normalized) {
+            _filterState.value = _filterState.value.copy(category = normalized)
         }
     }
 
@@ -326,6 +332,13 @@ class HomeViewModel : ViewModel() {
     }
 
     companion object {
+        const val POPULAR_HONEY_SCORE_THRESHOLD = 100
+
+        fun isPopularDeal(deal: DealItem): Boolean {
+            return deal.honeyScore >= POPULAR_HONEY_SCORE_THRESHOLD ||
+                deal.tags.any { t -> t.contains("인기") || t.contains("역대") }
+        }
+
         val SUPPORTED_SORTS = setOf("latest", "popular", "price_asc")
         val COMMUNITY_FILTER_CHIPS = listOf(
             "전체",
@@ -337,16 +350,6 @@ class HomeViewModel : ViewModel() {
             "알리뽐뿌",
             "빠삭"
         )
-        private val ALL_COMMUNITY_PLATFORMS = listOf(
-            "뽐뿌",
-            "퀘이사존",
-            "펨코",
-            "루리웹",
-            "클리앙",
-            "알리뽐뿌",
-            "빠삭국내",
-            "빠삭해외",
-            "빠삭육아"
-        )
+        val ALL_COMMUNITY_PLATFORMS = CategoryCatalog.STANDARD_COMMUNITY_PLATFORMS
     }
 }

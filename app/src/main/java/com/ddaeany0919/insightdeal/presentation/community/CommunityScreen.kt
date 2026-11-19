@@ -27,9 +27,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import com.ddaeany0919.insightdeal.data.HotDealDto
+import com.ddaeany0919.insightdeal.data.util.ImageUrlResolver
 import coil.compose.AsyncImage
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import com.ddaeany0919.insightdeal.presentation.rememberRelativeTime
 
 
@@ -51,8 +54,11 @@ fun CommunityScreen(
             TopAppBar(
                 title = { Text("커뮤니티 핫딜", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(onClick = { viewModel.loadHotDeals() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    A11yIconButton(
+                        onClick = { viewModel.loadHotDeals() },
+                        contentDescription = "새로고침"
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -108,7 +114,7 @@ fun CommunityScreen(
                         val filteredDeals = remember(selectedTabIndex, state.deals) {
                             when (selectedTabIndex) {
                                 0 -> state.deals // 전체보기
-                                1 -> state.deals.filter { it.honeyScore >= 80 } // 핫딜만 (꿀점수 80 이상)
+                                1 -> state.deals.filter { it.honeyScore >= 100 } // 핫딜만 (꿀점수 100 이상)
                                 2 -> state.deals.filter { it.category == "적립" || it.category == "이벤트" } // 앱테크만
                                 else -> state.deals
                             }
@@ -168,13 +174,24 @@ fun HotDealCard(deal: HotDealDto, onClick: () -> Unit = {}) {
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 if (!deal.imageUrl.isNullOrEmpty()) {
+                    val primaryImageUrl = remember(deal.imageUrl) {
+                        ImageUrlResolver.resolve(deal.imageUrl, targetWidth = 200)
+                    }
+                    val fallbackImageUrl = remember(deal.imageUrl) {
+                        ImageUrlResolver.getFallbackBackendProxyUrl(deal.imageUrl)
+                    }
+                    var activeImageUrl by remember(primaryImageUrl) { mutableStateOf(primaryImageUrl) }
+
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
-                            .data(deal.imageUrl)
-                            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-                            .addHeader("Referer", "https://www.fmkorea.com/")
+                            .data(activeImageUrl)
                             .crossfade(true)
                             .build(),
+                        onError = {
+                            if (fallbackImageUrl != null && activeImageUrl != fallbackImageUrl) {
+                                activeImageUrl = fallbackImageUrl
+                            }
+                        },
                         contentDescription = null,
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
@@ -195,12 +212,12 @@ fun HotDealCard(deal: HotDealDto, onClick: () -> Unit = {}) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.6f)),
+                            .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.85f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "종료됨",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.inverseOnSurface,
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.labelLarge
                         )
@@ -235,7 +252,7 @@ fun HotDealCard(deal: HotDealDto, onClick: () -> Unit = {}) {
 
                 // 제목
                 Row(verticalAlignment = Alignment.Top) {
-                    if (deal.honeyScore >= 80) {
+                    if (deal.honeyScore >= 100) {
                         Text(
                             text = "🔥",
                             modifier = Modifier.padding(end = 4.dp),
@@ -320,8 +337,8 @@ fun HotDealCard(deal: HotDealDto, onClick: () -> Unit = {}) {
                             }
                             if (deal.commentCount > 0) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("댓글 ", style = MaterialTheme.typography.labelSmall, color = Color.DarkGray, fontWeight = FontWeight.Bold)
-                                    Text("${deal.commentCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B))
+                                    Text("댓글 ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Text("${deal.commentCount}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }

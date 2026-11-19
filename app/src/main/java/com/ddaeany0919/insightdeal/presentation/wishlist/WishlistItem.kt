@@ -7,6 +7,7 @@ import android.util.Log
 /** 관심상품 아이템 (UI 모델) */
 data class WishlistItem(
     val id: Int,
+    val serverWishlistId: Int? = null,
     val keyword: String,
     val productUrl: String = "",  // productUrl 필드 추가 (기본값: 빈 문자열)
     val targetPrice: Int,

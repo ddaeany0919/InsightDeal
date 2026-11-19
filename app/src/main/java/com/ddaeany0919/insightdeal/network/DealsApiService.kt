@@ -19,5 +19,6 @@ data class PopularKeywordsResponse(
 )
 
 data class HotDealsResponse(
-    @SerializedName("deals") val deals: List<com.ddaeany0919.insightdeal.models.DealItem>
+    @SerializedName("deals") val deals: List<com.ddaeany0919.insightdeal.models.DealItem> = emptyList(),
+    @SerializedName(value = "has_more", alternate = ["hasMore"]) val hasMore: Boolean = false
 )

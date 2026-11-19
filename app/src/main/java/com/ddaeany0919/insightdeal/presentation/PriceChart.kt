@@ -54,7 +54,7 @@ fun PriceChart(
     val safePrices = remember(validPairs) { validPairs.map { it.first } }
     val safeDates = remember(validPairs) { validPairs.map { it.second } }
 
-    if (safePrices.isEmpty()) return
+    if (safePrices.size < 2) return
 
     var selectedIndex by remember(safePrices) { mutableStateOf<Int?>(null) }
 
@@ -342,7 +342,7 @@ fun PriceChart(
                 )
 
                 drawCircle(color = primaryColor, radius = 6.5.dp.toPx(), center = point)
-                drawCircle(color = Color.White, radius = 3.dp.toPx(), center = point)
+                drawCircle(color = surfaceColor, radius = 3.dp.toPx(), center = point)
 
                 val selectedPrice = safePrices[index]
                 val diffPct = if (avgPrice > 0f) (((selectedPrice - avgPrice) / avgPrice) * 100f).roundToInt() else 0

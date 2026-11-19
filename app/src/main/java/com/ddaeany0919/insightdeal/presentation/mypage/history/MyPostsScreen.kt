@@ -14,7 +14,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import com.ddaeany0919.insightdeal.presentation.community.CommunityBoardUiState
 import com.ddaeany0919.insightdeal.presentation.community.CommunityBoardViewModel
 import com.ddaeany0919.insightdeal.presentation.community.ShouldIBuyVoteCard
@@ -25,17 +26,18 @@ fun MyPostsScreen(
     navController: NavController? = null,
     onBack: () -> Unit
 ) {
-    val context = LocalContext.current
     val viewModel: CommunityBoardViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val uiState by viewModel.uiState.collectAsState()
-    val currentUserId by AuthManager.getUsername(context).collectAsState(initial = "guest")
+    val currentUserId = remember {
+        runCatching { LocalDataProvider.getDeviceUuid() }.getOrDefault("")
+    }
 
     LaunchedEffect(Unit) {
         viewModel.loadPosts()
     }
 
     val myPosts = remember(uiState, currentUserId) {
-        if (uiState is CommunityBoardUiState.Success) {
+        if (uiState is CommunityBoardUiState.Success && currentUserId.isNotBlank()) {
             (uiState as CommunityBoardUiState.Success).posts.filter { it.userId == currentUserId }
         } else emptyList()
     }
@@ -45,8 +47,8 @@ fun MyPostsScreen(
             TopAppBar(
                 title = { Text("작성글", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
+                    A11yIconButton(onClick = onBack, contentDescription = "뒤로가기") {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
                 }
             )
@@ -85,7 +87,7 @@ fun MyPostsScreen(
                 ) { post ->
                     ShouldIBuyVoteCard(
                         post = post,
-                        currentUserId = currentUserId ?: "guest",
+                        currentUserId = currentUserId,
                         // [Bug Fix] MainActivity의 정의된 라우트("community_edit/{postId}")와 일치하도록 수정
                         onEditClick = { navController?.navigate("community_edit/${post.id}") },
                         onVoteSubmit = { viewModel.loadPosts(showLoading = false) },

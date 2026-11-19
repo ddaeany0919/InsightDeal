@@ -5,15 +5,17 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
-        WishlistEntity::class, 
-        DealEntity::class, 
+        WishlistEntity::class,
+        DealEntity::class,
         DealRemoteKeysEntity::class,
         KeywordEntity::class
-    ], 
-    version = 6, 
+    ],
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -27,6 +29,12 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE wishlist ADD COLUMN serverWishlistId INTEGER DEFAULT NULL")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -34,8 +42,9 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "insightdeal_db"
                 )
-                .fallbackToDestructiveMigration()
-                .build()
+                    .addMigrations(MIGRATION_6_7)
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }

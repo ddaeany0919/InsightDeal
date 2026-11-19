@@ -358,22 +358,9 @@ class DealReaction(Base):
 
 # 데이터베이스 세션 생성 함수
 def get_db_engine():
-    """데이터베이스 엔진 생성"""
-    database_url = os.getenv(
-        "DATABASE_URL", 
-        "postgresql://insightdeal:password@localhost:5432/insightdeal"
-    )
-    
-    engine = create_engine(
-        database_url,
-        echo=False,  # SQL 로그는 제한적으로
-        pool_size=10,
-        max_overflow=20,
-        pool_pre_ping=True,
-        pool_recycle=3600  # 1시간
-    )
-    
-    return engine
+    """데이터베이스 엔진 반환 (session.db_manager.engine 위임)"""
+    from backend.database.session import db_manager
+    return db_manager.engine
 
 def create_all_tables():
     """모든 테이블 생성"""

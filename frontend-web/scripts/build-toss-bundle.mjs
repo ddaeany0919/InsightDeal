@@ -29,6 +29,9 @@ try {
     }
     fs.renameSync(apiRouteDir, stashDir);
     stashed = true;
+  } else if (fs.existsSync(stashDir)) {
+    // 직전 비정상 종료로 .toss-api-stash만 남은 경우 finally에서 복원할 수 있도록 가드 설정
+    stashed = true;
   }
 
   // 2. 정적 Export 빌드 실행

@@ -7,7 +7,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -18,6 +17,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -31,6 +31,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.ddaeany0919.insightdeal.models.CategoryCatalog
+import com.ddaeany0919.insightdeal.presentation.theme.LocalIsDarkTheme
 
 @Immutable
 private data class CategorySpec(
@@ -49,27 +51,47 @@ private val ToneIndigo = Color(0xFF4F46E5)
 private val ToneRose = Color(0xFFE11D48)
 private val ToneSlate = Color(0xFF4E5968)
 
-private val CATEGORIES_LIST = listOf(
-    CategorySpec("핫딜모음", "핫딜모음", Icons.Outlined.LocalFireDepartment, ToneHotOrange),
-    CategorySpec("음식", "식품", Icons.Outlined.Restaurant, ToneWarmAmber),
-    CategorySpec("생활용품", "생활용품", Icons.Outlined.Inventory2, ToneEmerald),
-    CategorySpec("PC용품", "PC·하드웨어", Icons.Outlined.Computer, ToneBrandBlue),
-    CategorySpec("가전제품", "가전·디지털", Icons.Outlined.Tv, ToneIndigo),
-    CategorySpec("SW/게임", "게임·SW", Icons.Outlined.SportsEsports, ToneIndigo),
-    CategorySpec("패션", "패션·의류", Icons.Outlined.Checkroom, ToneRose),
-    CategorySpec("뷰티", "뷰티", Icons.Outlined.AutoAwesome, ToneRose),
-    CategorySpec("모바일/기프티콘", "모바일·쿠폰", Icons.Outlined.Smartphone, ToneBrandBlue),
-    CategorySpec("상품권", "상품권", Icons.Outlined.ConfirmationNumber, ToneWarmAmber),
-    CategorySpec("육아/유아용품", "출산·육아", Icons.Outlined.ChildCare, ToneEmerald),
-    CategorySpec("여행.해외핫딜", "해외직구·여행", Icons.Outlined.FlightTakeoff, ToneBrandBlue),
-    CategorySpec("적립", "포인트·적립", Icons.Outlined.Savings, ToneEmerald),
-    CategorySpec("이벤트", "이벤트", Icons.Outlined.Redeem, ToneHotOrange),
-    CategorySpec("기타", "기타", Icons.Outlined.MoreHoriz, ToneSlate)
-)
+private fun iconAndToneForCategory(key: String): Pair<ImageVector, Color> = when (key) {
+    "핫딜모음" -> Icons.Outlined.LocalFireDepartment to ToneHotOrange
+    "음식" -> Icons.Outlined.Restaurant to ToneWarmAmber
+    "생활용품" -> Icons.Outlined.Inventory2 to ToneEmerald
+    "PC용품" -> Icons.Outlined.Computer to ToneBrandBlue
+    "가전제품" -> Icons.Outlined.Tv to ToneIndigo
+    "SW/게임" -> Icons.Outlined.SportsEsports to ToneIndigo
+    "패션" -> Icons.Outlined.Checkroom to ToneRose
+    "뷰티" -> Icons.Outlined.AutoAwesome to ToneRose
+    "모바일/기프티콘" -> Icons.Outlined.Smartphone to ToneBrandBlue
+    "상품권" -> Icons.Outlined.ConfirmationNumber to ToneWarmAmber
+    "육아/유아용품" -> Icons.Outlined.ChildCare to ToneEmerald
+    "해외직구" -> Icons.Outlined.FlightTakeoff to ToneBrandBlue
+    "적립" -> Icons.Outlined.Savings to ToneEmerald
+    "이벤트" -> Icons.Outlined.Redeem to ToneHotOrange
+    else -> Icons.Outlined.MoreHoriz to ToneSlate
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryScreen(navController: NavController? = null) {
+    val catalogCategories by CategoryCatalog.categoriesState.collectAsState()
+    val categoriesToShow = remember(catalogCategories) {
+        val orderedKeys = listOf(
+            "핫딜모음", "음식", "생활용품", "PC용품", "가전제품",
+            "SW/게임", "패션", "뷰티", "모바일/기프티콘", "상품권",
+            "육아/유아용품", "해외직구", "적립", "이벤트", "기타"
+        )
+        val byKey = catalogCategories.associateBy { it.key }
+        orderedKeys.map { key ->
+            val std = byKey[key]
+            val (icon, tone) = iconAndToneForCategory(key)
+            CategorySpec(
+                routeName = key,
+                displayTitle = std?.label ?: CategoryCatalog.getDisplayLabel(key),
+                icon = icon,
+                tintColor = tone
+            )
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -98,7 +120,7 @@ fun CategoryScreen(navController: NavController? = null) {
                 .padding(paddingValues)
         ) {
             items(
-                items = CATEGORIES_LIST,
+                items = categoriesToShow,
                 key = { it.routeName },
                 contentType = { "category_grid_item" }
             ) { spec ->
@@ -119,7 +141,7 @@ private fun CategoryCard(
     spec: CategorySpec,
     onClick: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 

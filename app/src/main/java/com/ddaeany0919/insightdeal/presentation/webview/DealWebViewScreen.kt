@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -34,6 +35,8 @@ import com.ddaeany0919.insightdeal.utils.CustomTabLauncher
 private const val CLEAN_MOBILE_UA = "Mozilla/5.0 (Linux; Android 14; SM-S928N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 private const val DESKTOP_CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
+private val BLOCKED_WEBVIEW_SCHEMES = setOf("file", "content", "javascript", "data", "about")
+
 private val SHOPPING_SCHEME_PACKAGES = mapOf(
     "coupang" to "com.coupang.mobile",
     "coupangapp" to "com.coupang.mobile",
@@ -48,12 +51,25 @@ private val SHOPPING_SCHEME_PACKAGES = mapOf(
     "naversearchapp" to "com.nhn.android.search"
 )
 
+private fun upgradeHttpToHttps(url: String): String {
+    val trimmed = url.trim()
+    return when {
+        trimmed.startsWith("http://", ignoreCase = true) ->
+            trimmed.replaceFirst(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
+        trimmed.startsWith("https://", ignoreCase = true) -> trimmed
+        else -> "https://$trimmed"
+    }
+}
+
+private fun isHostOrSubdomain(host: String?, targetDomain: String): Boolean {
+    val normalizedHost = host?.lowercase()?.trimEnd('.') ?: return false
+    return normalizedHost == targetDomain || normalizedHost.endsWith(".$targetDomain")
+}
+
 fun resolveMobileWebViewUrl(rawUrl: String): String {
     var trimmed = rawUrl.trim().replace(":443", "")
     if (trimmed.isBlank()) return ""
-    if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-        trimmed = "https://$trimmed"
-    }
+    trimmed = upgradeHttpToHttps(trimmed)
 
     if (trimmed.contains("bbasak.com/bbs/board.php", ignoreCase = true) &&
         trimmed.contains("wr_id=", ignoreCase = true) &&
@@ -64,12 +80,12 @@ fun resolveMobileWebViewUrl(rawUrl: String): String {
 
     val auctionMatch = Regex("itempage3?\\.auction\\.co\\.kr/DetailView\\.aspx\\?.*itemno=([A-Za-z0-9]+)", RegexOption.IGNORE_CASE).find(trimmed)
     if (auctionMatch != null) {
-        return "http://mitem.auction.co.kr/vip?itemNo=${auctionMatch.groupValues[1]}"
+        return "https://mitem.auction.co.kr/vip?itemNo=${auctionMatch.groupValues[1]}"
     }
 
     val gmarketMatch = Regex("item\\.gmarket\\.co\\.kr/Item\\?.*goodscode=([0-9]+)", RegexOption.IGNORE_CASE).find(trimmed)
     if (gmarketMatch != null) {
-        return "http://mitem.gmarket.co.kr/vi/product/${gmarketMatch.groupValues[1]}"
+        return "https://mitem.gmarket.co.kr/vi/product/${gmarketMatch.groupValues[1]}"
     }
 
     val st11Match = Regex("www\\.11st\\.co\\.kr/products/([0-9]+)", RegexOption.IGNORE_CASE).find(trimmed)
@@ -154,7 +170,11 @@ fun DealWebViewScreen(
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
                             canGoBack = view?.canGoBack() == true
-                            if (url?.contains("bbasak.com/bbs/board.php") == true && url.contains("wr_id=")) {
+                            val parsedUri = url?.let { runCatching { Uri.parse(it) }.getOrNull() }
+                            if (isHostOrSubdomain(parsedUri?.host, "bbasak.com") &&
+                                parsedUri?.path?.contains("/bbs/board.php", ignoreCase = true) == true &&
+                                parsedUri.getQueryParameter("wr_id") != null
+                            ) {
                                 view?.evaluateJavascript(
                                     "(function(){var el=document.getElementById('view_content')||document.querySelector('.view_content,.board_view');if(el){el.scrollIntoView({behavior:'instant',block:'start'});}})();",
                                     null
@@ -176,13 +196,15 @@ fun DealWebViewScreen(
                                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                         }
                                     }
-                                    val fallbackUrl = intent.getStringExtra("browser_fallback_url")?.takeIf {
-                                        it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true)
-                                    }
+                                    val fallbackUrl = intent.getStringExtra("browser_fallback_url")
+                                        ?.takeIf {
+                                            it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true)
+                                        }
+                                        ?.let { resolveMobileWebViewUrl(it) }
                                     try {
                                         context.startActivity(intent)
                                     } catch (_: Exception) {
-                                        if (fallbackUrl != null) {
+                                        if (!fallbackUrl.isNullOrBlank()) {
                                             view?.loadUrl(fallbackUrl)
                                         } else {
                                             val packageName = intent.`package`
@@ -209,11 +231,15 @@ fun DealWebViewScreen(
                                 return true
                             }
 
+                            val parsedUri = runCatching { Uri.parse(requestUrl) }.getOrNull()
+                            val scheme = parsedUri?.scheme?.lowercase().orEmpty()
+                            if (scheme in BLOCKED_WEBVIEW_SCHEMES || scheme.isBlank()) {
+                                return true
+                            }
+
                             if (!requestUrl.startsWith("http://", ignoreCase = true) &&
                                 !requestUrl.startsWith("https://", ignoreCase = true)
                             ) {
-                                val parsedUri = runCatching { Uri.parse(requestUrl) }.getOrNull()
-                                val scheme = parsedUri?.scheme?.lowercase().orEmpty()
                                 try {
                                     val intent = Intent(Intent.ACTION_VIEW, parsedUri ?: Uri.parse(requestUrl)).apply {
                                         addCategory(Intent.CATEGORY_BROWSABLE)
@@ -245,10 +271,19 @@ fun DealWebViewScreen(
                                 return true
                             }
 
+                            if (requestUrl.startsWith("http://", ignoreCase = true) && request?.isForMainFrame == true) {
+                                val upgradedUrl = resolveMobileWebViewUrl(requestUrl)
+                                if (upgradedUrl.isNotBlank()) {
+                                    view?.loadUrl(upgradedUrl)
+                                    return true
+                                }
+                            }
+
                             return super.shouldOverrideUrlLoading(view, request)
                         }
                     }
 
+                    @Suppress("DEPRECATION")
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
@@ -259,11 +294,17 @@ fun DealWebViewScreen(
                         displayZoomControls = false
                         allowFileAccess = false
                         allowContentAccess = false
-                        mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                        allowFileAccessFromFileURLs = false
+                        allowUniversalAccessFromFileURLs = false
+                        mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            safeBrowsingEnabled = true
+                        }
                     }
 
                     val resolvedUrl = resolveMobileWebViewUrl(url)
-                    settings.userAgentString = if (resolvedUrl.contains("bbasak.com")) {
+                    val resolvedHost = runCatching { Uri.parse(resolvedUrl).host }.getOrNull()
+                    settings.userAgentString = if (isHostOrSubdomain(resolvedHost, "bbasak.com")) {
                         DESKTOP_CHROME_UA
                     } else {
                         CLEAN_MOBILE_UA
@@ -272,11 +313,15 @@ fun DealWebViewScreen(
                     webView = this
 
                     val extraHeaders = mutableMapOf<String, String>()
-                    if (resolvedUrl.contains("naver.com") || resolvedUrl.contains("fmkorea.com") || resolvedUrl.contains("clien.net") || resolvedUrl.contains("quasarzone.com")) {
+                    if (isHostOrSubdomain(resolvedHost, "naver.com") ||
+                        isHostOrSubdomain(resolvedHost, "fmkorea.com") ||
+                        isHostOrSubdomain(resolvedHost, "clien.net") ||
+                        isHostOrSubdomain(resolvedHost, "quasarzone.com")
+                    ) {
                         extraHeaders["Referer"] = "https://search.naver.com"
-                    } else if (resolvedUrl.contains("auction.co.kr")) {
+                    } else if (isHostOrSubdomain(resolvedHost, "auction.co.kr")) {
                         extraHeaders["Referer"] = "https://m.auction.co.kr"
-                    } else if (resolvedUrl.contains("gmarket.co.kr")) {
+                    } else if (isHostOrSubdomain(resolvedHost, "gmarket.co.kr")) {
                         extraHeaders["Referer"] = "https://m.gmarket.co.kr"
                     }
 

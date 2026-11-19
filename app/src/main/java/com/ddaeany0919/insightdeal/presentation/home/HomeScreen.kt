@@ -3,6 +3,7 @@ package com.ddaeany0919.insightdeal.presentation.home
 import com.ddaeany0919.insightdeal.presentation.decodeHtmlEntities
 import com.ddaeany0919.insightdeal.presentation.formatPrice
 import com.ddaeany0919.insightdeal.presentation.resolveShopBadgeAndCleanTitle
+import com.ddaeany0919.insightdeal.presentation.theme.LocalIsDarkTheme
 import androidx.compose.foundation.*
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -136,7 +137,7 @@ fun HomeScreen(
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val networkMonitor = remember { NetworkMonitor(context) }
     val isOnline by networkMonitor.isOnline.collectAsStateWithLifecycle(initialValue = true)
-    val isDark = MaterialTheme.colorScheme.background.red < 0.2f
+    val isDark = LocalIsDarkTheme.current
 
     var isNotificationPermissionGranted by remember {
         mutableStateOf(androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled())
@@ -236,8 +237,8 @@ fun HomeScreen(
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(
-                                        Color(0xFF3A7BD5),
-                                        Color(0xFF3A6073)
+                                        Color(0xFF1B64DA),
+                                        Color(0xFF1E3A5F)
                                     )
                                 )
                             ),
@@ -246,7 +247,7 @@ fun HomeScreen(
                         Icon(
                             imageVector = Icons.Default.NotificationsActive,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = Color(0xFFF9FAFB),
                             modifier = Modifier.size(32.dp)
                         )
                     }
@@ -330,9 +331,6 @@ fun HomeScreen(
     val notificationAlerts by com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager.alerts.collectAsStateWithLifecycle()
     var showNotificationHistory by remember { mutableStateOf(false) }
 
-    val username by com.ddaeany0919.insightdeal.presentation.auth.AuthManager.getUsername(context).collectAsStateWithLifecycle(initialValue = "guest")
-    val isLoggedIn = username != "guest" && !username.isNullOrEmpty()
-
     val hiddenDeals = remember { mutableStateListOf<String>() }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         val prefs = context.getSharedPreferences("app", android.content.Context.MODE_PRIVATE)
@@ -353,8 +351,6 @@ fun HomeScreen(
     var showDealOptionsBottomSheet by remember { mutableStateOf(false) }
     var selectedDealForOptions by remember { mutableStateOf<DealItem?>(null) }
     var showWhyThisDealDialog by remember { mutableStateOf<DealItem?>(null) }
-    var showReportDialog by remember { mutableStateOf<DealItem?>(null) }
-    var showAuthRequiredDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -404,8 +400,10 @@ fun HomeScreen(
                 navController.navigate("webview/$encodedUrl")
             } else {
                 viewModel.trackOutboundClick(url)
-                val prefs = com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager.getEncryptedPrefs(context)
-                val savedTime = prefs.getLong("last_dismiss_commission_time", 0L)
+                val prefs = runCatching {
+                    com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager.getEncryptedPrefs(context)
+                }.getOrNull()
+                val savedTime = prefs?.getLong("last_dismiss_commission_time", 0L) ?: 0L
                 val currentTime = System.currentTimeMillis()
                 val shouldShowSheet = (currentTime - savedTime) > 24 * 60 * 60 * 1000
 
@@ -466,7 +464,7 @@ fun HomeScreen(
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(
                                     brush = Brush.linearGradient(
-                                        colors = listOf(Color(0xFFFF6B35), Color(0xFFFF3B30))
+                                        colors = listOf(Color(0xFFB84500), Color(0xFFC92A37))
                                     )
                                 ),
                             contentAlignment = Alignment.Center
@@ -474,7 +472,7 @@ fun HomeScreen(
                             Icon(
                                 imageVector = Icons.Default.LocalOffer,
                                 contentDescription = "InsightDeal 로고",
-                                tint = Color.White,
+                                tint = Color(0xFFF9FAFB),
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -492,6 +490,7 @@ fun HomeScreen(
                     val alertsCount = notificationAlerts.size
                     Box(
                         modifier = Modifier
+                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                             .bounceClick { showNotificationHistory = true }
                             .padding(8.dp),
                         contentAlignment = Alignment.Center
@@ -504,7 +503,7 @@ fun HomeScreen(
                         if (alertsCount > 0) {
                             Surface(
                                 shape = CircleShape,
-                                color = Color(0xFFFF3B30),
+                                color = Color(0xFFC92A37),
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .padding(top = 0.dp, end = 0.dp)
@@ -516,7 +515,7 @@ fun HomeScreen(
                                 ) {
                                     Text(
                                         text = "+$alertsCount",
-                                        color = Color.White,
+                                        color = Color(0xFFF9FAFB),
                                         fontSize = 8.sp,
                                         fontWeight = FontWeight.Bold,
                                         style = TextStyle(
@@ -534,6 +533,7 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.width(4.dp))
                     Box(
                         modifier = Modifier
+                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                             .bounceClick { navController.navigate("keyword_alarm") }
                             .padding(8.dp),
                         contentAlignment = Alignment.Center
@@ -560,7 +560,7 @@ fun HomeScreen(
             ) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = if (isDark) Color(0xFFD84315) else Color(0xFFFF9500),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
                     shadowElevation = 2.dp
                 ) {
                     Row(
@@ -573,13 +573,13 @@ fun HomeScreen(
                         Icon(
                             imageVector = Icons.Default.CloudOff,
                             contentDescription = "Offline Warning",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "현재 오프라인 상태예요. 저장된 핫딜 목록을 보여드릴게요.",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -634,7 +634,7 @@ fun HomeScreen(
                                 }
                             }
                         },
-                    color = if (isDark) Color(0xFF2E7D32).copy(alpha = 0.85f) else Color(0xFFE8F5E9),
+                    color = MaterialTheme.colorScheme.primaryContainer,
                     shadowElevation = 2.dp
                 ) {
                     Row(
@@ -651,21 +651,21 @@ fun HomeScreen(
                             Icon(
                                 imageVector = Icons.Default.NotificationsActive,
                                 contentDescription = "Notification Warning",
-                                tint = if (isDark) Color.White else Color(0xFF2E7D32),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
                                     text = "알림 권한을 켜면 원하는 특가를 바로 받아볼 수 있어요",
-                                    color = if (isDark) Color.White else Color(0xFF1B5E20),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "터치하여 실시간 핫딜 알림을 켜고 스마트하게 절약해보세요.",
-                                    color = if (isDark) Color.White.copy(alpha = 0.8f) else Color(0xFF388E3C),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium
                                 )
@@ -674,8 +674,8 @@ fun HomeScreen(
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowRight,
                             contentDescription = "이동",
-                            tint = if (isDark) Color.White.copy(alpha = 0.7f) else Color(0xFF2E7D32),
-                            modifier = Modifier.size(12.dp)
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
@@ -734,14 +734,12 @@ fun HomeScreen(
                                             }
 
                                             val primaryPickUrl = remember(pick.id, pick.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
-                                                val fallbackPickImg = "https://placehold.co/400x300/E2E8F0/A0AEC0?text=Deal"
-                                                val rawPickUrl = pick.imageUrl.takeIf { !it.isNullOrBlank() } ?: fallbackPickImg
+                                                val rawPickUrl = pick.imageUrl?.takeIf { it.isNotBlank() }
                                                 com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(rawPickUrl, targetWidth = 400)
                                             }
 
                                             val fallbackPickUrl = remember(pick.id, pick.imageUrl, com.ddaeany0919.insightdeal.data.network.NetworkConfig.getActiveServerUrl()) {
-                                                val fallbackPickImg = "https://placehold.co/400x300/E2E8F0/A0AEC0?text=Deal"
-                                                val rawPickUrl = pick.imageUrl.takeIf { !it.isNullOrBlank() } ?: fallbackPickImg
+                                                val rawPickUrl = pick.imageUrl?.takeIf { it.isNotBlank() }
                                                 com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(rawPickUrl)
                                             }
 
@@ -795,14 +793,14 @@ fun HomeScreen(
                                             Card(
                                                 modifier = Modifier
                                                     .width(184.dp)
-                                                    .height(206.dp)
+                                                    .height(216.dp)
                                                     .bounceClick {
                                                         onNavigateToDetail(pick.id)
                                                     },
                                                 shape = RoundedCornerShape(16.dp),
                                                 elevation = CardDefaults.cardElevation(if (isDark) 0.dp else 2.dp),
                                                 colors = CardDefaults.cardColors(
-                                                    containerColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f) else Color.White,
+                                                    containerColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f) else MaterialTheme.colorScheme.surface,
                                                     contentColor = MaterialTheme.colorScheme.onSurface
                                                 )
                                             ) {
@@ -814,7 +812,7 @@ fun HomeScreen(
                                                                 .height(100.dp)
                                                                 .fillMaxWidth()
                                                                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
-                                                            textStyle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                                                            textStyle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFFF9FAFB))
                                                         )
                                                     } else {
                                                         SubcomposeAsyncImage(
@@ -823,7 +821,7 @@ fun HomeScreen(
                                                             modifier = Modifier
                                                                 .height(100.dp)
                                                                 .fillMaxWidth()
-                                                                .background(if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White)
+                                                                .background(MaterialTheme.colorScheme.surfaceVariant)
                                                                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
                                                             contentScale = ContentScale.Crop,
                                                             onError = {
@@ -835,7 +833,7 @@ fun HomeScreen(
                                                                 BrandPlaceholder(
                                                                     siteName = pick.siteName,
                                                                     modifier = Modifier.fillMaxSize(),
-                                                                    textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                                                    textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF9FAFB))
                                                                 )
                                                             }
                                                         )
@@ -881,7 +879,7 @@ fun HomeScreen(
                                                                 Text(
                                                                     text = priceText,
                                                                     color = if (pick.price > 0L || priceText == "무료") {
-                                                                        if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30)
+                                                                        MaterialTheme.colorScheme.error
                                                                     } else {
                                                                         MaterialTheme.colorScheme.onSurfaceVariant
                                                                     },
@@ -929,12 +927,12 @@ fun HomeScreen(
                                                                         }
                                                                     }
                                                                 },
-                                                                modifier = Modifier.size(22.dp)
+                                                                modifier = Modifier.size(48.dp)
                                                             ) {
                                                                 Icon(
                                                                     imageVector = if (isBookmarked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                                                                     contentDescription = "관심 상품",
-                                                                    tint = if (isBookmarked) Color.Red else Color.Gray,
+                                                                    tint = if (isBookmarked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                                                     modifier = Modifier.size(18.dp)
                                                                 )
                                                             }
@@ -980,9 +978,11 @@ fun HomeScreen(
 
                             var hideKeywordBanner by remember {
                                 mutableStateOf(
-                                    com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
-                                        .getEncryptedPrefs(context)
-                                        .getBoolean("hide_home_kw_banner", false)
+                                    runCatching {
+                                        com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
+                                            .getEncryptedPrefs(context)
+                                            .getBoolean("hide_home_kw_banner", false)
+                                    }.getOrDefault(false)
                                 )
                             }
                             if (!hideKeywordBanner) {
@@ -997,7 +997,7 @@ fun HomeScreen(
                                         if (isDark) Color(0xFF2B333E) else Color(0xFFE5E8EB)
                                     ),
                                     colors = CardDefaults.cardColors(
-                                        containerColor = if (isDark) Color(0xFF191F28) else Color.White
+                                        containerColor = MaterialTheme.colorScheme.surface
                                     )
                                 ) {
                                     Row(
@@ -1010,13 +1010,13 @@ fun HomeScreen(
                                             modifier = Modifier
                                                 .size(26.dp)
                                                 .clip(RoundedCornerShape(8.dp))
-                                                .background(if (isDark) Color(0x33FF5A26) else Color(0xFFFFF1EC)),
+                                                .background(MaterialTheme.colorScheme.secondaryContainer),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.NotificationsActive,
                                                 contentDescription = "알림",
-                                                tint = Color(0xFFFF5A26),
+                                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
                                                 modifier = Modifier.size(15.dp)
                                             )
                                         }
@@ -1034,30 +1034,36 @@ fun HomeScreen(
                                             text = "설정",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color(0xFFFF5A26)
+                                            color = MaterialTheme.colorScheme.secondary
                                         )
                                         Icon(
                                             imageVector = Icons.Default.KeyboardArrowRight,
                                             contentDescription = "이동",
-                                            tint = Color(0xFFFF5A26),
+                                            tint = MaterialTheme.colorScheme.secondary,
                                             modifier = Modifier.size(16.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "배너 닫기",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        Box(
                                             modifier = Modifier
-                                                .size(16.dp)
+                                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                                 .clickable {
                                                     hideKeywordBanner = true
-                                                    com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
-                                                        .getEncryptedPrefs(context)
-                                                        .edit()
-                                                        .putBoolean("hide_home_kw_banner", true)
-                                                        .apply()
-                                                }
-                                        )
+                                                    runCatching {
+                                                        com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
+                                                            .getEncryptedPrefs(context)
+                                                            .edit()
+                                                            .putBoolean("hide_home_kw_banner", true)
+                                                            .apply()
+                                                    }
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "배너 닫기",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1100,7 +1106,7 @@ fun HomeScreen(
                                             viewModel.searchDeals(currentItem.keyword)
                                         },
                                     shape = RoundedCornerShape(12.dp),
-                                    color = if (isDark) Color(0xFF191F28) else Color.White,
+                                    color = MaterialTheme.colorScheme.surface,
                                     border = BorderStroke(
                                         1.dp,
                                         if (isDark) Color(0xFF2B333E) else Color(0xFFE5E8EB)
@@ -1160,13 +1166,13 @@ fun HomeScreen(
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Surface(
                                                     shape = RoundedCornerShape(4.dp),
-                                                    color = if (isDark) Color(0x33FF5A26) else Color(0xFFFFF1EC)
+                                                    color = MaterialTheme.colorScheme.secondaryContainer
                                                 ) {
                                                     Text(
                                                         text = "인기",
                                                         fontSize = 9.sp,
                                                         fontWeight = FontWeight.ExtraBold,
-                                                        color = Color(0xFFFF5A26),
+                                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                                                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                                     )
                                                 }
@@ -1174,9 +1180,12 @@ fun HomeScreen(
                                         }
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.clickable {
-                                                navController.navigate("advanced_search")
-                                            }
+                                            modifier = Modifier
+                                                .heightIn(min = 48.dp)
+                                                .clickable {
+                                                    navController.navigate("advanced_search")
+                                                }
+                                                .padding(horizontal = 4.dp)
                                         ) {
                                             Text(
                                                 text = "전체 순위",
@@ -1265,18 +1274,23 @@ fun HomeScreen(
                                     )
                                 }
                                 if (searchInput.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Icon(
-                                        imageVector = Icons.Default.Cancel,
-                                        contentDescription = "검색어 지우기",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Box(
                                         modifier = Modifier
-                                            .size(18.dp)
+                                            .size(48.dp)
                                             .clickable {
                                                 searchInput = ""
                                                 viewModel.searchDeals("")
-                                            }
-                                    )
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Cancel,
+                                            contentDescription = "검색어 지우기",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1292,36 +1306,41 @@ fun HomeScreen(
                             ) { idx ->
                                 val chip = HomeViewModel.COMMUNITY_FILTER_CHIPS[idx]
                                 val isSelected = filterState.communityChip == chip
-                                val chipContainer = when {
-                                    isSelected && isDark -> Color.White
-                                    isSelected -> Color(0xFF191F28)
-                                    isDark -> Color(0xFF191F28)
-                                    else -> Color.White
+                                val chipContainer = if (isSelected) {
+                                    MaterialTheme.colorScheme.inverseSurface
+                                } else {
+                                    MaterialTheme.colorScheme.surface
                                 }
-                                val chipContent = when {
-                                    isSelected && isDark -> Color(0xFF111827)
-                                    isSelected -> Color.White
-                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                val chipContent = if (isSelected) {
+                                    MaterialTheme.colorScheme.inverseOnSurface
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
                                 }
-                                Surface(
-                                    shape = RoundedCornerShape(999.dp),
-                                    color = chipContainer,
-                                    border = if (isSelected) null else BorderStroke(
-                                        1.dp,
-                                        if (isDark) Color(0xFF2B333E) else Color(0xFFE5E8EB)
-                                    ),
-                                    modifier = Modifier.clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        viewModel.selectCommunityChip(chip)
-                                    }
+                                Box(
+                                    modifier = Modifier
+                                        .heightIn(min = 48.dp)
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            viewModel.selectCommunityChip(chip)
+                                        },
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Text(
-                                        text = chip,
-                                        fontSize = 12.5.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = chipContent,
-                                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp)
-                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(999.dp),
+                                        color = chipContainer,
+                                        border = if (isSelected) null else BorderStroke(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.outline
+                                        )
+                                    ) {
+                                        Text(
+                                            text = chip,
+                                            fontSize = 12.5.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = chipContent,
+                                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1351,24 +1370,30 @@ fun HomeScreen(
                                         Surface(
                                             shape = RoundedCornerShape(8.dp),
                                             color = when {
-                                                selected && isDark -> Color(0xFF2B333E)
-                                                selected -> Color.White
+                                                selected && isDark -> MaterialTheme.colorScheme.surfaceVariant
+                                                selected -> MaterialTheme.colorScheme.surface
                                                 else -> Color.Transparent
                                             },
                                             shadowElevation = if (selected && !isDark) 1.dp else 0.dp,
-                                            modifier = Modifier.clickable {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                viewModel.selectSort(sortKey)
-                                            }
+                                            modifier = Modifier
+                                                .heightIn(min = 48.dp)
+                                                .clickable {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    viewModel.selectSort(sortKey)
+                                                }
                                         ) {
-                                            Text(
-                                                text = sortLabel,
-                                                fontSize = 12.sp,
-                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                                color = if (selected) MaterialTheme.colorScheme.onSurface
-                                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                            )
+                                            Box(
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = sortLabel,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                                    color = if (selected) MaterialTheme.colorScheme.onSurface
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -1456,26 +1481,24 @@ fun HomeScreen(
                                     )
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Text(
-                                        text = "핫딜 목록을 불러오지 못했어요",
+                                        text = "핫딜 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.onErrorContainer
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "네트워크 상태를 확인한 뒤 다시 시도해 주세요.",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.65f)
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Spacer(modifier = Modifier.height(14.dp))
                                     Button(
                                         onClick = { dealsPagingItems.refresh() },
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.error,
+                                            contentColor = MaterialTheme.colorScheme.onError
+                                        ),
                                         shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                        modifier = Modifier.height(34.dp)
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                        modifier = Modifier.heightIn(min = 48.dp)
                                     ) {
-                                        Text("다시 시도", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("다시 시도", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -1539,8 +1562,8 @@ fun HomeScreen(
                                                     viewModel.resetHomeFilters()
                                                 },
                                                 shape = RoundedCornerShape(8.dp),
-                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                                modifier = Modifier.height(32.dp)
+                                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                                modifier = Modifier.heightIn(min = 48.dp)
                                             ) {
                                                 Text("필터 초기화", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                             }
@@ -1602,13 +1625,59 @@ fun HomeScreen(
                             }
                         }
 
-                        if (dealsPagingItems.loadState.append is LoadState.Loading) {
-                            item(
-                                key = "append_skeleton",
-                                span = { GridItemSpan(maxLineSpan) },
-                                contentType = "skeleton_loader"
-                            ) {
-                                HomeDealCardSkeleton()
+                        val appendState = dealsPagingItems.loadState.append
+                        when {
+                            appendState is LoadState.Loading -> {
+                                item(
+                                    key = "append_skeleton",
+                                    span = { GridItemSpan(maxLineSpan) },
+                                    contentType = "skeleton_loader"
+                                ) {
+                                    HomeDealCardSkeleton()
+                                }
+                            }
+                            appendState is LoadState.Error -> {
+                                item(
+                                    key = "append_error",
+                                    span = { GridItemSpan(maxLineSpan) },
+                                    contentType = "append_error"
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 12.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { dealsPagingItems.retry() },
+                                            modifier = Modifier.heightIn(min = 48.dp)
+                                        ) {
+                                            Text("더 불러오기 다시 시도", fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                            }
+                            appendState is LoadState.NotLoading &&
+                                appendState.endOfPaginationReached &&
+                                dealsPagingItems.itemCount > 0 -> {
+                                item(
+                                    key = "append_end",
+                                    span = { GridItemSpan(maxLineSpan) },
+                                    contentType = "append_end"
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 14.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "모든 핫딜을 불러왔어요",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -1633,6 +1702,7 @@ fun HomeScreen(
         ) {
             androidx.compose.material3.Surface(
                 modifier = Modifier
+                    .heightIn(min = 48.dp)
                     .bounceClick {
                         dealsPagingItems.refresh()
                         viewModel.onRefreshNewDeals()
@@ -1647,7 +1717,9 @@ fun HomeScreen(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -1678,7 +1750,7 @@ fun HomeScreen(
             ModalBottomSheet(
                 onDismissRequest = { showCommissionSheet = false },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                containerColor = if (isDark) MaterialTheme.colorScheme.surface else Color.White,
+                containerColor = MaterialTheme.colorScheme.surface,
                 dragHandle = { BottomSheetDefaults.DragHandle() }
             ) {
                 Column(
@@ -1744,8 +1816,10 @@ fun HomeScreen(
                         onClick = {
                             showCommissionSheet = false
                             if (dontShowToday) {
-                                val prefs = com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager.getEncryptedPrefs(context)
-                                prefs.edit().putLong("last_dismiss_commission_time", System.currentTimeMillis()).apply()
+                                runCatching {
+                                    val prefs = com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager.getEncryptedPrefs(context)
+                                    prefs.edit().putLong("last_dismiss_commission_time", System.currentTimeMillis()).apply()
+                                }
                             }
                             if (pendingUrlToOpen.isNotEmpty()) {
                                 CustomTabLauncher.launchShoppingUrl(context, pendingUrlToOpen)
@@ -1756,14 +1830,15 @@ fun HomeScreen(
                             .height(52.dp),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isDark) Color(0xFFFF5A36) else Color(0xFFFF3B30)
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         )
                     ) {
                         Text(
                             text = "확인하고 쇼핑몰로 이동하기",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onPrimary
                         )
                     }
                 }
@@ -1828,7 +1903,7 @@ fun HomeScreen(
                             Icon(
                                 imageVector = if (isWishlisted) Icons.Filled.Favorite else Icons.Default.FavoriteBorder,
                                 contentDescription = null,
-                                tint = if (isWishlisted) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = if (isWishlisted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(24.dp)
                             )
                             Text(
@@ -1847,17 +1922,13 @@ fun HomeScreen(
                         color = if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color(0xFFF2F4F7)
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            // 1) 이 글 숨기기 (로그인 가드 및 영구 필터 등록)
+                            // 1) 이 글 숨기기 (비로그인 허용 즉시 숨김)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
                                         showDealOptionsBottomSheet = false
-                                        if (isLoggedIn) {
-                                            hideDeal(deal.id)
-                                        } else {
-                                            showAuthRequiredDialog = true
-                                        }
+                                        hideDeal(deal.id)
                                     }
                                     .padding(horizontal = 16.dp, vertical = 18.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1902,34 +1973,6 @@ fun HomeScreen(
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-
-                            HorizontalDivider(color = if (isDark) MaterialTheme.colorScheme.outlineVariant else Color(0xFFE4E7EC), thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
-
-                            // 3) 신고하기 (빨간색 맑은 레드)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        showDealOptionsBottomSheet = false
-                                        showReportDialog = deal
-                                    }
-                                    .padding(horizontal = 16.dp, vertical = 18.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Report,
-                                    contentDescription = null,
-                                    tint = Color.Red,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Text(
-                                    text = "신고하기",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.Red
                                 )
                             }
                         }
@@ -1981,93 +2024,6 @@ fun HomeScreen(
             )
         }
 
-        // 🚨 신고 사유 선택 다이얼로그 (신고하기 클릭 시)
-        if (showReportDialog != null) {
-            var selectedReason by remember { mutableStateOf(0) }
-            val reasons = listOf(
-                "광고성 / 홍보성 / 도배성 게시글",
-                "판매 종료 / 링크 깨짐 / 가격 오류",
-                "욕설 / 비방 / 불쾌감을 주는 내용",
-                "기타 사유"
-            )
-            AlertDialog(
-                onDismissRequest = { showReportDialog = null },
-                title = { Text(text = "이 게시글을 신고할까요?", fontWeight = FontWeight.Bold) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = "신고 사유를 선택해 주세요. 확인 후 신속히 처리하겠습니다.",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        reasons.forEachIndexed { index, reason ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { selectedReason = index }
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                RadioButton(
-                                    selected = selectedReason == index,
-                                    onClick = { selectedReason = index }
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(text = reason, fontSize = 14.sp)
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            showReportDialog = null
-                            android.widget.Toast.makeText(context, "신고가 접수되었어요. 빠르게 확인 후 조치할게요.", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    ) {
-                        Text("신고 제출", color = Color.Red, fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showReportDialog = null }) {
-                        Text("취소")
-                    }
-                }
-            )
-        }
-
-        // 로그인 권유 가드 다이얼로그 (비로그인 사용자 안내)
-        if (showAuthRequiredDialog) {
-            AlertDialog(
-                onDismissRequest = { showAuthRequiredDialog = false },
-                title = { Text(text = "로그인이 필요해요", fontWeight = FontWeight.Bold) },
-                text = {
-                    Text(
-                        text = "관심 키워드 알림과 핫딜 숨기기 기능은 로그인 후 이용할 수 있습니다.\n\n" +
-                                "로그인 화면으로 이동할까요?",
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            showAuthRequiredDialog = false
-                            navController.navigate("auth")
-                        }
-                    ) {
-                        Text("확인하고 로그인하기", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showAuthRequiredDialog = false }) {
-                        Text("취소")
-                    }
-                }
-            )
-        }
-
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
@@ -2081,12 +2037,12 @@ fun HomeScreen(
 // ✨ 세로형 딜 카드를 위한 스켈레톤 (Recomposition 방지용, 다크모드 완벽 대응)
 @Composable
 fun HomeDealCardSkeleton() {
-    val isDark = MaterialTheme.colorScheme.background.red < 0.2f
+    val isDark = LocalIsDarkTheme.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(if (isDark) 0.dp else 2.dp),
-        colors = CardDefaults.cardColors(containerColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f) else Color.White)
+        colors = CardDefaults.cardColors(containerColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface)
     ) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -2210,7 +2166,7 @@ fun DealCardComposable(
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val isDark = MaterialTheme.colorScheme.background.red < 0.2f
+    val isDark = LocalIsDarkTheme.current
 
     // 1. 쇼핑몰 배지 및 중복 [말머리] 제거·HTML 엔티티 디코딩 캐싱
     val resolvedShopTitle = remember(deal.id, deal.title, deal.shopName, deal.ecommerceUrl) {
@@ -2344,7 +2300,7 @@ fun DealCardComposable(
         if (percentileText == "일반") "커뮤니티 추천도 ${deal.honeyScore}점" else "커뮤니티 인기 $percentileText · 추천도 ${deal.honeyScore}점"
     }
 
-    val cardBgColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f) else Color.White
+    val cardBgColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f) else MaterialTheme.colorScheme.surface
     val cardContentColor = MaterialTheme.colorScheme.onSurface
     val highlightBg = if (isDark) Color(0x4DFFB74D) else Color(0xFFFFF3BF)
     val highlightFg = if (isDark) Color(0xFFFFE082) else Color(0xFF7C2D12)
@@ -2378,7 +2334,7 @@ fun DealCardComposable(
                             modifier = Modifier
                                 .size(80.dp)
                                 .clip(RoundedCornerShape(8.dp)),
-                            textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF9FAFB))
                         )
                     } else {
                         Box(modifier = Modifier.size(80.dp)) {
@@ -2387,7 +2343,7 @@ fun DealCardComposable(
                                 contentDescription = resolvedShopTitle.cleanTitle,
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White, RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
                                     .clip(RoundedCornerShape(8.dp)),
                                 colorFilter = if (deal.isClosed) CLOSED_DEAL_COLOR_FILTER else null,
                                 contentScale = ContentScale.Crop,
@@ -2400,7 +2356,7 @@ fun DealCardComposable(
                                     BrandPlaceholder(
                                         siteName = deal.siteName,
                                         modifier = Modifier.fillMaxSize(),
-                                        textStyle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        textStyle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF9FAFB))
                                     )
                                 }
                             )
@@ -2410,12 +2366,12 @@ fun DealCardComposable(
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(Color.Black.copy(alpha = 0.5f)),
+                                        .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.85f)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = "종료",
-                                        color = Color.White,
+                                        color = MaterialTheme.colorScheme.inverseOnSurface,
                                         fontWeight = FontWeight.ExtraBold,
                                         fontSize = 12.sp
                                     )
@@ -2430,52 +2386,40 @@ fun DealCardComposable(
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Top
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             FlowRow(
                                 modifier = Modifier.weight(1f).padding(end = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                sourcesToRender.forEach { source ->
-                                    val displaySiteName = if (source.siteName.contains(" - ")) {
-                                        source.siteName.substringBefore(" - ").trim()
+                                val primarySource = sourcesToRender.firstOrNull()
+                                if (primarySource != null) {
+                                    val baseSiteName = if (primarySource.siteName.contains(" - ")) {
+                                        primarySource.siteName.substringBefore(" - ").trim()
                                     } else {
-                                        source.siteName
+                                        primarySource.siteName.trim()
                                     }
-                                    val siteNameLower = displaySiteName.lowercase(Locale.getDefault())
+                                    val displaySiteName = if (sourcesToRender.size > 1) {
+                                        "$baseSiteName +${sourcesToRender.size - 1}"
+                                    } else {
+                                        baseSiteName
+                                    }
+                                    val siteNameLower = baseSiteName.lowercase(Locale.getDefault())
                                     val (containerColor, contentColor) = when {
-                                        siteNameLower.contains("뽐뿌") -> Color(0xFF1565C0) to Color.White
-                                        siteNameLower.contains("퀘이사존") -> Color(0xFFE65100) to Color.White
-                                        siteNameLower.contains("루리웹") -> Color(0xFF0D47A1) to Color.White
-                                        siteNameLower.contains("펨코") || siteNameLower.contains("에펨코리아") -> Color(0xFF0288D1) to Color.White
-                                        siteNameLower.contains("빠삭") -> Color(0xFFC2185B) to Color.White
-                                        siteNameLower.contains("클리앙") -> Color(0xFF37474F) to Color.White
-                                        else -> if (isDark) Color(0xFF424242) to Color.White else Color(0xFFE0E0E0) to Color.Black
+                                        siteNameLower.contains("뽐뿌") -> Color(0xFF1565C0) to Color(0xFFF9FAFB)
+                                        siteNameLower.contains("퀘이사존") -> Color(0xFFB84500) to Color(0xFFF9FAFB)
+                                        siteNameLower.contains("루리웹") -> Color(0xFF0D47A1) to Color(0xFFF9FAFB)
+                                        siteNameLower.contains("펨코") || siteNameLower.contains("에펨코리아") -> Color(0xFF026AA7) to Color(0xFFF9FAFB)
+                                        siteNameLower.contains("빠삭") -> Color(0xFFAD1457) to Color(0xFFF9FAFB)
+                                        siteNameLower.contains("클리앙") -> Color(0xFF37474F) to Color(0xFFF9FAFB)
+                                        else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
                                     }
 
                                     Surface(
                                         shape = RoundedCornerShape(4.dp),
                                         color = containerColor,
-                                        modifier = Modifier
-                                            .align(Alignment.CenterVertically)
-                                            .clickable {
-                                                try {
-                                                    val targetUrl = source.postUrl
-                                                    val safeUrl = targetUrl.replace(":443", "")
-                                                    if (safeUrl.isNotBlank()) {
-                                                        var finalUrl = if (safeUrl.startsWith("http")) safeUrl else "https://$safeUrl"
-                                                        if (finalUrl.contains("bbasak.com") && !finalUrl.contains("device=pc")) {
-                                                            finalUrl += if (finalUrl.contains("?")) "&device=pc" else "?device=pc"
-                                                        }
-                                                        onOpenUrl(finalUrl)
-                                                    } else {
-                                                        android.widget.Toast.makeText(context, "연결할 링크가 없어요.", android.widget.Toast.LENGTH_SHORT).show()
-                                                    }
-                                                } catch (_: Exception) {
-                                                    android.widget.Toast.makeText(context, "브라우저를 열 수 없어요.", android.widget.Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
+                                        modifier = Modifier.align(Alignment.CenterVertically)
                                     ) {
                                         Text(
                                             text = displaySiteName,
@@ -2487,39 +2431,56 @@ fun DealCardComposable(
                                     }
                                 }
 
-                                if (!resolvedShopTitle.shopBadge.isNullOrBlank()) {
-                                    Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = if (isDark) Color(0xFF2B333E) else Color(0xFFF2F4F7),
-                                        border = BorderStroke(
-                                            0.5.dp,
-                                            if (isDark) Color(0xFF3E4856) else Color(0xFFE5E8EB)
-                                        ),
-                                        modifier = Modifier.align(Alignment.CenterVertically)
-                                    ) {
-                                        Text(
-                                            text = resolvedShopTitle.shopBadge,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                // Density Cap: 상단 보조 칩은 우선순위(인기 -> 옵션 N개 -> 쇼핑몰) 기준 최대 1개만 표시
+                                when {
+                                    isSuperHot -> {
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.errorContainer,
+                                            modifier = Modifier.align(Alignment.CenterVertically)
+                                        ) {
+                                            Text(
+                                                text = "인기",
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = MaterialTheme.colorScheme.onErrorContainer
+                                            )
+                                        }
                                     }
-                                }
-
-                                if (deal.hasMultipleOptions && optionCount > 1) {
-                                    Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = if (isDark) Color(0xFF1E3A5F) else Color(0xFFEFF6FF),
-                                        modifier = Modifier.align(Alignment.CenterVertically)
-                                    ) {
-                                        Text(
-                                            text = "옵션 ${optionCount}개",
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isDark) Color(0xFF93C5FD) else Color(0xFF1D4ED8)
-                                        )
+                                    deal.hasMultipleOptions && optionCount > 1 -> {
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            modifier = Modifier.align(Alignment.CenterVertically)
+                                        ) {
+                                            Text(
+                                                text = "옵션 ${optionCount}개",
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+                                    !resolvedShopTitle.shopBadge.isNullOrBlank() -> {
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant,
+                                            border = BorderStroke(
+                                                0.5.dp,
+                                                MaterialTheme.colorScheme.outline
+                                            ),
+                                            modifier = Modifier.align(Alignment.CenterVertically)
+                                        ) {
+                                            Text(
+                                                text = resolvedShopTitle.shopBadge,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                     }
                                 }
 
@@ -2544,12 +2505,13 @@ fun DealCardComposable(
                                         isExpanded = !isExpanded
                                     }
                                 },
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
                                     contentDescription = "더보기",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
@@ -2585,7 +2547,7 @@ fun DealCardComposable(
                                     fontSize = priceFontSize,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = if (deal.price > 0L || priceText == "무료") {
-                                        if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30)
+                                        MaterialTheme.colorScheme.error
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant
                                     },
@@ -2672,10 +2634,11 @@ fun DealCardComposable(
                                     val optPriceText = formatPrice(opt.price, opt.currency, opt.name)
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White,
+                                        color = MaterialTheme.colorScheme.surface,
                                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .heightIn(min = 48.dp)
                                             .clickable {
                                                 if (opt.targetUrl.isNotBlank()) {
                                                     val finalOptUrl = if (opt.targetUrl.startsWith("http")) opt.targetUrl else "https://${opt.targetUrl}"
@@ -2703,7 +2666,7 @@ fun DealCardComposable(
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = if (opt.price > 0L || optPriceText == "무료") {
-                                                        if (isDark) Color(0xFFFF453A) else Color(0xFFFF3B30)
+                                                        MaterialTheme.colorScheme.error
                                                     } else {
                                                         MaterialTheme.colorScheme.onSurfaceVariant
                                                     }
@@ -2746,10 +2709,10 @@ fun DealCardComposable(
 
                         Button(
                             onClick = onDetailClick,
-                            modifier = Modifier.fillMaxWidth().height(46.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isDark) MaterialTheme.colorScheme.secondary else Color(0xFF1F2937),
-                                contentColor = if (isDark) MaterialTheme.colorScheme.onSecondary else Color.White
+                                containerColor = MaterialTheme.colorScheme.secondary,
+                                contentColor = MaterialTheme.colorScheme.onSecondary
                             ),
                             shape = RoundedCornerShape(8.dp)
                         ) {
@@ -2786,36 +2749,14 @@ fun DealCardComposable(
                                     android.widget.Toast.makeText(context, "브라우저를 열 수 없어요.", android.widget.Toast.LENGTH_SHORT).show()
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth().height(46.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isDark) MaterialTheme.colorScheme.primary else Color(0xFFFF6D00),
+                                containerColor = MaterialTheme.colorScheme.primary,
                                 contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text("쇼핑몰 바로가기", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
-            if (isSuperHot) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Surface(
-                        shape = RoundedCornerShape(bottomStart = 12.dp, topEnd = 12.dp),
-                        color = if (isDark) Color(0x33FF453A) else Color(0xFFFFEBEB),
-                        modifier = Modifier.align(Alignment.TopEnd)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = "인기",
-                                fontSize = 11.sp,
-                                color = if (isDark) Color(0xFFFF6961) else Color(0xFFD32F2F),
-                                fontWeight = FontWeight.ExtraBold
-                            )
                         }
                     }
                 }
@@ -3023,17 +2964,24 @@ fun KeywordSettingsBottomSheet(
                 ) {
                     keywordsState.forEach { kwEntity ->
                         InputChip(
-                            selected = false,
-                            onClick = { },
+                            selected = kwEntity.isActive,
+                            onClick = { keywordViewModel.toggleKeyword(kwEntity) },
                             label = { Text(kwEntity.keyword, fontWeight = FontWeight.Bold) },
                             trailingIcon = {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "삭제",
-                                    modifier = Modifier.size(16.dp).clickable {
-                                        keywordViewModel.deleteKeyword(kwEntity.keyword)
-                                    }
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                        .clickable {
+                                            keywordViewModel.deleteKeyword(kwEntity.keyword)
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "삭제",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             },
                             colors = InputChipDefaults.inputChipColors(
                                 containerColor = if (kwEntity.isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
@@ -3160,18 +3108,18 @@ fun CoupangSettingsDialog(onDismiss: () -> Unit) {
 fun BrandPlaceholder(
     siteName: String,
     modifier: Modifier = Modifier,
-    textStyle: TextStyle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+    textStyle: TextStyle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF9FAFB))
 ) {
     val siteLower = siteName.lowercase(Locale.getDefault())
     val (colors, _) = remember(siteLower) {
         when {
-            siteLower.contains("뽐뿌") -> listOf(Color(0xFF1976D2), Color(0xFF0D47A1)) to "뽐뿌"
-            siteLower.contains("퀘이사존") -> listOf(Color(0xFFFFB74D), Color(0xFFE65100)) to "퀘존"
-            siteLower.contains("펨코") || siteLower.contains("에펨코리아") -> listOf(Color(0xFF4FC3F7), Color(0xFF0288D1)) to "펨코"
-            siteLower.contains("루리웹") -> listOf(Color(0xFF5C6BC0), Color(0xFF1A237E)) to "루리"
-            siteLower.contains("빠삭") -> listOf(Color(0xFFF48FB1), Color(0xFFC2185B)) to "빠삭"
-            siteLower.contains("슬리앙") || siteLower.contains("클리앙") -> listOf(Color(0xFF78909C), Color(0xFF37474F)) to "클앙"
-            else -> listOf(Color(0xFFB0BEC5), Color(0xFF546E7A)) to "HOT"
+            siteLower.contains("뽐뿌") -> listOf(Color(0xFF1B64DA), Color(0xFF0D47A1)) to "뽐뿌"
+            siteLower.contains("퀘이사존") -> listOf(Color(0xFFC24900), Color(0xFF8F3200)) to "퀘존"
+            siteLower.contains("펨코") || siteLower.contains("에펨코리아") -> listOf(Color(0xFF026AA7), Color(0xFF014A75)) to "펨코"
+            siteLower.contains("루리웹") -> listOf(Color(0xFF3949AB), Color(0xFF1A237E)) to "루리"
+            siteLower.contains("빠삭") -> listOf(Color(0xFFAD1457), Color(0xFF78002E)) to "빠삭"
+            siteLower.contains("슬리앙") || siteLower.contains("클리앙") -> listOf(Color(0xFF455A64), Color(0xFF263238)) to "클앙"
+            else -> listOf(Color(0xFF546E7A), Color(0xFF37474F)) to "HOT"
         }
     }
 
@@ -3194,7 +3142,7 @@ fun BrandPlaceholder(
             Icon(
                 imageVector = Icons.Default.LocalOffer,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.9f),
+                tint = Color(0xFFF9FAFB).copy(alpha = 0.92f),
                 modifier = Modifier.size(22.dp)
             )
             Spacer(modifier = Modifier.height(4.dp))
@@ -3270,9 +3218,10 @@ fun NotificationHistoryBottomSheet(
                         TextButton(
                             onClick = {
                                 com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager.clearAll(context)
-                            }
+                            },
+                            modifier = Modifier.heightIn(min = 48.dp)
                         ) {
-                            Text("전체 삭제", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("전체 삭제", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                     }
 
@@ -3372,13 +3321,13 @@ fun NotificationHistoryBottomSheet(
                                         onClick = {
                                             com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager.deleteAlert(context, alert.id)
                                         },
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(48.dp)
                                     ) {
                                         Icon(
                                             Icons.Default.Delete,
                                             contentDescription = "삭제",
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                            modifier = Modifier.size(16.dp)
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
                                 }

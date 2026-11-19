@@ -5,20 +5,27 @@ const isTossMiniApp = process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true";
 
 const withPWA = withPWAInit({
   dest: "public",
+  sw: "pwa-sw.js",
   disable: process.env.NODE_ENV === "development" || isTossMiniApp,
   register: true,
+  publicExcludes: ["!sw.js"],
+  workboxOptions: {
+    importScripts: ["/sw.js"],
+  },
 });
 
-// 도커 컨테이너 기동 시 브릿지 네트워크 호스트인 backend:8080으로 프록시하고, Vercel 배포 시 클라우드 실서버로, 로컬 기동 시 localhost:8080을 탑니다.
+// 도커 컨테이너 기동 시 브릿지 네트워크 호스트인 api:8080으로 프록시하고, Vercel 배포 시 클라우드 실서버로, 로컬 기동 시 localhost:8080을 탑니다.
 const isDocker = process.env.DOCKER_ENV === "true";
 const isVercel = process.env.VERCEL === "1";
-const backendUrl =
+const backendUrl = (
   process.env.BACKEND_URL ||
-  (isVercel
-    ? "https://34.59.208.14.sslip.io"
-    : isDocker
-      ? "http://backend:8080"
-      : "http://localhost:8080");
+  process.env.BACKEND_API_URL ||
+  (isDocker
+    ? "http://api:8080"
+    : isVercel
+      ? "https://34.59.208.14.sslip.io"
+      : "http://localhost:8080")
+).replace(/\/+$/, "");
 
 console.log(`[Next.js Rewrite Engine] Configured rewrite destination to: ${backendUrl}`);
 

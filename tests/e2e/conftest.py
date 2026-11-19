@@ -1,5 +1,11 @@
 import os
 import sys
+
+# 테스트 임포트 시 실로컬 DB(backend/insight_deal.db) 접근 및 스케줄러 기동 원천 차단
+os.environ.setdefault("ENABLE_SCHEDULER", "false")
+os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+os.environ.setdefault("ENV", "development")
+
 import pytest
 from datetime import datetime, timezone
 from sqlalchemy import create_engine
@@ -12,8 +18,34 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from backend.database.models import Base, Deal, PriceHistory, Community
-from backend.database.session import get_db
+from backend.database.session import get_db, get_db_session
 from backend.main import app
+from backend.routers import community as community_router
+from backend.scrapers.base_scraper import AsyncBaseScraper
+from backend.core import url_utils as core_url_utils
+
+
+@pytest.fixture(autouse=True)
+def _isolate_e2e_network_and_cache(monkeypatch):
+    """E2E 테스트 중 외부 HTTP 요청 누출 및 피드 API 캐시 오염을 차단합니다."""
+    community_router.invalidate_feed_api_cache()
+
+    async def _noop_fetch_og_image(self, url: str = "", fallback_title: str = ""):
+        return None
+
+    orig_unwrap = core_url_utils.unwrap_third_party_affiliate_url
+
+    def _offline_unwrap_third_party_affiliate_url(url: str, allow_network: bool = False) -> str:
+        return orig_unwrap(url, allow_network=False)
+
+    monkeypatch.setattr(AsyncBaseScraper, "fetch_og_image", _noop_fetch_og_image)
+    monkeypatch.setattr(
+        core_url_utils,
+        "unwrap_third_party_affiliate_url",
+        _offline_unwrap_third_party_affiliate_url,
+    )
+    yield
+    community_router.invalidate_feed_api_cache()
 
 
 @pytest.fixture(scope="session")
@@ -73,8 +105,11 @@ def client(db_session):
             pass
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_db_session] = override_get_db
+    community_router.invalidate_feed_api_cache()
     with TestClient(app) as test_client:
         yield test_client
+    community_router.invalidate_feed_api_cache()
     app.dependency_overrides.clear()
 
 

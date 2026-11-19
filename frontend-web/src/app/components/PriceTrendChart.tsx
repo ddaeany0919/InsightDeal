@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useId, useMemo } from "react";
-import { RefreshCw, BarChart3 } from "lucide-react";
+import { useState, useEffect, useRef, useId } from "react";
+import { RefreshCw, BarChart3, AlertCircle } from "lucide-react";
 import type { PriceHistoryItem } from "../lib/types";
 import { apiUrl, formatPrice } from "../lib/utils";
 
@@ -13,7 +13,7 @@ export interface PriceTrendStats {
 }
 
 interface PriceTrendChartProps {
-  basePrice: string | number | null | undefined;
+  basePrice?: string | number | null;
   dealId?: number;
   currency?: string;
   optionName?: string;
@@ -112,44 +112,10 @@ function parseSafeHistoryDate(raw: string | null | undefined): ParsedHistoryDate
   return { label: s, daySerial: null, isLongRangeFormat: false };
 }
 
-function parseBasePriceToRawUnit(
-  pVal: string | number | null | undefined,
-  normCurrency: string
-): number {
-  if (pVal === null || pVal === undefined) return 0;
-  if (typeof pVal === "number") {
-    return Number.isFinite(pVal) && pVal > 0 ? Math.round(pVal) : 0;
-  }
-  const trimmed = String(pVal).trim();
-  if (
-    !trimmed ||
-    trimmed === "0" ||
-    trimmed === "0원" ||
-    trimmed === "무료" ||
-    trimmed === "가격 확인" ||
-    trimmed === "가격 문의" ||
-    trimmed === "정보 없음"
-  ) {
-    return 0;
-  }
-  const clean = trimmed.replace(/[^0-9.-]/g, "");
-  if (!clean) return 0;
-  const num = parseFloat(clean);
-  if (!Number.isFinite(num) || num <= 0) return 0;
-
-  const isSubunit =
-    normCurrency === "USD" || normCurrency === "EUR" || normCurrency === "CNY";
-  if (isSubunit && trimmed.includes(".")) {
-    return Math.round(num * 100);
-  }
-  return Math.round(num);
-}
-
 // [react-patterns] React StrictMode 이중 마운트 및 탭 재전환 시 중복 네트워크 호출 방지용 인플라이트 캐시
 const historyPromiseCache = new Map<string, { ts: number; promise: Promise<PriceHistoryItem[]> }>();
 
 export default function PriceTrendChart({
-  basePrice,
   dealId,
   currency = "KRW",
   optionName,
@@ -175,9 +141,11 @@ export default function PriceTrendChart({
     scope: string;
     index: number | null;
   }>({ scope: scopeKey, index: null });
+  const [retryCount, setRetryCount] = useState(0);
   const [fetchedState, setFetchedState] = useState<{
     requestKey: string;
     points: { price: number; date: string }[];
+    error?: boolean;
   } | null>(null);
 
   const userPeriod =
@@ -197,22 +165,6 @@ export default function PriceTrendChart({
   const queryPeriod = userPeriod ?? "7d_auto";
   const requestKey = dealId ? `${scopeKey}:${queryPeriod}` : null;
 
-  const previewBase = useMemo(
-    () => (dealId ? 0 : parseBasePriceToRawUnit(basePrice, normCurrency)),
-    [dealId, basePrice, normCurrency]
-  );
-
-  const previewPoints = useMemo(() => {
-    if (dealId || previewBase <= 0) return [];
-    const dummyPrices = [
-      Math.max(1, Math.round(previewBase * 1.15)),
-      Math.max(1, Math.round(previewBase * 1.08)),
-      previewBase,
-    ];
-    const dummyDates = ["3일 전", "어제", "오늘"];
-    return dummyPrices.map((p, idx) => ({ price: p, date: dummyDates[idx] }));
-  }, [dealId, previewBase]);
-
   const onHistoryStatusRef = useRef(onHistoryStatus);
   useEffect(() => {
     onHistoryStatusRef.current = onHistoryStatus;
@@ -220,17 +172,7 @@ export default function PriceTrendChart({
 
   useEffect(() => {
     if (!dealId || !requestKey) {
-      if (previewPoints.length >= 2) {
-        const pVals = previewPoints.map((d) => d.price);
-        onHistoryStatusRef.current?.(true, {
-          minPrice: Math.min(...pVals),
-          avgPrice: Math.round(pVals.reduce((a, b) => a + b, 0) / pVals.length),
-          maxPrice: Math.max(...pVals),
-          latestPrice: pVals[pVals.length - 1],
-        });
-      } else {
-        onHistoryStatusRef.current?.(false);
-      }
+      onHistoryStatusRef.current?.(false);
       return;
     }
 
@@ -251,7 +193,7 @@ export default function PriceTrendChart({
             `/api/community/deals/${dealId}/history?period=${queryPeriod}${optParam}${currParam}`
           );
           const promise = fetch(targetUrl).then((res) => {
-            if (!res.ok) throw new Error("Failed to fetch");
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             return res.json() as Promise<PriceHistoryItem[]>;
           });
           cached = { ts: now, promise };
@@ -302,7 +244,7 @@ export default function PriceTrendChart({
             date: parsedDates[idx].label || String(item.recordedAt || "").trim(),
           }));
 
-          setFetchedState({ requestKey, points: formatted });
+          setFetchedState({ requestKey, points: formatted, error: false });
           const pVals = formatted.map((d) => d.price);
           onHistoryStatusRef.current?.(true, {
             minPrice: Math.min(...pVals),
@@ -313,12 +255,13 @@ export default function PriceTrendChart({
             latestPrice: pVals[pVals.length - 1],
           });
         } else {
-          setFetchedState({ requestKey, points: [] });
+          setFetchedState({ requestKey, points: [], error: false });
           onHistoryStatusRef.current?.(false);
         }
       } catch {
+        historyPromiseCache.delete(requestKey);
         if (!isMounted) return;
-        setFetchedState({ requestKey, points: [] });
+        setFetchedState({ requestKey, points: [], error: true });
         onHistoryStatusRef.current?.(false);
       }
     })();
@@ -326,16 +269,26 @@ export default function PriceTrendChart({
     return () => {
       isMounted = false;
     };
-  }, [dealId, requestKey, queryPeriod, cleanOpt, normCurrency, userPeriod, scopeKey, previewPoints]);
+  }, [dealId, requestKey, queryPeriod, cleanOpt, normCurrency, userPeriod, scopeKey, retryCount]);
 
   const loading =
     requestKey !== null && fetchedState?.requestKey !== requestKey;
-  const chartData = dealId
-    ? fetchedState?.requestKey === requestKey
+  const fetchError =
+    requestKey !== null &&
+    fetchedState?.requestKey === requestKey &&
+    Boolean(fetchedState.error);
+  const chartData =
+    dealId && fetchedState?.requestKey === requestKey
       ? fetchedState.points
-      : []
-    : previewPoints;
-  const isRealData = Boolean(dealId && chartData.length >= 2);
+      : [];
+
+  const handleRetry = () => {
+    if (requestKey) {
+      historyPromiseCache.delete(requestKey);
+    }
+    setFetchedState(null);
+    setRetryCount((c) => c + 1);
+  };
 
   const formatPriceNum = (num: number) => {
     if (!Number.isFinite(num) || num <= 0) return "가격 확인";
@@ -371,7 +324,61 @@ export default function PriceTrendChart({
     );
   }
 
-  // 2. 데이터가 아예 없거나 부족할 때
+  // 2. API 에러 발생 시 (데이터 부족 안내와 명확히 구분)
+  if (fetchError) {
+    return (
+      <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+          <span style={{ fontSize: "0.9rem", fontWeight: 800, color: "var(--accent)" }}>핫딜 가격 변동</span>
+        </div>
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "24px 16px",
+          background: "var(--card-bg)",
+          border: "1px solid rgba(239, 68, 68, 0.25)",
+          borderRadius: "16px",
+          textAlign: "center",
+          minHeight: "160px",
+          gap: "12px",
+        }}>
+          <div style={{
+            width: "36px",
+            height: "36px",
+            borderRadius: "50%",
+            background: "rgba(239, 68, 68, 0.1)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#EF4444",
+          }}>
+            <AlertCircle size={18} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <span style={{ fontSize: "0.92rem", fontWeight: 900, color: "var(--text-main)" }}>
+              가격 추이를 불러오지 못했어요
+            </span>
+            <p style={{ fontSize: "0.8rem", color: "var(--text-sub)", lineHeight: "1.5", maxWidth: "340px", margin: "0 auto", fontWeight: 600 }}>
+              잠시 후 다시 시도해 주세요.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleRetry}
+            className="btn-primary"
+            style={{ minHeight: "40px", padding: "8px 16px", fontSize: "0.82rem", borderRadius: "10px" }}
+          >
+            <RefreshCw size={14} aria-hidden="true" />
+            <span>다시 시도</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. 데이터가 아예 없거나 부족할 때 (<2건 표준 카피)
   if (chartData.length < 2) {
     return (
       <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -432,10 +439,12 @@ export default function PriceTrendChart({
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             <span style={{ fontSize: "0.92rem", fontWeight: 900, color: "var(--text-main)" }}>
-              {cleanOpt ? `"${cleanOpt}" 핫딜 기록을 모으고 있어요` : "가격 기록을 모으고 있어요"}
+              아직 비교할 가격 이력이 충분하지 않아요
             </span>
             <p style={{ fontSize: "0.8rem", color: "var(--text-sub)", lineHeight: "1.5", maxWidth: "340px", margin: "0 auto", fontWeight: 600 }}>
-              동일 상품의 핫딜 기록이 2건 이상 쌓이면 가격 변동 추이를 한눈에 볼 수 있어요.
+              {cleanOpt
+                ? `"${cleanOpt}" 옵션의 핫딜 기록이 2건 이상 쌓이면 가격 변동 추이를 볼 수 있어요.`
+                : "동일 상품의 핫딜 기록이 2건 이상 쌓이면 가격 변동 추이를 한눈에 볼 수 있어요."}
             </p>
           </div>
         </div>
@@ -532,17 +541,10 @@ export default function PriceTrendChart({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span style={{ fontSize: "0.9rem", fontWeight: 800, color: "var(--accent)" }}>가격 변동 내역</span>
-          {isRealData ? (
-            <span style={{ fontSize: "0.72rem", color: "#10b981", background: "rgba(16, 185, 129, 0.1)", padding: "2px 8px", borderRadius: "10px", fontWeight: 800, border: "1px solid rgba(16, 185, 129, 0.2)", display: "flex", alignItems: "center", gap: "4px" }}>
-              <span style={{ width: "5px", height: "5px", borderRadius: "50%", backgroundColor: "#10b981", display: "inline-block" }}></span>
-              실거래 {chartData.length}건
-            </span>
-          ) : (
-            <span style={{ fontSize: "0.72rem", color: "var(--accent)", background: "rgba(var(--accent-rgb), 0.1)", padding: "2px 8px", borderRadius: "10px", fontWeight: 800, border: "1px solid rgba(var(--accent-rgb), 0.2)", display: "flex", alignItems: "center", gap: "4px" }}>
-              <span style={{ width: "5px", height: "5px", borderRadius: "50%", backgroundColor: "var(--accent)", display: "inline-block" }}></span>
-              예상 추이
-            </span>
-          )}
+          <span style={{ fontSize: "0.72rem", color: "#10b981", background: "rgba(16, 185, 129, 0.1)", padding: "2px 8px", borderRadius: "10px", fontWeight: 800, border: "1px solid rgba(16, 185, 129, 0.2)", display: "flex", alignItems: "center", gap: "4px" }}>
+            <span style={{ width: "5px", height: "5px", borderRadius: "50%", backgroundColor: "#10b981", display: "inline-block" }}></span>
+            실거래 {chartData.length}건
+          </span>
         </div>
         <div style={{ display: "flex", background: "var(--card-bg)", borderRadius: "10px", padding: "3px", border: "1px solid var(--card-border)" }}>
           {PERIOD_OPTIONS.map((opt) => {

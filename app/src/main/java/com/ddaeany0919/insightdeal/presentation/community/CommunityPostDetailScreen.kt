@@ -45,11 +45,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
 import com.ddaeany0919.insightdeal.data.network.CommunityPostCreateReq
 import com.ddaeany0919.insightdeal.data.network.CommunityPostDto
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.NetworkModule
-import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -204,54 +205,20 @@ fun CommunityPostDetailScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isCommentSubmitting by viewModel.isCommentSubmitting.collectAsState()
 
-    val currentUserId by AuthManager.getUsername(context).collectAsState(initial = "guest")
-    val currentUserNickname by AuthManager.getNickname(context).collectAsState(initial = "익명")
-    val isLoggedIn = currentUserId != "guest" && !currentUserId.isNullOrEmpty()
+    val currentUserId = remember {
+        runCatching { LocalDataProvider.getDeviceUuid() }.getOrDefault("")
+    }
+    val currentUserNickname = remember(currentUserId) {
+        if (currentUserId.isNotBlank()) "회원_${currentUserId.takeLast(4)}" else "익명"
+    }
 
     var commentText by remember { mutableStateOf("") }
     var replyingToCommentId by remember { mutableStateOf<Int?>(null) }
     var replyingToNickname by remember { mutableStateOf<String?>(null) }
     var editingCommentId by remember { mutableStateOf<Int?>(null) }
-    var showLoginIncentiveDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(postId) {
         viewModel.loadPostDetail(postId)
-    }
-
-    if (showLoginIncentiveDialog) {
-        AlertDialog(
-            onDismissRequest = { showLoginIncentiveDialog = false },
-            title = {
-                Text("로그인이 필요합니다", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
-            },
-            text = {
-                Text(
-                    "댓글 작성 및 투표 참여는 로그인 후 이용할 수 있습니다.",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 20.sp
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showLoginIncentiveDialog = false
-                        navController?.navigate("auth")
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("로그인하기", color = Color.White, fontWeight = FontWeight.SemiBold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLoginIncentiveDialog = false }) {
-                    Text("닫기", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(18.dp)
-        )
     }
 
     Scaffold(
@@ -260,14 +227,17 @@ fun CommunityPostDetailScreen(
             TopAppBar(
                 title = { Text("게시글", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        if (navController?.popBackStack() != true) {
-                            navController?.navigate("community") {
-                                popUpTo("community") { inclusive = true }
+                    A11yIconButton(
+                        onClick = {
+                            if (navController?.popBackStack() != true) {
+                                navController?.navigate("community") {
+                                    popUpTo("community") { inclusive = true }
+                                }
                             }
-                        }
-                    }) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "뒤로가기")
+                        },
+                        contentDescription = "뒤로가기"
+                    ) {
+                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = null)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -297,17 +267,17 @@ fun CommunityPostDetailScreen(
                             Text(
                                 text = if (editingCommentId != null) "댓글 수정 중..." else "↳ $replyingToNickname 님에게 답글 작성 중...",
                                 fontSize = 12.sp,
-                                color = AccentOrange,
+                                color = MaterialTheme.colorScheme.secondary,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            IconButton(
+                            A11yIconButton(
                                 onClick = {
                                     replyingToCommentId = null
                                     replyingToNickname = null
                                     editingCommentId = null
                                     commentText = ""
                                 },
-                                modifier = Modifier.size(24.dp)
+                                contentDescription = "답글 취소"
                             ) {
                                 Text("✕", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -322,52 +292,41 @@ fun CommunityPostDetailScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .heightIn(min = 40.dp, max = 100.dp)
+                                .heightIn(min = 48.dp, max = 100.dp)
                                 .clip(RoundedCornerShape(20.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
                                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
-                                .clickable {
-                                    if (!isLoggedIn) {
-                                        showLoginIncentiveDialog = true
-                                    }
-                                }
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             contentAlignment = Alignment.CenterStart
                         ) {
                             if (commentText.isEmpty()) {
                                 Text(
-                                    text = if (isLoggedIn) "조언이나 피드백을 남겨주세요..." else "로그인 후 의견을 남겨보세요",
+                                    text = "조언이나 피드백을 남겨주세요...",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 13.sp
                                 )
                             }
-                            if (isLoggedIn) {
-                                androidx.compose.foundation.text.BasicTextField(
-                                    value = commentText,
-                                    onValueChange = { commentText = it },
-                                    textStyle = androidx.compose.ui.text.TextStyle(
-                                        fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    ),
-                                    cursorBrush = androidx.compose.ui.graphics.SolidColor(AccentOrange),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = commentText,
+                                onValueChange = { commentText = it },
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                ),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
 
                         IconButton(
                             onClick = {
-                                if (!isLoggedIn) {
-                                    showLoginIncentiveDialog = true
-                                    return@IconButton
-                                }
                                 if (commentText.isNotBlank()) {
                                     if (editingCommentId != null) {
                                         viewModel.updateComment(
                                             postId = postId,
                                             commentId = editingCommentId!!,
-                                            userId = currentUserId ?: "guest",
-                                            nickname = currentUserNickname ?: "익명",
+                                            userId = currentUserId,
+                                            nickname = currentUserNickname,
                                             content = commentText,
                                             dealUrl = null
                                         ) {
@@ -378,8 +337,8 @@ fun CommunityPostDetailScreen(
                                     } else {
                                         viewModel.submitComment(
                                             postId = postId,
-                                            userId = currentUserId ?: "guest",
-                                            nickname = currentUserNickname ?: "익명",
+                                            userId = currentUserId,
+                                            nickname = currentUserNickname,
                                             content = commentText,
                                             dealUrl = null,
                                             parentId = replyingToCommentId
@@ -392,16 +351,16 @@ fun CommunityPostDetailScreen(
                                     }
                                 }
                             },
-                            enabled = (commentText.isNotBlank() && !isCommentSubmitting) || !isLoggedIn,
-                            modifier = Modifier.size(40.dp),
+                            enabled = commentText.isNotBlank() && !isCommentSubmitting,
+                            modifier = Modifier.size(48.dp),
                             colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = AccentOrange,
-                                contentColor = Color.White,
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
                                 disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                                 disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         ) {
-                            Icon(imageVector = Icons.Default.Send, contentDescription = "전송", modifier = Modifier.size(16.dp))
+                            Icon(imageVector = Icons.Default.Send, contentDescription = "전송", modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -411,7 +370,7 @@ fun CommunityPostDetailScreen(
     ) { paddingValues ->
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = AccentOrange)
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.secondary)
             }
             return@Scaffold
         }
@@ -598,7 +557,7 @@ fun CommunityPostDetailScreen(
                                                     text = "${deal.discountRate}% 할인",
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = AccentOrange
+                                                    color = MaterialTheme.colorScheme.secondary
                                                 )
                                             }
                                         }
@@ -634,8 +593,6 @@ fun CommunityPostDetailScreen(
                 item {
                     ShouldIBuyDetailVotePanel(
                         post = currentPost,
-                        isLoggedIn = isLoggedIn,
-                        onRequireLogin = { showLoginIncentiveDialog = true },
                         onVoteSubmit = { viewModel.loadPostDetail(postId, showLoading = false) }
                     )
                 }
@@ -733,7 +690,7 @@ fun CommunityPostDetailScreen(
                                         ) {
                                             Text(
                                                 text = comment.nickname.take(1).uppercase(),
-                                                color = if (comment.isAccepted) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                color = if (comment.isAccepted) Color(0xFF3D2210) else MaterialTheme.colorScheme.onSurfaceVariant,
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -763,48 +720,65 @@ fun CommunityPostDetailScreen(
                                         }
                                     }
 
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                                         Text(
                                             text = formatRelativeTime(comment.createdAt),
                                             fontSize = 10.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        if (comment.userId == currentUserId) {
-                                            Text(
-                                                text = "수정",
-                                                fontSize = 10.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.clickable {
-                                                    editingCommentId = comment.id
-                                                    commentText = comment.content
-                                                    replyingToCommentId = null
-                                                    replyingToNickname = null
-                                                }
-                                            )
-                                            Text(
-                                                text = "삭제",
-                                                fontSize = 10.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.clickable {
-                                                    viewModel.deleteComment(postId, comment.id, currentUserId ?: "guest") {}
-                                                }
-                                            )
+                                        if (currentUserId.isNotBlank() && comment.userId == currentUserId) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .heightIn(min = 48.dp)
+                                                    .clickable {
+                                                        editingCommentId = comment.id
+                                                        commentText = comment.content
+                                                        replyingToCommentId = null
+                                                        replyingToNickname = null
+                                                    }
+                                                    .padding(horizontal = 6.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "수정",
+                                                    fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            Box(
+                                                modifier = Modifier
+                                                    .heightIn(min = 48.dp)
+                                                    .clickable {
+                                                        viewModel.deleteComment(postId, comment.id, currentUserId) {}
+                                                    }
+                                                    .padding(horizontal = 6.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "삭제",
+                                                    fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                         }
-                                        Text(
-                                            text = "답글달기",
-                                            fontSize = 10.sp,
-                                            color = AccentOrange,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.clickable {
-                                                if (!isLoggedIn) {
-                                                    showLoginIncentiveDialog = true
-                                                } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .heightIn(min = 48.dp)
+                                                .clickable {
                                                     replyingToCommentId = comment.parentId ?: comment.id
                                                     replyingToNickname = comment.nickname
                                                     editingCommentId = null
                                                 }
-                                            }
-                                        )
+                                                .padding(horizontal = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "답글달기",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.secondary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
 
@@ -823,9 +797,11 @@ fun CommunityPostDetailScreen(
                                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                                         shape = RoundedCornerShape(6.dp),
                                         border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
-                                        modifier = Modifier.clickable {
-                                            com.ddaeany0919.insightdeal.utils.CustomTabLauncher.launchShoppingUrl(context, comment.dealUrl)
-                                        }
+                                        modifier = Modifier
+                                            .heightIn(min = 48.dp)
+                                            .clickable {
+                                                com.ddaeany0919.insightdeal.utils.CustomTabLauncher.launchShoppingUrl(context, comment.dealUrl)
+                                            }
                                     ) {
                                         Row(
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -835,14 +811,14 @@ fun CommunityPostDetailScreen(
                                             Icon(
                                                 imageVector = Icons.Outlined.Link,
                                                 contentDescription = null,
-                                                tint = AccentOrange,
+                                                tint = MaterialTheme.colorScheme.secondary,
                                                 modifier = Modifier.size(12.dp)
                                             )
                                             Text(
                                                 text = "핫딜 링크 바로가기",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = AccentOrange
+                                                color = MaterialTheme.colorScheme.secondary
                                             )
                                         }
                                     }
@@ -882,8 +858,6 @@ fun CommunityPostDetailScreen(
 @Composable
 fun ShouldIBuyDetailVotePanel(
     post: CommunityPostDto,
-    isLoggedIn: Boolean = true,
-    onRequireLogin: (() -> Unit)? = null,
     onVoteSubmit: () -> Unit
 ) {
     val context = LocalContext.current
@@ -944,7 +918,7 @@ fun ShouldIBuyDetailVotePanel(
                     Text(
                         text = "살까 ${"%.0f".format(buyRatio * 100)}% (${post.bountyPoints})",
                         fontWeight = FontWeight.SemiBold,
-                        color = if (buyRatio >= skipRatio) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (buyRatio >= skipRatio) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
                     )
                     Text(
@@ -966,7 +940,7 @@ fun ShouldIBuyDetailVotePanel(
                         modifier = Modifier
                             .fillMaxHeight()
                             .fillMaxWidth(animatedProgress)
-                            .background(AccentOrange)
+                            .background(MaterialTheme.colorScheme.secondary)
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
@@ -981,10 +955,6 @@ fun ShouldIBuyDetailVotePanel(
 
                 OutlinedButton(
                     onClick = {
-                        if (!isLoggedIn) {
-                            onRequireLogin?.invoke()
-                            return@OutlinedButton
-                        }
                         scope.launch {
                             try {
                                 if (isBuySelected) {
@@ -1020,27 +990,25 @@ fun ShouldIBuyDetailVotePanel(
                         }
                     },
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isBuySelected) AccentOrange.copy(alpha = 0.14f) else Color.Transparent
+                        containerColor = if (isBuySelected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f) else Color.Transparent
                     ),
-                    border = BorderStroke(1.dp, if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.outlineVariant),
+                    border = BorderStroke(1.dp, if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outlineVariant),
                     shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Filled.ThumbUp, contentDescription = null, tint = if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+                        Icon(Icons.Filled.ThumbUp, contentDescription = null, tint = if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
                         Text(
                             text = if (post.bountyPoints > 0) "살까 ${post.bountyPoints}" else "살까",
-                            color = if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = if (isBuySelected) FontWeight.Bold else FontWeight.Medium
                         )
                     }
                 }
                 OutlinedButton(
                     onClick = {
-                        if (!isLoggedIn) {
-                            onRequireLogin?.invoke()
-                            return@OutlinedButton
-                        }
                         scope.launch {
                             try {
                                 if (isSkipSelected) {
@@ -1080,7 +1048,9 @@ fun ShouldIBuyDetailVotePanel(
                     ),
                     border = BorderStroke(1.dp, if (isSkipSelected) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outlineVariant),
                     shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.Filled.ThumbDown, contentDescription = null, tint = if (isSkipSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
@@ -1131,13 +1101,3 @@ private fun formatRelativeTime(dateTimeStr: String?): String {
         dateTimeStr.substringBefore("T")
     }
 }
-
-private val AccentOrange = Color(0xFFFF6B35)
-private val AccentOrangeSoft = Color(0xFFFFF0EB)
-private val NeutralGray50 = Color(0xFFF8F9FA)
-private val NeutralGray200 = Color(0xFFE9ECEF)
-private val NeutralGray400 = Color(0xFFCED4DA)
-private val NeutralGray500 = Color(0xFF868E96)
-private val NeutralGray700 = Color(0xFF495057)
-private val NeutralGray800 = Color(0xFF343A40)
-private val NeutralGray900 = Color(0xFF212529)

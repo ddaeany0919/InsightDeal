@@ -154,14 +154,15 @@ def test_admin_routes_require_key_and_fail_closed(isolated_app_and_db, monkeypat
     assert res_local.status_code == 200
     assert "X-Admin-Key" in res_local.text
 
-    # (B) ADMIN_API_KEY 설정 시 헤더(X-Admin-Key) 및 쿼리(api_key) 모두 검증
+    # (B) ADMIN_API_KEY 설정 시 헤더(X-Admin-Key) 전용 인증 검증 (?api_key= 쿼리 차단)
     monkeypatch.setenv("ADMIN_API_KEY", "super-admin-key-999")
 
     assert external_client.get("/admin/").status_code == 403
     assert external_client.get("/admin/logs").status_code == 403
     assert external_client.get("/admin/?api_key=wrong").status_code == 403
+    assert external_client.get("/admin/?api_key=super-admin-key-999").status_code == 403
 
-    assert external_client.get("/admin/?api_key=super-admin-key-999").status_code == 200
+    assert external_client.get("/admin/", headers={"X-Admin-Key": "super-admin-key-999"}).status_code == 200
     assert external_client.get("/admin/logs", headers={"X-Admin-Key": "super-admin-key-999"}).status_code == 200
 
 

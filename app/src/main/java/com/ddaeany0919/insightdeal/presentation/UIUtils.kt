@@ -71,13 +71,21 @@ fun RefreshToastManager(
         enter = fadeIn(),
         exit = fadeOut()
     ) {
+        val containerBg = if (refreshSuccess == true) {
+            Color(0xFF1B7A37)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        }
+        val contentInk = if (refreshSuccess == true) {
+            Color(0xFFF9FAFB)
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        }
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (refreshSuccess == true) Color(0xFF4CAF50) else MaterialTheme.colorScheme.surfaceVariant
-            ),
+            colors = CardDefaults.cardColors(containerColor = containerBg),
             elevation = CardDefaults.cardElevation(6.dp),
             shape = RoundedCornerShape(12.dp)
         ) {
@@ -90,13 +98,13 @@ fun RefreshToastManager(
                 Icon(
                     imageVector = toastIcon,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = contentInk,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = toastMessage,
-                    color = Color.White,
+                    color = contentInk,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium
                 )
@@ -140,12 +148,12 @@ fun NetworkStatusIndicator(
 @Composable
 fun CommunityBadge(community: String) {
     val displayName = getPlatformDisplayName(community)
-    val badgeColor = when (community.lowercase()) {
-        "ppomppu", "뽐뿌" -> Color(0xFFE65100)
-        "clien", "클리앙" -> Color(0xFF1565C0)
-        "ruliweb", "루리웹" -> Color(0xFF0D47A1)
-        "eleventh", "11번가" -> Color(0xFF2E7D32)
-        else -> MaterialTheme.colorScheme.primary
+    val (badgeColor, textColor) = when (community.lowercase()) {
+        "ppomppu", "뽐뿌" -> Color(0xFFB84500) to Color(0xFFF9FAFB)
+        "clien", "클리앙" -> Color(0xFF1565C0) to Color(0xFFF9FAFB)
+        "ruliweb", "루리웹" -> Color(0xFF0D47A1) to Color(0xFFF9FAFB)
+        "eleventh", "11번가" -> Color(0xFF1B7A37) to Color(0xFFF9FAFB)
+        else -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
     }
 
     Surface(
@@ -156,7 +164,7 @@ fun CommunityBadge(community: String) {
             text = displayName,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
+            color = textColor,
             fontWeight = FontWeight.Medium
         )
     }

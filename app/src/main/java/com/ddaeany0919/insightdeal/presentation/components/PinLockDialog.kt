@@ -50,15 +50,21 @@ fun PinLockDialog(
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findFragmentActivity() }
-    val prefs = remember { EncryptedPrefsManager.getEncryptedPrefs(context) }
+    val prefs = remember {
+        runCatching { EncryptedPrefsManager.getEncryptedPrefs(context) }
+            .onFailure { e ->
+                android.util.Log.e("PinLockDialog", "암호화 저장소 접근 실패: ${e.message}", e)
+            }
+            .getOrNull()
+    }
 
     var pinInput by remember { mutableStateOf("") }
-    var errorCount by remember { prefs.getInt("app_lock_fail_count", 0).let { mutableStateOf(it) } }
+    var errorCount by remember { (prefs?.getInt("app_lock_fail_count", 0) ?: 0).let { mutableStateOf(it) } }
     var setupStep by remember { mutableStateOf(1) } // 1: 첫 입력, 2: 확인 입력
     var firstPinInput by remember { mutableStateOf("") }
 
     // 차단(락다운) 상태 관리
-    var blockedUntil by remember { prefs.getLong("app_lock_blocked_until", 0L).let { mutableStateOf(it) } }
+    var blockedUntil by remember { (prefs?.getLong("app_lock_blocked_until", 0L) ?: 0L).let { mutableStateOf(it) } }
     var isBlocked by remember { mutableStateOf(false) }
     var remainingSeconds by remember { mutableStateOf(0L) }
 
@@ -95,7 +101,7 @@ fun PinLockDialog(
 
                     override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                         super.onAuthenticationSucceeded(result)
-                        prefs.edit().putInt("app_lock_fail_count", 0).apply()
+                        prefs?.edit()?.putInt("app_lock_fail_count", 0)?.apply()
                         errorCount = 0
                         onSuccess(correctPin)
                     }
@@ -111,8 +117,8 @@ fun PinLockDialog(
         }
     }
 
-    val mainColor = Color(0xFFFF3B30)
-    val gradientColors = listOf(Color(0xFFFF5722), Color(0xFFFF3B30))
+    val mainColor = MaterialTheme.colorScheme.error
+    val gradientColors = listOf(Color(0xFFC92A37), Color(0xFFB84500))
 
     // 실시간 차단 카운트다운 타이머 연동
     LaunchedEffect(blockedUntil) {
@@ -125,7 +131,7 @@ fun PinLockDialog(
             } else {
                 if (isBlocked) {
                     isBlocked = false
-                    prefs.edit().putInt("app_lock_fail_count", 0).apply()
+                    prefs?.edit()?.putInt("app_lock_fail_count", 0)?.apply()
                     errorCount = 0
                     instructionText = subtitle
                 }
@@ -198,7 +204,7 @@ fun PinLockDialog(
                         Icon(
                             imageVector = Icons.Default.Lock,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = Color(0xFFF9FAFB),
                             modifier = Modifier.size(36.dp)
                         )
                     }
@@ -308,21 +314,21 @@ fun PinLockDialog(
                                                         }
                                                     } else {
                                                         if (pinInput == correctPin) {
-                                                            prefs.edit().putInt("app_lock_fail_count", 0).apply()
+                                                            prefs?.edit()?.putInt("app_lock_fail_count", 0)?.apply()
                                                             errorCount = 0
                                                             onSuccess(pinInput)
                                                         } else {
                                                             pinInput = ""
                                                             val newFailCount = errorCount + 1
-                                                            prefs.edit().putInt("app_lock_fail_count", newFailCount).apply()
+                                                            prefs?.edit()?.putInt("app_lock_fail_count", newFailCount)?.apply()
                                                             errorCount = newFailCount
                                                             
                                                             if (newFailCount >= 5) {
                                                                 val blockTime = System.currentTimeMillis() + (5 * 60 * 1000)
-                                                                prefs.edit()
-                                                                    .putLong("app_lock_blocked_until", blockTime)
-                                                                    .putInt("app_lock_fail_count", 0)
-                                                                    .apply()
+                                                                prefs?.edit()
+                                                                    ?.putLong("app_lock_blocked_until", blockTime)
+                                                                    ?.putInt("app_lock_fail_count", 0)
+                                                                    ?.apply()
                                                                 blockedUntil = blockTime
                                                                 errorCount = 0
                                                                 android.widget.Toast.makeText(context, "5회 실패! 5분간 입력이 제한됩니다.", android.widget.Toast.LENGTH_LONG).show()

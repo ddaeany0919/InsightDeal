@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import com.ddaeany0919.insightdeal.presentation.home.DealCardComposable
 import kotlinx.coroutines.launch
 
@@ -47,14 +48,17 @@ fun RecentDealsScreen(
             TopAppBar(
                 title = { Text("최근 본 핫딜", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
+                    A11yIconButton(onClick = onBack, contentDescription = "뒤로가기") {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
                 },
                 actions = {
                     if (recentDeals.isNotEmpty()) {
-                        IconButton(onClick = { RecentDealManager.clearRecentDeals(context) }) {
-                            Icon(Icons.Default.DeleteOutline, contentDescription = "전체 삭제")
+                        A11yIconButton(
+                            onClick = { RecentDealManager.clearRecentDeals(context) },
+                            contentDescription = "전체 삭제"
+                        ) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = null)
                         }
                     }
                 }
@@ -157,8 +161,8 @@ fun RecentDealsScreen(
                                     onOpenUrl = onOpenUrl
                                 )
                                 
-                                // 사용자가 요청한 우측 하단 휴지통 단추 추가 (터치 오작동이 없는 하단 영역에 배치)
-                                IconButton(
+                                // 사용자가 요청한 우측 하단 휴지통 단추 추가 (48.dp 최소 터치 영역 보장)
+                                A11yIconButton(
                                     onClick = {
                                         // 1. 햅틱 피드백 수행 (진동)
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -183,18 +187,18 @@ fun RecentDealsScreen(
                                             }
                                         }
                                     },
+                                    contentDescription = "삭제",
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
-                                        .padding(bottom = 12.dp, end = 12.dp)
-                                        .size(36.dp)
+                                        .padding(bottom = 8.dp, end = 8.dp)
                                         .background(
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
                                             shape = MaterialTheme.shapes.small
                                         )
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Delete, // 빨간색으로 채워진 삭제 휴지통
-                                        contentDescription = "삭제",
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = null,
                                         tint = MaterialTheme.colorScheme.error,
                                         modifier = Modifier.size(18.dp)
                                     )

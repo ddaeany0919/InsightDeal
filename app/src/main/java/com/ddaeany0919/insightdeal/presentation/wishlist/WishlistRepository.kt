@@ -6,10 +6,12 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.map
-import com.ddaeany0919.insightdeal.network.ApiService
-import com.ddaeany0919.insightdeal.data.network.*
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
+import com.ddaeany0919.insightdeal.data.network.WishlistCreateFromKeywordRequest
+import com.ddaeany0919.insightdeal.data.network.WishlistUpdateRequest
 import com.ddaeany0919.insightdeal.local.db.AppDatabase
 import com.ddaeany0919.insightdeal.local.db.WishlistEntity
+import com.ddaeany0919.insightdeal.network.ApiService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -23,6 +25,7 @@ import java.time.LocalDateTime
 fun WishlistEntity.toWishlistItem(): WishlistItem {
     return WishlistItem(
         id = this.id,
+        serverWishlistId = this.serverWishlistId,
         keyword = this.keyword,
         productUrl = this.productUrl,
         targetPrice = this.targetPrice,
@@ -81,13 +84,14 @@ class WishlistRepository(
     }
 
     suspend fun createWishlist(
-        keyword: String, 
-        productUrl: String, 
+        keyword: String,
+        productUrl: String,
         targetPrice: Int,
         currentLowestPrice: Int? = null,
         currentLowestPlatform: String? = null,
-        userId: String = "default"
+        userId: String = LocalDataProvider.getDeviceUuid()
     ) = withContext(Dispatchers.IO) {
+        val resolvedUserId = userId.ifBlank { LocalDataProvider.getDeviceUuid() }
         Log.d(TAG, "createWishlist: Local db insert -> keyword=$keyword url=$productUrl target=$targetPrice lowest=$currentLowestPrice")
         val entity = WishlistEntity(
             keyword = keyword,
@@ -96,25 +100,38 @@ class WishlistRepository(
             currentLowestPrice = currentLowestPrice,
             currentLowestPlatform = currentLowestPlatform
         )
-        dao.insertWishlist(entity)
+        val localId = dao.insertWishlist(entity).toInt()
 
-        // 백엔드 목표가 알림 테이블(wishlist)과 1-RTT 비동기 동기화 (오프라인 시 로컬 Room 유지)
+        // 백엔드 목표가 알림 테이블(wishlist)과 1-RTT 비동기 동기화 및 serverWishlistId 저장
         runCatching {
             service().createWishlistFromKeyword(
                 WishlistCreateFromKeywordRequest(
                     keyword = keyword,
                     targetPrice = targetPrice,
-                    userId = userId
+                    userId = resolvedUserId
                 )
             )
+        }.onSuccess { created ->
+            if (localId > 0 && created.id > 0) {
+                dao.updateServerWishlistId(localId, created.id)
+                Log.d(TAG, "서버 위시리스트 ID 매핑 저장: localId=$localId -> serverId=${created.id}")
+            }
         }.onFailure { e ->
             Log.w(TAG, "서버 목표가 알림 동기화 생략 (로컬 Room 저장 완료): ${e.message}")
         }
     }
 
-    suspend fun updateWishlist(item: WishlistItem) = withContext(Dispatchers.IO) {
+    suspend fun updateWishlist(
+        item: WishlistItem,
+        userId: String = LocalDataProvider.getDeviceUuid()
+    ) = withContext(Dispatchers.IO) {
+        val resolvedUserId = userId.ifBlank { LocalDataProvider.getDeviceUuid() }
+        val existing = dao.getWishlistById(item.id)
+        val resolvedServerId = item.serverWishlistId ?: existing?.serverWishlistId
+
         val entity = WishlistEntity(
             id = item.id,
+            serverWishlistId = resolvedServerId,
             keyword = item.keyword,
             productUrl = item.productUrl,
             targetPrice = item.targetPrice,
@@ -130,18 +147,77 @@ class WishlistRepository(
             lastChecked = item.lastChecked
         )
         dao.updateWishlist(entity)
+
+        val targetServerId = resolvedServerId ?: runCatching {
+            service().getWishlist(resolvedUserId).firstOrNull { it.keyword == item.keyword }?.id
+        }.getOrNull()?.also { foundId ->
+            dao.updateServerWishlistId(item.id, foundId)
+        }
+
+        if (targetServerId != null) {
+            runCatching {
+                service().updateWishlist(
+                    wishlistId = targetServerId,
+                    request = WishlistUpdateRequest(
+                        targetPrice = item.targetPrice,
+                        isActive = item.isActive,
+                        alertEnabled = item.alertEnabled
+                    ),
+                    userId = resolvedUserId
+                )
+            }.onFailure { e ->
+                Log.w(TAG, "서버 위시리스트 PATCH 동기화 실패 (로컬 반영 완료): ${e.message}")
+            }
+        }
     }
 
-    suspend fun deleteWishlist(wishlistId: Int): Boolean = withContext(Dispatchers.IO) {
+    suspend fun deleteWishlist(
+        wishlistId: Int,
+        userId: String = LocalDataProvider.getDeviceUuid()
+    ): Boolean = withContext(Dispatchers.IO) {
+        val resolvedUserId = userId.ifBlank { LocalDataProvider.getDeviceUuid() }
         Log.d(TAG, "deleteWishlist: start id=$wishlistId")
+        val target = dao.getWishlistById(wishlistId)
         dao.deleteWishlistById(wishlistId)
+
+        val serverId = target?.serverWishlistId ?: runCatching {
+            service().getWishlist(resolvedUserId).firstOrNull { it.keyword == target?.keyword }?.id
+        }.getOrNull()
+
+        if (serverId != null) {
+            runCatching {
+                service().deleteWithQuery(serverId, resolvedUserId)
+            }.onFailure { e ->
+                Log.w(TAG, "서버 위시리스트 DELETE 동기화 실패: ${e.message}")
+            }
+        }
         true
     }
 
-    suspend fun checkPrice(wishlistId: Int, userId: String): PriceCheckResponse = withContext(Dispatchers.IO) {
-        Log.d(TAG, "checkPrice: start id=$wishlistId userId=$userId")
+    suspend fun checkPrice(wishlistId: Int, userId: String): PriceCheckResponse? = withContext(Dispatchers.IO) {
+        val resolvedUserId = userId.ifBlank { LocalDataProvider.getDeviceUuid() }
+        val localItem = dao.getWishlistById(wishlistId)
+        val serverId = localItem?.serverWishlistId ?: run {
+            val keyword = localItem?.keyword
+            if (keyword.isNullOrBlank()) {
+                null
+            } else {
+                runCatching {
+                    service().getWishlist(resolvedUserId)
+                        .firstOrNull { it.keyword == keyword }
+                        ?.id
+                }.getOrNull()?.also { foundId ->
+                    dao.updateServerWishlistId(wishlistId, foundId)
+                }
+            }
+        }
+        if (serverId == null) {
+            Log.w(TAG, "checkPrice: 서버 위시리스트 ID 미존재로 가격 확인 중단 (localId=$wishlistId)")
+            return@withContext null
+        }
+        Log.d(TAG, "checkPrice: start localId=$wishlistId serverId=$serverId userId=$resolvedUserId")
         executeWithRetry("checkPrice") {
-            service().checkWishlistPrice(wishlistId, userId)
+            service().checkWishlistPrice(serverId, resolvedUserId)
         }
     }
 

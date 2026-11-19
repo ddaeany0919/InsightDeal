@@ -1,9 +1,13 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 import sys
 import os
+import json
+import socket
+from urllib.parse import urljoin, urlparse
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
@@ -45,11 +49,22 @@ from firebase_admin import credentials
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Firebase 초기화
+# Firebase 초기화 (환경변수 우선, 기본 경로 폴백)
 try:
-    cred = credentials.Certificate(os.path.join(os.path.dirname(__file__), "firebase-service-account.json"))
-    firebase_admin.initialize_app(cred)
-    logger.info("Firebase Admin SDK가 초기화되었습니다.")
+    if not firebase_admin._apps:
+        firebase_source = (
+            os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "").strip()
+            or os.getenv("FIREBASE_CREDENTIALS", "").strip()
+        )
+        if firebase_source:
+            if firebase_source.startswith("{"):
+                cred = credentials.Certificate(json.loads(firebase_source))
+            else:
+                cred = credentials.Certificate(firebase_source)
+        else:
+            cred = credentials.Certificate(os.path.join(os.path.dirname(__file__), "firebase-service-account.json"))
+        firebase_admin.initialize_app(cred)
+        logger.info("Firebase Admin SDK가 초기화되었습니다.")
 except Exception as e:
     logger.error(f"Firebase 초기화 실패: {e}")
 
@@ -64,25 +79,34 @@ if not os.path.exists(IMAGE_CACHE_DIR):
 # 정적 파일 마운트 (이미지 서비스)
 app.mount("/images", StaticFiles(directory=IMAGE_CACHE_DIR), name="images")
 
-# CORS 설정 (로컬, 앱 WebView 및 앱인토스(Apps in Toss) 미니앱 CDN 도메인 허용)
+# CORS 설정 (신뢰 도메인 + 앱인토스 공식 도메인만 허용)
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 if not ALLOWED_ORIGINS:
     ALLOWED_ORIGINS = [
         "http://localhost",
         "http://localhost:3000",
+        "http://127.0.0.1:3000",
         "capacitor://localhost",
         "http://10.0.2.2",
         "https://toss.im",
         "https://apps-in-toss.toss.im",
+        "https://insightdeal.vercel.app",
     ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://.*\.(toss\.im|tossmini\.com|vercel\.app|sslip\.io|nip\.io|duckdns\.org|trycloudflare\.com)",
+    allow_origin_regex=r"^https://([a-z0-9-]+\.)*(toss\.im|tossmini\.com)$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Admin-Key"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "X-Admin-Key",
+        "X-Device-Token",
+        "X-Feeder-Token",
+    ],
 )
 
 # 라우터 등록
@@ -96,14 +120,39 @@ app.include_router(coupang.router, prefix="/api/coupang", tags=["coupang"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
+_PLACEHOLDER_VAPID_PUBLIC_KEYS = {
+    "bel62iuyguivxikv69yvieuiBia-ib9-skvmeata3lfgdzkrxzjjsgsnfckjbjubkr3qbuyihbqflxyp5nksh8u".lower(),
+}
+
+
+@app.get("/api/push-public-key")
+def get_push_public_key():
+    key = os.getenv("VAPID_PUBLIC_KEY", "").strip()
+    lowered = key.lower()
+    if (
+        not key
+        or lowered in _PLACEHOLDER_VAPID_PUBLIC_KEYS
+        or lowered.startswith(("your_", "placeholder", "change_me"))
+        or "example" in lowered
+    ):
+        raise HTTPException(status_code=503, detail="VAPID_PUBLIC_KEY is not configured")
+    return {"public_key": key, "publicKey": key}
+
+
+@app.get("/api/meta/categories")
+def get_meta_categories():
+    from backend.core.categories import STANDARD_CATEGORIES, STANDARD_SOURCES
+    return {"categories": STANDARD_CATEGORIES, "sources": STANDARD_SOURCES}
+
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to InsightDeal API"}
 
-# 전역 HTTP 클라이언트 (Connection Pooling)
+# 전역 HTTP 클라이언트 (Connection Pooling — 리다이렉트 수동 홉 검증 강제)
 proxy_client = httpx.AsyncClient(
     limits=httpx.Limits(max_keepalive_connections=50, max_connections=100),
-    follow_redirects=True
+    follow_redirects=False,
 )
 
 @app.on_event("shutdown")
@@ -118,25 +167,174 @@ FALLBACK_SVG_IMAGE = """<svg xmlns="http://www.w3.org/2000/svg" width="400" heig
   <text x="200" y="235" font-family="sans-serif" font-size="12" fill="#64748B" text-anchor="middle">원본 이미지 만료 또는 준비 중</text>
 </svg>""".encode('utf-8')
 
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+_MAX_IMAGE_REDIRECTS = 3
+
+
+def _is_public_ip(ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped is not None:
+        ip_obj = ip_obj.ipv4_mapped
+    return not (
+        ip_obj.is_private
+        or ip_obj.is_loopback
+        or ip_obj.is_link_local
+        or ip_obj.is_multicast
+        or ip_obj.is_reserved
+        or ip_obj.is_unspecified
+    )
+
+
 def _is_safe_external_url(url: str) -> bool:
-    """SSRF 방어를 위한 외부 이미지 URL 검증 (사설망/루프백/메타데이터 IP 완벽 차단)"""
-    from urllib.parse import urlparse
+    """SSRF 방어를 위한 외부 이미지 URL 동기 기본 검증 (스킴/인증정보/리터럴 사설 IP 차단)"""
     try:
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
             return False
-        host = (parsed.hostname or "").lower().strip()
+        if parsed.username or parsed.password:
+            return False
+        host = (parsed.hostname or "").lower().strip().rstrip(".")
         if not host or host in ("localhost", "0.0.0.0", "169.254.169.254") or host.endswith(".internal") or host.endswith(".local"):
             return False
         try:
             ip = ipaddress.ip_address(host)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            if not _is_public_ip(ip):
                 return False
         except ValueError:
             pass
         return True
     except Exception:
         return False
+
+
+async def _is_safe_external_url_async(url: str) -> bool:
+    """SSRF 방어를 위한 비동기 DNS 해석 검증 (IPv4/IPv6 전체 주소 중 비공인 IP 포함 시 즉시 차단)"""
+    if not _is_safe_external_url(url):
+        return False
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").strip()
+        try:
+            ip = ipaddress.ip_address(host)
+            return _is_public_ip(ip)
+        except ValueError:
+            pass
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        addr_infos = await run_in_threadpool(socket.getaddrinfo, host, port, 0, socket.SOCK_STREAM)
+        if not addr_infos:
+            return False
+        for info in addr_infos:
+            raw_ip = str(info[4][0]).split("%")[0]
+            ip_obj = ipaddress.ip_address(raw_ip)
+            if not _is_public_ip(ip_obj):
+                return False
+        return True
+    except Exception as exc:
+        logger.debug("SSRF DNS 검증 차단 (%s): %s", url, exc)
+        return False
+
+
+async def _fetch_external_image_safe(
+    url: str,
+    max_redirects: int = _MAX_IMAGE_REDIRECTS,
+    max_bytes: int = _MAX_IMAGE_BYTES,
+) -> httpx.Response:
+    current_url = url
+    for _ in range(max_redirects + 1):
+        if not await _is_safe_external_url_async(current_url):
+            raise ValueError(f"Blocked unsafe external URL: {current_url}")
+        resp = await proxy_client.get(
+            current_url,
+            timeout=8.0,
+            headers=_build_proxy_headers(current_url),
+        )
+        if resp.status_code in (301, 302, 303, 307, 308):
+            location = (resp.headers.get("location") or "").strip()
+            if not location:
+                raise ValueError("Redirect response missing Location header")
+            current_url = urljoin(current_url, location)
+            continue
+        resp.raise_for_status()
+        content_len_hdr = resp.headers.get("content-length")
+        if content_len_hdr and content_len_hdr.isdigit() and int(content_len_hdr) > max_bytes:
+            raise ValueError(f"Content-Length exceeds limit: {content_len_hdr}")
+        if len(resp.content) > max_bytes:
+            raise ValueError(f"Image payload exceeds {max_bytes} bytes")
+        return resp
+    raise ValueError("Too many redirects")
+
+
+def _read_cached_image_sync(cache_file_path: str) -> bytes | None:
+    if not os.path.exists(cache_file_path):
+        return None
+    try:
+        os.utime(cache_file_path, None)
+    except OSError:
+        pass
+    with open(cache_file_path, "rb") as f:
+        return f.read()
+
+
+def _write_cached_image_sync(cache_file_path: str, content: bytes) -> None:
+    with open(cache_file_path, "wb") as f:
+        f.write(content)
+
+
+def _remove_file_quietly_sync(file_path: str) -> None:
+    try:
+        os.remove(file_path)
+    except OSError:
+        pass
+
+
+def _get_deal_backup_candidates_sync(raw_input_url: str, url: str) -> tuple[int | None, list[str]]:
+    import re
+    from backend.database.session import SessionLocal
+    from backend.database import models
+
+    db = SessionLocal()
+    try:
+        deal = db.query(models.Deal).filter(models.Deal.image_url.in_([raw_input_url, url])).first()
+        if not deal:
+            return None, []
+        backup_candidates: list[str] = []
+        gm_match = re.search(
+            r'(?:goodscode=|/vi/product/)(\d{8,12})',
+            f"{deal.ecommerce_link or ''} {deal.content_html or ''} {raw_input_url}",
+            re.I,
+        )
+        if gm_match:
+            backup_candidates.append(f"https://gdimg.gmarket.co.kr/{gm_match.group(1)}/still/600")
+        if deal.content_html:
+            idx = deal.content_html.find("[첨부된 이미지 링크들]")
+            search_zone = deal.content_html[idx:] if idx != -1 else deal.content_html
+            for raw_m in re.findall(r'https?://[^\s,\)\]\'\"<>]+', search_zone):
+                clean_m = raw_m.replace("&amp;", "&").strip().rstrip(",)")
+                if clean_m and clean_m not in backup_candidates and clean_m != url:
+                    backup_candidates.append(clean_m)
+                    if "ppomppu.co.kr" in clean_m:
+                        no_900 = clean_m.replace("/900w_", "/")
+                        if no_900 not in backup_candidates:
+                            backup_candidates.append(no_900)
+                        cdn4_u = re.sub(r"cdn\d\.ppomppu\.co\.kr", "cdn4.ppomppu.co.kr", no_900)
+                        if cdn4_u not in backup_candidates:
+                            backup_candidates.append(cdn4_u)
+        return deal.id, backup_candidates
+    finally:
+        db.close()
+
+
+def _update_deal_image_url_sync(deal_id: int, backup_url: str) -> None:
+    from backend.database.session import SessionLocal
+    from backend.database import models
+
+    db = SessionLocal()
+    try:
+        deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
+        if deal:
+            deal.image_url = backup_url
+            db.commit()
+    finally:
+        db.close()
 
 def _detect_image_mime(data: bytes) -> str | None:
     if not data or len(data) < 12:
@@ -203,21 +401,14 @@ async def proxy_image(url: str):
     cache_file_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}.cache")
 
     try:
-        if not _is_safe_external_url(url):
+        if not await _is_safe_external_url_async(url):
             raise ValueError("Unsafe or non-http external URL")
         lower_u = url.lower()
         if any(bad in lower_u for bad in ("no_image.svg", "thumb_no_image.svg", "noimage", "dot03.gif", "logo_f.svg", "49841804f3d132d75a6c11b1510af812.png")):
             raise ValueError("Known placeholder image URL")
 
-        if os.path.exists(cache_file_path):
-            # [LRU 수명 연장] 최근 조회 시 mtime을 현재 시각으로 갱신하여 7일 청소 데몬으로부터 보호
-            try:
-                os.utime(cache_file_path, None)
-            except OSError:
-                pass
-
-            with open(cache_file_path, "rb") as f:
-                cached_content = f.read()
+        cached_content = await run_in_threadpool(_read_cached_image_sync, cache_file_path)
+        if cached_content is not None:
             detected_mime = _detect_image_mime(cached_content)
             if detected_mime:
                 return Response(
@@ -225,11 +416,7 @@ async def proxy_image(url: str):
                     media_type=detected_mime,
                     headers={"Cache-Control": "public, max-age=604800, immutable"}
                 )
-            else:
-                try:
-                    os.remove(cache_file_path)
-                except OSError:
-                    pass
+            await run_in_threadpool(_remove_file_quietly_sync, cache_file_path)
 
         candidates = [url]
         if "ppomppu.co.kr" in url:
@@ -244,17 +431,11 @@ async def proxy_image(url: str):
         last_err = None
         for cand in candidates:
             try:
-                resp = await proxy_client.get(
-                    cand,
-                    timeout=8.0,
-                    headers=_build_proxy_headers(cand)
-                )
-                resp.raise_for_status()
+                resp = await _fetch_external_image_safe(cand)
                 detected_mime = _detect_image_mime(resp.content)
                 if not detected_mime or len(resp.content) < 60:
                     raise ValueError(f"Non-image or tiny payload returned from {cand}")
-                with open(cache_file_path, "wb") as f:
-                    f.write(resp.content)
+                await run_in_threadpool(_write_cached_image_sync, cache_file_path, resp.content)
                 return Response(
                     content=resp.content,
                     media_type=detected_mime,
@@ -266,57 +447,25 @@ async def proxy_image(url: str):
     except Exception as e:
         logger.warning(f"Proxy Image Fallback Triggered for {raw_input_url}: {e}")
         try:
-            from backend.database.session import SessionLocal
-            from backend.database import models
-            db = SessionLocal()
-            try:
-                deal = db.query(models.Deal).filter(models.Deal.image_url.in_([raw_input_url, url])).first()
-                backup_candidates = []
-                if deal:
-                    gm_match = re.search(
-                        r'(?:goodscode=|/vi/product/)(\d{8,12})',
-                        f"{deal.ecommerce_link or ''} {deal.content_html or ''} {raw_input_url}",
-                        re.I
-                    )
-                    if gm_match:
-                        backup_candidates.append(f"https://gdimg.gmarket.co.kr/{gm_match.group(1)}/still/600")
-                if deal and deal.content_html:
-                    idx = deal.content_html.find("[첨부된 이미지 링크들]")
-                    search_zone = deal.content_html[idx:] if idx != -1 else deal.content_html
-                    for raw_m in re.findall(r'https?://[^\s,\)\]\'\"<>]+', search_zone):
-                        clean_m = raw_m.replace("&amp;", "&").strip().rstrip(",)")
-                        if clean_m and clean_m not in backup_candidates and clean_m != url:
-                            backup_candidates.append(clean_m)
-                            if "ppomppu.co.kr" in clean_m:
-                                no_900 = clean_m.replace("/900w_", "/")
-                                if no_900 not in backup_candidates:
-                                    backup_candidates.append(no_900)
-                                cdn4_u = re.sub(r"cdn\d\.ppomppu\.co\.kr", "cdn4.ppomppu.co.kr", no_900)
-                                if cdn4_u not in backup_candidates:
-                                    backup_candidates.append(cdn4_u)
-                for backup_url in backup_candidates[:6]:
-                    if not _is_safe_external_url(backup_url):
-                        continue
-                    try:
-                        b_resp = await proxy_client.get(backup_url, timeout=8.0, headers=_build_proxy_headers(backup_url))
-                        b_resp.raise_for_status()
-                        b_mime = _detect_image_mime(b_resp.content)
-                        if b_mime and len(b_resp.content) >= 60:
-                            with open(cache_file_path, "wb") as f:
-                                f.write(b_resp.content)
-                            deal.image_url = backup_url
-                            db.commit()
-                            return Response(
-                                content=b_resp.content,
-                                media_type=b_mime,
-                                headers={"Cache-Control": "public, max-age=604800, immutable"}
-                            )
-                    except Exception:
-                        continue
-            finally:
-                db.close()
-        except Exception:
-            pass
+            deal_id, backup_candidates = await run_in_threadpool(_get_deal_backup_candidates_sync, raw_input_url, url)
+            for backup_url in backup_candidates[:6]:
+                try:
+                    b_resp = await _fetch_external_image_safe(backup_url)
+                    b_mime = _detect_image_mime(b_resp.content)
+                    if b_mime and len(b_resp.content) >= 60:
+                        await run_in_threadpool(_write_cached_image_sync, cache_file_path, b_resp.content)
+                        if deal_id is not None:
+                            await run_in_threadpool(_update_deal_image_url_sync, deal_id, backup_url)
+                        return Response(
+                            content=b_resp.content,
+                            media_type=b_mime,
+                            headers={"Cache-Control": "public, max-age=604800, immutable"}
+                        )
+                except Exception as backup_err:
+                    logger.debug("Proxy image backup candidate failed (%s): %s", backup_url, backup_err)
+                    continue
+        except Exception as fallback_err:
+            logger.debug("Proxy image DB fallback failed for %s: %s", raw_input_url, fallback_err)
         return Response(
             status_code=404,
             headers={"Cache-Control": "no-store"}

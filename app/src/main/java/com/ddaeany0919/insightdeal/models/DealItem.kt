@@ -119,25 +119,27 @@ data class DealItem(
     @SerializedName("category")
     val category: String? = null,
 
-    @SerializedName(value = "created_at", alternate = ["indexed_at"])
+    @SerializedName(value = "created_at", alternate = ["indexed_at", "createdAt", "indexedAt"])
     val createdAt: String? = null,
 
-    @SerializedName(value = "view_count", alternate = ["views"])
+    @SerializedName(value = "view_count", alternate = ["views", "viewCount"])
     val viewCount: Int = 0,
 
-    @SerializedName(value = "comment_count", alternate = ["comments"])
+    // 백엔드 상세 응답에서는 원글 "comments"와 앱 한줄평 "comment_count"/"commentCount"가 공존하며
+    // Gson이 후속 키인 comment_count/commentCount로 최종 활성 한줄평 수를 반영합니다.
+    @SerializedName(value = "comment_count", alternate = ["comments", "commentCount"])
     val commentCount: Int = 0,
 
-    @SerializedName(value = "like_count", alternate = ["recommendations"])
+    @SerializedName(value = "like_count", alternate = ["recommendations", "likeCount"])
     val likeCount: Int = 0,
 
-    @SerializedName("dislike_count")
+    @SerializedName(value = "dislike_count", alternate = ["dislikeCount"])
     val dislikeCount: Int = 0,
 
     @SerializedName("tags")
     val tags: List<String> = emptyList(),
 
-    @SerializedName(value = "honey_score", alternate = ["score"])
+    @SerializedName(value = "honey_score", alternate = ["score", "honeyScore"])
     val honeyScore: Int = 0,
 
     @SerializedName("ai_summary")
@@ -160,7 +162,26 @@ data class DealItem(
     val optionsData: List<DealOptionItem> = emptyList(),
 
     @SerializedName("sub_urls")
-    val subUrls: List<String> = emptyList()
+    val subUrls: List<String> = emptyList(),
+
+    // M3-2 1-RTT 상세 요약 필드 (초기 진입 시 별도 투표/댓글 API 왕복 제거)
+    @SerializedName(value = "buy_count", alternate = ["buyCount"])
+    val buyCount: Int = 0,
+
+    @SerializedName(value = "pass_count", alternate = ["saveCount", "passCount", "save_count"])
+    val passCount: Int = 0,
+
+    @SerializedName(value = "user_vote", alternate = ["userVote"])
+    val userVote: String? = null,
+
+    @SerializedName(value = "history_count", alternate = ["historyCount"])
+    val historyCount: Int = 0,
+
+    @SerializedName(value = "is_search_fallback", alternate = ["isSearchFallback"])
+    val isSearchFallback: Boolean = false,
+
+    @SerializedName(value = "is_free", alternate = ["isFree"])
+    val isFree: Boolean = false
 ) {
     /**
      * 할인된 가격 계산
@@ -189,13 +210,14 @@ data class DealItem(
      */
     val resolvedOptionCount: Int
         get() {
+            val safeOptionsData = (optionsData as List<DealOptionItem>?) ?: emptyList()
             if (optionsCount > 1) return optionsCount
-            if (optionsData.size > 1) return optionsData.size
+            if (safeOptionsData.size > 1) return safeOptionsData.size
             val sourceOptionCount = sources?.count { src ->
                 src.siteName.contains(" - ") && src.siteName.substringAfter(" - ").isNotBlank()
             } ?: 0
             if (sourceOptionCount > 1) return sourceOptionCount
-            return if (hasOptions) maxOf(optionsCount, optionsData.size, sourceOptionCount, 2) else 0
+            return if (hasOptions) maxOf(optionsCount, safeOptionsData.size, sourceOptionCount, 2) else 0
         }
 
     /**
@@ -209,9 +231,10 @@ data class DealItem(
      */
     val resolvedSubUrls: List<String>
         get() {
+            val safeSubUrls = (subUrls as List<String>?) ?: emptyList()
             val primaryUrl = ecommerceUrl?.trim().orEmpty()
             val merged = buildList {
-                addAll(subUrls)
+                addAll(safeSubUrls)
                 sources?.forEach { src ->
                     if (!src.siteName.contains(" - ")) {
                         addAll(src.subUrls.orEmpty())

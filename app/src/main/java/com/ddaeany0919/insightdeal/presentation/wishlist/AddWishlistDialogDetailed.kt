@@ -10,17 +10,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
 import com.ddaeany0919.insightdeal.data.network.AnalyzeLinkRequest
 import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.network.NetworkModule
-import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
 import com.ddaeany0919.insightdeal.presentation.decodeHtmlEntities
 import com.ddaeany0919.insightdeal.presentation.formatPrice
 import com.ddaeany0919.insightdeal.presentation.inferMallFromUrl
@@ -61,10 +59,8 @@ private fun LinkInputTab(
     onDismiss: () -> Unit,
     onAddFromLink: (String, Int) -> Unit
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val apiService = remember { NetworkModule.createService<ApiService>() }
-    val currentUsername by AuthManager.getUsername(context).collectAsStateWithLifecycle(initialValue = "guest")
 
     var url by remember { mutableStateOf("") }
     var targetText by remember { mutableStateOf("") }
@@ -181,7 +177,7 @@ private fun LinkInputTab(
                         urlError = null
                         scope.launch {
                             try {
-                                val resolvedUser = currentUsername?.takeIf { it.isNotBlank() && it != "guest" } ?: "default"
+                                val resolvedUser = LocalDataProvider.getDeviceUuid()
                                 val response = apiService.analyzeLink(
                                     AnalyzeLinkRequest(
                                         url = trimmedUrl,

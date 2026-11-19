@@ -42,8 +42,6 @@ fun AuthScreen(
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
-    var socialAgreed by remember { mutableStateOf(false) }
-
     val savedUsername by AuthManager.getUsername(ctx).collectAsState(initial = "guest")
     val savedNickname by AuthManager.getNickname(ctx).collectAsState(initial = "guest")
     val autoLoginEnabled by AuthManager.isAutoLoginEnabled(ctx).collectAsState(initial = true)
@@ -670,81 +668,6 @@ fun AuthScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
-                    }
-
-                    if (isUserGuest && selectedTab == AuthTab.LOGIN) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { socialAgreed = !socialAgreed }
-                        ) {
-                            Checkbox(
-                                checked = socialAgreed,
-                                onCheckedChange = { socialAgreed = it },
-                                colors = CheckboxDefaults.colors(checkedColor = brandAccent)
-                            )
-                            Text(
-                                text = "서비스 이용약관 및 개인정보 제3자 제공 동의 (필수)",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            // 카카오 로그인
-                            Button(
-                                onClick = {
-                                    if (!socialAgreed) {
-                                        android.widget.Toast.makeText(ctx, "필수 약관에 동의해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
-                                        return@Button
-                                    }
-                                    scope.launch {
-                                        AuthManager.saveUser(ctx, "kakao_94821", "카카오쇼핑꾼")
-                                        android.widget.Toast.makeText(ctx, "카카오 로그인 완료", android.widget.Toast.LENGTH_SHORT).show()
-                                        onBackClick()
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFFFEE500),
-                                    contentColor = Color.Black
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f).height(50.dp)
-                            ) {
-                                Text("카카오 로그인", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-
-                            // 네이버 로그인
-                            Button(
-                                onClick = {
-                                    if (!socialAgreed) {
-                                        android.widget.Toast.makeText(ctx, "필수 약관에 동의해 주세요.", android.widget.Toast.LENGTH_SHORT).show()
-                                        return@Button
-                                    }
-                                    scope.launch {
-                                        AuthManager.saveUser(ctx, "naver_38291", "네이버쇼핑꾼")
-                                        android.widget.Toast.makeText(ctx, "네이버 로그인 완료", android.widget.Toast.LENGTH_SHORT).show()
-                                        onBackClick()
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF03C75A),
-                                    contentColor = Color.White
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f).height(50.dp)
-                            ) {
-                                Text("네이버 로그인", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-                        }
                     }
 
                     // ⚡ [정보 수정 상태인 경우] 카드 내부에 자동 로그인 & 아이디 저장 소형 체크박스 통합 제공

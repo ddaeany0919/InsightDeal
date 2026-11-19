@@ -264,8 +264,10 @@ fun OfflineErrorState(
         
         Button(
             onClick = onRetry,
+            modifier = Modifier.heightIn(min = 48.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (isOffline) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             )
         ) {
             Icon(
@@ -274,7 +276,7 @@ fun OfflineErrorState(
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text("재시도")
+            Text("다시 시도")
         }
     }
 }

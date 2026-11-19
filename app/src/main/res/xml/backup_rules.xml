@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- Include/exclude rules for backup -->
-    <include domain="sharedpref" />
+    <!-- 민감 저장소(암호화 prefs, 기기 식별자, API 키, DataStore) 백업 제외 -->
+    <include domain="sharedpref" path="." />
+    <exclude domain="sharedpref" path="insight_deal_prefs_encrypted.xml" />
+    <exclude domain="sharedpref" path="insight_deal_prefs_fallback.xml" />
+    <exclude domain="sharedpref" path="insight_deal_prefs.xml" />
+    <exclude domain="sharedpref" path="insightdeal_prefs.xml" />
     <exclude domain="sharedpref" path="device.xml" />
     <exclude domain="sharedpref" path="sensitive_data.xml" />
-    
-    <!-- Include database and file domains with strict excludes -->
-    <include domain="database" />
+
+    <include domain="database" path="." />
     <include domain="file" path="." />
-    
-    <!-- Exclude specific files that shouldn't be backed up -->
+
+    <exclude domain="file" path="datastore/user_prefs.preferences_pb" />
     <exclude domain="file" path="cache" />
     <exclude domain="file" path="temp" />
 </full-backup-content>

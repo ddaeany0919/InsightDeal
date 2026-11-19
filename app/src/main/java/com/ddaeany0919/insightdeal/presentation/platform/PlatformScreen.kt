@@ -12,6 +12,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
+import com.ddaeany0919.insightdeal.models.CategoryCatalog
 import com.ddaeany0919.insightdeal.presentation.home.DealCardComposable
 import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
 
@@ -26,7 +27,7 @@ fun PlatformScreen(
     val currentPlatform = filterState.platform ?: "전체"
     val dealsPagingItems = viewModel.dealsPagingData.collectAsLazyPagingItems()
 
-    val platforms = listOf("전체", "뽐뿌", "퀘이사존", "펨코", "루리웹", "클리앙", "알리뽐뿌", "빠삭국내", "빠삭해외")
+    val platforms = CategoryCatalog.STANDARD_SOURCES
 
     Scaffold(
         topBar = {

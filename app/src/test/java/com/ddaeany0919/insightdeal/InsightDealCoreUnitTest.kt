@@ -240,7 +240,7 @@ class InsightDealCoreUnitTest {
     }
 
     @Test
-    fun extractValidMultiOptions_excludesZeroPriceEntriesForIndexParity() {
+    fun extractValidMultiOptions_preservesZeroPriceValidOptionsAndExcludesBlankOrNegativeEntries() {
         val sourceDeal = DealItem(
             id = 801,
             title = "멀티 옵션 테스트 딜",
@@ -248,15 +248,18 @@ class InsightDealCoreUnitTest {
             currency = "KRW",
             siteName = "뽐뿌",
             sources = listOf(
-                DealSource(siteName = "뽐뿌 - 품절더미", postUrl = "https://ppomppu.co.kr/1", price = 0L),
+                DealSource(siteName = "뽐뿌 - 사은품 증정", postUrl = "https://ppomppu.co.kr/1", price = 0L),
+                DealSource(siteName = "뽐뿌 -    ", postUrl = "https://ppomppu.co.kr/1", price = 0L),
+                DealSource(siteName = "뽐뿌 - 음수더미", postUrl = "https://ppomppu.co.kr/1", price = -100L),
                 DealSource(siteName = "뽐뿌 - 본품 500ml", postUrl = "https://ppomppu.co.kr/1", price = 25900L),
                 DealSource(siteName = "뽐뿌 - 리필 세트", postUrl = "https://ppomppu.co.kr/1", price = 32900L)
             )
         )
         val resolvedSources = DealDetailViewModel.extractValidMultiOptions(sourceDeal)
-        assertEquals(2, resolvedSources.size)
-        assertEquals(25900L, resolvedSources[0].price)
-        assertEquals(32900L, resolvedSources[1].price)
+        assertEquals(3, resolvedSources.size)
+        assertEquals(0L, resolvedSources[0].price)
+        assertEquals(25900L, resolvedSources[1].price)
+        assertEquals(32900L, resolvedSources[2].price)
 
         val optionsDataDeal = DealItem(
             id = 802,
@@ -265,15 +268,19 @@ class InsightDealCoreUnitTest {
             currency = "USD",
             siteName = "알리뽐뿌",
             optionsData = listOf(
-                DealOptionItem(name = "무효옵션", price = 0L, currency = "USD"),
+                DealOptionItem(name = "무료 사은품", price = 0L, currency = "USD"),
+                DealOptionItem(name = "   ", price = 0L, currency = "USD"),
+                DealOptionItem(name = "음수옵션", price = -10L, currency = "USD"),
                 DealOptionItem(name = "128GB", price = 1990L, currency = "USD"),
                 DealOptionItem(name = "256GB", price = 2990L, currency = "USD")
             )
         )
         val resolvedOptionsData = DealDetailViewModel.extractValidMultiOptions(optionsDataDeal)
-        assertEquals(2, resolvedOptionsData.size)
-        assertEquals(1990L, resolvedOptionsData[0].price)
-        assertEquals("USD", resolvedOptionsData[0].currency)
+        assertEquals(3, resolvedOptionsData.size)
+        assertEquals(0L, resolvedOptionsData[0].price)
+        assertEquals(1990L, resolvedOptionsData[1].price)
+        assertEquals("USD", resolvedOptionsData[1].currency)
+        assertEquals(2990L, resolvedOptionsData[2].price)
     }
 
     @Test

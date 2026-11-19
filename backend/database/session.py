@@ -1,10 +1,11 @@
 import os
+import re
 import sqlite3
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import QueuePool, StaticPool
 from typing import Generator
 
 logger = logging.getLogger(__name__)
@@ -31,22 +32,40 @@ class DatabaseManager:
             default_db_path = os.path.join(backend_dir, "insight_deal.db")
             self.db_file_path = default_db_path
             database_url = f"sqlite:///{default_db_path}"
-        elif database_url.startswith("sqlite:///"):
-            self.db_file_path = database_url.replace("sqlite:///", "", 1)
-            
-        logger.info(f"데이터베이스 연결 시도: {database_url}")
-        
-        connect_args = {"check_same_thread": False, "timeout": 30} if database_url.startswith("sqlite") else {"options": "-c timezone=Asia/Seoul"}
-        
-        self.engine = create_engine(
-            database_url,
-            poolclass=QueuePool,
-            pool_size=10,
-            max_overflow=20,
-            pool_pre_ping=True,
-            echo=False,
-            connect_args=connect_args
+        else:
+            if database_url.startswith("postgres://"):
+                database_url = "postgresql://" + database_url[len("postgres://"):]
+            if database_url.startswith("sqlite:///") and ":memory:" not in database_url:
+                self.db_file_path = database_url.replace("sqlite:///", "", 1)
+
+        masked_url = re.sub(r":([^:@/]+)@", ":***@", database_url)
+        logger.info(f"데이터베이스 연결 시도: {masked_url}")
+
+        is_sqlite = database_url.startswith("sqlite")
+        is_memory_sqlite = is_sqlite and (
+            database_url in ("sqlite://", "sqlite:///:memory:") or ":memory:" in database_url
         )
+        connect_args = (
+            {"check_same_thread": False, "timeout": 30}
+            if is_sqlite
+            else {"options": "-c timezone=Asia/Seoul"}
+        )
+
+        engine_kwargs = {
+            "echo": False,
+            "connect_args": connect_args,
+        }
+        if is_memory_sqlite:
+            engine_kwargs["poolclass"] = StaticPool
+        else:
+            engine_kwargs.update({
+                "poolclass": QueuePool,
+                "pool_size": 10,
+                "max_overflow": 20,
+                "pool_pre_ping": True,
+            })
+
+        self.engine = create_engine(database_url, **engine_kwargs)
         
         if database_url.startswith("sqlite"):
             @event.listens_for(self.engine, "connect")
@@ -134,7 +153,9 @@ class DatabaseManager:
         summary = {"slimmed_deals": 0, "backup_path": None, "cache_summary": None}
         session = self.get_session()
         try:
-            cutoff_date = datetime.utcnow() - timedelta(days=slim_days)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=slim_days)
+            if self.engine is not None and self.engine.dialect.name == "sqlite":
+                cutoff_date = cutoff_date.replace(tzinfo=None)
             res = session.execute(
                 text("UPDATE deals SET content_html = NULL WHERE indexed_at < :cutoff AND content_html IS NOT NULL"),
                 {"cutoff": cutoff_date}

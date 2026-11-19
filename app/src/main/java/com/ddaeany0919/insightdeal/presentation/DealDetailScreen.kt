@@ -1,64 +1,80 @@
 package com.ddaeany0919.insightdeal.presentation
 
 import com.ddaeany0919.insightdeal.presentation.formatPrice
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.*
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import com.ddaeany0919.insightdeal.presentation.theme.LocalIsDarkTheme
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Poll
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.models.DealSource
-import com.ddaeany0919.insightdeal.models.PriceHistoryPoint
 import com.ddaeany0919.insightdeal.models.MallPrice
-import java.util.Locale
-
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistViewModel
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistUiState
+import com.ddaeany0919.insightdeal.models.PriceHistoryPoint
+import com.ddaeany0919.insightdeal.network.ApiDealComment
 import com.ddaeany0919.insightdeal.network.ApiDealVotes
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistUiState
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistViewModel
 import com.ddaeany0919.insightdeal.utils.CustomTabLauncher
+import java.util.Locale
 
 // [jetpack-compose-performance] 정규식, 날짜 포매터 및 정적 컬렉션 파일 레벨 호이스팅
 private val DIGITAL_CATEGORIES = setOf("적립", "이벤트", "모바일/기프티콘", "상품권", "패키지/이용권")
@@ -164,6 +180,25 @@ fun extractPromoCodesFromText(text: String, title: String): List<String> {
 }
 
 /**
+ * 상세 화면 전용 가격 표시 헬퍼 (StringUtils.formatPrice 기존 동작은 유지하면서 0원 옵션/무료 딜을 명확히 표시)
+ */
+internal fun formatDetailPriceText(
+    price: Long,
+    currency: String?,
+    titleHint: String?,
+    isFree: Boolean = false
+): String {
+    if (price > 0L) {
+        return formatPrice(price, currency, titleHint)
+    }
+    val base = formatPrice(0L, currency, titleHint)
+    return when {
+        isFree || base == "무료" -> "0원 (무료)"
+        else -> "0원"
+    }
+}
+
+/**
  * 사이트 칩의 메타 정보를 담는 고성능 정적 데이터 클래스
  */
 @Immutable
@@ -173,6 +208,55 @@ private data class SiteChipInfo(
     val textColor: Color
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DealDetailStatusScaffold(
+    title: String,
+    onBack: () -> Unit,
+    content: @Composable BoxScope.() -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                navigationIcon = {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "뒤로가기",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        }
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(padding),
+            contentAlignment = Alignment.Center,
+            content = content
+        )
+    }
+}
+
+@Suppress("UNUSED_PARAMETER")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DealDetailRoute(
@@ -195,27 +279,101 @@ fun DealDetailRoute(
     }
 
     if (uiState.isLoading) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        DealDetailStatusScaffold(title = "핫딜 상세", onBack = onBack) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                Text(
+                    text = "핫딜 정보를 불러오는 중이에요",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         return
     }
 
     if (uiState.error != null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = uiState.error ?: "알 수 없는 에러가 발생했습니다.",
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.titleMedium
-            )
+        DealDetailStatusScaffold(title = "핫딜 상세", onBack = onBack) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ErrorOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(44.dp)
+                )
+                Text(
+                    text = uiState.error ?: DealDetailViewModel.STANDARD_DETAIL_ERROR_MESSAGE,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center
+                )
+                Button(
+                    onClick = { viewModel.loadDealData(dealId) },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text(
+                        text = "다시 시도",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+            }
         }
         return
     }
 
     val deal = uiState.deal
     if (deal == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("데이터를 찾을 수 없습니다.", style = MaterialTheme.typography.titleMedium)
+        DealDetailStatusScaffold(title = "핫딜 상세", onBack = onBack) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(44.dp)
+                )
+                Text(
+                    text = DealDetailViewModel.STANDARD_DETAIL_ERROR_MESSAGE,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center
+                )
+                Button(
+                    onClick = { viewModel.loadDealData(dealId) },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text(
+                        text = "다시 시도",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+            }
         }
         return
     }
@@ -226,7 +384,7 @@ fun DealDetailRoute(
     }
 
     val multiOptions = remember(deal.id, deal.sources, deal.optionsData) {
-        viewModel.resolveMultiOptions(deal)
+        DealDetailViewModel.extractValidMultiOptions(deal)
     }
     val selectedOption = remember(multiOptions, uiState.selectedOptionIndex) {
         if (multiOptions.isNotEmpty() && uiState.selectedOptionIndex in multiOptions.indices) {
@@ -235,8 +393,9 @@ fun DealDetailRoute(
             null
         }
     }
+    // 0원 유효 옵션 선택 시 대표가로 덮어쓰이지 않도록 >= 0L 기준 보존
     val effectivePrice = remember(selectedOption, deal.price) {
-        selectedOption?.price?.takeIf { it > 0L } ?: deal.price
+        selectedOption?.price?.takeIf { it >= 0L } ?: deal.price
     }
     val effectiveCurrency = remember(selectedOption, deal.currency) {
         selectedOption?.currency?.takeIf { it.isNotBlank() } ?: deal.currency
@@ -264,10 +423,10 @@ fun DealDetailRoute(
     }
     val isBookmarked = existingWishlistItem != null
 
-    // 다중 옵션(sources) 각각의 실제 가격(source.price), 구매처 링크(source.ecommerceUrl), 통화(source.currency) 반영
+    // 다중 옵션(sources) 각각의 실제 가격(0원 포함), 구매처 링크, 통화 반영
     val pricesList = remember(deal.sources, deal.siteName, deal.price, deal.currency, rootTargetUrl) {
         deal.sources?.map { source ->
-            val optionPrice = source.price?.toInt()?.takeIf { it > 0 } ?: currentPriceInt
+            val optionPrice = source.price?.takeIf { it >= 0L }?.toInt() ?: currentPriceInt
             val optionUrl = source.ecommerceUrl?.takeIf { it.isNotBlank() } ?: source.postUrl
             val optionCurrency = source.currency?.takeIf { it.isNotBlank() } ?: deal.currency
             MallPrice(
@@ -290,6 +449,24 @@ fun DealDetailRoute(
         isBookmarked = isBookmarked,
         initialTargetPrice = existingWishlistItem?.targetPrice,
         votes = uiState.votes,
+        buyCount = uiState.buyCount,
+        passCount = uiState.passCount,
+        userVote = uiState.userVote,
+        commentCount = uiState.commentCount,
+        historyCount = uiState.historyCount,
+        isSearchFallback = uiState.isSearchFallback,
+        isFree = uiState.isFree,
+        comments = uiState.comments,
+        commentsLoaded = uiState.commentsLoaded,
+        isCommentsLoading = uiState.isCommentsLoading,
+        commentsError = uiState.commentsError,
+        currentDeviceUuid = uiState.currentDeviceUuid,
+        isVoting = uiState.isVoting,
+        voteError = uiState.voteError,
+        isSubmittingComment = uiState.isSubmittingComment,
+        deletingCommentId = uiState.deletingCommentId,
+        commentActionError = uiState.commentActionError,
+        commentSubmitSuccessSeq = uiState.commentSubmitSuccessSeq,
         selectedPeriod = selectedPeriod,
         onPeriodSelected = { viewModel.setPeriod(it) },
         selectedOptionIndex = uiState.selectedOptionIndex,
@@ -346,7 +523,12 @@ fun DealDetailRoute(
             }
         },
         onShare = {
-            val formattedSharePrice = formatPrice(effectivePrice, effectiveCurrency, effectiveTitle)
+            val formattedSharePrice = formatDetailPriceText(
+                price = effectivePrice,
+                currency = effectiveCurrency,
+                titleHint = effectiveTitle,
+                isFree = uiState.isFree || deal.isFree
+            )
             val shareText = buildString {
                 append("[인사이트딜 핫딜 공유]\n")
                 append("$effectiveTitle\n")
@@ -378,7 +560,12 @@ fun DealDetailRoute(
             )
             CustomTabLauncher.launchShoppingUrl(localContext, purchaseUrl)
         },
-        onNavigateToCommunity = onNavigateToCommunity,
+        onVote = { voteType -> viewModel.vote(voteType) },
+        onRetryVotes = { viewModel.refreshVotes() },
+        onExpandComments = { viewModel.loadCommentsIfNeeded() },
+        onRetryComments = { viewModel.loadCommentsIfNeeded(forceRefresh = true) },
+        onAddComment = { content -> viewModel.addComment(content) },
+        onDeleteComment = { commentId -> viewModel.deleteComment(commentId) },
         snackbarHostState = snackbarHostState
     )
 }
@@ -392,60 +579,75 @@ fun DealDetailScreen(
     isBookmarked: Boolean,
     initialTargetPrice: Int? = null,
     votes: ApiDealVotes?,
+    buyCount: Int = deal.buyCount,
+    passCount: Int = deal.passCount,
+    userVote: String? = deal.userVote,
+    commentCount: Int = deal.commentCount,
+    historyCount: Int = deal.historyCount,
+    isSearchFallback: Boolean = deal.isSearchFallback,
+    isFree: Boolean = deal.isFree,
+    comments: List<ApiDealComment> = emptyList(),
+    commentsLoaded: Boolean = false,
+    isCommentsLoading: Boolean = false,
+    commentsError: String? = null,
+    currentDeviceUuid: String = "",
+    isVoting: Boolean = false,
+    voteError: String? = null,
+    isSubmittingComment: Boolean = false,
+    deletingCommentId: Int? = null,
+    commentActionError: String? = null,
+    commentSubmitSuccessSeq: Int = 0,
     selectedPeriod: String,
     onPeriodSelected: (String) -> Unit,
     selectedOptionIndex: Int = 0,
-    onSelectOption: (Int) -> Unit = {},
+    onSelectOption: (Int) -> Unit,
     onBack: () -> Unit,
     onBookmarkToggle: () -> Unit,
-    onTargetPriceAlertRegister: (Int) -> Unit = {},
+    onTargetPriceAlertRegister: (Int) -> Unit,
     onShare: () -> Unit,
     onOpenOrigin: (String) -> Unit,
-    onOpenPurchaseUrl: (String, Long?, String?) -> Unit = { url, _, _ -> onOpenOrigin(url) },
-    onNavigateToCommunity: () -> Unit,
+    onOpenPurchaseUrl: (String, Long?, String?) -> Unit,
+    onVote: (String) -> Unit,
+    onRetryVotes: () -> Unit,
+    onExpandComments: () -> Unit,
+    onRetryComments: () -> Unit,
+    onAddComment: (String) -> Unit,
+    onDeleteComment: (Int) -> Unit,
     snackbarHostState: SnackbarHostState
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+
     val multiOptions = remember(deal.id, deal.sources, deal.optionsData) {
-        val fromSources = deal.sources?.filter {
-            it.siteName.contains(" - ") &&
-                it.siteName.substringAfter(" - ").isNotBlank() &&
-                (it.price ?: 0L) > 0L
-        }.orEmpty()
-        val rawList = if (fromSources.isNotEmpty()) {
-            fromSources
-        } else {
-            deal.optionsData
-                .filter { it.name.isNotBlank() && it.price > 0L }
-                .map { opt ->
-                    DealSource(
-                        siteName = "${deal.siteName} - ${opt.name}",
-                        postUrl = deal.postUrl.orEmpty(),
-                        ecommerceUrl = opt.url ?: deal.ecommerceUrl,
-                        price = opt.price,
-                        currency = opt.currency ?: deal.currency,
-                        code = opt.code,
-                        imageUrl = opt.imageUrl ?: deal.imageUrl,
-                        subUrls = opt.subUrls ?: emptyList()
-                    )
-                }
-        }
-        val seen = mutableSetOf<String>()
-        rawList.filter { src ->
-            val optTitle = cleanOptionTitle(src.siteName).lowercase().replace(" ", "")
-            optTitle.isNotEmpty() && seen.add(optTitle)
-        }
+        DealDetailViewModel.extractValidMultiOptions(deal)
     }
     val selectedOption = remember(multiOptions, selectedOptionIndex) {
         if (multiOptions.isNotEmpty() && selectedOptionIndex in multiOptions.indices) {
             multiOptions[selectedOptionIndex]
         } else null
     }
-    val effectivePrice = selectedOption?.price ?: deal.price
-    val effectiveCurrency = selectedOption?.currency ?: deal.currency
+    val effectivePrice = selectedOption?.price?.takeIf { it >= 0L } ?: deal.price
+    val effectiveCurrency = selectedOption?.currency?.takeIf { it.isNotBlank() } ?: deal.currency
     val promoCodes = remember(deal.contentHtml, deal.title) {
         extractPromoCodesFromText(deal.contentHtml ?: deal.title, deal.title)
     }
+
+    val effectiveIsFree = isFree || deal.isFree
+    val effectiveHistoryCount = maxOf(historyCount, priceHistory.size)
+    val effectiveBuyCount = votes?.buy_count ?: buyCount
+    val effectivePassCount = votes?.pass_count ?: passCount
+    val effectiveUserVote = votes?.user_vote ?: userVote
+    val effectiveCommentCount = if (commentsLoaded) comments.size else maxOf(commentCount, comments.size)
+    val canShowTargetAlert = effectivePrice > 0L && !effectiveIsFree
+    val isUsingSearchFallback = (isSearchFallback || deal.isSearchFallback) &&
+        selectedOption?.ecommerceUrl.isNullOrBlank()
+
+    // [안 B] 2급 아코디언 초기 상태는 모두 접힘(expanded = false)
+    var chartExpanded by rememberSaveable(deal.id) { mutableStateOf(false) }
+    var voteExpanded by rememberSaveable(deal.id) { mutableStateOf(false) }
+    var commentsExpanded by rememberSaveable(deal.id) { mutableStateOf(false) }
+    var targetExpanded by rememberSaveable(deal.id) { mutableStateOf(false) }
 
     // 🛡️ 제휴 수수료 고지 BottomSheet 상태 관리
     var showAffiliateSheet by remember { mutableStateOf(false) }
@@ -471,7 +673,6 @@ fun DealDetailScreen(
                     .padding(horizontal = 24.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 아이콘 + 타이틀
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -483,14 +684,13 @@ fun DealDetailScreen(
                         modifier = Modifier.size(24.dp)
                     )
                     Text(
-                        text = "외부 쇼핑몰 이동 안내",
+                        text = if (isUsingSearchFallback) "쇼핑몰 검색 결과 이동 안내" else "외부 쇼핑몰 이동 안내",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
-                // 고지 본문
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                     shape = RoundedCornerShape(16.dp)
@@ -500,7 +700,11 @@ fun DealDetailScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "쿠팡 파트너스 및 제휴 마케팅 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.",
+                            text = if (isUsingSearchFallback) {
+                                "직접 링크가 제공되지 않아 해당 상품의 쇼핑몰 검색 결과 화면으로 연결됩니다."
+                            } else {
+                                "쿠팡 파트너스 및 제휴 마케팅 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             lineHeight = 22.sp
@@ -538,14 +742,14 @@ fun DealDetailScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp),
+                        .heightIn(min = 52.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
                     Text(
-                        text = "구매처로 이동",
+                        text = if (isUsingSearchFallback) "쇼핑몰 검색 결과 보기" else "구매처로 이동",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onPrimary
@@ -557,7 +761,9 @@ fun DealDetailScreen(
                         showAffiliateSheet = false
                         pendingUrl = null
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
                 ) {
                     Text(
                         text = "닫기",
@@ -598,12 +804,13 @@ fun DealDetailScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (originalPostUrl != null && originalPostUrl != targetUrl) {
+                        // 뼈대 ②: targetUrl과 동일하더라도 원본 커뮤니티 글 버튼 항상 유지
+                        if (originalPostUrl != null) {
                             OutlinedButton(
                                 onClick = { onOpenOrigin(originalPostUrl) },
                                 modifier = Modifier
                                     .weight(0.9f)
-                                    .height(52.dp),
+                                    .heightIn(min = 52.dp),
                                 shape = RoundedCornerShape(12.dp),
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                             ) {
@@ -612,14 +819,27 @@ fun DealDetailScreen(
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    letterSpacing = (-0.2).sp
+                                    letterSpacing = (-0.2).sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
 
+                        // 뼈대 ③: 구매처 다이렉트 링크 아웃 버튼 (검색 폴백 시 표준 CTA 적용)
                         if (targetUrl != null) {
-                            val bottomPriceText = remember(effectivePrice, effectiveCurrency, selectedOption) {
-                                formatPrice(effectivePrice, effectiveCurrency, selectedOption?.let { cleanOptionTitle(it.siteName) })
+                            val bottomPriceText = remember(effectivePrice, effectiveCurrency, selectedOption, effectiveIsFree) {
+                                formatDetailPriceText(
+                                    price = effectivePrice,
+                                    currency = effectiveCurrency,
+                                    titleHint = selectedOption?.let { cleanOptionTitle(it.siteName) } ?: deal.title,
+                                    isFree = effectiveIsFree
+                                )
+                            }
+                            val ctaLabel = when {
+                                isUsingSearchFallback -> "쇼핑몰 검색 결과 보기"
+                                bottomPriceText == "본문 참조" || bottomPriceText == "가격 확인" -> "구매처로 이동"
+                                else -> "$bottomPriceText · 구매처 이동"
                             }
                             Button(
                                 onClick = {
@@ -628,14 +848,14 @@ fun DealDetailScreen(
                                 },
                                 modifier = Modifier
                                     .weight(1.4f)
-                                    .height(52.dp),
+                                    .heightIn(min = 52.dp),
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primary
                                 )
                             ) {
                                 Text(
-                                    text = if (bottomPriceText == "본문 참조") "구매처로 이동" else "$bottomPriceText · 구매처 이동",
+                                    text = ctaLabel,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
                                     color = MaterialTheme.colorScheme.onPrimary,
@@ -664,7 +884,10 @@ fun DealDetailScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "뒤로가기",
@@ -673,14 +896,20 @@ fun DealDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onShare) {
+                    IconButton(
+                        onClick = onShare,
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Share,
                             contentDescription = "공유",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    IconButton(onClick = onBookmarkToggle) {
+                    IconButton(
+                        onClick = onBookmarkToggle,
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    ) {
                         Icon(
                             imageVector = if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                             contentDescription = "북마크",
@@ -695,68 +924,175 @@ fun DealDetailScreen(
         }
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
                 .padding(padding),
-            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 88.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // 1급 뼈대: 헤더 + 가격 + 검색 폴백 배지 + 1-RTT Summary Pill + 다중 옵션 + 본문 + 할인코드 + AI 요약
             item(key = "deal_header", contentType = "header") {
                 DealHeader(
                     deal = deal,
                     selectedOption = selectedOption,
                     selectedOptionIndex = selectedOptionIndex,
                     multiOptions = multiOptions,
+                    isSearchFallbackActive = isUsingSearchFallback,
+                    isFreeDeal = effectiveIsFree,
                     onSelectOption = onSelectOption,
                     onOpenOrigin = onOpenOrigin,
-                    onOpenPurchaseUrl = onOpenPurchaseUrl
+                    onOpenPurchaseUrl = onOpenPurchaseUrl,
+                    summaryPillsContent = {
+                        DealSummaryPillsRow(
+                            historyCount = effectiveHistoryCount,
+                            buyCount = effectiveBuyCount,
+                            passCount = effectivePassCount,
+                            commentCount = effectiveCommentCount,
+                            showTargetAlertPill = canShowTargetAlert,
+                            isTargetAlertConfigured = initialTargetPrice != null && initialTargetPrice > 0,
+                            onHistoryPillClick = {
+                                chartExpanded = true
+                                scope.launch { listState.animateScrollToItem(1) }
+                            },
+                            onVotePillClick = {
+                                voteExpanded = true
+                                scope.launch { listState.animateScrollToItem(2) }
+                            },
+                            onCommentsPillClick = {
+                                commentsExpanded = true
+                                onExpandComments()
+                                scope.launch { listState.animateScrollToItem(3) }
+                            },
+                            onTargetPillClick = {
+                                targetExpanded = true
+                                scope.launch { listState.animateScrollToItem(4) }
+                            }
+                        )
+                    }
                 )
             }
-            item(key = "price_chart", contentType = "chart") {
-                PriceHistoryInteractiveCard(
-                    history = priceHistory,
-                    currency = effectiveCurrency,
-                    selectedPeriod = selectedPeriod,
-                    onPeriodSelected = onPeriodSelected
-                )
+
+            // 2급 [안 B] 아코디언 ①: 가격 추이 · 시세 요약 (초기 접힘)
+            item(key = "accordion_chart", contentType = "accordion_chart") {
+                DetailAccordionSection(
+                    title = "가격 추이 · 시세 요약",
+                    icon = Icons.AutoMirrored.Filled.ShowChart,
+                    summaryBadge = if (effectiveHistoryCount >= 2) "${effectiveHistoryCount}건" else "이력 부족",
+                    expanded = chartExpanded,
+                    onToggle = { chartExpanded = !chartExpanded }
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        PriceHistoryInteractiveCard(
+                            history = priceHistory,
+                            currency = effectiveCurrency,
+                            selectedPeriod = selectedPeriod,
+                            onPeriodSelected = onPeriodSelected
+                        )
+                        if (priceHistory.size > 1 || deal.honeyScore > 0) {
+                            AIBuyerGuide(
+                                deal = deal,
+                                priceHistory = priceHistory,
+                                currentPrice = effectivePrice.toInt(),
+                                currencyOverride = effectiveCurrency
+                            )
+                        }
+                    }
+                }
             }
-            item(key = "buyer_guide", contentType = "guide") {
-                if (priceHistory.size > 1 || deal.honeyScore > 0) {
-                    AIBuyerGuide(
-                        deal = deal,
-                        priceHistory = priceHistory,
-                        currentPrice = effectivePrice.toInt(),
-                        currencyOverride = effectiveCurrency
+
+            // 2급 [안 B] 아코디언 ②: 살까 · 말까 투표 (초기 접힘)
+            item(key = "accordion_vote", contentType = "accordion_vote") {
+                DetailAccordionSection(
+                    title = "살까 · 말까 투표",
+                    icon = Icons.Default.Poll,
+                    summaryBadge = "살까 $effectiveBuyCount · 말까 $effectivePassCount",
+                    expanded = voteExpanded,
+                    onToggle = { voteExpanded = !voteExpanded }
+                ) {
+                    DealVoteAccordionContent(
+                        buyCount = effectiveBuyCount,
+                        passCount = effectivePassCount,
+                        userVote = effectiveUserVote,
+                        isVoting = isVoting,
+                        voteError = voteError,
+                        onVote = onVote,
+                        onRetryVotes = onRetryVotes
                     )
                 }
             }
-            item(key = "alert_register", contentType = "alert_btn") {
-                val activeAlertPrice = remember(selectedOption, effectivePrice, mallPrices, deal.price) {
-                    if (selectedOption != null && effectivePrice > 0L) {
-                        effectivePrice.toInt()
-                    } else {
-                        mallPrices.minOfOrNull { it.price } ?: deal.price.toInt()
+
+            // 2급 [안 B] 아코디언 ③: 한줄평 (초기 접힘, 펼침 시 Lazy-fetch)
+            item(key = "accordion_comments", contentType = "accordion_comments") {
+                DetailAccordionSection(
+                    title = "한줄평",
+                    icon = Icons.Default.Forum,
+                    summaryBadge = "${effectiveCommentCount}개",
+                    expanded = commentsExpanded,
+                    onToggle = {
+                        val next = !commentsExpanded
+                        commentsExpanded = next
+                        if (next) {
+                            onExpandComments()
+                        }
+                    }
+                ) {
+                    DealCommentsAccordionContent(
+                        comments = comments,
+                        currentDeviceUuid = currentDeviceUuid,
+                        isLoading = isCommentsLoading,
+                        loadError = commentsError,
+                        actionError = commentActionError,
+                        isSubmitting = isSubmittingComment,
+                        deletingCommentId = deletingCommentId,
+                        commentSubmitSuccessSeq = commentSubmitSuccessSeq,
+                        onAddComment = onAddComment,
+                        onDeleteComment = onDeleteComment,
+                        onRetry = onRetryComments
+                    )
+                }
+            }
+
+            // 2급 [안 B] 아코디언 ④: 목표가 알림 (0원·무료 딜 제외, 초기 접힘)
+            if (canShowTargetAlert) {
+                item(key = "accordion_target", contentType = "accordion_target") {
+                    val activeAlertPrice = remember(selectedOption, effectivePrice, mallPrices, deal.price) {
+                        if (selectedOption != null && effectivePrice >= 0L) {
+                            effectivePrice.toInt()
+                        } else {
+                            mallPrices.filter { it.price > 0 }.minOfOrNull { it.price } ?: effectivePrice.toInt()
+                        }
+                    }
+                    val activeAlertTitleHint = remember(selectedOption, deal.title) {
+                        selectedOption?.let { cleanOptionTitle(it.siteName) }?.takeIf { it.isNotBlank() } ?: deal.title
+                    }
+                    val targetBadge = remember(initialTargetPrice, effectiveCurrency, activeAlertTitleHint) {
+                        if (initialTargetPrice != null && initialTargetPrice > 0) {
+                            formatPrice(initialTargetPrice.toLong(), effectiveCurrency, activeAlertTitleHint)
+                        } else {
+                            "미설정"
+                        }
+                    }
+                    DetailAccordionSection(
+                        title = "목표가 알림",
+                        icon = Icons.Default.Notifications,
+                        summaryBadge = targetBadge,
+                        expanded = targetExpanded,
+                        onToggle = { targetExpanded = !targetExpanded }
+                    ) {
+                        PriceAlertRegistrationButton(
+                            currentPrice = activeAlertPrice,
+                            currency = effectiveCurrency,
+                            titleHint = activeAlertTitleHint,
+                            priceHistory = priceHistory,
+                            initialTargetPrice = initialTargetPrice,
+                            onAlertClick = onTargetPriceAlertRegister
+                        )
                     }
                 }
-                val activeAlertTitleHint = remember(selectedOption, deal.title) {
-                    selectedOption?.let { cleanOptionTitle(it.siteName) }?.takeIf { it.isNotBlank() } ?: deal.title
-                }
-                PriceAlertRegistrationButton(
-                    currentPrice = activeAlertPrice,
-                    currency = effectiveCurrency,
-                    titleHint = activeAlertTitleHint,
-                    priceHistory = priceHistory,
-                    initialTargetPrice = initialTargetPrice,
-                    onAlertClick = onTargetPriceAlertRegister
-                )
             }
-            item(key = "community_gomin", contentType = "gomin_banner") {
-                CommunityGominBanner(
-                    votes = votes,
-                    onClick = onNavigateToCommunity
-                )
-            }
+
             item(key = "affiliate_notice", contentType = "footer_notice") {
                 Text(
                     text = "쿠팡 파트너스 및 제휴 마케팅 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.",
@@ -771,87 +1107,600 @@ fun DealDetailScreen(
     }
 }
 
+/**
+ * 1-RTT Summary Pill 스트립 (진입 즉시 요약 카운트 노출, 탭 시 해당 아코디언 펼침+스크롤)
+ */
 @Composable
-private fun CommunityGominBanner(
-    votes: ApiDealVotes?,
+private fun DealSummaryPillsRow(
+    historyCount: Int,
+    buyCount: Int,
+    passCount: Int,
+    commentCount: Int,
+    showTargetAlertPill: Boolean,
+    isTargetAlertConfigured: Boolean,
+    onHistoryPillClick: () -> Unit,
+    onVotePillClick: () -> Unit,
+    onCommentsPillClick: () -> Unit,
+    onTargetPillClick: () -> Unit
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        item(key = "pill_history") {
+            SummaryActionPill(
+                icon = Icons.AutoMirrored.Filled.ShowChart,
+                label = "가격 추이 ${historyCount}건",
+                onClick = onHistoryPillClick
+            )
+        }
+        item(key = "pill_vote") {
+            SummaryActionPill(
+                icon = Icons.Default.Poll,
+                label = "살까 $buyCount · 말까 $passCount",
+                onClick = onVotePillClick
+            )
+        }
+        item(key = "pill_comments") {
+            SummaryActionPill(
+                icon = Icons.Default.Forum,
+                label = "한줄평 ${commentCount}개",
+                onClick = onCommentsPillClick
+            )
+        }
+        if (showTargetAlertPill) {
+            item(key = "pill_target") {
+                SummaryActionPill(
+                    icon = Icons.Default.Notifications,
+                    label = if (isTargetAlertConfigured) "목표가 설정됨" else "목표가 알림",
+                    onClick = onTargetPillClick
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryActionPill(
+    icon: ImageVector,
+    label: String,
     onClick: () -> Unit
 ) {
-    val totalVotes = remember(votes) { (votes?.buy_count ?: 0) + (votes?.pass_count ?: 0) }
-    val hasVotes = totalVotes > 0
-    val buyRatio = remember(votes, totalVotes) {
-        if (hasVotes) {
-            ((votes!!.buy_count.toFloat() / totalVotes) * 100).toInt()
-        } else {
-            0
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+        modifier = Modifier.heightIn(min = 48.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
+}
 
-    val statusText = remember(votes, hasVotes, buyRatio, totalVotes) {
-        if (hasVotes) {
-            "지름 지수 $buyRatio% (${totalVotes}명 참여 · 살까 ${votes?.buy_count ?: 0} / 말까 ${votes?.pass_count ?: 0})"
-        } else {
-            "실구매 유저들의 투표를 확인하고 현명하게 결정하세요"
-        }
-    }
-
+/**
+ * [안 B] 공통 접이식 아코디언 섹션 (초기 접힘, 48dp+ 터치 타깃)
+ */
+@Composable
+private fun DetailAccordionSection(
+    title: String,
+    icon: ImageVector,
+    summaryBadge: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit
+) {
     Card(
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .bounceClick { onClick() }
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Box(
-            modifier = Modifier
-                .background(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(Color(0xFFFF8E53), Color(0xFFFE6B8B))
-                    )
-                )
-                .padding(16.dp)
-        ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .clickable(onClick = onToggle)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.fillMaxWidth()
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color.White.copy(alpha = 0.25f),
-                    modifier = Modifier.size(40.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                    ) {
+                        Text(
+                            text = summaryBadge,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (expanded) "접기" else "펼치기",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+                ) {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(bottom = 14.dp)
+                    )
+                    content()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * [안 B] 살까 · 말까 투표 아코디언 본문 (1-RTT 요약 연동 + 낙관적 업데이트 + 오류 재시도)
+ */
+@Composable
+private fun DealVoteAccordionContent(
+    buyCount: Int,
+    passCount: Int,
+    userVote: String?,
+    isVoting: Boolean,
+    voteError: String?,
+    onVote: (String) -> Unit,
+    onRetryVotes: () -> Unit
+) {
+    val totalVotes = buyCount + passCount
+    val buyRatio = if (totalVotes > 0) (buyCount.toFloat() / totalVotes.toFloat()).coerceIn(0f, 1f) else 0.5f
+    val buyPercent = if (totalVotes > 0) (buyRatio * 100f).toInt() else 0
+    val normalizedVote = userVote?.lowercase(Locale.US)
+    val isBuySelected = normalizedVote == "buy"
+    val isPassSelected = normalizedVote == "save" || normalizedVote == "pass"
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (totalVotes > 0) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "지름 지수 $buyPercent% (${totalVotes}명 참여)",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "살까 $buyCount · 말까 $passCount",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(fraction = buyRatio)
+                            .background(MaterialTheme.colorScheme.primary)
+                    )
+                }
+            }
+        } else {
+            Text(
+                text = "아직 등록된 투표가 없어요. 첫 투표를 남겨보세요!",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (isBuySelected) {
+                Button(
+                    onClick = { onVote("buy") },
+                    enabled = !isVoting,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ThumbUp,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "살까 ($buyCount)",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { onVote("buy") },
+                    enabled = !isVoting,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ThumbUp,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "살까 ($buyCount)",
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            if (isPassSelected) {
+                Button(
+                    onClick = { onVote("save") },
+                    enabled = !isVoting,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ThumbDown,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "말까 ($passCount)",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { onVote("save") },
+                    enabled = !isVoting,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ThumbDown,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "말까 ($passCount)",
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+
+        if (voteError != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = voteError,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = onRetryVotes,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text(
+                        text = "다시 시도",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * [안 B] 한줄평 아코디언 본문 (Lazy-fetch + 작성 + 본인 댓글 삭제 CRUD 완전 연결)
+ */
+@Composable
+private fun DealCommentsAccordionContent(
+    comments: List<ApiDealComment>,
+    currentDeviceUuid: String,
+    isLoading: Boolean,
+    loadError: String?,
+    actionError: String?,
+    isSubmitting: Boolean,
+    deletingCommentId: Int?,
+    commentSubmitSuccessSeq: Int = 0,
+    onAddComment: (String) -> Unit,
+    onDeleteComment: (Int) -> Unit,
+    onRetry: () -> Unit
+) {
+    var commentInput by remember { mutableStateOf("") }
+    LaunchedEffect(commentSubmitSuccessSeq) {
+        if (commentSubmitSuccessSeq > 0) {
+            commentInput = ""
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = commentInput,
+                onValueChange = { commentInput = it },
+                placeholder = {
+                    Text(
+                        text = "이 핫딜에 대한 한줄평을 남겨보세요",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                },
+                singleLine = false,
+                maxLines = 3,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = {
+                    val trimmed = commentInput.trim()
+                    if (trimmed.isNotEmpty()) {
+                        onAddComment(trimmed)
+                    }
+                },
+                enabled = commentInput.isNotBlank() && !isSubmitting,
+                modifier = Modifier.heightIn(min = 48.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                if (isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Text(
+                        text = "등록",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+            }
+        }
+
+        if (actionError != null) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.errorContainer
+            ) {
+                Text(
+                    text = actionError,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        }
+
+        when {
+            isLoading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(28.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            loadError != null -> {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = loadError,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(
+                        onClick = onRetry,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    ) {
+                        Text(
+                            text = "다시 시도",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "이 특가 핫딜, 살까 말까 고민되시나요?",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        letterSpacing = (-0.3).sp
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = statusText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.9f),
-                        letterSpacing = (-0.2).sp
-                    )
-                }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
+            }
+            comments.isEmpty() -> {
+                Text(
+                    text = "아직 한줄평이 없어요. 첫 의견을 남겨보세요!",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp)
                 )
+            }
+            else -> {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    comments.forEach { comment ->
+                        val isMyComment = currentDeviceUuid.isNotBlank() && comment.user_id == currentDeviceUuid
+                        val isDeletingThis = deletingCommentId == comment.id
+                        val relativeTime = rememberRelativeTime(comment.created_at)
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = comment.nickname.ifBlank { "익명의찰떡이" },
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        if (relativeTime.isNotEmpty()) {
+                                            Text(
+                                                text = "• $relativeTime",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    if (isMyComment) {
+                                        TextButton(
+                                            onClick = { onDeleteComment(comment.id) },
+                                            enabled = !isDeletingThis,
+                                            modifier = Modifier.heightIn(min = 48.dp)
+                                        ) {
+                                            if (isDeletingThis) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(14.dp),
+                                                    strokeWidth = 2.dp
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Default.Delete,
+                                                    contentDescription = "한줄평 삭제",
+                                                    tint = MaterialTheme.colorScheme.error,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(Modifier.width(4.dp))
+                                                Text(
+                                                    text = "삭제",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.error,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Text(
+                                    text = comment.content,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    lineHeight = 20.sp
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1140,10 +1989,11 @@ private fun PriceAlertRegistrationButton(
                         }
                         showDialog = false
                     },
+                    modifier = Modifier.heightIn(min = 48.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Text("설정 완료", fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("설정 완료", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
                 }
             },
             dismissButton = {
@@ -1162,7 +2012,7 @@ private fun PriceHistoryInteractiveCard(
     history: List<PriceHistoryPoint>,
     currency: String = "KRW",
     selectedPeriod: String = "7d",
-    onPeriodSelected: (String) -> Unit = {}
+    onPeriodSelected: (String) -> Unit
 ) {
     if (history.size <= 1) {
         val singlePoint = history.firstOrNull()
@@ -1207,7 +2057,7 @@ private fun PriceHistoryInteractiveCard(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "동일 상품의 이전 핫딜 기록이 없어 비교 차트를 표시하지 않습니다.",
+                        text = "아직 비교할 가격 이력이 충분하지 않아요",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                         lineHeight = 18.sp,
@@ -1441,14 +2291,16 @@ private fun PriceHistoryInteractiveCard(
                                         )
                                 )
                                 val offsetDp = (maxWidth - 12.dp) * posFraction
-                                Surface(
+                                Box(
                                     modifier = Modifier
                                         .offset(x = offsetDp)
-                                        .size(12.dp),
-                                    shape = RoundedCornerShape(999.dp),
-                                    color = pinColor,
-                                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface)
-                                ) {}
+                                        .size(12.dp)
+                                        .clip(RoundedCornerShape(999.dp))
+                                        .background(pinColor)
+                                        .then(
+                                            Modifier.padding(0.dp)
+                                        )
+                                )
                             }
                         }
                     }
@@ -1527,10 +2379,10 @@ private fun AIBuyerGuide(
     val maxPrice = remember(validHistory, currentPrice) { validHistory.maxOfOrNull { it.price } ?: currentPrice }
     val isRecordLow = remember(currentPrice, minPrice, validHistory) { currentPrice <= minPrice && validHistory.size > 1 }
 
-    val isGoodDeal = deal.honeyScore >= 80
+    val isGoodDeal = deal.honeyScore >= 100
 
     // 다크모드/라이트모드에 완벽 반응하는 프리미엄 테마 컬러 동적 맵핑
-    val isDark = MaterialTheme.colorScheme.background.red < 0.2f
+    val isDark = LocalIsDarkTheme.current
 
     val titleColor = remember(isRecordLow, isGoodDeal, isDark) {
         if (isRecordLow || isGoodDeal) {
@@ -1715,9 +2567,12 @@ fun DealHeader(
     selectedOption: DealSource? = null,
     selectedOptionIndex: Int = 0,
     multiOptions: List<DealSource> = emptyList(),
-    onSelectOption: (Int) -> Unit = {},
+    isSearchFallbackActive: Boolean = deal.isSearchFallback,
+    isFreeDeal: Boolean = deal.isFree,
+    onSelectOption: (Int) -> Unit,
     onOpenOrigin: (String) -> Unit,
-    onOpenPurchaseUrl: (String, Long?, String?) -> Unit = { url, _, _ -> onOpenOrigin(url) }
+    onOpenPurchaseUrl: (String, Long?, String?) -> Unit,
+    summaryPillsContent: (@Composable () -> Unit)? = null
 ) {
     val context = LocalContext.current
     var copiedCode by remember { mutableStateOf<String?>(null) }
@@ -1754,7 +2609,7 @@ fun DealHeader(
                 Card(
                     shape = RoundedCornerShape(20.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
@@ -1787,7 +2642,7 @@ fun DealHeader(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 120.dp, max = 280.dp)
-                            .background(Color.White),
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentScale = ContentScale.Fit,
                         alpha = 1.0f
                     )
@@ -1809,12 +2664,22 @@ fun DealHeader(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // 고성능 렌더링 최적화: 사이트 이름 매칭 칩에 필요한 색상 매핑 연산을 remember 블록 내부에서 1회만 계산하도록 최적화
+                // Light/Dark/AMOLED 3모드 고대비 보장을 위해 테마 컨테이너/텍스트 토큰으로 통일
+                val primaryContainer = MaterialTheme.colorScheme.primaryContainer
+                val onPrimaryContainer = MaterialTheme.colorScheme.onPrimaryContainer
                 val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
                 val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
 
-                val siteChips = remember(deal.siteNames, deal.siteName, surfaceVariant, onSurfaceVariant) {
-                    val rawList = if (deal.siteNames.isNotEmpty()) deal.siteNames else deal.siteName.split(",").map { it.trim() }
+                val safeSiteNames = ((deal.siteNames as List<String>?) ?: emptyList())
+                val siteChips = remember(
+                    safeSiteNames,
+                    deal.siteName,
+                    primaryContainer,
+                    onPrimaryContainer,
+                    surfaceVariant,
+                    onSurfaceVariant
+                ) {
+                    val rawList = if (safeSiteNames.isNotEmpty()) safeSiteNames else deal.siteName.split(",").map { it.trim() }
                     val distinctRawList = rawList.map { sName ->
                         if (sName.contains(" - ")) {
                             sName.substringBefore(" - ").trim()
@@ -1825,14 +2690,17 @@ fun DealHeader(
 
                     distinctRawList.map { sName ->
                         val siteNameLower = sName.lowercase(Locale.getDefault())
-                        val (bgColor, textColor) = when {
-                            siteNameLower.contains("뽐뿌") -> Color(0xFF1565C0) to Color.White
-                            siteNameLower.contains("퀘이사존") -> Color(0xFFE65100) to Color.White
-                            siteNameLower.contains("루리웹") -> Color(0xFF0D47A1) to Color.White
-                            siteNameLower.contains("펨코") || siteNameLower.contains("에펨코리아") -> Color(0xFF0288D1) to Color.White
-                            siteNameLower.contains("빠삭") -> Color(0xFFC2185B) to Color.White
-                            siteNameLower.contains("클리앙") -> Color(0xFF37474F) to Color.White
-                            else -> surfaceVariant to onSurfaceVariant
+                        val isKnownCommunity = siteNameLower.contains("뽐뿌") ||
+                            siteNameLower.contains("퀘이사존") ||
+                            siteNameLower.contains("루리웹") ||
+                            siteNameLower.contains("펨코") ||
+                            siteNameLower.contains("에펨코리아") ||
+                            siteNameLower.contains("빠삭") ||
+                            siteNameLower.contains("클리앙")
+                        val (bgColor, textColor) = if (isKnownCommunity) {
+                            primaryContainer to onPrimaryContainer
+                        } else {
+                            surfaceVariant to onSurfaceVariant
                         }
                         SiteChipInfo(name = sName, bgColor = bgColor, textColor = textColor)
                     }
@@ -1937,8 +2805,8 @@ fun DealHeader(
                 }
             }
 
-            val effectivePrice = selectedOption?.price ?: deal.price
-            val effectiveCurrency = selectedOption?.currency ?: deal.currency
+            val effectivePrice = selectedOption?.price?.takeIf { it >= 0L } ?: deal.price
+            val effectiveCurrency = selectedOption?.currency?.takeIf { it.isNotBlank() } ?: deal.currency
 
             Row(verticalAlignment = Alignment.Bottom) {
                 if (deal.discountRate != null && deal.discountRate > 0 && selectedOption == null) {
@@ -1952,11 +2820,12 @@ fun DealHeader(
                     Spacer(modifier = Modifier.width(8.dp))
                 }
 
-                val priceText = remember(effectivePrice, effectiveCurrency, resolvedShopTitle.cleanTitle, selectedOption) {
-                    formatPrice(
-                        effectivePrice,
-                        effectiveCurrency,
-                        selectedOption?.let { cleanOptionTitle(it.siteName) } ?: resolvedShopTitle.cleanTitle
+                val priceText = remember(effectivePrice, effectiveCurrency, resolvedShopTitle.cleanTitle, selectedOption, isFreeDeal) {
+                    formatDetailPriceText(
+                        price = effectivePrice,
+                        currency = effectiveCurrency,
+                        titleHint = selectedOption?.let { cleanOptionTitle(it.siteName) } ?: resolvedShopTitle.cleanTitle,
+                        isFree = isFreeDeal
                     )
                 }
                 val isUnconfirmedPrice = priceText == "가격 확인"
@@ -1966,7 +2835,7 @@ fun DealHeader(
                     fontWeight = FontWeight.Black,
                     color = if (isUnconfirmedPrice) {
                         MaterialTheme.colorScheme.onSurfaceVariant
-                    } else if (MaterialTheme.colorScheme.background.red < 0.2f) {
+                    } else if (LocalIsDarkTheme.current) {
                         Color(0xFFFF7A45)
                     } else {
                         Color(0xFFFF5A26)
@@ -2025,6 +2894,40 @@ fun DealHeader(
                 )
             }
 
+            if (isSearchFallbackActive) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "직접 링크 미제공 · 쇼핑몰 검색 결과로 이동해요",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
+
+            if (summaryPillsContent != null) {
+                Spacer(modifier = Modifier.height(14.dp))
+                summaryPillsContent()
+            }
+
             val dealLevelSubUrls = remember(deal.id, deal.subUrls, deal.sources, deal.ecommerceUrl) {
                 deal.resolvedSubUrls
             }
@@ -2040,7 +2943,7 @@ fun DealHeader(
                             onClick = {
                                 onOpenPurchaseUrl(subUrl, deal.price, deal.currency)
                             },
-                            modifier = Modifier.height(34.dp),
+                            modifier = Modifier.heightIn(min = 40.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                             shape = RoundedCornerShape(8.dp),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -2052,265 +2955,6 @@ fun DealHeader(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
-                    }
-                }
-            }
-
-            if (multiOptions.size > 1) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                    elevation = CardDefaults.cardElevation(0.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "옵션 선택 (${multiOptions.size}개)",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "선택 시 가격·시세 반영",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                            )
-                        }
-
-                        multiOptions.forEachIndexed { index, opt ->
-                            val isSelected = selectedOptionIndex == index
-                            val optName = cleanOptionTitle(opt.siteName)
-                            val optPriceVal = opt.price ?: 0L
-                            val optCurrencyVal = opt.currency ?: deal.currency
-                            val optPriceText = formatPrice(optPriceVal, optCurrencyVal, optName)
-                            val optTargetUrl = opt.ecommerceUrl?.takeIf { it.isNotBlank() } ?: opt.postUrl
-                            val optSubUrls = remember(opt.subUrls, optTargetUrl) {
-                                opt.subUrls.orEmpty()
-                                    .map { it.trim() }
-                                    .filter { it.startsWith("http", ignoreCase = true) && it != optTargetUrl }
-                                    .distinct()
-                            }
-
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surface,
-                                border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onSelectOption(index)
-                                    }
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        if (!opt.imageUrl.isNullOrBlank()) {
-                                            AsyncImage(
-                                                model = coil.request.ImageRequest.Builder(context)
-                                                    .data(com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(opt.imageUrl, targetWidth = 120))
-                                                    .crossfade(true)
-                                                    .build(),
-                                                contentDescription = optName,
-                                                modifier = Modifier
-                                                    .size(48.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .background(Color.White),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(48.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = "${index + 1}",
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-
-                                        Column(
-                                            modifier = Modifier.weight(1f),
-                                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                                        ) {
-                                            Text(
-                                                text = optName,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text(
-                                                    text = optPriceText,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                if (!opt.code.isNullOrBlank()) {
-                                                    val isOptCodeCopied = copiedCode == opt.code
-                                                    val chipBg by animateColorAsState(
-                                                        targetValue = if (isOptCodeCopied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f),
-                                                        label = "optCodeBg"
-                                                    )
-                                                    val chipFg by animateColorAsState(
-                                                        targetValue = if (isOptCodeCopied) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
-                                                        label = "optCodeFg"
-                                                    )
-                                                    Surface(
-                                                        shape = RoundedCornerShape(6.dp),
-                                                        color = chipBg,
-                                                        modifier = Modifier.clickable {
-                                                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                                                            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("promo_code", opt.code))
-                                                            copiedCode = opt.code
-                                                            android.widget.Toast.makeText(context, "할인코드를 복사했어요 (${opt.code})", android.widget.Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    ) {
-                                                        Row(
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = if (isOptCodeCopied) Icons.Default.Check else Icons.Default.ContentCopy,
-                                                                contentDescription = null,
-                                                                tint = chipFg,
-                                                                modifier = Modifier.size(11.dp)
-                                                            )
-                                                            Text(
-                                                                text = if (isOptCodeCopied) "${opt.code} 복사됨" else opt.code,
-                                                                style = MaterialTheme.typography.labelSmall,
-                                                                fontWeight = FontWeight.SemiBold,
-                                                                color = chipFg
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            if (isSelected) {
-                                                Icon(
-                                                    imageVector = Icons.Default.CheckCircle,
-                                                    contentDescription = "선택됨",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                            if (optTargetUrl.isNotBlank()) {
-                                                OutlinedButton(
-                                                    onClick = {
-                                                        val codeToCopy = opt.code?.takeIf { it.isNotBlank() } ?: promoCodes.firstOrNull()
-                                                        if (!codeToCopy.isNullOrBlank()) {
-                                                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                                                            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("promo_code", codeToCopy))
-                                                            copiedCode = codeToCopy
-                                                            android.widget.Toast.makeText(context, "할인코드를 복사했어요 ($codeToCopy)", android.widget.Toast.LENGTH_SHORT).show()
-                                                        }
-                                                        val finalOptUrl = if (optTargetUrl.startsWith("http", ignoreCase = true)) optTargetUrl else "https://$optTargetUrl"
-                                                        onOpenPurchaseUrl(finalOptUrl, optPriceVal, optCurrencyVal)
-                                                    },
-                                                    modifier = Modifier.height(34.dp),
-                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
-                                                ) {
-                                                    Text(
-                                                        text = "구매",
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.primary
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    if (optSubUrls.isNotEmpty()) {
-                                        androidx.compose.foundation.lazy.LazyRow(
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            items(optSubUrls.size) { subIdx ->
-                                                val subUrl = optSubUrls[subIdx]
-                                                Surface(
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
-                                                    modifier = Modifier.clickable {
-                                                        onOpenPurchaseUrl(subUrl, optPriceVal, optCurrencyVal)
-                                                    }
-                                                ) {
-                                                    Text(
-                                                        text = "보조 구매처 ${subIdx + 1}",
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.Medium,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            val cleanAiSummary = remember(deal.aiSummary) {
-                deal.aiSummary
-                    ?.replace(Regex("[🔥✨🤖💡⚡🎉📦]+"), "")
-                    ?.replace(Regex("\\s{2,}"), " ")
-                    ?.trim()
-                    .orEmpty()
-            }
-            if (cleanAiSummary.isNotEmpty() && cleanAiSummary != "[커뮤니티 인증 핫딜]" && !(multiOptions.size > 1 && cleanAiSummary.contains("[구성 상품"))) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                    elevation = CardDefaults.cardElevation(0.dp)
-                ) {
-                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
-                        Text(
-                            text = cleanAiSummary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            lineHeight = 21.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            letterSpacing = (-0.2).sp
-                        )
                     }
                 }
             }
@@ -2397,15 +3041,15 @@ fun DealHeader(
                 }
             }
 
-            if (cleanedBodyText.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(20.dp))
+            if (cleanedBodyText.isNotEmpty() || promoCodes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(18.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "상품 안내 요약",
+                        text = "상품 상세 본문",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -2421,7 +3065,7 @@ fun DealHeader(
                 }
                 if (promoCodes.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    androidx.compose.foundation.lazy.LazyRow(
+                    LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -2442,12 +3086,14 @@ fun DealHeader(
                                     1.dp,
                                     if (isCopied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
                                 ),
-                                modifier = Modifier.clickable {
-                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                                    clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("promo_code", code))
-                                    copiedCode = code
-                                    android.widget.Toast.makeText(context, "할인코드를 복사했어요 ($code)", android.widget.Toast.LENGTH_SHORT).show()
-                                }
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .clickable {
+                                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("promo_code", code))
+                                        copiedCode = code
+                                        android.widget.Toast.makeText(context, "할인코드를 복사했어요 ($code)", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -2471,23 +3117,311 @@ fun DealHeader(
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                if (cleanedBodyText.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                        elevation = CardDefaults.cardElevation(0.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = cleanedBodyText,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 22.sp,
+                                letterSpacing = (-0.1).sp
+                            ),
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                }
+            }
+
+            if (multiOptions.size > 1) {
+                Spacer(modifier = Modifier.height(16.dp))
                 Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                     elevation = CardDefaults.cardElevation(0.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = cleanedBodyText,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 22.sp,
-                            letterSpacing = (-0.1).sp
-                        ),
-                        modifier = Modifier.padding(16.dp)
-                    )
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "옵션 선택 (${multiOptions.size}개)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "선택 시 가격·시세 반영",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+
+                        multiOptions.forEachIndexed { index, opt ->
+                            val isSelected = selectedOptionIndex == index
+                            val optName = cleanOptionTitle(opt.siteName)
+                            val optPriceVal = opt.price ?: 0L
+                            val optCurrencyVal = opt.currency ?: deal.currency
+                            val optPriceText = formatDetailPriceText(
+                                price = optPriceVal,
+                                currency = optCurrencyVal,
+                                titleHint = optName,
+                                isFree = isFreeDeal && optPriceVal == 0L
+                            )
+                            val optTargetUrl = opt.ecommerceUrl?.takeIf { it.isNotBlank() } ?: opt.postUrl
+                            val optSubUrls = remember(opt.subUrls, optTargetUrl) {
+                                opt.subUrls.orEmpty()
+                                    .map { it.trim() }
+                                    .filter { it.startsWith("http", ignoreCase = true) && it != optTargetUrl }
+                                    .distinct()
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surface,
+                                border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onSelectOption(index)
+                                    }
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        if (!opt.imageUrl.isNullOrBlank()) {
+                                            val primaryOptImg = remember(opt.imageUrl) {
+                                                com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(opt.imageUrl, targetWidth = 120)
+                                            }
+                                            val fallbackOptImg = remember(opt.imageUrl) {
+                                                com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(opt.imageUrl)
+                                            }
+                                            var activeOptImg by remember(primaryOptImg) { mutableStateOf(primaryOptImg) }
+
+                                            AsyncImage(
+                                                model = coil.request.ImageRequest.Builder(context)
+                                                    .data(activeOptImg)
+                                                    .crossfade(true)
+                                                    .build(),
+                                                onError = {
+                                                    if (fallbackOptImg != null && activeOptImg != fallbackOptImg) {
+                                                        activeOptImg = fallbackOptImg
+                                                    }
+                                                },
+                                                contentDescription = optName,
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "${index + 1}",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Text(
+                                                text = optName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = optPriceText,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                if (!opt.code.isNullOrBlank()) {
+                                                    val isOptCodeCopied = copiedCode == opt.code
+                                                    val chipBg by animateColorAsState(
+                                                        targetValue = if (isOptCodeCopied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f),
+                                                        label = "optCodeBg"
+                                                    )
+                                                    val chipFg by animateColorAsState(
+                                                        targetValue = if (isOptCodeCopied) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
+                                                        label = "optCodeFg"
+                                                    )
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = chipBg,
+                                                        modifier = Modifier
+                                                            .heightIn(min = 48.dp)
+                                                            .clickable {
+                                                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                                                clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("promo_code", opt.code))
+                                                                copiedCode = opt.code
+                                                                android.widget.Toast.makeText(context, "할인코드를 복사했어요 (${opt.code})", android.widget.Toast.LENGTH_SHORT).show()
+                                                            }
+                                                    ) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = if (isOptCodeCopied) Icons.Default.Check else Icons.Default.ContentCopy,
+                                                                contentDescription = null,
+                                                                tint = chipFg,
+                                                                modifier = Modifier.size(11.dp)
+                                                            )
+                                                            Text(
+                                                                text = if (isOptCodeCopied) "${opt.code} 복사됨" else opt.code,
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                color = chipFg
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CheckCircle,
+                                                    contentDescription = "선택됨",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                            if (optTargetUrl.isNotBlank()) {
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        val codeToCopy = opt.code?.takeIf { it.isNotBlank() } ?: promoCodes.firstOrNull()
+                                                        if (!codeToCopy.isNullOrBlank()) {
+                                                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                                            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("promo_code", codeToCopy))
+                                                            copiedCode = codeToCopy
+                                                            android.widget.Toast.makeText(context, "할인코드를 복사했어요 ($codeToCopy)", android.widget.Toast.LENGTH_SHORT).show()
+                                                        }
+                                                        val finalOptUrl = if (optTargetUrl.startsWith("http", ignoreCase = true)) optTargetUrl else "https://$optTargetUrl"
+                                                        onOpenPurchaseUrl(finalOptUrl, optPriceVal, optCurrencyVal)
+                                                    },
+                                                    modifier = Modifier.heightIn(min = 48.dp),
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+                                                ) {
+                                                    Text(
+                                                        text = "구매",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (optSubUrls.isNotEmpty()) {
+                                        LazyRow(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            items(optSubUrls.size) { subIdx ->
+                                                val subUrl = optSubUrls[subIdx]
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                                                    modifier = Modifier
+                                                        .heightIn(min = 48.dp)
+                                                        .clickable {
+                                                            onOpenPurchaseUrl(subUrl, optPriceVal, optCurrencyVal)
+                                                        }
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = "보조 구매처 ${subIdx + 1}",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val cleanAiSummary = remember(deal.aiSummary) {
+                deal.aiSummary
+                    ?.replace(Regex("[🔥✨🤖💡⚡🎉📦]+"), "")
+                    ?.replace(Regex("\\s{2,}"), " ")
+                    ?.trim()
+                    .orEmpty()
+            }
+            if (cleanAiSummary.isNotEmpty() && cleanAiSummary != "[커뮤니티 인증 핫딜]" && !(multiOptions.size > 1 && cleanAiSummary.contains("[구성 상품"))) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    elevation = CardDefaults.cardElevation(0.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
+                        Text(
+                            text = cleanAiSummary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            lineHeight = 21.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            letterSpacing = (-0.2).sp
+                        )
+                    }
                 }
             }
         }

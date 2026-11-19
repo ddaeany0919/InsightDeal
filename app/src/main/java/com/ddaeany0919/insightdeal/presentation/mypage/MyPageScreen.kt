@@ -11,7 +11,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
-import androidx.compose.material.icons.automirrored.outlined.ExitToApp
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,12 +27,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.ddaeany0919.insightdeal.data.network.NetworkConfig
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.network.NetworkModule
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import com.ddaeany0919.insightdeal.presentation.KeywordManagerViewModel
-import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
 import com.ddaeany0919.insightdeal.presentation.community.CommunityBoardUiState
 import com.ddaeany0919.insightdeal.presentation.community.CommunityBoardViewModel
 import com.ddaeany0919.insightdeal.presentation.formatPrice
@@ -44,7 +43,6 @@ import com.ddaeany0919.insightdeal.presentation.mypage.history.MyCommentsUiState
 import com.ddaeany0919.insightdeal.presentation.mypage.history.MyCommentsViewModel
 import com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager
 import com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager
-import kotlinx.coroutines.launch
 import java.net.URLEncoder
 
 private fun buildProxiedThumbUrl(rawUrl: String?, targetWidth: Int = 200): String? {
@@ -59,7 +57,6 @@ private fun buildFallbackThumbUrl(rawUrl: String?): String? {
 @Composable
 fun MyPageScreen(
     onNavigateToSettings: () -> Unit,
-    onNavigateToAuth: () -> Unit,
     onNavigateToWatchlist: () -> Unit,
     onNavigateToMyPosts: () -> Unit,
     onNavigateToMyComments: () -> Unit,
@@ -67,9 +64,9 @@ fun MyPageScreen(
     navController: androidx.navigation.NavController? = null
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val username by AuthManager.getUsername(context).collectAsState(initial = "guest")
-    val isLoggedIn = username != "guest" && !username.isNullOrEmpty()
+    val deviceUuid = remember {
+        runCatching { LocalDataProvider.getDeviceUuid() }.getOrDefault("")
+    }
 
     LaunchedEffect(Unit) {
         NotificationHistoryManager.init(context)
@@ -83,13 +80,17 @@ fun MyPageScreen(
         boardViewModel.loadPosts()
     }
     val myPostsCount = if (boardUiState is CommunityBoardUiState.Success) {
-        (boardUiState as CommunityBoardUiState.Success).posts.count { it.userId == username }
+        (boardUiState as CommunityBoardUiState.Success).posts.count {
+            deviceUuid.isNotBlank() && it.userId == deviceUuid
+        }
     } else 0
 
     val myCommentsViewModel: MyCommentsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val myCommentsUiState by myCommentsViewModel.uiState.collectAsState()
-    LaunchedEffect(username) {
-        myCommentsViewModel.loadComments(username ?: "guest")
+    LaunchedEffect(deviceUuid) {
+        if (deviceUuid.isNotBlank()) {
+            myCommentsViewModel.loadComments(deviceUuid)
+        }
     }
     val myCommentsCount = if (myCommentsUiState is MyCommentsUiState.Success) {
         (myCommentsUiState as MyCommentsUiState.Success).comments.size
@@ -138,17 +139,23 @@ fun MyPageScreen(
                     )
                 },
                 actions = {
-                    IconButton(onClick = { showNotificationHistory = true }) {
+                    A11yIconButton(
+                        onClick = { showNotificationHistory = true },
+                        contentDescription = "알림 내역"
+                    ) {
                         Icon(
                             imageVector = Icons.Outlined.Notifications,
-                            contentDescription = "알림 내역",
+                            contentDescription = null,
                             tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
-                    IconButton(onClick = onNavigateToSettings) {
+                    A11yIconButton(
+                        onClick = onNavigateToSettings,
+                        contentDescription = "설정"
+                    ) {
                         Icon(
                             imageVector = Icons.Outlined.Settings,
-                            contentDescription = "설정",
+                            contentDescription = null,
                             tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
@@ -203,7 +210,7 @@ fun MyPageScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Text(
-                                        text = if (isLoggedIn) "$username 님" else "비회원 이용 중",
+                                        text = "기기 기반 이용 중",
                                         fontSize = 17.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = MaterialTheme.colorScheme.onSurface,
@@ -211,51 +218,25 @@ fun MyPageScreen(
                                     )
                                     Surface(
                                         shape = RoundedCornerShape(6.dp),
-                                        color = if (isLoggedIn) {
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                                        } else {
-                                            MaterialTheme.colorScheme.surfaceVariant
-                                        }
+                                        color = MaterialTheme.colorScheme.surfaceVariant
                                     ) {
                                         Text(
-                                            text = if (isLoggedIn) "계정 연동됨" else "기기 저장",
+                                            text = "기기 저장",
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isLoggedIn) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            },
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                         )
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(3.dp))
                                 Text(
-                                    text = if (isLoggedIn) {
-                                        "관심 상품과 키워드 알림이 계정에 동기화됩니다."
-                                    } else {
-                                        "로그인하면 기기 변경 시에도 알림과 관심 목록이 유지됩니다."
-                                    },
+                                    text = "이 기기에 알림 설정과 관심 목록이 안전하게 저장됩니다.",
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     lineHeight = 16.sp,
                                     letterSpacing = (-0.1).sp
                                 )
-                            }
-                            if (!isLoggedIn) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                FilledTonalButton(
-                                    onClick = onNavigateToAuth,
-                                    shape = RoundedCornerShape(10.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                    colors = ButtonDefaults.filledTonalButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                        contentColor = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                ) {
-                                    Text("로그인", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
                             }
                         }
 
@@ -325,13 +306,21 @@ fun MyPageScreen(
                             letterSpacing = (-0.3).sp
                         )
                         if (recentDeals.isNotEmpty()) {
-                            Text(
-                                text = "전체보기",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.clickable { onNavigateToRecentDeals() }
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onNavigateToRecentDeals() }
+                                    .padding(horizontal = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "전체보기",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(10.dp))
@@ -394,7 +383,7 @@ fun MyPageScreen(
                                                 .fillMaxWidth()
                                                 .height(86.dp)
                                                 .clip(RoundedCornerShape(10.dp))
-                                                .background(Color.White)
+                                                .background(MaterialTheme.colorScheme.surfaceVariant)
                                         ) {
                                             if (!proxiedUrl.isNullOrBlank()) {
                                                 AsyncImage(
@@ -433,7 +422,7 @@ fun MyPageScreen(
                                             text = formatPrice(deal.price, deal.currency, deal.title),
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.ExtraBold,
-                                            color = Color(0xFFFF5A26)
+                                            color = MaterialTheme.colorScheme.secondary
                                         )
                                     }
                                 }
@@ -486,7 +475,7 @@ fun MyPageScreen(
                                             modifier = Modifier
                                                 .size(56.dp)
                                                 .clip(RoundedCornerShape(10.dp))
-                                                .background(Color.White)
+                                                .background(MaterialTheme.colorScheme.surfaceVariant)
                                         ) {
                                             if (!proxiedUrl.isNullOrBlank()) {
                                                 AsyncImage(
@@ -556,7 +545,7 @@ fun MyPageScreen(
                                                 text = formatPrice(deal.price, deal.currency, deal.title),
                                                 fontSize = 13.sp,
                                                 fontWeight = FontWeight.ExtraBold,
-                                                color = Color(0xFFFF5A26)
+                                                color = MaterialTheme.colorScheme.secondary
                                             )
                                         }
                                         Icon(
@@ -636,26 +625,6 @@ fun MyPageScreen(
                                 title = "앱 환경설정",
                                 onClick = onNavigateToSettings
                             )
-
-                            if (isLoggedIn) {
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                                MyPageMenuItem(
-                                    icon = Icons.AutoMirrored.Outlined.ExitToApp,
-                                    title = "로그아웃",
-                                    textColor = MaterialTheme.colorScheme.error,
-                                    iconColor = MaterialTheme.colorScheme.error,
-                                    onClick = {
-                                        scope.launch {
-                                            AuthManager.logout(context)
-                                            android.widget.Toast.makeText(
-                                                context,
-                                                "로그아웃되었습니다.",
-                                                android.widget.Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    }
-                                )
-                            }
                         }
                     }
                 }
@@ -704,10 +673,12 @@ private fun SummaryStatItem(
 ) {
     Column(
         modifier = modifier
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .padding(vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         Text(
             text = value,

@@ -13,6 +13,8 @@ import {
   Flame,
   ChevronRight,
   RotateCcw,
+  ExternalLink,
+  AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -21,17 +23,20 @@ import type {
   DealSource,
   PopularKeywordRanking,
   RawDealApiResponse,
+  HotDealsApiResponse,
+  CategoryMetaItem,
+  WishlistApiItem,
 } from "./lib/types";
 import {
   formatPrice,
-  extractPriceFromTitle,
-  categorizeDeal,
   getProxyImageUrl,
   getFallbackProxyImageUrl,
   apiUrl,
   resolveOutboundUrl,
   trackOutboundClick,
   getOrCreateWebDeviceUuid,
+  ensureWebDeviceAuth,
+  authFetch,
   ensureWebPushSubscribed,
   getOptionSources,
   decodeHtmlEntities,
@@ -39,6 +44,13 @@ import {
   stripLeadingShopBracket,
   normalizeMallAlias,
   isNonMallLabel,
+  formatRelativeTimeKo,
+  mapRawDealToDeal,
+  buildDealWishlistKeyword,
+  loadWishlistIdMap,
+  saveWishlistIdEntry,
+  removeWishlistIdEntry,
+  resolveServerWishlistId,
 } from "./lib/utils";
 import {
   hasTossBridge,
@@ -63,16 +75,23 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 }
 
-const TABS = [
-  "전체",
-  "PC/하드웨어",
-  "가전/TV",
-  "식품/건강",
-  "의류/뷰티",
-  "육아/유아용품",
-  "모바일/상품권",
-  "해외직구",
-  "기타",
+const DEFAULT_CATEGORIES: CategoryMetaItem[] = [
+  { key: "전체", label: "전체" },
+  { key: "음식", label: "식품/건강" },
+  { key: "SW/게임", label: "SW/게임" },
+  { key: "PC용품", label: "PC/하드웨어" },
+  { key: "가전제품", label: "가전/TV" },
+  { key: "생활용품", label: "생활용품" },
+  { key: "패션", label: "의류/패션" },
+  { key: "뷰티", label: "뷰티" },
+  { key: "모바일/기프티콘", label: "모바일/기프티콘" },
+  { key: "상품권", label: "상품권" },
+  { key: "적립", label: "적립/포인트" },
+  { key: "이벤트", label: "이벤트" },
+  { key: "육아/유아용품", label: "육아/유아용품" },
+  { key: "해외직구", label: "해외직구" },
+  { key: "핫딜모음", label: "핫딜모음" },
+  { key: "기타", label: "기타" },
 ];
 
 const PLATFORMS = [
@@ -88,32 +107,8 @@ const PLATFORMS = [
   "빠삭육아",
 ];
 
-const CATEGORY_MAP: Record<string, string> = {
-  "PC/하드웨어": "PC용품",
-  "가전/TV": "가전제품",
-  "식품/건강": "음식",
-  "의류/뷰티": "패션",
-  "육아/유아용품": "육아/유아용품",
-  "모바일/상품권": "모바일/기프티콘",
-  "해외직구": "여행.해외핫딜",
-  "기타": "기타",
-};
-
-function getCommunityName(id?: number): string {
-  if (!id) return "핫딜";
-  const map: Record<number, string> = {
-    1: "뽐뿌",
-    2: "루리웹",
-    3: "클리앙",
-    4: "알리뽐뿌",
-    5: "퀘이사존",
-    6: "펨코",
-    7: "빠삭국내",
-    8: "빠삭해외",
-    9: "빠삭육아",
-  };
-  return map[id] || "핫딜";
-}
+const HOT_DEALS_ERROR_COPY =
+  "핫딜 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.";
 
 function isAbortError(err: unknown): boolean {
   return (
@@ -127,6 +122,9 @@ function isAbortError(err: unknown): boolean {
 export default function Home() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [categories, setCategories] =
+    useState<CategoryMetaItem[]>(DEFAULT_CATEGORIES);
   const [isMounted, setIsMounted] = useState(false);
   const [activeTab, setActiveTab] = useState("전체");
   const [activePlatform, setActivePlatform] = useState("전체");
@@ -144,6 +142,10 @@ export default function Home() {
     {}
   );
   const [alerts, setAlerts] = useState<number[]>([]);
+  const wishlistRef = useRef<number[]>([]);
+  const wishlistItemsMapRef = useRef<Record<number, Deal>>({});
+  const alertsRef = useRef<number[]>([]);
+  const idMutationQueueRef = useRef<Map<number, Promise<void>>>(new Map());
   const [serverAlertCount, setServerAlertCount] = useState<number>(0);
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
@@ -190,11 +192,104 @@ export default function Home() {
   const liveDealsAbortRef = useRef<AbortController | null>(null);
   const isComposingRef = useRef(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingWishlistRef = useRef<Set<number>>(new Set());
+  const pendingAlertRef = useRef<Set<number>>(new Set());
 
   const clearSearchDebounce = useCallback(() => {
     if (searchDebounceRef.current) {
       clearTimeout(searchDebounceRef.current);
       searchDebounceRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    wishlistRef.current = wishlist;
+  }, [wishlist]);
+
+  useEffect(() => {
+    wishlistItemsMapRef.current = wishlistItemsMap;
+  }, [wishlistItemsMap]);
+
+  useEffect(() => {
+    alertsRef.current = alerts;
+  }, [alerts]);
+
+  const enqueueDealMutation = useCallback(
+    (dealId: number, task: () => Promise<void>): Promise<void> => {
+      const prev = idMutationQueueRef.current.get(dealId) ?? Promise.resolve();
+      const next = prev
+        .catch(() => undefined)
+        .then(task)
+        .finally(() => {
+          if (idMutationQueueRef.current.get(dealId) === next) {
+            idMutationQueueRef.current.delete(dealId);
+          }
+        });
+      idMutationQueueRef.current.set(dealId, next);
+      return next;
+    },
+    []
+  );
+
+  const applyWishlistAdd = useCallback((id: number, targetDeal?: Deal) => {
+    const nextWishlist = wishlistRef.current.includes(id)
+      ? wishlistRef.current
+      : [...wishlistRef.current, id];
+    wishlistRef.current = nextWishlist;
+    setWishlist((prev) => (prev.includes(id) ? prev : [...prev, id]));
+
+    if (targetDeal) {
+      const nextMap = { ...wishlistItemsMapRef.current, [id]: targetDeal };
+      wishlistItemsMapRef.current = nextMap;
+      setWishlistItemsMap((prev) => ({ ...prev, [id]: targetDeal }));
+    }
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("insightdeal_wishlist", JSON.stringify(nextWishlist));
+      localStorage.setItem(
+        "insightdeal_wishlist_items",
+        JSON.stringify(wishlistItemsMapRef.current)
+      );
+    }
+  }, []);
+
+  const applyWishlistRemove = useCallback((id: number) => {
+    const nextWishlist = wishlistRef.current.filter((item) => item !== id);
+    wishlistRef.current = nextWishlist;
+    setWishlist((prev) => prev.filter((item) => item !== id));
+
+    const nextMap = { ...wishlistItemsMapRef.current };
+    delete nextMap[id];
+    wishlistItemsMapRef.current = nextMap;
+    setWishlistItemsMap((prev) => {
+      const copy = { ...prev };
+      delete copy[id];
+      return copy;
+    });
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("insightdeal_wishlist", JSON.stringify(nextWishlist));
+      localStorage.setItem("insightdeal_wishlist_items", JSON.stringify(nextMap));
+    }
+  }, []);
+
+  const applyAlertAdd = useCallback((id: number) => {
+    const nextAlerts = alertsRef.current.includes(id)
+      ? alertsRef.current
+      : [...alertsRef.current, id];
+    alertsRef.current = nextAlerts;
+    setAlerts((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    if (typeof window !== "undefined") {
+      localStorage.setItem("insightdeal_alerts", JSON.stringify(nextAlerts));
+    }
+  }, []);
+
+  const applyAlertRemove = useCallback((id: number) => {
+    const nextAlerts = alertsRef.current.filter((item) => item !== id);
+    alertsRef.current = nextAlerts;
+    setAlerts((prev) => prev.filter((item) => item !== id));
+    if (typeof window !== "undefined") {
+      localStorage.setItem("insightdeal_alerts", JSON.stringify(nextAlerts));
     }
   }, []);
 
@@ -238,18 +333,35 @@ export default function Home() {
     const cleanKw = rawKw.trim();
     if (!cleanKw) return;
     try {
-      const { deviceUuid, pushGranted } = await ensureWebPushSubscribed();
-      await fetch(apiUrl("/api/push/keywords"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ device_uuid: deviceUuid, keyword: cleanKw }),
-      }).catch(() => null);
+      const { pushGranted, reason } = await ensureWebPushSubscribed();
+      const res = await authFetch((latestAuth) => ({
+        pathOrUrl: "/api/push/keywords",
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            device_uuid: latestAuth.deviceUuid,
+            keyword: cleanKw,
+          }),
+        },
+      }));
+
+      if (!res.ok) {
+        showToast("알림을 등록하지 못했어요. 잠시 후 다시 시도해 주세요");
+        return;
+      }
 
       if (typeof window !== "undefined") {
-        const saved = localStorage.getItem("insightdeal_web_keywords");
-        const parsed: { id: string; keyword: string }[] = saved
-          ? JSON.parse(saved)
-          : [];
+        let parsed: { id: string; keyword: string }[] = [];
+        try {
+          const saved = localStorage.getItem("insightdeal_web_keywords");
+          const rawParsed = saved ? JSON.parse(saved) : [];
+          if (Array.isArray(rawParsed)) {
+            parsed = rawParsed;
+          }
+        } catch {
+          parsed = [];
+        }
         if (!parsed.some((k) => k.keyword === cleanKw)) {
           const updated = [
             ...parsed,
@@ -261,11 +373,17 @@ export default function Home() {
           );
         }
       }
-      showToast(
-        pushGranted
-          ? `'${cleanKw}' 새 딜이 올라오면 바로 알려드릴게요`
-          : `'${cleanKw}' 알림을 켰어요. 브라우저 알림을 허용하면 푸시로 알려드려요`
-      );
+      if (pushGranted) {
+        showToast(`'${cleanKw}' 새 딜이 올라오면 바로 알려드릴게요`);
+      } else if (reason === "in_app_webview" || reason === "toss_miniapp") {
+        showToast(
+          `'${cleanKw}' 키워드를 등록했어요. 인앱 브라우저에서는 푸시 대신 알림함에서 확인할 수 있어요`
+        );
+      } else {
+        showToast(
+          `'${cleanKw}' 키워드를 등록했어요. 브라우저 알림을 허용하면 푸시로 알려드려요`
+        );
+      }
       logTossClick("register_keyword_alert", {
         button_name: "keyword_alert_submit",
       });
@@ -281,15 +399,12 @@ export default function Home() {
     const cleanShareTitle = decodeHtmlEntities(deal.title);
     const shareUrl =
       typeof window !== "undefined"
-        ? `${window.location.origin}/?keyword=${encodeURIComponent(
-            cleanShareTitle.slice(0, 20)
-          )}`
+        ? `${window.location.origin}/?dealId=${deal.id}`
         : deal.post_link;
-    const shareText = `${cleanShareTitle} (${formatPrice(
-      deal.price,
-      deal.currency,
-      cleanShareTitle
-    )})`;
+    const sharePrice = deal.isFree
+      ? "0원 (무료)"
+      : formatPrice(deal.price, deal.currency, cleanShareTitle);
+    const shareText = `${cleanShareTitle} (${sharePrice})`;
 
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
@@ -300,7 +415,7 @@ export default function Home() {
         });
         return;
       } catch {
-        // 사용자 공유 취소 시 클립보드 복사로 넘어가지 않고 종료하거나 폴백
+        // 사용자 공유 취소 시 클립보드 복사로 폴백
       }
     }
     const copied = await copyTextSafe(`${shareText}\n${shareUrl}`);
@@ -309,133 +424,337 @@ export default function Home() {
     }
   };
 
-  const toggleWishlist = (e: React.MouseEvent, id: number) => {
+  const toggleWishlist = async (e: React.MouseEvent, id: number) => {
     e.preventDefault();
     e.stopPropagation();
+    if (pendingWishlistRef.current.has(id)) return;
+    pendingWishlistRef.current.add(id);
 
-    getOrCreateBrowserUserId();
-    const targetDeal = deals.find((d) => d.id === id) || wishlistItemsMap[id];
+    await enqueueDealMutation(id, async () => {
+      try {
+        const auth = await ensureWebDeviceAuth();
+        setIsLoggedIn(true);
 
-    setWishlist((prev) => {
-      const isAdded = prev.includes(id);
-      const updated = isAdded
-        ? prev.filter((item) => item !== id)
-        : [...prev, id];
-      if (typeof window !== "undefined") {
-        localStorage.setItem("insightdeal_wishlist", JSON.stringify(updated));
-      }
-      setWishlistItemsMap((prevMap) => {
-        const nextMap = { ...prevMap };
+        const targetDeal =
+          deals.find((d) => d.id === id) || wishlistItemsMapRef.current[id];
+        const keyword = buildDealWishlistKeyword(targetDeal?.title || `deal_${id}`);
+        const isAdded = wishlistRef.current.includes(id);
+
         if (isAdded) {
-          delete nextMap[id];
-        } else if (targetDeal) {
-          nextMap[id] = targetDeal;
+          const prevSavedDeal = wishlistItemsMapRef.current[id];
+          applyWishlistRemove(id);
+
+          const isAlertStillOn = alertsRef.current.includes(id);
+          let serverOk = true;
+          if (!isAlertStillOn) {
+            const beforeUuid = auth.deviceUuid;
+            const wishlistId = await resolveServerWishlistId(
+              id,
+              keyword,
+              beforeUuid,
+              targetDeal?.title ? [decodeHtmlEntities(targetDeal.title)] : []
+            );
+            if (wishlistId !== null) {
+              const delRes = await authFetch(
+                (latestAuth) =>
+                  `/api/wishlist/${wishlistId}?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
+                { method: "DELETE" }
+              );
+              const afterUuid = getOrCreateWebDeviceUuid();
+              if (!delRes.ok && delRes.status !== 404) {
+                if (delRes.status === 403 && afterUuid !== beforeUuid) {
+                  // 401 세션 회전으로 구 계정의 wishlistId를 호출한 경우 새 계정 기준으로 재확인
+                  removeWishlistIdEntry(id);
+                  const rotatedWishlistId = await resolveServerWishlistId(
+                    id,
+                    keyword,
+                    afterUuid,
+                    targetDeal?.title ? [decodeHtmlEntities(targetDeal.title)] : []
+                  );
+                  if (rotatedWishlistId !== null) {
+                    const retryDel = await authFetch(
+                      (latestAuth) =>
+                        `/api/wishlist/${rotatedWishlistId}?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
+                      { method: "DELETE" }
+                    );
+                    if (!retryDel.ok && retryDel.status !== 404) {
+                      serverOk = false;
+                    } else {
+                      removeWishlistIdEntry(id);
+                    }
+                  }
+                } else {
+                  serverOk = false;
+                }
+              } else {
+                removeWishlistIdEntry(id);
+              }
+            }
+          }
+
+          if (!serverOk) {
+            applyWishlistAdd(id, prevSavedDeal);
+            showToast("찜 해제에 실패했어요. 잠시 후 다시 시도해 주세요");
+            return;
+          }
+
+          showToast("찜 목록에서 뺐어요");
+        } else {
+          const existingMap = loadWishlistIdMap();
+          if (!existingMap[String(id)]) {
+            const postRes = await authFetch((latestAuth) => ({
+              pathOrUrl: "/api/wishlist/from-keyword",
+              init: {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  keyword,
+                  target_price: 0,
+                  user_id: latestAuth.deviceUuid,
+                }),
+              },
+            }));
+            if (!postRes.ok) {
+              showToast("찜 등록에 실패했어요. 잠시 후 다시 시도해 주세요");
+              return;
+            }
+            const saved = (await postRes.json().catch(() => null)) as
+              | WishlistApiItem
+              | null;
+            if (saved && typeof saved.id === "number") {
+              saveWishlistIdEntry(id, saved.id, saved.keyword || keyword);
+            }
+          }
+
+          applyWishlistAdd(id, targetDeal);
+          showToast("찜 목록에 담았어요");
+          logTossClick("save_wishlist_deal", {
+            button_name: "wishlist_button",
+            deal_id: id,
+          });
+          if (wishlistRef.current.length >= 2) {
+            maybeRequestTossReview();
+          }
         }
-        if (typeof window !== "undefined") {
-          localStorage.setItem(
-            "insightdeal_wishlist_items",
-            JSON.stringify(nextMap)
-          );
-        }
-        return nextMap;
-      });
-      if (isAdded) {
-        showToast("찜 목록에서 뺐어요");
-      } else {
-        showToast("찜 목록에 담았어요");
-        logTossClick("save_wishlist_deal", {
-          button_name: "wishlist_button",
-          deal_id: id,
-        });
-        if (updated.length >= 2) {
-          maybeRequestTossReview();
-        }
+      } catch {
+        showToast("찜 상태를 변경하지 못했어요. 잠시 후 다시 시도해 주세요");
+      } finally {
+        pendingWishlistRef.current.delete(id);
       }
-      return updated;
     });
   };
 
-  const toggleAlert = (e: React.MouseEvent, id: number) => {
+  const toggleAlert = async (e: React.MouseEvent, id: number) => {
     e.preventDefault();
     e.stopPropagation();
+    if (pendingAlertRef.current.has(id)) return;
+    pendingAlertRef.current.add(id);
 
-    const uid = getOrCreateBrowserUserId();
-    const targetDeal = deals.find((d) => d.id === id) || wishlistItemsMap[id];
+    await enqueueDealMutation(id, async () => {
+      try {
+        const auth = await ensureWebDeviceAuth();
+        setIsLoggedIn(true);
 
-    setAlerts((prev) => {
-      const isAlertOn = prev.includes(id);
-      const updated = isAlertOn
-        ? prev.filter((item) => item !== id)
-        : [...prev, id];
-      if (typeof window !== "undefined") {
-        localStorage.setItem("insightdeal_alerts", JSON.stringify(updated));
-      }
-      if (isAlertOn) {
-        showToast("가격 알림을 껐어요");
-      } else {
-        ensureWebPushSubscribed().catch(() => null);
-        const dealCurr = (targetDeal?.currency || "KRW").toUpperCase();
-        const isSubunitCurrency =
-          dealCurr === "USD" || dealCurr === "EUR" || dealCurr === "CNY";
-        const rawPrice = targetDeal
-          ? parseInt(String(targetDeal.price || "").replace(/[^0-9]/g, ""), 10) ||
-            0
-          : 0;
-        const autoTarget = isSubunitCurrency
-          ? rawPrice >= 500
-            ? Math.max(100, Math.floor((rawPrice / 100) * 0.95) * 100)
-            : Math.round(rawPrice * 0.95)
-          : rawPrice >= 1000
-            ? Math.max(100, Math.round((rawPrice * 0.95) / 100) * 100)
-            : rawPrice;
-        if (targetDeal && autoTarget > 0) {
-          const cleanKw = decodeHtmlEntities(targetDeal.title || "")
-            .replace(/\[[^\]]*\]/g, "")
-            .replace(/\([^)]*\)/g, "")
-            .trim()
-            .slice(0, 50);
-          fetch(apiUrl("/api/wishlist/item-alert"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              user_id: uid,
-              keyword: cleanKw || decodeHtmlEntities(targetDeal.title).slice(0, 40),
-              target_price: autoTarget,
-            }),
-          }).catch(() => null);
+        const targetDeal =
+          deals.find((d) => d.id === id) || wishlistItemsMapRef.current[id];
+        const keyword = buildDealWishlistKeyword(targetDeal?.title || `deal_${id}`);
+        const isAlertOn = alertsRef.current.includes(id);
+
+        if (isAlertOn) {
+          let prevTargetPriceVal: number | undefined;
           try {
             const mapStr = localStorage.getItem("insightdeal_target_prices");
             const targetMap = mapStr ? JSON.parse(mapStr) : {};
-            targetMap[id] = isSubunitCurrency
-              ? Math.max(1, Math.round(autoTarget / 100))
-              : autoTarget;
-            localStorage.setItem(
-              "insightdeal_target_prices",
-              JSON.stringify(targetMap)
-            );
+            prevTargetPriceVal = targetMap[id];
           } catch {}
-          showToast(
-            `${formatPrice(autoTarget, targetDeal.currency, targetDeal.title)} 이하로 내려가면 알려드릴게요`
+
+          applyAlertRemove(id);
+
+          const beforeUuid = auth.deviceUuid;
+          const wishlistId = await resolveServerWishlistId(
+            id,
+            keyword,
+            beforeUuid,
+            targetDeal?.title ? [decodeHtmlEntities(targetDeal.title)] : []
           );
+
+          let serverOk = true;
+          if (wishlistId !== null) {
+            const isStillWishlisted = wishlistRef.current.includes(id);
+            if (isStillWishlisted) {
+              const patchRes = await authFetch(
+                (latestAuth) => ({
+                  pathOrUrl: `/api/wishlist/${wishlistId}?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
+                  init: {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      alert_enabled: false,
+                      target_price: 0,
+                    }),
+                  },
+                })
+              );
+              const afterUuid = getOrCreateWebDeviceUuid();
+              if (!patchRes.ok && patchRes.status !== 404) {
+                if (patchRes.status === 403 && afterUuid !== beforeUuid) {
+                  removeWishlistIdEntry(id);
+                } else {
+                  serverOk = false;
+                }
+              }
+            } else {
+              const delRes = await authFetch(
+                (latestAuth) =>
+                  `/api/wishlist/${wishlistId}?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
+                { method: "DELETE" }
+              );
+              const afterUuid = getOrCreateWebDeviceUuid();
+              if (!delRes.ok && delRes.status !== 404) {
+                if (delRes.status === 403 && afterUuid !== beforeUuid) {
+                  removeWishlistIdEntry(id);
+                  const rotatedWishlistId = await resolveServerWishlistId(
+                    id,
+                    keyword,
+                    afterUuid,
+                    targetDeal?.title ? [decodeHtmlEntities(targetDeal.title)] : []
+                  );
+                  if (rotatedWishlistId !== null) {
+                    const retryDel = await authFetch(
+                      (latestAuth) =>
+                        `/api/wishlist/${rotatedWishlistId}?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
+                      { method: "DELETE" }
+                    );
+                    if (!retryDel.ok && retryDel.status !== 404) {
+                      serverOk = false;
+                    } else {
+                      removeWishlistIdEntry(id);
+                    }
+                  }
+                } else {
+                  serverOk = false;
+                }
+              } else {
+                removeWishlistIdEntry(id);
+              }
+            }
+          }
+
+          if (!serverOk) {
+            applyAlertAdd(id);
+            showToast("가격 알림 해제에 실패했어요. 잠시 후 다시 시도해 주세요");
+            return;
+          }
+
+          if (typeof window !== "undefined" && prevTargetPriceVal !== undefined) {
+            try {
+              const mapStr = localStorage.getItem("insightdeal_target_prices");
+              const targetMap = mapStr ? JSON.parse(mapStr) : {};
+              delete targetMap[id];
+              localStorage.setItem(
+                "insightdeal_target_prices",
+                JSON.stringify(targetMap)
+              );
+            } catch {}
+          }
+          showToast("가격 알림을 껐어요");
         } else {
-          showToast("가격 변동 알림을 켰어요");
+          const pushRes = await ensureWebPushSubscribed();
+          const dealCurr = (targetDeal?.currency || "KRW").toUpperCase();
+          const isSubunitCurrency =
+            dealCurr === "USD" || dealCurr === "EUR" || dealCurr === "CNY";
+          const rawPrice = targetDeal
+            ? parseInt(String(targetDeal.price || "").replace(/[^0-9]/g, ""), 10) ||
+              0
+            : 0;
+          const autoTarget = isSubunitCurrency
+            ? rawPrice >= 500
+              ? Math.max(100, Math.floor((rawPrice / 100) * 0.95) * 100)
+              : Math.round(rawPrice * 0.95)
+            : rawPrice >= 1000
+              ? Math.max(100, Math.round((rawPrice * 0.95) / 100) * 100)
+              : rawPrice;
+
+          if (!targetDeal || targetDeal.isFree || autoTarget <= 0) {
+            showToast("가격 정보가 확인된 상품만 목표가 알림을 켤 수 있어요");
+            return;
+          }
+
+          const postRes = await authFetch((latestAuth) => ({
+            pathOrUrl: "/api/wishlist/item-alert",
+            init: {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                user_id: latestAuth.deviceUuid,
+                keyword: keyword || decodeHtmlEntities(targetDeal.title).slice(0, 40),
+                title: decodeHtmlEntities(targetDeal.title),
+                product_url: targetDeal.ecommerce_url || targetDeal.post_link,
+                target_price: autoTarget,
+              }),
+            },
+          }));
+
+          if (!postRes.ok) {
+            showToast("가격 알림 설정에 실패했어요. 잠시 후 다시 시도해 주세요");
+            return;
+          }
+
+          const saved = (await postRes.json().catch(() => null)) as
+            | WishlistApiItem
+            | null;
+          if (saved && typeof saved.id === "number") {
+            saveWishlistIdEntry(id, saved.id, saved.keyword || keyword);
+          }
+
+          applyAlertAdd(id);
+          if (typeof window !== "undefined") {
+            try {
+              const mapStr = localStorage.getItem("insightdeal_target_prices");
+              const targetMap = mapStr ? JSON.parse(mapStr) : {};
+              targetMap[id] = isSubunitCurrency
+                ? Math.max(1, Math.round(autoTarget / 100))
+                : autoTarget;
+              localStorage.setItem(
+                "insightdeal_target_prices",
+                JSON.stringify(targetMap)
+              );
+            } catch {}
+          }
+
+          const priceFormatted = formatPrice(
+            autoTarget,
+            targetDeal.currency,
+            targetDeal.title
+          );
+          showToast(
+            pushRes.pushGranted
+              ? `${priceFormatted} 이하로 내려가면 알려드릴게요`
+              : `${priceFormatted} 이하 목표가 알림을 켰어요. 알림함에서 확인할 수 있어요`
+          );
+          logTossClick("save_target_price_alert", {
+            button_name: "card_price_alert_button",
+            deal_id: id,
+          });
+          maybeRequestTossReview();
         }
-        logTossClick("save_target_price_alert", {
-          button_name: "card_price_alert_button",
-          deal_id: id,
-        });
-        maybeRequestTossReview();
+      } catch {
+        showToast("가격 알림 설정에 실패했어요. 잠시 후 다시 시도해 주세요");
+      } finally {
+        pendingAlertRef.current.delete(id);
       }
-      return updated;
     });
   };
 
-  const handleLoginSimulate = () => {
-    if (typeof window !== "undefined") {
-      getOrCreateBrowserUserId();
+  const handleLoginSimulate = async () => {
+    if (typeof window === "undefined") return;
+    try {
+      await ensureWebDeviceAuth();
       setIsLoggedIn(true);
       setShowLoginModal(false);
       showToast("기기 연동을 완료했어요");
+    } catch {
+      showToast("기기 연동에 실패했어요. 잠시 후 다시 시도해 주세요");
     }
   };
 
@@ -447,7 +766,7 @@ export default function Home() {
       targetPlatform = "전체",
       overrideKeyword?: string,
       overrideSort?: "latest" | "popular" | "price_asc"
-    ) => {
+    ): Promise<boolean> => {
       if (liveDealsAbortRef.current) {
         liveDealsAbortRef.current.abort();
       }
@@ -456,11 +775,15 @@ export default function Home() {
       const { signal } = controller;
 
       try {
+        if (offset === 0) {
+          setFetchError(null);
+        }
         if (showLoadingState) {
           setLoading(true);
         }
 
-        const apiCategory = CATEGORY_MAP[targetTab] || "";
+        const apiCategory =
+          targetTab && targetTab !== "전체" ? targetTab : "";
         const platformParam =
           targetPlatform && targetPlatform !== "전체"
             ? `&platform=${encodeURIComponent(targetPlatform)}`
@@ -483,17 +806,22 @@ export default function Home() {
         );
 
         let res: Response | null = null;
+        let lastStatus = 0;
         for (let attempt = 0; attempt < 3; attempt++) {
-          if (signal.aborted) return;
+          if (signal.aborted) return false;
           try {
             const r = await fetch(url, { signal });
+            lastStatus = r.status;
             if (r.ok) {
               res = r;
               break;
             }
+            if (r.status >= 400 && r.status < 500) {
+              break;
+            }
           } catch (fetchErr) {
             if (signal.aborted || isAbortError(fetchErr)) {
-              return;
+              return false;
             }
           }
           if (attempt < 2) {
@@ -508,121 +836,31 @@ export default function Home() {
                 { once: true }
               );
             });
-            if (signal.aborted) return;
+            if (signal.aborted) return false;
           }
         }
 
-        if (signal.aborted || liveDealsAbortRef.current !== controller) return;
-        if (!res || !res.ok) throw new Error("API Offline");
+        if (signal.aborted || liveDealsAbortRef.current !== controller) {
+          return false;
+        }
+        if (!res || !res.ok) {
+          throw new Error(`API Offline (${lastStatus || "network"})`);
+        }
 
-        const data = await res.json();
-        if (signal.aborted || liveDealsAbortRef.current !== controller) return;
+        const data = (await res.json()) as
+          | RawDealApiResponse[]
+          | HotDealsApiResponse;
+        if (signal.aborted || liveDealsAbortRef.current !== controller) {
+          return false;
+        }
 
         const dealsArray: RawDealApiResponse[] = Array.isArray(data)
           ? data
           : data.deals || data.items || [];
 
-        const formatted: Deal[] = dealsArray.map((d: RawDealApiResponse) => {
-          const titleStr = decodeHtmlEntities(d.title || "");
-          const cleanEcommerce =
-            d.ecommerce_url && d.ecommerce_url.trim() !== ""
-              ? d.ecommerce_url.trim()
-              : null;
-          const cleanPost =
-            d.post_url && d.post_url.trim() !== "" ? d.post_url.trim() : null;
-          const cleanPostLink =
-            d.post_link && d.post_link.trim() !== ""
-              ? d.post_link.trim()
-              : null;
-          const cleanLink =
-            d.link && d.link.trim() !== "" ? d.link.trim() : null;
-
-          const matchedSource =
-            targetPlatform &&
-            targetPlatform !== "전체" &&
-            Array.isArray(d.sources)
-              ? d.sources.find(
-                  (s: DealSource) =>
-                    String(s.site_name || "").includes(targetPlatform) &&
-                    s.post_url
-                )
-              : null;
-          const finalEcommerce =
-            cleanEcommerce || cleanPostLink || cleanLink || "#";
-          const finalPost =
-            (matchedSource && matchedSource.post_url) ||
-            cleanPost ||
-            cleanPostLink ||
-            cleanLink ||
-            "#";
-          const rawPriceNum = Number(
-            String(d.price ?? "").replace(/[^0-9.-]/g, "")
-          );
-          const titleFallback =
-            d.price === null ||
-            d.price === undefined ||
-            String(d.price).trim() === "" ||
-            !Number.isFinite(rawPriceNum) ||
-            rawPriceNum <= 0
-              ? extractPriceFromTitle(titleStr)
-              : null;
-          const rawShipping = d.shipping_fee || d.shippingFee || null;
-          const shippingStr = rawShipping
-            ? decodeHtmlEntities(rawShipping)
-            : null;
-          const optionsDataArr = Array.isArray(d.options_data)
-            ? d.options_data
-            : Array.isArray(d.optionsData)
-              ? d.optionsData
-              : undefined;
-          const resolvedShop = resolveDealShopName({
-            shop_name: d.shop_name ?? d.shopName,
-            title: titleStr,
-            ecommerce_url: finalEcommerce,
-          });
-
-          return {
-            id: d.id,
-            community_name:
-              d.site_name ||
-              (d.site_names && d.site_names[0]) ||
-              d.community_name ||
-              d.communityName ||
-              getCommunityName(d.source_community_id),
-            shop_name: resolvedShop || undefined,
-            title: titleStr,
-            price: titleFallback
-              ? titleFallback.price
-              : d.price !== null &&
-                  d.price !== undefined &&
-                  String(d.price).trim() !== ""
-                ? String(d.price)
-                : "0",
-            image_url: d.image_url || d.imageUrl || null,
-            scraped_at: d.scraped_at || d.timeAgo || "방금 전",
-            post_link: finalPost,
-            ecommerce_url: finalEcommerce,
-            shipping_fee: shippingStr,
-            category: d.category || categorizeDeal(titleStr),
-            isClosed: Boolean(d.is_closed ?? d.isClosed),
-            originalDate: d.created_at || d.originalDate,
-            currency: titleFallback
-              ? titleFallback.currency
-              : d.currency || "KRW",
-            honeyScore: d.honey_score || d.honeyScore || 0,
-            aiSummary: decodeHtmlEntities(d.ai_summary || d.aiSummary || ""),
-            contentHtml: d.content_html || d.contentHtml || "",
-            sources: d.sources || [],
-            tags: Array.isArray(d.tags)
-              ? d.tags.map((t) => decodeHtmlEntities(String(t))).filter(Boolean)
-              : [],
-            has_options: Boolean(d.has_options ?? d.hasOptions),
-            options_count:
-              d.options_count ??
-              (optionsDataArr ? optionsDataArr.length : undefined),
-            options_data: optionsDataArr,
-          };
-        });
+        const formatted: Deal[] = dealsArray.map((d: RawDealApiResponse) =>
+          mapRawDealToDeal(d, targetPlatform)
+        );
 
         if (offset === 0 && activeKw.trim().length >= 2) {
           logTossClick("search_deals", {
@@ -630,6 +868,13 @@ export default function Home() {
             result_count: formatted.length,
           });
         }
+
+        const explicitHasMore =
+          !Array.isArray(data) && typeof data?.has_more === "boolean"
+            ? data.has_more
+            : !Array.isArray(data) && typeof data?.hasMore === "boolean"
+              ? data.hasMore
+              : undefined;
 
         if (formatted.length > 0) {
           if (offset === 0) {
@@ -656,28 +901,38 @@ export default function Home() {
             });
           }
 
-          setHasMore(formatted.length >= limit);
+          setHasMore(
+            explicitHasMore !== undefined
+              ? explicitHasMore
+              : formatted.length >= limit
+          );
         } else {
           if (offset === 0) {
             setDeals([]);
           }
-          setHasMore(false);
+          setHasMore(explicitHasMore !== undefined ? explicitHasMore : false);
         }
+
+        setFetchError(null);
+        return true;
       } catch (err) {
         if (
           signal.aborted ||
           isAbortError(err) ||
           liveDealsAbortRef.current !== controller
         ) {
-          return;
+          return false;
         }
         const activeKwOnErr =
           overrideKeyword !== undefined
             ? overrideKeyword
             : appliedSearchRef.current;
         const activeSortOnErr = overrideSort ?? sortByRef.current;
-        if (offset === 0 && typeof window !== "undefined") {
+
+        if (offset === 0) {
+          setFetchError(HOT_DEALS_ERROR_COPY);
           if (
+            typeof window !== "undefined" &&
             !activeKwOnErr.trim() &&
             targetTab === "전체" &&
             targetPlatform === "전체" &&
@@ -695,8 +950,11 @@ export default function Home() {
           } else {
             setDeals([]);
           }
+          setHasMore(false);
+        } else {
+          showToast("추가 딜을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
         }
-        setHasMore(false);
+        return false;
       } finally {
         if (liveDealsAbortRef.current === controller) {
           liveDealsAbortRef.current = null;
@@ -706,19 +964,16 @@ export default function Home() {
         }
       }
     },
-    []
+    [showToast]
   );
 
   const handleRefresh = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
     setNewDealsCount(0);
-    try {
-      await fetch(apiUrl("/api/community/force-scrape"), { method: "POST" });
-    } catch {}
-    await fetchLiveDeals(false, 0, activeTab, activePlatform);
+    const ok = await fetchLiveDeals(false, 0, activeTab, activePlatform);
     setIsRefreshing(false);
-    showToast("최신 딜을 불러왔어요");
+    showToast(ok ? "최신 딜을 불러왔어요" : HOT_DEALS_ERROR_COPY);
   };
 
   const handleScrollToTopAndRefresh = async () => {
@@ -727,9 +982,9 @@ export default function Home() {
     }
     setNewDealsCount(0);
     setIsRefreshing(true);
-    await fetchLiveDeals(false, 0, activeTab, activePlatform);
+    const ok = await fetchLiveDeals(false, 0, activeTab, activePlatform);
     setIsRefreshing(false);
-    showToast("최신 딜을 반영했어요");
+    showToast(ok ? "최신 딜을 반영했어요" : HOT_DEALS_ERROR_COPY);
   };
 
   const handleTabChange = (tab: string) => {
@@ -919,6 +1174,7 @@ export default function Home() {
     };
 
     let initialSharedKw = "";
+    let initialDealId: number | null = null;
     if (typeof window !== "undefined") {
       window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
 
@@ -928,6 +1184,14 @@ export default function Home() {
         initialSharedKw = sharedKw.trim();
         setSearchQuery(initialSharedKw);
         updateAppliedSearch(initialSharedKw);
+      }
+
+      const dealIdRaw = urlParams.get("dealId");
+      if (dealIdRaw && /^\d+$/.test(dealIdRaw.trim())) {
+        const parsedId = Number(dealIdRaw.trim());
+        if (Number.isSafeInteger(parsedId) && parsedId > 0) {
+          initialDealId = parsedId;
+        }
       }
 
       if (localStorage.getItem("insightdeal_hide_kw_banner") === "1") {
@@ -944,6 +1208,36 @@ export default function Home() {
         setIsTossMiniApp(true);
       }
       logTossScreen("home_feed_view", { tab: "전체" });
+    }
+
+    // 15종 표준 카테고리 메타데이터 동기화 (구형 원시 키 자동 배제)
+    fetch(apiUrl("/api/meta/categories"))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || !Array.isArray(data.categories)) return;
+        const normalized: CategoryMetaItem[] = (data.categories as CategoryMetaItem[])
+          .filter((c) => c && typeof c.key === "string" && typeof c.label === "string")
+          .map((c) => ({
+            key: c.key.includes("해외핫딜") ? "해외직구" : c.key,
+            label: c.label,
+          }))
+          .filter((c) => c.key !== "전체");
+        if (normalized.length > 0) {
+          setCategories([{ key: "전체", label: "전체" }, ...normalized]);
+        }
+      })
+      .catch(() => {});
+
+    // /?dealId= 딥링크 진입 시 상세 모달 자동 오픈
+    if (initialDealId !== null) {
+      fetch(apiUrl(`/api/community/deals/${initialDealId}`))
+        .then((r) => (r.ok ? (r.json() as Promise<RawDealApiResponse>) : null))
+        .then((detail) => {
+          if (detail && detail.id) {
+            setSelectedDeal(mapRawDealToDeal(detail));
+          }
+        })
+        .catch(() => {});
     }
 
     fetch(apiUrl("/api/community/popular-keywords"))
@@ -1018,9 +1312,13 @@ export default function Home() {
       const token = getOrCreateBrowserUserId();
       if (token) {
         setIsLoggedIn(true);
-        fetch(
-          apiUrl(`/api/users/notifications?user_id=${encodeURIComponent(token)}`)
-        )
+        ensureWebDeviceAuth()
+          .then(() =>
+            authFetch(
+              (latestAuth) =>
+                `/api/users/notifications?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`
+            )
+          )
           .then((r) => (r.ok ? r.json() : []))
           .then((list) => {
             if (Array.isArray(list)) setServerAlertCount(list.length);
@@ -1030,7 +1328,11 @@ export default function Home() {
       const savedWishlist = localStorage.getItem("insightdeal_wishlist");
       if (savedWishlist) {
         try {
-          setWishlist(JSON.parse(savedWishlist));
+          const parsed = JSON.parse(savedWishlist);
+          if (Array.isArray(parsed)) {
+            wishlistRef.current = parsed;
+            setWishlist(parsed);
+          }
         } catch {}
       }
       const savedWishlistItems = localStorage.getItem(
@@ -1038,13 +1340,21 @@ export default function Home() {
       );
       if (savedWishlistItems) {
         try {
-          setWishlistItemsMap(JSON.parse(savedWishlistItems));
+          const parsed = JSON.parse(savedWishlistItems);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            wishlistItemsMapRef.current = parsed;
+            setWishlistItemsMap(parsed);
+          }
         } catch {}
       }
       const savedAlerts = localStorage.getItem("insightdeal_alerts");
       if (savedAlerts) {
         try {
-          setAlerts(JSON.parse(savedAlerts));
+          const parsed = JSON.parse(savedAlerts);
+          if (Array.isArray(parsed)) {
+            alertsRef.current = parsed;
+            setAlerts(parsed);
+          }
         } catch {}
       }
       const savedRecent = localStorage.getItem("insightdeal_recent_searches");
@@ -1168,11 +1478,8 @@ export default function Home() {
         setIsRefreshing(true);
         setNewDealsCount(0);
         try {
-          await fetch(apiUrl("/api/community/force-scrape"), {
-            method: "POST",
-          }).catch(() => {});
-          await fetchLiveDeals(false, 0, activeTab, activePlatform);
-          showToast("최신 딜을 불러왔어요");
+          const ok = await fetchLiveDeals(false, 0, activeTab, activePlatform);
+          showToast(ok ? "최신 딜을 불러왔어요" : HOT_DEALS_ERROR_COPY);
         } finally {
           setIsRefreshing(false);
           setPullOffset(0);
@@ -1213,7 +1520,8 @@ export default function Home() {
       if (document.hidden) return;
 
       try {
-        const apiCategory = CATEGORY_MAP[activeTab] || "";
+        const apiCategory =
+          activeTab && activeTab !== "전체" ? activeTab : "";
         const platformParam =
           activePlatform && activePlatform !== "전체"
             ? `&platform=${encodeURIComponent(activePlatform)}`
@@ -1250,58 +1558,7 @@ export default function Home() {
 
   const getLiveTimeAgo = (dateStr?: string, fallback?: string) => {
     if (!isMounted || currentTime <= 0) return fallback || "최근";
-    if (!dateStr) return fallback || "최근";
-
-    try {
-      let isoStr = dateStr.trim();
-      if (isoStr.includes(" ")) {
-        isoStr = isoStr.replace(" ", "T");
-      }
-
-      let dealTime: number;
-      if (
-        isoStr.includes("+") ||
-        isoStr.endsWith("Z") ||
-        isoStr.includes("GMT")
-      ) {
-        dealTime = new Date(isoStr).getTime();
-      } else {
-        isoStr += "Z";
-        dealTime = new Date(isoStr).getTime();
-      }
-
-      if (isNaN(dealTime)) return fallback || "최근";
-
-      let diffMs = currentTime - dealTime;
-      const nineHoursMs = 9 * 60 * 60 * 1000;
-      if (
-        diffMs < 0 &&
-        Math.abs(diffMs) >= 8 * 60 * 60 * 1000 &&
-        Math.abs(diffMs) <= 10 * 60 * 60 * 1000
-      ) {
-        dealTime += nineHoursMs;
-        diffMs = currentTime - dealTime;
-      }
-
-      if (diffMs < 0) diffMs = 0;
-
-      const diffMins = Math.floor(diffMs / 60000);
-      if (diffMins < 1) return "방금 전";
-      if (diffMins < 60) return `${diffMins}분 전`;
-
-      const diffHours = Math.floor(diffMins / 60);
-      if (diffHours < 24) return `${diffHours}시간 전`;
-
-      const diffDays = Math.floor(diffHours / 24);
-      if (diffDays < 7) return `${diffDays}일 전`;
-
-      const d = new Date(dealTime);
-      const month = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      return `${month}.${day}`;
-    } catch {
-      return fallback || "최근";
-    }
+    return formatRelativeTimeKo(dateStr, currentTime, fallback || "최근");
   };
 
   const filteredDeals = deals
@@ -1414,7 +1671,6 @@ export default function Home() {
             cursor: "pointer",
             display: "inline-flex",
             alignItems: "center",
-            gap: "8px",
           }}
           onClick={() => {
             clearSearchDebounce();
@@ -1778,10 +2034,6 @@ export default function Home() {
                   className={isRefreshing ? "spin-animation" : ""}
                 />
                 <span>새로고침</span>
-                <style>{`
-                  @keyframes spin { 100% { transform: rotate(360deg); } }
-                  .spin-animation { animation: spin 0.9s linear infinite; }
-                `}</style>
               </button>
             </div>
           </div>
@@ -1871,7 +2123,7 @@ export default function Home() {
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
-                        minHeight: "36px",
+                        minHeight: "44px",
                         padding: "0 4px 0 12px",
                         borderRadius: "999px",
                         fontSize: "0.78rem",
@@ -1890,7 +2142,7 @@ export default function Home() {
                         onClick={() => handleSelectPopularKeyword(kw)}
                         style={{
                           cursor: "pointer",
-                          minHeight: "36px",
+                          minHeight: "44px",
                           display: "inline-flex",
                           alignItems: "center",
                           paddingRight: "4px",
@@ -1909,8 +2161,10 @@ export default function Home() {
                           display: "inline-flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          width: "28px",
-                          height: "28px",
+                          width: "44px",
+                          height: "44px",
+                          minWidth: "44px",
+                          minHeight: "44px",
                           borderRadius: "50%",
                           border: "none",
                           background: "transparent",
@@ -1918,7 +2172,7 @@ export default function Home() {
                           cursor: "pointer",
                         }}
                       >
-                        <X size={12} />
+                        <X size={13} />
                       </button>
                     </div>
                   );
@@ -1934,8 +2188,8 @@ export default function Home() {
                   fontSize: "0.76rem",
                   fontWeight: 600,
                   cursor: "pointer",
-                  minHeight: "36px",
-                  padding: "0 6px",
+                  minHeight: "44px",
+                  padding: "0 8px",
                 }}
               >
                 전체 삭제
@@ -2029,16 +2283,16 @@ export default function Home() {
 
           <div className="tabs-container">
             <div className="tabs">
-              {TABS.map((tab) => (
+              {categories.map((cat) => (
                 <button
-                  key={tab}
+                  key={cat.key}
                   type="button"
                   className={`tab bounce-click ${
-                    activeTab === tab ? "active" : ""
+                    activeTab === cat.key ? "active" : ""
                   }`}
-                  onClick={() => handleTabChange(tab)}
+                  onClick={() => handleTabChange(cat.key)}
                 >
-                  {tab}
+                  {cat.label}
                 </button>
               ))}
             </div>
@@ -2084,9 +2338,9 @@ export default function Home() {
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
-                      minHeight: "36px",
+                      minHeight: "44px",
                       gap: "4px",
-                      padding: "4px 10px",
+                      padding: "6px 12px",
                       borderRadius: "999px",
                       background: "rgba(var(--accent-rgb), 0.1)",
                       color: "var(--accent)",
@@ -2107,9 +2361,9 @@ export default function Home() {
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
-                      minHeight: "36px",
+                      minHeight: "44px",
                       gap: "4px",
-                      padding: "4px 10px",
+                      padding: "6px 12px",
                       borderRadius: "999px",
                       background: "var(--surface-subtle)",
                       color: "var(--text-main)",
@@ -2130,9 +2384,9 @@ export default function Home() {
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
-                      minHeight: "36px",
+                      minHeight: "44px",
                       gap: "4px",
-                      padding: "4px 10px",
+                      padding: "6px 12px",
                       borderRadius: "999px",
                       background: "var(--surface-subtle)",
                       color: "var(--text-main)",
@@ -2142,7 +2396,11 @@ export default function Home() {
                       cursor: "pointer",
                     }}
                   >
-                    <span>카테고리: {activeTab}</span>
+                    <span>
+                      카테고리:{" "}
+                      {categories.find((c) => c.key === activeTab)?.label ||
+                        activeTab}
+                    </span>
                     <X size={12} />
                   </button>
                 )}
@@ -2176,7 +2434,7 @@ export default function Home() {
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  minHeight: "38px",
+                  minHeight: "44px",
                   gap: "5px",
                   padding: "6px 12px",
                   borderRadius: "8px",
@@ -2194,10 +2452,52 @@ export default function Home() {
             </div>
           )}
 
+          {fetchError && filteredDeals.length > 0 && (
+            <div
+              role="alert"
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "10px",
+                padding: "10px 14px",
+                marginBottom: "16px",
+                borderRadius: "12px",
+                background: "rgba(239, 68, 68, 0.08)",
+                border: "1px solid rgba(239, 68, 68, 0.28)",
+                color: "#EF4444",
+                fontSize: "0.84rem",
+                fontWeight: 700,
+              }}
+            >
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <AlertCircle size={15} aria-hidden="true" />
+                <span>{fetchError}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  void fetchLiveDeals(true, 0, activeTab, activePlatform)
+                }
+                className="btn-primary bounce-click"
+                style={{
+                  minHeight: "38px",
+                  padding: "6px 14px",
+                  borderRadius: "10px",
+                  fontSize: "0.8rem",
+                }}
+              >
+                다시 시도
+              </button>
+            </div>
+          )}
+
           <div className="deal-list">
             {filteredDeals.length === 0 ? (
               <div
                 className="glass-panel"
+                role={fetchError ? "alert" : undefined}
                 style={{
                   gridColumn: "1 / -1",
                   padding: "48px 24px",
@@ -2210,6 +2510,9 @@ export default function Home() {
                   gap: "12px",
                 }}
               >
+                {fetchError && !loading && (
+                  <AlertCircle size={28} color="#EF4444" aria-hidden="true" />
+                )}
                 <p
                   style={{
                     fontSize: "0.98rem",
@@ -2220,34 +2523,56 @@ export default function Home() {
                 >
                   {loading && deals.length === 0
                     ? "핫딜을 불러오고 있어요"
-                    : "찾으시는 조건의 딜이 없어요"}
+                    : fetchError
+                      ? fetchError
+                      : "찾으시는 조건의 딜이 없어요"}
                 </p>
-                {!loading && hasActiveFilters && (
-                  <>
-                    <p
-                      style={{
-                        fontSize: "0.84rem",
-                        color: "var(--text-sub)",
-                        margin: 0,
-                      }}
-                    >
-                      검색어나 필터를 초기화하면 전체 딜을 볼 수 있어요
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleResetAllFilters}
-                      className="btn-primary bounce-click"
-                      style={{
-                        marginTop: "4px",
-                        padding: "10px 18px",
-                        borderRadius: "12px",
-                        fontSize: "0.85rem",
-                      }}
-                    >
-                      <RotateCcw size={15} />
-                      <span>필터 초기화</span>
-                    </button>
-                  </>
+                {!loading && fetchError ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void fetchLiveDeals(true, 0, activeTab, activePlatform)
+                    }
+                    className="btn-primary bounce-click"
+                    style={{
+                      marginTop: "4px",
+                      padding: "10px 18px",
+                      borderRadius: "12px",
+                      fontSize: "0.85rem",
+                    }}
+                  >
+                    <RefreshCw size={15} aria-hidden="true" />
+                    <span>다시 시도</span>
+                  </button>
+                ) : (
+                  !loading &&
+                  hasActiveFilters && (
+                    <>
+                      <p
+                        style={{
+                          fontSize: "0.84rem",
+                          color: "var(--text-sub)",
+                          margin: 0,
+                        }}
+                      >
+                        검색어나 필터를 초기화하면 전체 딜을 볼 수 있어요
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleResetAllFilters}
+                        className="btn-primary bounce-click"
+                        style={{
+                          marginTop: "4px",
+                          padding: "10px 18px",
+                          borderRadius: "12px",
+                          fontSize: "0.85rem",
+                        }}
+                      >
+                        <RotateCcw size={15} />
+                        <span>필터 초기화</span>
+                      </button>
+                    </>
+                  )
                 )}
               </div>
             ) : (
@@ -2259,6 +2584,11 @@ export default function Home() {
                   deal.ecommerce_url &&
                   deal.ecommerce_url !== "#" &&
                   String(deal.ecommerce_url).trim() !== "";
+                const outboundTarget = hasValidEcommerceLink
+                  ? resolveOutboundUrl(deal.ecommerce_url)
+                  : deal.post_link && deal.post_link !== "#"
+                    ? resolveOutboundUrl(deal.post_link)
+                    : "#";
 
                 const optionSources = getOptionSources(
                   deal.sources,
@@ -2284,224 +2614,191 @@ export default function Home() {
                   ? decodeHtmlEntities(deal.shipping_fee)
                   : null;
 
+                const badgeSources: DealSource[] =
+                  deal.sources && deal.sources.length > 0
+                    ? deal.sources
+                    : deal.community_name.split(", ").map((cName) => ({
+                        site_name: cName,
+                        post_url: deal.post_link,
+                      }));
+
+                const uniqueBadgeSources: DealSource[] = [];
+                badgeSources.forEach((src: DealSource) => {
+                  const nameClean = src.site_name
+                    ? src.site_name.replace(/ - .*$/, "").trim()
+                    : "";
+                  if (
+                    !uniqueBadgeSources.some(
+                      (x: DealSource) =>
+                        (x.site_name
+                          ? x.site_name.replace(/ - .*$/, "").trim()
+                          : "") === nameClean
+                    )
+                  ) {
+                    uniqueBadgeSources.push(src);
+                  }
+                });
+
                 return (
-                  <a
+                  <article
                     key={deal.id}
-                    href={
-                      hasValidEcommerceLink
-                        ? resolveOutboundUrl(deal.ecommerce_url)
-                        : deal.post_link && deal.post_link !== "#"
-                          ? resolveOutboundUrl(deal.post_link)
-                          : "#"
-                    }
-                    target="_blank"
-                    rel="noopener"
-                    className="glass-panel deal-card bounce-click"
+                    className="glass-panel deal-card"
                     style={
                       deal.isClosed
                         ? { opacity: 0.6, filter: "grayscale(0.5)" }
                         : undefined
                     }
-                    onClick={(e) => {
-                      const outboundTarget = hasValidEcommerceLink
-                        ? resolveOutboundUrl(deal.ecommerce_url)
-                        : deal.post_link && deal.post_link !== "#"
-                          ? resolveOutboundUrl(deal.post_link)
-                          : "#";
-                      if (!outboundTarget || outboundTarget === "#") {
-                        e.preventDefault();
-                        showToast("이동할 수 있는 상품 주소를 찾지 못했어요");
-                        return;
-                      }
-                      if (!hasValidEcommerceLink) {
-                        showToast(
-                          "구매처 바로가기가 없어 원본 게시글로 이동해요"
-                        );
-                      }
-                      trackOutboundClick(
-                        outboundTarget,
-                        deal.id,
-                        deal.price,
-                        deal.currency
-                      );
-                      openExternalUrlInToss(outboundTarget, e);
-                    }}
                   >
-                    <div className="deal-image-wrapper">
-                      {deal.image_url ? (
-                        <img
-                          src={getProxyImageUrl(deal.image_url, { width: 400 })}
-                          alt={displayTitle}
-                          className="deal-image"
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          onError={(e) => {
-                            const fallback = getFallbackProxyImageUrl(
-                              deal.image_url
-                            );
-                            if (fallback && e.currentTarget.src !== fallback) {
-                              e.currentTarget.src = fallback;
-                            }
-                          }}
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: "var(--text-sub)",
-                            background: "var(--badge-bg)",
-                            fontSize: "0.8rem",
-                            fontWeight: 600,
-                          }}
-                        >
-                          이미지 없음
-                        </div>
-                      )}
-
-                      {isMultiDeal && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            bottom: "8px",
-                            left: "8px",
-                            background: "rgba(25, 31, 40, 0.78)",
-                            backdropFilter: "blur(6px)",
-                            color: "#FFFFFF",
-                            border: "1px solid rgba(255, 255, 255, 0.14)",
-                            padding: "3px 8px",
-                            borderRadius: "6px",
-                            fontSize: "0.72rem",
-                            fontWeight: 700,
-                            display: "inline-flex",
-                            alignItems: "center",
-                            zIndex: 2,
-                          }}
-                        >
-                          <span>
-                            {displayCount >= 2
-                              ? `${displayCount}종 옵션`
-                              : "옵션 상품"}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="deal-info">
-                      <div>
-                        <div className="deal-meta">
-                          {(() => {
-                            const badgeSources: DealSource[] =
-                              deal.sources && deal.sources.length > 0
-                                ? deal.sources
-                                : deal.community_name
-                                    .split(", ")
-                                    .map((cName) => ({
-                                      site_name: cName,
-                                      post_url: deal.post_link,
-                                    }));
-
-                            const uniqueBadgeSources: DealSource[] = [];
-                            badgeSources.forEach((src: DealSource) => {
-                              const nameClean = src.site_name
-                                ? src.site_name.replace(/ - .*$/, "").trim()
-                                : "";
-                              if (
-                                !uniqueBadgeSources.some(
-                                  (x: DealSource) =>
-                                    (x.site_name
-                                      ? x.site_name.replace(/ - .*$/, "").trim()
-                                      : "") === nameClean
-                                )
-                              ) {
-                                uniqueBadgeSources.push(src);
+                    {/* 1. 본문 클릭 영역 (비인터랙티브 자식만 포함 -> 상세 모달 오픈) */}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className="deal-card-body-trigger"
+                      aria-label={`${displayTitle} 상세 정보 보기`}
+                      onClick={() => setSelectedDeal(deal)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelectedDeal(deal);
+                        }
+                      }}
+                    >
+                      <div className="deal-image-wrapper">
+                        {deal.image_url ? (
+                          <img
+                            src={getProxyImageUrl(deal.image_url, { width: 400 })}
+                            alt={displayTitle}
+                            className="deal-image"
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              const fallback = getFallbackProxyImageUrl(
+                                deal.image_url
+                              );
+                              if (fallback && e.currentTarget.src !== fallback) {
+                                e.currentTarget.src = fallback;
                               }
-                            });
-
-                            return uniqueBadgeSources.map(
-                              (source: DealSource, idx: number) => {
-                                const displaySiteName = source.site_name
-                                  ? source.site_name.replace(/ - .*$/, "").trim()
-                                  : "";
-                                return (
-                                  <span
-                                    key={idx}
-                                    className="deal-source"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      const targetUrl =
-                                        source.post_url || deal.post_link;
-                                      if (targetUrl && targetUrl !== "#") {
-                                        const resolvedPostUrl =
-                                          resolveOutboundUrl(targetUrl);
-                                        if (
-                                          !openExternalUrlInToss(
-                                            resolvedPostUrl,
-                                            e
-                                          )
-                                        ) {
-                                          window.open(
-                                            resolvedPostUrl,
-                                            "_blank",
-                                            "noopener"
-                                          );
-                                        }
-                                      } else {
-                                        showToast(
-                                          "원본 게시글 주소를 찾지 못했어요"
-                                        );
-                                      }
-                                    }}
-                                    title={`${displaySiteName} 원본 글 보기`}
-                                    style={{
-                                      cursor: "pointer",
-                                      border:
-                                        "1px solid rgba(var(--accent-rgb), 0.18)",
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                    }}
-                                  >
-                                    {displaySiteName}
-                                  </span>
-                                );
-                              }
-                            );
-                          })()}
-                          {shopBadge && (
-                            <span
-                              style={{
-                                fontSize: "0.72rem",
-                                fontWeight: 700,
-                                color: "var(--text-main)",
-                                background: "var(--badge-bg)",
-                                border: "1px solid var(--card-border)",
-                                padding: "2px 7px",
-                                borderRadius: "5px",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                lineHeight: 1.3,
-                              }}
-                            >
-                              {shopBadge}
-                            </span>
-                          )}
-                          <span>·</span>
-                          <span>
-                            {getLiveTimeAgo(deal.originalDate, deal.scraped_at)}
-                          </span>
-                        </div>
-                        <h3 className="deal-title">
-                          <HighlightedTitle
-                            title={displayTitle}
-                            query={appliedSearch}
+                            }}
                           />
-                        </h3>
+                        ) : (
+                          <div
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "var(--text-sub)",
+                              background: "var(--badge-bg)",
+                              fontSize: "0.8rem",
+                              fontWeight: 600,
+                            }}
+                          >
+                            이미지 없음
+                          </div>
+                        )}
+
+                        {isMultiDeal && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              bottom: "8px",
+                              left: "8px",
+                              background: "rgba(25, 31, 40, 0.78)",
+                              backdropFilter: "blur(6px)",
+                              color: "#FFFFFF",
+                              border: "1px solid rgba(255, 255, 255, 0.14)",
+                              padding: "3px 8px",
+                              borderRadius: "6px",
+                              fontSize: "0.72rem",
+                              fontWeight: 700,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              zIndex: 2,
+                            }}
+                          >
+                            <span>
+                              {displayCount >= 2
+                                ? `${displayCount}종 옵션`
+                                : "옵션 상품"}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
+                      <h3 className="deal-title">
+                        <HighlightedTitle
+                          title={displayTitle}
+                          query={appliedSearch}
+                        />
+                      </h3>
+                    </div>
+
+                    {/* 2. 출처 링크 + 쇼핑몰 + 시간 메타 바 (본문 트리거의 형제 요소) */}
+                    <div className="deal-info">
+                      <div className="deal-meta">
+                        {uniqueBadgeSources.map(
+                          (source: DealSource, idx: number) => {
+                            const displaySiteName = source.site_name
+                              ? source.site_name.replace(/ - .*$/, "").trim()
+                              : "";
+                            const targetPostUrl = source.post_url || deal.post_link;
+                            const hasPostUrl = Boolean(
+                              targetPostUrl && targetPostUrl !== "#"
+                            );
+                            const resolvedPostUrl = hasPostUrl
+                              ? resolveOutboundUrl(targetPostUrl)
+                              : "#";
+                            return hasPostUrl ? (
+                              <a
+                                key={idx}
+                                href={resolvedPostUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="deal-source deal-source-link"
+                                title={`${displaySiteName} 원본 글 보기`}
+                                onClick={(e) => {
+                                  openExternalUrlInToss(resolvedPostUrl, e);
+                                }}
+                                style={{
+                                  border:
+                                    "1px solid rgba(var(--accent-rgb), 0.18)",
+                                }}
+                              >
+                                {displaySiteName}
+                              </a>
+                            ) : (
+                              <span key={idx} className="deal-source">
+                                {displaySiteName}
+                              </span>
+                            );
+                          }
+                        )}
+                        {shopBadge && (
+                          <span
+                            style={{
+                              fontSize: "0.72rem",
+                              fontWeight: 700,
+                              color: "var(--text-main)",
+                              background: "var(--badge-bg)",
+                              border: "1px solid var(--card-border)",
+                              padding: "2px 7px",
+                              borderRadius: "5px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            {shopBadge}
+                          </span>
+                        )}
+                        <span>·</span>
+                        <span>
+                          {getLiveTimeAgo(deal.originalDate, deal.scraped_at)}
+                        </span>
+                      </div>
+
+                      {/* 3. 가격 + 배지(중복 N종 옵션 배지 제거) + 찜/알림/공유 액션 */}
                       <div className="price-section">
                         <div
                           style={{
@@ -2513,7 +2810,9 @@ export default function Home() {
                           }}
                         >
                           <span className="deal-price">
-                            {formatPrice(deal.price, deal.currency, deal.title)}
+                            {deal.isFree
+                              ? "0원 (무료)"
+                              : formatPrice(deal.price, deal.currency, deal.title)}
                           </span>
                           {deal.isClosed ? (
                             <span
@@ -2526,33 +2825,17 @@ export default function Home() {
                               종료
                             </span>
                           ) : (
-                            <>
-                              {isMultiDeal && (
-                                <span
-                                  className="deal-tag"
-                                  style={{
-                                    background: "var(--badge-bg)",
-                                    color: "var(--text-sub)",
-                                    border: "1px solid var(--card-border)",
-                                  }}
-                                >
-                                  {displayCount >= 2
-                                    ? `${displayCount}종 옵션`
-                                    : "옵션 상품"}
-                                </span>
-                              )}
-                              {(deal.honeyScore || 0) >= 100 && (
-                                <span
-                                  className="deal-tag"
-                                  style={{
-                                    background: "var(--deal-orange-bg)",
-                                    color: "var(--deal-orange)",
-                                  }}
-                                >
-                                  인기
-                                </span>
-                              )}
-                            </>
+                            (deal.honeyScore || 0) >= 100 && (
+                              <span
+                                className="deal-tag"
+                                style={{
+                                  background: "var(--deal-orange-bg)",
+                                  color: "var(--deal-orange)",
+                                }}
+                              >
+                                인기
+                              </span>
+                            )
                           )}
                           {displayShipping && !deal.isClosed && (
                             <span
@@ -2645,19 +2928,55 @@ export default function Home() {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setSelectedDeal(deal);
-                        }}
-                        className="deal-card-detail-btn bounce-click"
-                      >
-                        <span>상세 조건 · 가격 추이 · 의견 보기</span>
-                      </button>
+                      {/* 4. 하단 독립 2버튼: 상세 보기 <button> + 독립 형제 <a> 바로구매 (44px+ 터치 타깃) */}
+                      <div className="deal-card-footer-actions">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDeal(deal)}
+                          className="deal-card-detail-btn bounce-click"
+                        >
+                          <span>상세 · 의견 보기</span>
+                        </button>
+                        <a
+                          href={outboundTarget}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-primary bounce-click deal-card-buy-link"
+                          aria-label={`${displayTitle} ${
+                            deal.isSearchFallback
+                              ? "쇼핑몰 검색 결과 보기"
+                              : "바로구매"
+                          } (새 창)`}
+                          onClick={(e) => {
+                            if (!outboundTarget || outboundTarget === "#") {
+                              e.preventDefault();
+                              showToast("이동할 수 있는 상품 주소를 찾지 못했어요");
+                              return;
+                            }
+                            if (!hasValidEcommerceLink) {
+                              showToast(
+                                "구매처 바로가기가 없어 원본 게시글로 이동해요"
+                              );
+                            }
+                            trackOutboundClick(
+                              outboundTarget,
+                              deal.id,
+                              deal.price,
+                              deal.currency
+                            );
+                            openExternalUrlInToss(outboundTarget, e);
+                          }}
+                        >
+                          <span>
+                            {deal.isSearchFallback
+                              ? "검색 결과 보기"
+                              : "바로구매"}
+                          </span>
+                          <ExternalLink size={14} aria-hidden="true" />
+                        </a>
+                      </div>
                     </div>
-                  </a>
+                  </article>
                 );
               })
             )}
@@ -2777,6 +3096,9 @@ export default function Home() {
         deal={selectedDeal}
         onClose={() => setSelectedDeal(null)}
         showToast={showToast}
+        onTargetAlertSaved={(dealId) => {
+          applyAlertAdd(dealId);
+        }}
       />
 
       <NotificationDrawer
@@ -2798,13 +3120,12 @@ export default function Home() {
         }}
         isLoggedIn={isLoggedIn}
         onLoginSimulate={handleLoginSimulate}
-        onNotify={showToast}
       />
 
       <LoginPromptModal
         isOpen={showLoginModal}
         onClose={() => setShowLoginModal(false)}
-        onNotify={showToast}
+        onActivateGuest={handleLoginSimulate}
       />
 
       <PrivacyModal

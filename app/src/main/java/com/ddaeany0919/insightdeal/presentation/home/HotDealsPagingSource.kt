@@ -2,6 +2,7 @@ package com.ddaeany0919.insightdeal.presentation.home
 
 import androidx.paging.PagingSource
 import androidx.paging.PagingState
+import com.ddaeany0919.insightdeal.models.CategoryCatalog
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.ApiService
 import kotlinx.coroutines.CancellationException
@@ -24,20 +25,27 @@ class HotDealsPagingSource(
                 platform == "빠삭" -> "빠삭국내,빠삭해외,빠삭육아"
                 else -> platform
             }
+            val resolvedCategory = if (category.isNullOrBlank() || category == "전체") {
+                null
+            } else {
+                CategoryCatalog.normalizeCategoryKey(category)
+            }
             val response = apiService.getCommunityHotDeals(
                 limit = limit,
                 offset = offset,
-                category = if (category == "전체") null else category,
+                category = resolvedCategory,
                 keyword = keyword,
                 platform = resolvedPlatform,
                 sort = sort
             )
             if (response.isSuccessful) {
-                val data = response.body()?.deals ?: emptyList()
+                val body = response.body()
+                val data = body?.deals ?: emptyList()
+                val hasMore = body?.hasMore ?: false
                 LoadResult.Page(
                     data = data,
-                    prevKey = if (offset == 0) null else offset - limit,
-                    nextKey = if (data.isEmpty() || data.size < limit) null else offset + limit
+                    prevKey = if (offset <= 0) null else (offset - limit).coerceAtLeast(0),
+                    nextKey = if (data.isEmpty() || !hasMore) null else offset + data.size
                 )
             } else {
                 LoadResult.Error(Exception("API Error: ${response.code()}"))

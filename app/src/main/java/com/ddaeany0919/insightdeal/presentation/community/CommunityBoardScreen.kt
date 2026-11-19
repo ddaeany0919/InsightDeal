@@ -37,20 +37,13 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
 import com.ddaeany0919.insightdeal.data.network.CommunityPostDto
-import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import com.ddaeany0919.insightdeal.presentation.bounceClick
 import com.ddaeany0919.insightdeal.presentation.decodeHtmlEntities
 import com.ddaeany0919.insightdeal.presentation.formatPrice
 import com.ddaeany0919.insightdeal.presentation.formatRelativeTime
-
-private val AccentOrange = Color(0xFFFF6B35)
-private val AccentOrangeSoft = Color(0xFFFFF0EB)
-private val NeutralGray50 = Color(0xFFF8F9FA)
-private val NeutralGray200 = Color(0xFFE9ECEF)
-private val NeutralGray500 = Color(0xFF868E96)
-private val NeutralGray700 = Color(0xFF495057)
-private val NeutralGray900 = Color(0xFF212529)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,10 +52,9 @@ fun CommunityBoardScreen(
     viewModel: CommunityBoardViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val currentUserId by AuthManager.getUsername(context).collectAsStateWithLifecycle(initialValue = "guest")
-    val isLoggedIn = currentUserId != "guest" && !currentUserId.isNullOrEmpty()
-    var showLoginIncentiveDialog by remember { mutableStateOf(false) }
+    val currentUserId = remember {
+        runCatching { LocalDataProvider.getDeviceUuid() }.getOrDefault("")
+    }
 
     LaunchedEffect(Unit) {
         viewModel.loadPosts()
@@ -85,11 +77,14 @@ fun CommunityBoardScreen(
                     )
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.loadPosts() }) {
+                    A11yIconButton(
+                        onClick = { viewModel.loadPosts() },
+                        contentDescription = "새로고침"
+                    ) {
                         Icon(
                             Icons.Default.Refresh,
-                            contentDescription = "새로고침",
-                            tint = NeutralGray500
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
@@ -101,11 +96,7 @@ fun CommunityBoardScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
-                    if (isLoggedIn) {
-                        navController?.navigate("community_write")
-                    } else {
-                        showLoginIncentiveDialog = true
-                    }
+                    navController?.navigate("community_write")
                 },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -140,7 +131,7 @@ fun CommunityBoardScreen(
                         Text(
                             "게시글을 불러오는 중이에요",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = NeutralGray500
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -152,7 +143,7 @@ fun CommunityBoardScreen(
                     ) {
                         Text(
                             text = state.message,
-                            color = NeutralGray500,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -180,7 +171,7 @@ fun CommunityBoardScreen(
                                     Icon(
                                         imageVector = Icons.Outlined.ThumbsUpDown,
                                         contentDescription = null,
-                                        tint = NeutralGray700,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(28.dp)
                                     )
                                 }
@@ -195,18 +186,15 @@ fun CommunityBoardScreen(
                             Text(
                                 "구매가 망설여지는 핫딜이 있다면 의견을 물어보세요.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = NeutralGray500
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             OutlinedButton(
                                 onClick = {
-                                    if (isLoggedIn) {
-                                        navController?.navigate("community_write")
-                                    } else {
-                                        showLoginIncentiveDialog = true
-                                    }
+                                    navController?.navigate("community_write")
                                 },
                                 shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.heightIn(min = 48.dp),
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                             ) {
                                 Text("첫 게시글 작성하기", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
@@ -220,13 +208,12 @@ fun CommunityBoardScreen(
                             items(items = state.posts, key = { it.id }, contentType = { "community_post_item" }) { post ->
                                 ShouldIBuyVoteCard(
                                     post = post,
-                                    currentUserId = currentUserId ?: "guest",
+                                    currentUserId = currentUserId,
                                     onEditClick = { navController?.navigate("community_edit/${post.id}") },
                                     onVoteSubmit = { viewModel.loadPosts(showLoading = false) },
                                     navController = navController,
                                     onClick = { navController?.navigate("community_detail/${post.id}") },
-                                    viewModel = viewModel,
-                                    onLoginRequired = { showLoginIncentiveDialog = true }
+                                    viewModel = viewModel
                                 )
                             }
                             item { Spacer(modifier = Modifier.height(80.dp)) }
@@ -235,38 +222,6 @@ fun CommunityBoardScreen(
                 }
             }
         }
-    }
-
-    if (showLoginIncentiveDialog) {
-        AlertDialog(
-            onDismissRequest = { showLoginIncentiveDialog = false },
-            title = {
-                Text("로그인이 필요해요", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
-            },
-            text = {
-                Text("커뮤니티 게시글 작성 및 투표 참여는 로그인 후 이용할 수 있어요.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showLoginIncentiveDialog = false
-                        navController?.navigate("auth")
-                    },
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Text("로그인하기", fontWeight = FontWeight.SemiBold, color = Color.White)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showLoginIncentiveDialog = false }
-                ) {
-                    Text("닫기", color = NeutralGray500)
-                }
-            },
-            shape = RoundedCornerShape(18.dp)
-        )
     }
 }
 
@@ -278,8 +233,7 @@ fun ShouldIBuyVoteCard(
     onVoteSubmit: () -> Unit,
     navController: NavController? = null,
     onClick: (() -> Unit)? = null,
-    viewModel: CommunityBoardViewModel,
-    onLoginRequired: (() -> Unit)? = null
+    viewModel: CommunityBoardViewModel
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -360,19 +314,23 @@ fun ShouldIBuyVoteCard(
                     modifier = Modifier.weight(1f).padding(end = 8.dp)
                 )
 
-                if (currentUserId != "guest" && post.userId == currentUserId) {
-                    Surface(
+                if (currentUserId.isNotBlank() && post.userId == currentUserId) {
+                    A11yIconButton(
                         onClick = onEditClick,
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        shape = CircleShape,
-                        modifier = Modifier.size(26.dp)
+                        contentDescription = "수정"
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
                                 Icons.Default.Edit,
-                                contentDescription = "수정",
-                                tint = NeutralGray500,
-                                modifier = Modifier.size(13.dp)
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
                             )
                         }
                     }
@@ -434,13 +392,13 @@ fun ShouldIBuyVoteCard(
                                 modifier = Modifier
                                     .size(28.dp)
                                     .clip(RoundedCornerShape(6.dp))
-                                    .background(NeutralGray50)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
                             )
                         } else {
                             Icon(
                                 imageVector = Icons.Outlined.ShoppingCart,
                                 contentDescription = null,
-                                tint = NeutralGray500,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(15.dp)
                             )
                         }
@@ -470,7 +428,7 @@ fun ShouldIBuyVoteCard(
                             text = formatPrice(deal.price, deal.currency, cleanDealTitle),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = Color(0xFFFF5A26)
+                            color = MaterialTheme.colorScheme.secondary
                         )
                     }
                 }
@@ -488,7 +446,7 @@ fun ShouldIBuyVoteCard(
                         Text(
                             text = "살까 ${"%.0f".format(buyRatio * 100)}% (${post.bountyPoints})",
                             fontWeight = FontWeight.SemiBold,
-                            color = if (buyRatio >= skipRatio) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (buyRatio >= skipRatio) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
                         )
                         Text(
@@ -510,7 +468,7 @@ fun ShouldIBuyVoteCard(
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .fillMaxWidth(animatedProgress)
-                                .background(AccentOrange)
+                                .background(MaterialTheme.colorScheme.secondary)
                         )
                     }
                     Spacer(modifier = Modifier.height(10.dp))
@@ -527,10 +485,6 @@ fun ShouldIBuyVoteCard(
                 OutlinedButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        if (currentUserId == "guest" || currentUserId.isBlank()) {
-                            if (onLoginRequired != null) onLoginRequired() else navController?.navigate("auth")
-                            return@OutlinedButton
-                        }
                         if (isBuySelected) {
                             viewModel.cancelVotePost(post, "BUY") {
                                 userVote = null
@@ -544,22 +498,24 @@ fun ShouldIBuyVoteCard(
                         }
                     },
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isBuySelected) AccentOrange.copy(alpha = 0.14f) else Color.Transparent,
-                        contentColor = if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant
+                        containerColor = if (isBuySelected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f) else Color.Transparent,
+                        contentColor = if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
                     ),
                     border = BorderStroke(
                         1.dp,
-                        if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.outlineVariant
+                        if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outlineVariant
                     ),
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(vertical = 8.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Icon(
                             imageVector = Icons.Default.ThumbUp,
                             contentDescription = null,
-                            tint = if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
                                 .size(14.dp)
                                 .graphicsLayer {
@@ -570,7 +526,7 @@ fun ShouldIBuyVoteCard(
                         )
                         Text(
                             text = if (post.bountyPoints > 0) "살까 ${post.bountyPoints}" else "살까",
-                            color = if (isBuySelected) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = if (isBuySelected) FontWeight.Bold else FontWeight.Medium,
                             fontSize = 13.sp
                         )
@@ -580,10 +536,6 @@ fun ShouldIBuyVoteCard(
                 OutlinedButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        if (currentUserId == "guest" || currentUserId.isBlank()) {
-                            if (onLoginRequired != null) onLoginRequired() else navController?.navigate("auth")
-                            return@OutlinedButton
-                        }
                         if (isSkipSelected) {
                             viewModel.cancelVotePost(post, "SKIP") {
                                 userVote = null
@@ -606,7 +558,9 @@ fun ShouldIBuyVoteCard(
                     ),
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(vertical = 8.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Icon(
@@ -641,7 +595,7 @@ fun ShouldIBuyVoteCard(
                 Text(
                     text = "${post.nickname ?: "익명"} · ${formatRelativeTime(post.createdAt.orEmpty())}",
                     fontSize = 11.sp,
-                    color = NeutralGray500
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -650,13 +604,13 @@ fun ShouldIBuyVoteCard(
                             Icons.Outlined.Visibility,
                             contentDescription = "조회수",
                             modifier = Modifier.size(13.dp),
-                            tint = NeutralGray500
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
                             text = "${post.viewCount}",
                             fontSize = 11.sp,
-                            color = NeutralGray500
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -664,13 +618,13 @@ fun ShouldIBuyVoteCard(
                             Icons.Outlined.ChatBubbleOutline,
                             contentDescription = "댓글",
                             modifier = Modifier.size(13.dp),
-                            tint = NeutralGray500
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
                             text = "${post.commentCount}",
                             fontSize = 11.sp,
-                            color = NeutralGray500,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Medium
                         )
                     }

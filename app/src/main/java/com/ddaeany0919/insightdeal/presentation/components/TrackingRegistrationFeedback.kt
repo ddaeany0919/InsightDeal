@@ -51,12 +51,15 @@ fun TrackingRegistrationFeedback(
         modifier = modifier
     ) {
         result?.let { trackingResult ->
+            val feedbackBg = Color(0xFF1B7A37)
+            val feedbackInk = Color(0xFFF9FAFB)
+
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
                 shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF4CAF50).copy(alpha = 0.95f),
+                color = feedbackBg,
                 shadowElevation = 8.dp
             ) {
                 Column(
@@ -70,35 +73,35 @@ fun TrackingRegistrationFeedback(
                         Icons.Default.CheckCircle,
                         contentDescription = null,
                         modifier = Modifier.size(48.dp),
-                        tint = Color.White
+                        tint = feedbackInk
                     )
-                    
+
                     Spacer(modifier = Modifier.height(12.dp))
-                    
+
                     // 메인 메시지
                     Text(
                         text = "가격 추적을 시작했어요",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = feedbackInk
                     )
-                    
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     // 상세 설명
                     Text(
-                        text = "5분마다 가격 확인하여\n목표가 도달 시 즐시 알림해드립니다",
+                        text = "5분마다 가격 확인하여\n목표가 도달 시 즉시 알림해드립니다",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.9f),
+                        color = feedbackInk.copy(alpha = 0.92f),
                         lineHeight = 20.sp
                     )
-                    
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    
+
                     // 첫 확인 예정 시각
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = Color.White.copy(alpha = 0.2f),
+                        color = feedbackInk.copy(alpha = 0.16f),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Row(
@@ -111,38 +114,38 @@ fun TrackingRegistrationFeedback(
                                 Icons.Default.Schedule,
                                 contentDescription = null,
                                 modifier = Modifier.size(20.dp),
-                                tint = Color.White
+                                tint = feedbackInk
                             )
-                            
+
                             Spacer(modifier = Modifier.width(8.dp))
-                            
+
                             Column {
                                 Text(
                                     text = "첫 확인 예정: ${trackingResult.estimatedNextCheck}",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = Color.White,
+                                    color = feedbackInk,
                                     fontWeight = FontWeight.Medium
                                 )
-                                
+
                                 if (trackingResult.currentPrice != null && trackingResult.targetPrice != null) {
                                     val diffMessage = if (trackingResult.currentPrice > trackingResult.targetPrice) {
                                         "현재 ${String.format("%,d", trackingResult.currentPrice - trackingResult.targetPrice)}원 높음"
                                     } else {
                                         "목표가 달성! 바로 알림"
                                     }
-                                    
+
                                     Text(
                                         text = diffMessage,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color.White.copy(alpha = 0.8f)
+                                        color = feedbackInk.copy(alpha = 0.88f)
                                     )
                                 }
                             }
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.height(20.dp))
-                    
+
                     // 액션 버튼들
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -151,10 +154,12 @@ fun TrackingRegistrationFeedback(
                         // 워치리스트로 이동
                         Button(
                             onClick = onGoToWatchlist,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color.White,
-                                contentColor = Color(0xFF4CAF50)
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                contentColor = MaterialTheme.colorScheme.primary
                             )
                         ) {
                             Text(
@@ -162,13 +167,15 @@ fun TrackingRegistrationFeedback(
                                 fontWeight = FontWeight.Medium
                             )
                         }
-                        
+
                         // 닫기
                         OutlinedButton(
                             onClick = onDismiss,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = Color.White
+                                contentColor = feedbackInk
                             )
                         ) {
                             Text(
@@ -177,14 +184,14 @@ fun TrackingRegistrationFeedback(
                             )
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     // 추가 안내
                     Text(
                         text = "목표가에 도달하면 푸시 알림으로 알려드려요",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.7f)
+                        color = feedbackInk.copy(alpha = 0.88f)
                     )
                 }
             }

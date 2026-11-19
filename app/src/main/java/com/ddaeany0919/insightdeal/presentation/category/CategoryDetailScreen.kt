@@ -15,11 +15,13 @@ import androidx.navigation.NavController
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
-import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
-import com.ddaeany0919.insightdeal.presentation.home.DealCardComposable
+import com.ddaeany0919.insightdeal.models.CategoryCatalog
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
+import com.ddaeany0919.insightdeal.presentation.EmptyFeedState
 import com.ddaeany0919.insightdeal.presentation.LoadingFeed
 import com.ddaeany0919.insightdeal.presentation.OfflineErrorState
-import com.ddaeany0919.insightdeal.presentation.EmptyFeedState
+import com.ddaeany0919.insightdeal.presentation.home.DealCardComposable
+import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,8 +30,15 @@ fun CategoryDetailScreen(
     viewModel: HomeViewModel,
     navController: NavController
 ) {
-    LaunchedEffect(categoryName) {
-        viewModel.selectCategory(categoryName)
+    val normalizedCategoryKey = remember(categoryName) {
+        CategoryCatalog.normalizeCategoryKey(categoryName)
+    }
+    val displayLabel = remember(normalizedCategoryKey) {
+        CategoryCatalog.getDisplayLabel(normalizedCategoryKey)
+    }
+
+    LaunchedEffect(normalizedCategoryKey) {
+        viewModel.selectCategory(normalizedCategoryKey)
     }
 
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -40,15 +49,18 @@ fun CategoryDetailScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = categoryName,
+                        text = displayLabel,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         letterSpacing = (-0.3).sp
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
+                    A11yIconButton(
+                        onClick = { navController.popBackStack() },
+                        contentDescription = "뒤로가기"
+                    ) {
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -71,7 +83,7 @@ fun CategoryDetailScreen(
                 }
                 refreshState is LoadState.Error -> {
                     OfflineErrorState(
-                        message = "상품 목록을 불러오지 못했습니다.",
+                        message = "핫딜 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.",
                         onRetry = { dealsPagingItems.retry() }
                     )
                 }
@@ -117,15 +129,52 @@ fun CategoryDetailScreen(
                             }
                         }
 
-                        if (dealsPagingItems.loadState.append is LoadState.Loading) {
-                            item(key = "append_loading", contentType = "loading") {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                        val appendState = dealsPagingItems.loadState.append
+                        when {
+                            appendState is LoadState.Loading -> {
+                                item(key = "append_loading", contentType = "loading") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                                    }
+                                }
+                            }
+                            appendState is LoadState.Error -> {
+                                item(key = "append_error", contentType = "error") {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { dealsPagingItems.retry() },
+                                            modifier = Modifier.heightIn(min = 48.dp)
+                                        ) {
+                                            Text("더 불러오기 다시 시도")
+                                        }
+                                    }
+                                }
+                            }
+                            appendState is LoadState.NotLoading && appendState.endOfPaginationReached && dealsPagingItems.itemCount > 0 -> {
+                                item(key = "append_end", contentType = "footer") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 12.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "모든 핫딜을 불러왔어요",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }

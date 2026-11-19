@@ -1,18 +1,17 @@
 package com.ddaeany0919.insightdeal.presentation.components
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -23,10 +22,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import java.time.format.DateTimeFormatter
-import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
+import com.ddaeany0919.insightdeal.presentation.formatPrice
+import com.ddaeany0919.insightdeal.presentation.theme.LocalIsDarkTheme
 import com.ddaeany0919.insightdeal.presentation.wishlist.PriceCheckResponse
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
+import java.time.format.DateTimeFormatter
 
 enum class WishlistCardStyle {
     SIMPLE, DETAILED
@@ -47,7 +48,7 @@ fun StandardWishlistCard(
     priceHistory: com.ddaeany0919.insightdeal.data.PriceHistory? = null
 ) {
     val context = LocalContext.current
-    val isDark = MaterialTheme.colorScheme.background.red < 0.2f
+    val isDark = LocalIsDarkTheme.current
 
     Card(
         modifier = Modifier
@@ -57,12 +58,11 @@ fun StandardWishlistCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = BorderStroke(1.dp, if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E7EB)),
         colors = CardDefaults.cardColors(
-            containerColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f) else Color(0xFFF2F4F7)
+            containerColor = if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant
         ),
         shape = RoundedCornerShape(18.dp)
     ) {
         Column(Modifier.padding(20.dp)) {
-            // Header: Title & Badges
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -95,13 +95,13 @@ fun StandardWishlistCard(
                     }
                 }
                 if (style == WishlistCardStyle.DETAILED) {
-                    IconButton(
+                    A11yIconButton(
                         onClick = { onExpand?.invoke() },
-                        modifier = Modifier.size(28.dp)
+                        contentDescription = "상세 펼치기"
                     ) {
                         Icon(
                             imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Expand",
+                            contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -110,7 +110,6 @@ fun StandardWishlistCard(
 
             Spacer(Modifier.height(16.dp))
 
-            // Price Section
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom
@@ -118,10 +117,10 @@ fun StandardWishlistCard(
                 val displayPrice = checkResult?.currentPrice ?: item.currentLowestPrice ?: item.targetPrice
                 if (displayPrice > 0) {
                     Text(
-                        text = com.ddaeany0919.insightdeal.presentation.formatPrice(displayPrice.toLong(), null, item.keyword),
+                        text = formatPrice(displayPrice.toLong(), null, item.keyword),
                         fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = Color(0xFF3182F6)
+                        color = MaterialTheme.colorScheme.primary
                     )
                 } else {
                     Text(
@@ -137,30 +136,34 @@ fun StandardWishlistCard(
             HorizontalDivider(color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E7EB), thickness = 1.dp)
             Spacer(Modifier.height(12.dp))
 
-            // Add Buy Button for Simple Mode if result exists
             if (style == WishlistCardStyle.SIMPLE && !checkResult?.productUrl.isNullOrBlank()) {
                 Button(
                     onClick = {
                         try {
                             val url = checkResult?.productUrl ?: ""
                             if (url.startsWith("http://") || url.startsWith("https://")) {
-
-
-
-
                                 com.ddaeany0919.insightdeal.utils.CustomTabLauncher.launchShoppingUrl(context, url)
                             }
                         } catch (_: Exception) {}
                     },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3182F6))
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 ) {
-                    Text(text = "구매 바로가기", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(
+                        text = "구매 바로가기",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
             }
 
-            // Footer actions (Refresh & Delete)
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -180,9 +183,10 @@ fun StandardWishlistCard(
                     if (style == WishlistCardStyle.SIMPLE) {
                         OutlinedButton(
                             onClick = { onCheckPrice?.invoke() },
+                            modifier = Modifier.heightIn(min = 48.dp),
                             shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, Color(0xFF3182F6)),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF3182F6))
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
@@ -190,9 +194,10 @@ fun StandardWishlistCard(
                         }
                         OutlinedButton(
                             onClick = { onDelete?.invoke() },
+                            modifier = Modifier.heightIn(min = 48.dp),
                             shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, Color(0xFFF04438)),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF04438))
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
@@ -203,7 +208,7 @@ fun StandardWishlistCard(
                             onClick = { onCheckPrice?.invoke() },
                             enabled = !item.isLoading,
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(48.dp)
                                 .background(Color.Transparent)
                                 .border(
                                     BorderStroke(1.dp, if (isDark) Color(0xFF3A3A3C) else Color(0xFFE5E7EB)),
@@ -211,25 +216,24 @@ fun StandardWishlistCard(
                                 )
                         ) {
                             if (item.isLoading) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color(0xFF3182F6), modifier = Modifier.size(20.dp))
+                            else Icon(Icons.Default.Refresh, contentDescription = "가격 확인", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                         }
                         IconButton(
                             onClick = { onDelete?.invoke() },
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(48.dp)
                                 .background(Color.Transparent)
                                 .border(
                                     BorderStroke(1.dp, if (isDark) Color(0xFF3A3A3C) else Color(0xFFE5E7EB)),
                                     RoundedCornerShape(10.dp)
                                 )
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFF04438), modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Delete, contentDescription = "삭제", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                         }
                     }
                 }
             }
 
-            // Expanded Graph View for Detailed Mode
             AnimatedVisibility(visible = isExpanded && style == WishlistCardStyle.DETAILED) {
                 Column {
                     Spacer(Modifier.height(16.dp))
@@ -237,11 +241,11 @@ fun StandardWishlistCard(
                         "가격 변동 추이 (30일)",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF3182F6)
+                        color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(Modifier.height(8.dp))
                     if (priceHistory != null && priceHistory.dataPoints.isNotEmpty()) {
-                        com.ddaeany0919.insightdeal.presentation.components.PriceHistoryGraph(
+                        PriceHistoryGraph(
                             dataPoints = priceHistory.dataPoints,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -253,7 +257,7 @@ fun StandardWishlistCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(120.dp)
-                                .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFF2F4F7), RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
                                 .padding(8.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -266,4 +270,3 @@ fun StandardWishlistCard(
         }
     }
 }
-

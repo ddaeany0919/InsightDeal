@@ -37,10 +37,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
 import com.ddaeany0919.insightdeal.data.network.CommunityPostCreateReq
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.NetworkModule
-import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -237,8 +238,12 @@ fun WritePostScreen(
     viewModel: WritePostViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val context = LocalContext.current
-    val userId by AuthManager.getUsername(context).collectAsState(initial = "guest")
-    val nickname by AuthManager.getNickname(context).collectAsState(initial = "익명")
+    val userId = remember {
+        runCatching { LocalDataProvider.getDeviceUuid() }.getOrDefault("")
+    }
+    val nickname = remember(userId) {
+        if (userId.isNotBlank()) "회원_${userId.takeLast(4)}" else "익명"
+    }
 
     val isSubmitting by viewModel.isSubmitting.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -275,8 +280,11 @@ fun WritePostScreen(
             TopAppBar(
                 title = { Text(if (postId == null) "구매 투표 올리기" else "게시글 수정", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = { navController?.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로 가기")
+                    A11yIconButton(
+                        onClick = { navController?.popBackStack() },
+                        contentDescription = "뒤로 가기"
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
                 },
                 actions = {
@@ -284,8 +292,8 @@ fun WritePostScreen(
                         onClick = {
                             viewModel.submitPost(
                                 postId = postId,
-                                userId = userId ?: "guest",
-                                nickname = nickname ?: "익명"
+                                userId = userId,
+                                nickname = nickname
                             )
                         },
                         enabled = title.isNotBlank() && content.isNotBlank() && !isSubmitting && !isLoading,
@@ -400,13 +408,13 @@ fun WritePostScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
-                            IconButton(
+                            A11yIconButton(
                                 onClick = { viewModel.setSelectedDeal(null) },
-                                modifier = Modifier.size(24.dp)
+                                contentDescription = "연동 해제"
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
-                                    contentDescription = "연동 해제",
+                                    contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(16.dp)
                                 )

@@ -18,9 +18,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
 import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.network.UserCommentDto
-import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import com.ddaeany0919.insightdeal.presentation.formatRelativeTime
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,13 +63,16 @@ fun MyCommentsScreen(
     navController: NavController? = null,
     onBack: () -> Unit
 ) {
-    val context = LocalContext.current
-    val currentUserId by AuthManager.getUsername(context).collectAsState(initial = "guest")
+    val currentUserId = remember {
+        runCatching { LocalDataProvider.getDeviceUuid() }.getOrDefault("")
+    }
     val viewModel: MyCommentsViewModel = viewModel()
     val uiState by viewModel.uiState.collectAsState()
 
     LaunchedEffect(currentUserId) {
-        viewModel.loadComments(currentUserId ?: "guest")
+        if (currentUserId.isNotBlank()) {
+            viewModel.loadComments(currentUserId)
+        }
     }
 
     Scaffold(
@@ -76,8 +80,8 @@ fun MyCommentsScreen(
             TopAppBar(
                 title = { Text("작성한 댓글", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
+                    A11yIconButton(onClick = onBack, contentDescription = "뒤로가기") {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
                 }
             )

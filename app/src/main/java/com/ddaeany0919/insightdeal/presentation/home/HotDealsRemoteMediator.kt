@@ -8,6 +8,8 @@ import androidx.room.withTransaction
 import com.ddaeany0919.insightdeal.local.db.AppDatabase
 import com.ddaeany0919.insightdeal.local.db.DealEntity
 import com.ddaeany0919.insightdeal.local.db.DealRemoteKeysEntity
+import com.ddaeany0919.insightdeal.models.CategoryCatalog
+import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.ApiService
 import kotlinx.coroutines.CancellationException
 import retrofit2.HttpException
@@ -47,11 +49,16 @@ class HotDealsRemoteMediator(
 
             val limit = state.config.pageSize
             val resolvedPlatform = normalizePlatformQuery(platform)
+            val resolvedCategory = if (category.isNullOrBlank() || category == "전체") {
+                null
+            } else {
+                CategoryCatalog.normalizeCategoryKey(category)
+            }
 
             val response = apiService.getCommunityHotDeals(
                 limit = limit,
                 offset = offset,
-                category = if (category == "전체") null else category,
+                category = resolvedCategory,
                 keyword = if (keyword.isNullOrBlank()) null else keyword,
                 platform = resolvedPlatform,
                 sort = sort
@@ -60,7 +67,8 @@ class HotDealsRemoteMediator(
             if (response.isSuccessful) {
                 val responseBody = response.body()
                 val deals = responseBody?.deals ?: emptyList()
-                val endOfPaginationReached = deals.isEmpty() || deals.size < limit
+                val hasMore = responseBody?.hasMore ?: false
+                val endOfPaginationReached = deals.isEmpty() || !hasMore
 
                 database.withTransaction {
                     if (loadType == LoadType.REFRESH) {
@@ -68,7 +76,7 @@ class HotDealsRemoteMediator(
                         database.dealDao().clearAllDeals()
                     }
 
-                    val prevKey = if (offset == 0) null else offset - limit
+                    val prevKey = if (offset <= 0) null else (offset - limit).coerceAtLeast(0)
                     val nextKey = if (endOfPaginationReached) null else offset + deals.size
 
                     val keys = deals.map { deal ->
@@ -80,7 +88,7 @@ class HotDealsRemoteMediator(
                     }
 
                     database.dealRemoteKeysDao().insertAll(keys)
-                    database.dealDao().insertAll(deals.map { DealEntity.fromDealItem(it) })
+                    database.dealDao().insertAll(deals.map { toCachedEntityForCategory(it, resolvedCategory) })
                 }
 
                 MediatorResult.Success(endOfPaginationReached = endOfPaginationReached)
@@ -93,6 +101,28 @@ class HotDealsRemoteMediator(
             MediatorResult.Error(e)
         } catch (e: Exception) {
             MediatorResult.Error(e)
+        }
+    }
+
+    companion object {
+        internal fun toCachedEntityForCategory(deal: DealItem, resolvedCategory: String?): DealEntity {
+            val baseEntity = DealEntity.fromDealItem(deal)
+            if (resolvedCategory.isNullOrBlank() || resolvedCategory == "전체" || resolvedCategory == "핫딜모음") {
+                return baseEntity
+            }
+            val alreadyMatchedByLocalSql = CategoryCatalog.matchesDealCategory(
+                title = baseEntity.title,
+                category = baseEntity.category,
+                siteName = baseEntity.siteName,
+                siteNames = baseEntity.siteNames,
+                honeyScore = baseEntity.honeyScore,
+                targetCategory = resolvedCategory
+            )
+            return if (alreadyMatchedByLocalSql) {
+                baseEntity
+            } else {
+                baseEntity.copy(category = resolvedCategory)
+            }
         }
     }
 

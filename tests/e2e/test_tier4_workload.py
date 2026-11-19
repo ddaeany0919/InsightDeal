@@ -152,11 +152,17 @@ class TestTier4RealWorkloadScenarios:
         assert "제닉스 게이밍 의자" in final_deal.content_html
 
         # API 엔드포인트 조회 검증
+        from backend.routers.community import clean_deal_title
+
         api_resp = client.get(f"/api/community/deals/{deal_id}")
         assert api_resp.status_code == 200
         resp_data = api_resp.json()
-        assert resp_data["title"] == final_deal.title
+        assert resp_data["title"] == clean_deal_title(final_deal.title)
+        assert resp_data["title"] == "[네이버] 제닉스 아레나 게이밍 체어"
         assert resp_data["price"] == 120000
+        assert resp_data["has_options"] is True
+        assert resp_data["is_search_fallback"] is False
+        assert resp_data["is_free"] is False
 
     # -------------------------------------------------------------------------
     # 시나리오 3: 다중 옵션 모음전 핫딜의 수집 -> 웹/앱 공통 계약 서빙 E2E

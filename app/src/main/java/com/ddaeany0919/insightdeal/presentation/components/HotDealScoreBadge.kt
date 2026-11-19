@@ -42,9 +42,11 @@ fun HotDealScoreBadge(
         label = "badgeColor"
     )
     
+    val badgeInk = Color(0xFFF9FAFB)
+
     Surface(
         modifier = modifier.clip(RoundedCornerShape(20.dp)),
-        color = badgeColor.copy(alpha = 0.9f),
+        color = badgeColor,
         shadowElevation = 4.dp
     ) {
         Row(
@@ -60,7 +62,7 @@ fun HotDealScoreBadge(
                 text = "${score.score}",
                 fontSize = if (showDetails) 16.sp else 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = badgeInk
             )
             
             if (showDetails) {
@@ -69,7 +71,7 @@ fun HotDealScoreBadge(
                 Text(
                     text = "점",
                     fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.9f)
+                    color = badgeInk.copy(alpha = 0.92f)
                 )
                 
                 Spacer(modifier = Modifier.width(6.dp))
@@ -89,7 +91,7 @@ fun HotDealScoreBadge(
                     text = badge.text,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color.White
+                    color = badgeInk
                 )
             }
         }
@@ -261,7 +263,7 @@ fun InlineScoreBadge(
                 text = "$score",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = Color(0xFFF9FAFB)
             )
         }
     }

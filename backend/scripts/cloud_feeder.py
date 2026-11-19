@@ -308,6 +308,7 @@ async def scrape_and_push_once():
     _rotate_cron_log_if_needed()
     from datetime import datetime, timedelta, timezone
     from backend.core.url_utils import normalize_url
+    from backend.scrapers.base_scraper import build_scraper_relay_headers
     from backend.scrapers.ppomppu_scraper import PpomppuScraper
     from backend.scrapers.ppomppu_overseas_scraper import PpomppuOverseasScraper
     from backend.scrapers.alippomppu_scraper import AlippomppuScraper
@@ -360,7 +361,10 @@ async def scrape_and_push_once():
                             rss_target = f"https://www.ppomppu.co.kr/rss.php?id={board_id}"
                             rss_relay_url = f"https://insightdeal.vercel.app/api/scraper-relay?url={urllib.parse.quote(rss_target, safe='')}"
                             try:
-                                res = await http_client.get(rss_relay_url, timeout=10.0)
+                                rss_headers = build_scraper_relay_headers(rss_target)
+                                res = await http_client.get(rss_relay_url, headers=rss_headers or None, timeout=10.0)
+                                if res.status_code in (401, 403, 503):
+                                    logger.warning(f"⚠️ [{display_name}] 클라우드 RSS 릴레이 인증/설정 오류 (HTTP {res.status_code})")
                                 if res.status_code == 200 and "<item>" in res.text:
                                     rss_items = await sc.parse_list(res.text)
                                     if rss_items:

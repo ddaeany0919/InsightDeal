@@ -73,8 +73,8 @@ fun WishlistSwipeToDismiss(
         backgroundContent = {
             val active = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart || dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd
             val color = if (active) {
-                Log.d(TAG, "배경 활성 상태 - 빨간색 삭제 배경 표시")
-                Color(0xFFB00020)
+                Log.d(TAG, "배경 활성 상태 - 삭제 배경 표시")
+                MaterialTheme.colorScheme.errorContainer
             } else {
                 MaterialTheme.colorScheme.surfaceVariant
             }
@@ -86,7 +86,11 @@ fun WishlistSwipeToDismiss(
                     .padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.Delete, contentDescription = "삭제", tint = Color.White)
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = "삭제",
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
             }
         },
         content = { 

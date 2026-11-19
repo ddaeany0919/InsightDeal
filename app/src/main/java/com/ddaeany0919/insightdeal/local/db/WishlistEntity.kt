@@ -12,6 +12,7 @@ import java.time.LocalDateTime
 data class WishlistEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
+    val serverWishlistId: Int? = null,
     val keyword: String,
     val productUrl: String,
     val targetPrice: Int,

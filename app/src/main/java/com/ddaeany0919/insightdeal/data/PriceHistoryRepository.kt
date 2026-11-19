@@ -1,11 +1,10 @@
 package com.ddaeany0919.insightdeal.data
 
 import android.util.Log
+import com.ddaeany0919.insightdeal.network.NetworkModule
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import retrofit2.Response
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -67,10 +66,10 @@ data class ApiHistoryResponse(
 )
 
 data class ApiPricePoint(
-    @com.google.gson.annotations.SerializedName("date") val date: String = "",
+    @com.google.gson.annotations.SerializedName(value = "date", alternate = ["tracked_at", "trackedAt"]) val date: String = "",
     @com.google.gson.annotations.SerializedName("price") val price: Int = 0,
-    @com.google.gson.annotations.SerializedName("platform") val platform: String = "",
-    @com.google.gson.annotations.SerializedName("is_available") val is_available: Boolean = true
+    @com.google.gson.annotations.SerializedName("platform") val platform: String? = null,
+    @com.google.gson.annotations.SerializedName(value = "is_available", alternate = ["isAvailable"]) val is_available: Boolean = true
 )
 
 /**
@@ -104,14 +103,8 @@ class PriceHistoryRepository {
     val historyState: StateFlow<HistoryState> = _historyState.asStateFlow()
 
     init {
-        // 사용자 응답속도 최우선 Retrofit 설정
-        val retrofit = Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-
-        api = retrofit.create(PriceHistoryApi::class.java)
-        Log.i(TAG, "📈 PriceHistoryRepository 초기화 - 90일 히스토리 준비 완료")
+        api = NetworkModule.createService<PriceHistoryApi>()
+        Log.i(TAG, "📈 PriceHistoryRepository 초기화 - NetworkModule 통합 90일 히스토리 준비 완료")
     }
 
     /**
@@ -194,7 +187,7 @@ class PriceHistoryRepository {
             PricePoint(
                 date = point.date,
                 price = point.price,
-                platform = point.platform,
+                platform = point.platform ?: "",
                 isAvailable = point.is_available
             )
         }

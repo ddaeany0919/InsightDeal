@@ -500,15 +500,15 @@ def test_history_api_heals_pollution_supports_period_all_kst_iso_and_currency(au
     assert len(hist_7d) == 1
     assert hist_7d[0]["price"] == 1253
     assert hist_7d[0]["currency"] == "USD"
-    # UTC 04:10 -> KST 13:10 변환 검증
+    # UTC 04:10 -> KST 13:10 차트 라벨 변환 검증, timestamp는 UTC Z ISO-8601
     assert hist_7d[0]["recordedAt"].startswith("11.11 13:1")
     assert "T" in hist_7d[0]["timestamp"] and " " not in hist_7d[0]["timestamp"]
-    assert hist_7d[0]["timestamp"].endswith("+09:00")
+    assert hist_7d[0]["timestamp"].endswith("Z")
 
     hist_all = _compute_deal_history(501, "all", audit_db)
     assert [p["price"] for p in hist_all] == [1917, 1253]
     assert all(p["currency"] == "USD" for p in hist_all)
-    assert all("T" in p["timestamp"] and p["timestamp"].endswith("+09:00") for p in hist_all)
+    assert all("T" in p["timestamp"] and p["timestamp"].endswith("Z") for p in hist_all)
 
 
 def test_history_cross_currency_isolation_and_uniform_date_format(audit_db):
@@ -586,9 +586,9 @@ def test_history_cross_currency_isolation_and_uniform_date_format(audit_db):
         assert hist_cny[0]["price"] == 18900
         assert hist_cny[0]["currency"] == "CNY"
 
-        # 상세 API의 indexed_at도 KST(+09:00) ISO-8601('T' 구분자) 포맷이어야 함
+        # 상세 API의 indexed_at도 UTC ISO-8601('T' 구분자, 'Z' 접미사) 포맷이어야 함
         det = client.get("/api/community/deals/19198").json()
-        assert "T" in det["indexed_at"] and det["indexed_at"].endswith("+09:00")
+        assert "T" in det["indexed_at"] and det["indexed_at"].endswith("Z")
     finally:
         app.dependency_overrides.clear()
 

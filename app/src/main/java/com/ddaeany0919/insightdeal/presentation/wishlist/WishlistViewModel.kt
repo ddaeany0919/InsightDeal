@@ -1,7 +1,11 @@
 package com.ddaeany0919.insightdeal.presentation.wishlist
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
 import com.ddaeany0919.insightdeal.presentation.wishlist.model.Period
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,9 +16,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalDateTime
-import android.util.Log
-import androidx.paging.PagingData
-import androidx.paging.cachedIn
 import kotlinx.coroutines.flow.Flow
 
 sealed class WishlistUiState {
@@ -88,8 +89,11 @@ class WishlistViewModel(
     fun checkPrice(item: WishlistItem) {
         viewModelScope.launch {
             try {
-                val userId = userIdProvider()
-                val priceResponse = wishlistRepository.checkPrice(item.id, userId)
+                val userId = runCatching { userIdProvider() }
+                    .getOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: LocalDataProvider.getDeviceUuid()
+                val priceResponse = wishlistRepository.checkPrice(item.id, userId) ?: return@launch
 
                 val updatedItem = item.copy(
                     currentLowestPrice = priceResponse.currentPrice ?: item.currentLowestPrice,
@@ -100,7 +104,7 @@ class WishlistViewModel(
                     lastChecked = LocalDateTime.now()
                 )
                 
-                wishlistRepository.updateWishlist(updatedItem)
+                wishlistRepository.updateWishlist(updatedItem, userId)
                 
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "가격 확인 실패", e)
@@ -111,7 +115,10 @@ class WishlistViewModel(
     fun addItem(keyword: String, productUrl: String, targetPrice: Int, currentLowestPrice: Int? = null, currentLowestPlatform: String? = null) {
         viewModelScope.launch {
             try {
-                val userId = runCatching { userIdProvider() }.getOrDefault("default")
+                val userId = runCatching { userIdProvider() }
+                    .getOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: LocalDataProvider.getDeviceUuid()
                 wishlistRepository.createWishlist(keyword, productUrl, targetPrice, currentLowestPrice, currentLowestPlatform, userId)
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "아이템 추가 실패", e)
@@ -122,7 +129,11 @@ class WishlistViewModel(
     fun deleteItem(item: WishlistItem) {
         viewModelScope.launch {
             try {
-                wishlistRepository.deleteWishlist(item.id)
+                val userId = runCatching { userIdProvider() }
+                    .getOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: LocalDataProvider.getDeviceUuid()
+                wishlistRepository.deleteWishlist(item.id, userId)
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "아이템 삭제 실패", e)
             }

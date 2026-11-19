@@ -1,6 +1,6 @@
-FROM python:3.9-slim
+FROM python:3.11-slim
 
-WORKDIR /app
+WORKDIR /app/backend
 
 # System dependencies for scraping, OCR, and Chrome Driver
 RUN apt-get update && apt-get install -y \
@@ -32,7 +32,6 @@ ENV LANG=ko_KR.UTF-8 \
 
 # Python dependencies
 COPY requirements.txt ./
-RUN pip install --no-cache-dir torch torchvision --extra-index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app
@@ -48,4 +47,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8080/api/health || exit 1
 
 # Default command (overridden by docker-compose for dev)
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "2"]
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

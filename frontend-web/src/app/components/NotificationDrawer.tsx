@@ -1,10 +1,17 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
-import { Bell, Trash2 } from "lucide-react";
+import React, { useEffect, useState, useRef, useId, useCallback } from "react";
+import { Bell, Trash2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import type { Deal } from "../lib/types";
-import { formatPrice, decodeHtmlEntities, apiUrl } from "../lib/utils";
+import {
+  formatPrice,
+  decodeHtmlEntities,
+  ensureWebDeviceAuth,
+  authFetch,
+  formatRelativeTimeKo,
+} from "../lib/utils";
+import { useDialogA11y } from "../lib/useDialogA11y";
 
 interface NotificationDrawerProps {
   isOpen: boolean;
@@ -25,16 +32,9 @@ interface NotificationLogItem {
 }
 
 function formatAlertTime(item: NotificationLogItem, referenceNow: number): string {
-  if (item.receivedAt && typeof item.receivedAt === "number" && referenceNow > 0) {
-    const diffMins = Math.max(0, Math.floor((referenceNow - item.receivedAt) / 60000));
-    if (diffMins < 1) return "방금 전";
-    if (diffMins < 60) return `${diffMins}분 전`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}시간 전`;
-    const d = new Date(item.receivedAt);
-    return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
-  }
-  return item.received_at || "최근";
+  const rawTime =
+    typeof item.receivedAt === "number" ? item.receivedAt : item.received_at;
+  return formatRelativeTimeKo(rawTime, referenceNow || Date.now(), "최근");
 }
 
 export default function NotificationDrawer({
@@ -47,29 +47,55 @@ export default function NotificationDrawer({
   const [serverAlerts, setServerAlerts] = useState<NotificationLogItem[]>([]);
   const [alertIds, setAlertIds] = useState<number[]>([]);
   const [nowTs, setNowTs] = useState<number>(0);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   const onCountChangeRef = useRef(onServerAlertCountChange);
 
   useEffect(() => {
     onCountChangeRef.current = onServerAlertCountChange;
   }, [onServerAlertCountChange]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  useDialogA11y({ isOpen, onClose, containerRef: panelRef });
 
-  const getDeviceUuid = () => {
-    if (typeof window === "undefined") return "";
-    return (
-      localStorage.getItem("insightdeal_web_device_uuid") ||
-      localStorage.getItem("insightdeal_token") ||
-      ""
-    );
-  };
+  const loadNotifications = useCallback(async (signal?: AbortSignal) => {
+    setIsLoading(true);
+    setFetchError(null);
+    setActionError(null);
+    try {
+      await ensureWebDeviceAuth();
+      if (signal?.aborted) return;
+
+      const res = await authFetch(
+        (latestAuth) =>
+          `/api/users/notifications?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
+        { signal }
+      );
+      if (signal?.aborted) return;
+
+      if (!res.ok) {
+        setFetchError("알림 내역을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
+
+      const data = await res.json();
+      if (!signal?.aborted && Array.isArray(data)) {
+        setServerAlerts(data as NotificationLogItem[]);
+        onCountChangeRef.current?.(data.length);
+      }
+    } catch (err) {
+      if (signal?.aborted) return;
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setFetchError("알림 내역을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (!isOpen || typeof window === "undefined") return;
@@ -87,52 +113,61 @@ export default function NotificationDrawer({
     const initTimer = window.setTimeout(syncLocalState, 0);
     const tick = window.setInterval(() => setNowTs(Date.now()), 60000);
 
-    // 백엔드 알림 수신 내역 조회
     const controller = new AbortController();
-    const deviceUuid = getDeviceUuid();
-    if (deviceUuid) {
-      fetch(apiUrl(`/api/users/notifications?user_id=${encodeURIComponent(deviceUuid)}`), {
-        signal: controller.signal,
-      })
-        .then((res) => (res.ok ? res.json() : []))
-        .then((data) => {
-          if (!controller.signal.aborted && Array.isArray(data)) {
-            setServerAlerts(data);
-            onCountChangeRef.current?.(data.length);
-          }
-        })
-        .catch(() => {});
-    }
+    void loadNotifications(controller.signal);
 
     return () => {
       window.clearTimeout(initTimer);
       window.clearInterval(tick);
       controller.abort();
     };
-  }, [isOpen]);
+  }, [isOpen, loadNotifications]);
 
-  const handleDeleteServerAlert = async (e: React.MouseEvent, alertId: string | number) => {
+  const handleDeleteServerAlert = async (
+    e: React.MouseEvent,
+    alertId: string | number
+  ) => {
     e.stopPropagation();
-    const deviceUuid = getDeviceUuid();
-    if (!deviceUuid) return;
-    await fetch(apiUrl(`/api/users/notifications/${alertId}?user_id=${encodeURIComponent(deviceUuid)}`), {
-      method: "DELETE",
-    }).catch(() => null);
-    setServerAlerts((prev) => {
-      const next = prev.filter((a) => String(a.id) !== String(alertId));
-      onCountChangeRef.current?.(next.length);
-      return next;
-    });
+    setActionError(null);
+    try {
+      await ensureWebDeviceAuth();
+      const res = await authFetch(
+        (latestAuth) =>
+          `/api/users/notifications/${encodeURIComponent(String(alertId))}?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        setActionError("알림을 삭제하지 못했어요. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
+      setServerAlerts((prev) => {
+        const next = prev.filter((a) => String(a.id) !== String(alertId));
+        onCountChangeRef.current?.(next.length);
+        return next;
+      });
+    } catch {
+      setActionError("알림을 삭제하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    }
   };
 
   const handleClearAllServerAlerts = async () => {
-    const deviceUuid = getDeviceUuid();
-    if (!deviceUuid) return;
-    await fetch(apiUrl(`/api/users/notifications/clear?user_id=${encodeURIComponent(deviceUuid)}`), {
-      method: "POST",
-    }).catch(() => null);
-    setServerAlerts([]);
-    onCountChangeRef.current?.(0);
+    setActionError(null);
+    try {
+      await ensureWebDeviceAuth();
+      const res = await authFetch(
+        (latestAuth) =>
+          `/api/users/notifications/clear?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        setActionError("알림 전체 비우기에 실패했어요. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
+      setServerAlerts([]);
+      onCountChangeRef.current?.(0);
+    } catch {
+      setActionError("알림 전체 비우기에 실패했어요. 잠시 후 다시 시도해 주세요.");
+    }
   };
 
   if (!isOpen) return null;
@@ -143,10 +178,7 @@ export default function NotificationDrawer({
     <div
       style={{
         position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
+        inset: 0,
         background: "rgba(15, 23, 42, 0.45)",
         backdropFilter: "blur(8px)",
         zIndex: 1900,
@@ -157,12 +189,18 @@ export default function NotificationDrawer({
       onClick={onClose}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className="glass-panel"
         style={{
           width: "100%",
           maxWidth: "420px",
           height: "100%",
-          padding: "calc(24px + env(safe-area-inset-top, 0px)) 24px calc(28px + env(safe-area-inset-bottom, 0px)) 24px",
+          padding:
+            "calc(24px + env(safe-area-inset-top, 0px)) 24px calc(28px + env(safe-area-inset-bottom, 0px)) 24px",
           display: "flex",
           flexDirection: "column",
           gap: "20px",
@@ -176,8 +214,10 @@ export default function NotificationDrawer({
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Bell size={20} color="var(--accent)" />
-            <h3 style={{ fontSize: "1.2rem", fontWeight: 800 }}>내 알림 내역</h3>
+            <Bell size={20} color="var(--accent)" aria-hidden="true" />
+            <h3 id={titleId} style={{ fontSize: "1.2rem", fontWeight: 800 }}>
+              내 알림 내역
+            </h3>
           </div>
           <button
             type="button"
@@ -206,6 +246,63 @@ export default function NotificationDrawer({
           키워드 알림으로 도착한 내역과 알림을 켜둔 관심 핫딜 목록입니다.
         </p>
 
+        {actionError && (
+          <div
+            role="alert"
+            style={{
+              fontSize: "0.82rem",
+              fontWeight: 700,
+              color: "#EF4444",
+              background: "rgba(239, 68, 68, 0.08)",
+              border: "1px solid rgba(239, 68, 68, 0.25)",
+              borderRadius: "12px",
+              padding: "10px 12px",
+            }}
+          >
+            {actionError}
+          </div>
+        )}
+
+        {fetchError && (
+          <div
+            role="alert"
+            style={{
+              padding: "16px",
+              borderRadius: "14px",
+              background: "rgba(239, 68, 68, 0.06)",
+              border: "1px solid rgba(239, 68, 68, 0.22)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+              alignItems: "flex-start",
+            }}
+          >
+            <span style={{ fontSize: "0.84rem", fontWeight: 700, color: "#EF4444" }}>
+              {fetchError}
+            </span>
+            <button
+              type="button"
+              onClick={() => void loadNotifications()}
+              className="btn-primary"
+              style={{
+                minHeight: "40px",
+                padding: "8px 14px",
+                fontSize: "0.8rem",
+                borderRadius: "10px",
+              }}
+            >
+              <RefreshCw size={14} aria-hidden="true" />
+              <span>다시 시도</span>
+            </button>
+          </div>
+        )}
+
+        {isLoading && serverAlerts.length === 0 && !fetchError && (
+          <div style={{ fontSize: "0.84rem", color: "var(--text-sub)", padding: "8px 0" }}>
+            알림 내역을 불러오는 중...
+          </div>
+        )}
+
         {/* 1. 키워드 매칭 알림 수신 내역 */}
         {serverAlerts.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -230,7 +327,7 @@ export default function NotificationDrawer({
                   padding: "0 6px",
                 }}
               >
-                <Trash2 size={13} />
+                <Trash2 size={13} aria-hidden="true" />
                 <span>전체 비우기</span>
               </button>
             </div>
@@ -239,24 +336,24 @@ export default function NotificationDrawer({
               return (
                 <div
                   key={item.id}
-                  className="bounce-click"
-                  onClick={() => {
-                    if (targetLink) {
-                      window.open(targetLink, "_blank", "noopener,noreferrer");
-                    }
-                  }}
                   style={{
                     background: "var(--surface-subtle)",
                     border: "1px solid var(--card-border)",
                     borderRadius: "14px",
-                    padding: "14px",
+                    padding: "12px 14px",
                     display: "flex",
                     flexDirection: "column",
                     gap: "6px",
-                    cursor: targetLink ? "pointer" : "default",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
                     <span className="deal-source" style={{ fontSize: "0.7rem", padding: "2px 8px" }}>
                       #{item.keyword}
                     </span>
@@ -287,9 +384,32 @@ export default function NotificationDrawer({
                       </button>
                     </div>
                   </div>
-                  <span style={{ fontSize: "0.85rem", fontWeight: 700, lineHeight: 1.4, color: "var(--text-main)" }}>
-                    {decodeHtmlEntities(item.title)}
-                  </span>
+                  {targetLink ? (
+                    <a
+                      href={targetLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        fontSize: "0.85rem",
+                        fontWeight: 700,
+                        lineHeight: 1.4,
+                        color: "var(--text-main)",
+                      }}
+                    >
+                      {decodeHtmlEntities(item.title)}
+                    </a>
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: "0.85rem",
+                        fontWeight: 700,
+                        lineHeight: 1.4,
+                        color: "var(--text-main)",
+                      }}
+                    >
+                      {decodeHtmlEntities(item.title)}
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -301,7 +421,7 @@ export default function NotificationDrawer({
           <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-sub)" }}>
             가격 변동 알림 켜둔 상품 ({watchedDeals.length})
           </span>
-          {watchedDeals.length === 0 && serverAlerts.length === 0 ? (
+          {watchedDeals.length === 0 && serverAlerts.length === 0 && !fetchError && !isLoading ? (
             <div
               style={{
                 padding: "36px 16px",
@@ -320,8 +440,9 @@ export default function NotificationDrawer({
             </div>
           ) : (
             watchedDeals.map((deal) => (
-              <div
+              <button
                 key={deal.id}
+                type="button"
                 className="bounce-click"
                 onClick={() => {
                   onClose();
@@ -336,14 +457,23 @@ export default function NotificationDrawer({
                   flexDirection: "column",
                   gap: "6px",
                   cursor: "pointer",
+                  textAlign: "left",
+                  width: "100%",
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    width: "100%",
+                  }}
+                >
                   <span className="deal-source" style={{ fontSize: "0.7rem", padding: "2px 6px" }}>
                     {deal.community_name}
                   </span>
                   <span style={{ fontSize: "0.85rem", color: "var(--deal-orange)", fontWeight: 800 }}>
-                    {formatPrice(deal.price, deal.currency, deal.title)}
+                    {deal.isFree ? "0원 (무료)" : formatPrice(deal.price, deal.currency, deal.title)}
                   </span>
                 </div>
                 <span
@@ -360,7 +490,7 @@ export default function NotificationDrawer({
                 >
                   {decodeHtmlEntities(deal.title)}
                 </span>
-              </div>
+              </button>
             ))
           )}
         </div>

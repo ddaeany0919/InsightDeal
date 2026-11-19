@@ -3,14 +3,15 @@ package com.ddaeany0919.insightdeal.presentation.tracking
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
 import com.ddaeany0919.insightdeal.network.ApiProduct
+import com.ddaeany0919.insightdeal.network.ApiService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
-import com.ddaeany0919.insightdeal.network.ApiService
 
 class CoupangTrackingViewModel : ViewModel() {
 
@@ -40,7 +41,8 @@ class CoupangTrackingViewModel : ViewModel() {
                 _isLoading.value = true
                 _errorMessage.value = null
                 Log.d(TAG, "🔄 Loading user products...")
-                val response = apiService.getUserProducts("anonymous")
+                val userId = LocalDataProvider.getDeviceUuid()
+                val response = apiService.getUserProducts(userId)
                 if (response.isSuccessful) {
                     val productList: List<ProductData> = response.body()?.map { apiProduct ->
                         ProductData(
@@ -87,10 +89,11 @@ class CoupangTrackingViewModel : ViewModel() {
                 _isLoading.value = true
                 _errorMessage.value = null
                 Log.d(TAG, "🛒 Adding new product: ${url.take(50)}...")
+                val userId = LocalDataProvider.getDeviceUuid()
                 val request = mapOf(
                     "url" to url,
                     "target_price" to targetPrice,
-                    "user_id" to "anonymous"
+                    "user_id" to userId
                 )
                 val response = apiService.addProduct(request)
                 if (response.isSuccessful) {

@@ -43,16 +43,17 @@ import coil.imageLoader
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
-import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
-import com.ddaeany0919.insightdeal.presentation.components.PinLockDialog
 import com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
+import com.ddaeany0919.insightdeal.models.CategoryCatalog
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
+import com.ddaeany0919.insightdeal.presentation.components.PinLockDialog
 
 @OptIn(ExperimentalMaterial3Api::class, coil.annotation.ExperimentalCoilApi::class)
 @Composable
 fun SettingsScreen(
     onBackClick: () -> Unit,
-    onNavigateToKeywordManager: () -> Unit,
-    onNavigateToAuth: () -> Unit
+    onNavigateToKeywordManager: () -> Unit
 ) {
     val ctx = LocalContext.current
     val tm = remember { ThemeManager.getInstance(ctx) }
@@ -60,12 +61,15 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
-    val savedUsername by AuthManager.getUsername(ctx).collectAsState(initial = "guest")
-    val savedNickname by AuthManager.getNickname(ctx).collectAsState(initial = "guest")
+    val deviceUuid = remember {
+        runCatching { LocalDataProvider.getDeviceUuid() }.getOrDefault("")
+    }
 
     val brandAccent = MaterialTheme.colorScheme.primary
 
-    val dealPrefs = remember { EncryptedPrefsManager.getEncryptedPrefs(ctx) }
+    val dealPrefs = remember {
+        runCatching { EncryptedPrefsManager.getEncryptedPrefs(ctx) }.getOrNull()
+    }
     val appPrefs = remember { ctx.getSharedPreferences("app", Context.MODE_PRIVATE) }
 
     var showPinDialog by remember { mutableStateOf(false) }
@@ -74,10 +78,10 @@ fun SettingsScreen(
     var pinSuccessCallback by remember { mutableStateOf<((String) -> Unit)?>(null) }
 
     var isPinLockedEnabled by remember {
-        mutableStateOf(dealPrefs.getBoolean("app_lock_enabled", false))
+        mutableStateOf(dealPrefs?.getBoolean("app_lock_enabled", false) ?: false)
     }
     var isBiometricEnabled by remember {
-        mutableStateOf(dealPrefs.getBoolean("biometric_lock_enabled", false))
+        mutableStateOf(dealPrefs?.getBoolean("biometric_lock_enabled", false) ?: false)
     }
     var isSecurityAccordionExpanded by remember { mutableStateOf(false) }
 
@@ -86,10 +90,10 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("설정", fontWeight = FontWeight.Bold, fontSize = 19.sp, letterSpacing = (-0.4).sp) },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
+                    A11yIconButton(onClick = onBackClick, contentDescription = "뒤로가기") {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "뒤로가기",
+                            contentDescription = null,
                             tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
@@ -110,63 +114,7 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            // 1. 사용자 계정 섹션
-            val isUserGuest = savedUsername == "guest" || savedUsername.isNullOrEmpty()
-            if (!isUserGuest) {
-                Column {
-                    SettingsSectionTitle("사용자 계정")
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onNavigateToAuth() },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                SettingsIconBadge(
-                                    icon = Icons.Outlined.Person,
-                                    tint = brandAccent
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = "내 계정 정보",
-                                        fontSize = 15.sp,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "$savedNickname ($savedUsername)",
-                                        fontSize = 12.5.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = "이동",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // 2. 앱 설정 섹션
+            // 1. 앱 설정 섹션
             Column {
                 SettingsSectionTitle("앱 설정")
                 Card(
@@ -187,50 +135,12 @@ fun SettingsScreen(
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
 
-                        // 알림 설정
-                        var notificationsEnabled by remember {
-                            mutableStateOf(appPrefs.getBoolean("push_enabled", true))
-                        }
-                        SettingsSwitchRow(
-                            icon = Icons.Outlined.Notifications,
-                            iconTint = Color(0xFFFF5A26),
-                            title = "관심 키워드 실시간 알림",
-                            checked = notificationsEnabled,
-                            onCheckedChange = {
-                                notificationsEnabled = it
-                                appPrefs.edit().putBoolean("push_enabled", it).apply()
-                            }
-                        )
-
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-
                         // 알림 키워드 관리
                         SettingsNavigationRow(
                             icon = Icons.Outlined.NotificationsActive,
-                            iconTint = Color(0xFFFF5A26),
+                            iconTint = MaterialTheme.colorScheme.secondary,
                             title = "알림 키워드 관리",
                             onClick = onNavigateToKeywordManager
-                        )
-
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-
-                        // 데이터 절약 모드
-                        var dataSaverEnabled by remember { mutableStateOf(appPrefs.getBoolean("data_saver", false)) }
-                        SettingsSwitchRow(
-                            icon = Icons.Outlined.DataUsage,
-                            iconTint = Color(0xFF0D9488),
-                            title = "데이터 절약 모드 (저화질 이미지)",
-                            checked = dataSaverEnabled,
-                            onCheckedChange = {
-                                dataSaverEnabled = it
-                                appPrefs.edit().putBoolean("data_saver", it).apply()
-                            }
                         )
 
                         HorizontalDivider(
@@ -356,11 +266,20 @@ fun SettingsScreen(
                                     subtitle = "앱 시작 시 4자리 PIN 입력으로 개인정보를 보호합니다.",
                                     checked = isPinLockedEnabled,
                                     onCheckedChange = { isChecked ->
+                                        val prefs = dealPrefs
+                                        if (prefs == null) {
+                                            android.widget.Toast.makeText(
+                                                ctx,
+                                                "보안 저장소를 사용할 수 없어 잠금 설정을 변경할 수 없어요.",
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                            return@SettingsSwitchRow
+                                        }
                                         if (isChecked) {
                                             pinDialogSetupMode = true
                                             pinCorrectPin = ""
                                             pinSuccessCallback = { newPin ->
-                                                dealPrefs.edit()
+                                                prefs.edit()
                                                     .putBoolean("app_lock_enabled", true)
                                                     .putString("app_lock_pin", newPin)
                                                     .putBoolean("biometric_lock_enabled", false)
@@ -371,15 +290,15 @@ fun SettingsScreen(
                                             }
                                             showPinDialog = true
                                         } else {
-                                            val correctPin = dealPrefs.getString("app_lock_pin", "") ?: ""
+                                            val correctPin = prefs.getString("app_lock_pin", "") ?: ""
                                             if (correctPin.isEmpty()) {
-                                                dealPrefs.edit().putBoolean("app_lock_enabled", false).apply()
+                                                prefs.edit().putBoolean("app_lock_enabled", false).apply()
                                                 isPinLockedEnabled = false
                                             } else {
                                                 pinDialogSetupMode = false
                                                 pinCorrectPin = correctPin
                                                 pinSuccessCallback = {
-                                                    dealPrefs.edit().putBoolean("app_lock_enabled", false).apply()
+                                                    prefs.edit().putBoolean("app_lock_enabled", false).apply()
                                                     isPinLockedEnabled = false
                                                     android.widget.Toast.makeText(ctx, "보안 PIN 잠금이 해제되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
                                                 }
@@ -399,12 +318,21 @@ fun SettingsScreen(
                                         iconTint = brandAccent,
                                         title = "PIN 비밀번호 변경",
                                         onClick = {
-                                            val currentPin = dealPrefs.getString("app_lock_pin", "") ?: ""
+                                            val prefs = dealPrefs
+                                            if (prefs == null) {
+                                                android.widget.Toast.makeText(
+                                                    ctx,
+                                                    "보안 저장소를 사용할 수 없어 PIN을 변경할 수 없어요.",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                                return@SettingsNavigationRow
+                                            }
+                                            val currentPin = prefs.getString("app_lock_pin", "") ?: ""
                                             if (currentPin.isEmpty()) {
                                                 pinDialogSetupMode = true
                                                 pinCorrectPin = ""
                                                 pinSuccessCallback = { newPin ->
-                                                    dealPrefs.edit()
+                                                    prefs.edit()
                                                         .putString("app_lock_pin", newPin)
                                                         .apply()
                                                     android.widget.Toast.makeText(ctx, "PIN 비밀번호가 설정되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
@@ -417,7 +345,7 @@ fun SettingsScreen(
                                                     pinDialogSetupMode = true
                                                     pinCorrectPin = ""
                                                     pinSuccessCallback = { newPin ->
-                                                        dealPrefs.edit()
+                                                        prefs.edit()
                                                             .putString("app_lock_pin", newPin)
                                                             .apply()
                                                         android.widget.Toast.makeText(ctx, "PIN 번호가 변경되었어요.", android.widget.Toast.LENGTH_SHORT).show()
@@ -443,6 +371,15 @@ fun SettingsScreen(
                                     subtitle = "생체 인증으로 앱 잠금을 빠르게 해제합니다.",
                                     checked = isBiometricEnabled,
                                     onCheckedChange = { isChecked ->
+                                        val prefs = dealPrefs
+                                        if (prefs == null) {
+                                            android.widget.Toast.makeText(
+                                                ctx,
+                                                "보안 저장소를 사용할 수 없어 생체 잠금 설정을 변경할 수 없어요.",
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                            return@SettingsSwitchRow
+                                        }
                                         if (isChecked) {
                                             val biometricManager = androidx.biometric.BiometricManager.from(ctx)
                                             val authenticators = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
@@ -450,7 +387,7 @@ fun SettingsScreen(
 
                                             if (biometricManager.canAuthenticate(authenticators) != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
                                                 isBiometricEnabled = false
-                                                dealPrefs.edit().putBoolean("biometric_lock_enabled", false).apply()
+                                                prefs.edit().putBoolean("biometric_lock_enabled", false).apply()
                                                 android.widget.Toast.makeText(ctx, "기기에 등록된 생체 인증 정보가 없어요.", android.widget.Toast.LENGTH_LONG).show()
                                             } else {
                                                 val activity = ctx as? androidx.fragment.app.FragmentActivity
@@ -464,7 +401,7 @@ fun SettingsScreen(
                                                             }
                                                             override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
                                                                 super.onAuthenticationSucceeded(result)
-                                                                dealPrefs.edit()
+                                                                prefs.edit()
                                                                     .putBoolean("biometric_lock_enabled", true)
                                                                     .putBoolean("app_lock_enabled", false)
                                                                     .apply()
@@ -485,7 +422,7 @@ fun SettingsScreen(
 
                                                     biometricPrompt.authenticate(promptInfo)
                                                 } else {
-                                                    dealPrefs.edit()
+                                                    prefs.edit()
                                                         .putBoolean("biometric_lock_enabled", true)
                                                         .putBoolean("app_lock_enabled", false)
                                                         .apply()
@@ -495,7 +432,7 @@ fun SettingsScreen(
                                                 }
                                             }
                                         } else {
-                                            dealPrefs.edit().putBoolean("biometric_lock_enabled", false).apply()
+                                            prefs.edit().putBoolean("biometric_lock_enabled", false).apply()
                                             isBiometricEnabled = false
                                             android.widget.Toast.makeText(ctx, "지문 인식 잠금이 해제되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
                                         }
@@ -552,16 +489,20 @@ fun SettingsScreen(
                             enter = expandVertically(),
                             exit = shrinkVertically()
                         ) {
-                            val allPlatforms = listOf(
+                            val dotColorMap = mapOf(
                                 "뽐뿌" to Color(0xFF1565C0),
                                 "퀘이사존" to Color(0xFFE65100),
-                                "펨코" to Color(0xFF0288D1),
+                                "펨코" to Color(0xFF026AA7),
                                 "루리웹" to Color(0xFF0D47A1),
                                 "클리앙" to Color(0xFF37474F),
                                 "알리뽐뿌" to Color(0xFFD84315),
                                 "빠삭국내" to Color(0xFFC2185B),
-                                "빠삭해외" to Color(0xFF880E4F)
+                                "빠삭해외" to Color(0xFF880E4F),
+                                "빠삭육아" to Color(0xFFAD1457)
                             )
+                            val allPlatforms = CategoryCatalog.STANDARD_COMMUNITY_PLATFORMS.map { platform ->
+                                platform to (dotColorMap[platform] ?: MaterialTheme.colorScheme.primary)
+                            }
                             var disabledPlatforms by remember {
                                 mutableStateOf(appPrefs.getStringSet("disabled_platforms", emptySet()) ?: emptySet())
                             }
@@ -609,7 +550,7 @@ fun SettingsScreen(
                                                 appPrefs.edit().putStringSet("disabled_platforms", newSet).apply()
                                             },
                                             colors = SwitchDefaults.colors(
-                                                checkedThumbColor = Color.White,
+                                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                                                 checkedTrackColor = MaterialTheme.colorScheme.primary
                                             )
                                         )
@@ -660,7 +601,7 @@ fun SettingsScreen(
                             onClick = {
                                 val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:support@insightdeal.com"))
                                 intent.putExtra(android.content.Intent.EXTRA_SUBJECT, "[InsightDeal] 소중한 의견 남기기")
-                                intent.putExtra(android.content.Intent.EXTRA_TEXT, "앱 이용에 관한 소중한 의견이나 버그 제보를 작성해 주세요.\n\n사용자 ID: $savedUsername\n앱 버전: 1.0.0\n의견 내용:")
+                                intent.putExtra(android.content.Intent.EXTRA_TEXT, "앱 이용에 관한 소중한 의견이나 버그 제보를 작성해 주세요.\n\n기기 ID: ${deviceUuid.ifBlank { "unknown" }}\n앱 버전: 1.0.0\n의견 내용:")
                                 try {
                                     ctx.startActivity(intent)
                                 } catch (e: Exception) {
@@ -709,6 +650,7 @@ fun SettingsScreen(
                                                 Box(
                                                     modifier = Modifier
                                                         .weight(1f)
+                                                        .heightIn(min = 48.dp)
                                                         .background(
                                                             if (isSelected) brandAccent else Color.Transparent,
                                                             RoundedCornerShape(8.dp)
@@ -871,6 +813,7 @@ fun SettingsSwitchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clickable { onCheckedChange(!checked) }
             .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -899,7 +842,7 @@ fun SettingsSwitchRow(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                 checkedTrackColor = MaterialTheme.colorScheme.primary
             )
         )
@@ -918,6 +861,7 @@ fun SettingsNavigationRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .bounceClick(scaleDown = 0.98f) { onClick() }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -964,6 +908,7 @@ fun ExpandableThemeSetting(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 48.dp)
                 .clickable { expanded = !expanded }
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -1030,6 +975,7 @@ private fun ThemeOptionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clickable { onSelect(value) }
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically

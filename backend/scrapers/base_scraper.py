@@ -1,8 +1,11 @@
 import asyncio
+import hashlib
+import hmac
 import httpx
 import logging
 import os
 import random
+import time
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
@@ -19,6 +22,29 @@ IS_CLOUD_ENV = bool(
 
 # 에펨코리아 WebAssembly(fm5/fm6/lite_year) 보안 챌린지 통과 쿠키 전역 캐시
 _FMKOREA_WASM_COOKIES: dict[str, str] = {}
+
+
+def build_scraper_relay_headers(
+    target_url: str,
+    secret: Optional[str] = None,
+    timestamp: Optional[int] = None,
+) -> dict[str, str]:
+    """Vercel /api/scraper-relay용 X-Feeder-Token(v1.<ts>.<hmac_sha256_hex>) HMAC 서명 헤더 생성."""
+    resolved_secret = (
+        secret
+        if secret is not None
+        else (os.getenv("FEEDER_API_TOKEN") or os.getenv("SCRAPER_RELAY_SECRET") or "")
+    ).strip()
+    if not resolved_secret or not target_url:
+        return {}
+    ts = int(time.time()) if timestamp is None else int(timestamp)
+    msg = f"{ts}:{target_url}"
+    sig = hmac.new(
+        resolved_secret.encode("utf-8"),
+        msg.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return {"X-Feeder-Token": f"v1.{ts}.{sig}"}
 
 class AsyncBaseScraper(ABC):
     """
@@ -294,7 +320,10 @@ class AsyncBaseScraper(ABC):
             relay_url = f"https://insightdeal.vercel.app/api/scraper-relay?url={quote(url, safe='')}"
             relay_timeout = 10.0 if IS_CLOUD_ENV else 15.0
             async with httpx.AsyncClient(timeout=relay_timeout, follow_redirects=True) as client:
-                res = await client.get(relay_url)
+                relay_headers = build_scraper_relay_headers(url)
+                res = await client.get(relay_url, headers=relay_headers or None)
+                if res.status_code in (401, 403, 503):
+                    logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 릴레이 인증/설정 오류 (HTTP {res.status_code}): {url}")
                 if res.status_code == 200 and len(res.text) > 500:
                     cf_blocked_signals = ["Attention Required! | Cloudflare", "Just a moment...", "cf-browser-verification", "Ray ID:", "Cloudflare Ray ID", "cf-turnstile"]
                     is_cf_blocked = any(sig in res.text for sig in cf_blocked_signals)
@@ -308,7 +337,10 @@ class AsyncBaseScraper(ABC):
                     board_id = m_id.group(1) if m_id else "ppomppu"
                     rss_target = f"https://www.ppomppu.co.kr/rss.php?id={board_id}"
                     rss_relay = f"https://insightdeal.vercel.app/api/scraper-relay?url={quote(rss_target, safe='')}"
-                    rss_res = await client.get(rss_relay)
+                    rss_headers = build_scraper_relay_headers(rss_target)
+                    rss_res = await client.get(rss_relay, headers=rss_headers or None)
+                    if rss_res.status_code in (401, 403, 503):
+                        logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 RSS 릴레이 인증/설정 오류 (HTTP {rss_res.status_code}): {rss_target}")
                     if rss_res.status_code == 200 and "<item>" in rss_res.text:
                         logger.info(f"🌐 [{self.platform_name}] 서울 리전 RSS 릴레이 우회 페칭 성공: {rss_target}")
                         return rss_res.text

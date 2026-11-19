@@ -1,7 +1,24 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const preferredRegion = "icn1";
+
+const ALLOWED_HOSTS = [
+  "ppomppu.co.kr",
+  "quasarzone.com",
+  "fmkorea.com",
+  "ruliweb.com",
+  "clien.net",
+  "bbasak.com",
+  "auction.co.kr",
+  "gmarket.co.kr",
+  "11st.co.kr",
+  "bnkrmall.co.kr",
+];
+
+const MAX_REDIRECT_HOPS = 3;
+const HMAC_TOLERANCE_SECONDS = 300;
 
 let cachedFmkoreaCookies = "";
 let cachedMcwBytes: ArrayBuffer | null = null;
@@ -18,15 +35,119 @@ interface FakeWindowShape {
   self: FakeWindowShape;
 }
 
+function getRelaySecret(): string {
+  return (
+    process.env.FEEDER_API_TOKEN ||
+    process.env.SCRAPER_RELAY_SECRET ||
+    ""
+  ).trim();
+}
+
+function isAllowedRelayHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  return ALLOWED_HOSTS.some(
+    (h) => normalized === h || normalized.endsWith(`.${h}`)
+  );
+}
+
+/**
+ * X-Feeder-Token 엄격 HMAC 검증:
+ * - 포맷: v1.<unix_ts>.<hmac_sha256_hex> (평문 토큰 폴백 불가)
+ * - 서명 원문: `${unix_ts}:${decoded_target_url}`
+ * - 허용 오차: ±300초, 상수 시간 비교(crypto.timingSafeEqual)
+ */
+function verifyFeederHmacToken(
+  providedToken: string,
+  secret: string,
+  targetUrl: string
+): boolean {
+  if (!providedToken || !secret) return false;
+
+  const parts = providedToken.split(".");
+  if (parts.length !== 3 || parts[0] !== "v1") return false;
+
+  const tsStr = parts[1];
+  const sigHex = parts[2];
+  if (!/^(?:0|[1-9]\d*)$/.test(tsStr) || !/^[0-9a-f]{64}$/i.test(sigHex)) {
+    return false;
+  }
+
+  const ts = Number(tsStr);
+  if (!Number.isSafeInteger(ts)) return false;
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (Math.abs(nowSec - ts) > HMAC_TOLERANCE_SECONDS) {
+    return false;
+  }
+
+  const payload = `${ts}:${targetUrl}`;
+  const expectedDigest = crypto
+    .createHmac("sha256", secret)
+    .update(payload)
+    .digest();
+  const providedDigest = Buffer.from(sigHex.toLowerCase(), "hex");
+
+  if (providedDigest.length !== expectedDigest.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(providedDigest, expectedDigest);
+}
+
+async function fetchWithAllowedRedirects(
+  initialUrl: string,
+  init: RequestInit
+): Promise<{ response: Response; finalUrl: URL }> {
+  let currentUrl = initialUrl;
+
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+    const parsed = new URL(currentUrl);
+    if (!/^https?:$/i.test(parsed.protocol) || !isAllowedRelayHost(parsed.hostname)) {
+      throw new RelayForbiddenError("Redirect host not allowed");
+    }
+
+    const res = await fetch(currentUrl, {
+      ...init,
+      redirect: "manual",
+    });
+
+    const isRedirect = res.status >= 300 && res.status < 400;
+    if (!isRedirect) {
+      return { response: res, finalUrl: parsed };
+    }
+
+    const location = res.headers.get("location");
+    if (!location) {
+      return { response: res, finalUrl: parsed };
+    }
+
+    const nextUrl = new URL(location, parsed);
+    if (!/^https?:$/i.test(nextUrl.protocol) || !isAllowedRelayHost(nextUrl.hostname)) {
+      throw new RelayForbiddenError("Redirect target host not allowed");
+    }
+    currentUrl = nextUrl.toString();
+  }
+
+  throw new Error("Too many redirects");
+}
+
+class RelayForbiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RelayForbiddenError";
+  }
+}
+
 async function solveFmkoreaWasmInNode(
   arg0: string,
   arg1: string,
-  baseHeaders: Record<string, string>
+  baseHeaders: Record<string, string>,
+  signal: AbortSignal
 ): Promise<string[]> {
   if (!cachedMcwBytes) {
     const wasmRes = await fetch("https://www.fmkorea.com/mc/mcw.php", {
       headers: baseHeaders,
       cache: "no-store",
+      signal,
     });
     if (!wasmRes.ok) return [];
     cachedMcwBytes = await wasmRes.arrayBuffer();
@@ -162,35 +283,53 @@ async function solveFmkoreaWasmInNode(
 }
 
 export async function GET(req: NextRequest) {
+  // 1. 시크릿 미설정 시 즉시 503 Fail-Closed
+  const secret = getRelaySecret();
+  if (!secret) {
+    return NextResponse.json(
+      { error: "Relay authentication secret is not configured" },
+      { status: 503 }
+    );
+  }
+
+  // 2. X-Feeder-Token 헤더 기본 형식 확인
+  const providedToken = (req.headers.get("x-feeder-token") || "").trim();
+  if (!providedToken) {
+    return NextResponse.json(
+      { error: "Missing feeder authentication token" },
+      { status: 401 }
+    );
+  }
+
+  // 3. targetUrl 검증 (searchParams.get은 URL-decoded 값을 반환)
   const targetUrl = req.nextUrl.searchParams.get("url");
   if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
     return NextResponse.json({ error: "Invalid url" }, { status: 400 });
   }
 
-  const allowedHosts = [
-    "ppomppu.co.kr",
-    "quasarzone.com",
-    "fmkorea.com",
-    "ruliweb.com",
-    "clien.net",
-    "bbasak.com",
-    "auction.co.kr",
-    "gmarket.co.kr",
-    "11st.co.kr",
-    "bnkrmall.co.kr",
-  ];
-  try {
-    const parsed = new URL(targetUrl);
-    const isAllowed = allowedHosts.some(
-      (h) => parsed.hostname === h || parsed.hostname.endsWith(`.${h}`)
+  // 4. 엄격 v1.<unix_ts>.<hmac_sha256_hex> 상수 시간 HMAC 검증
+  if (!verifyFeederHmacToken(providedToken, secret, targetUrl)) {
+    return NextResponse.json(
+      { error: "Invalid or expired feeder token" },
+      { status: 401 }
     );
-    if (!isAllowed) {
-      return NextResponse.json({ error: "Host not allowed" }, { status: 403 });
-    }
+  }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 9000);
+  let parsed: URL;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    return NextResponse.json({ error: "Invalid url" }, { status: 400 });
+  }
 
+  if (!isAllowedRelayHost(parsed.hostname)) {
+    return NextResponse.json({ error: "Host not allowed" }, { status: 403 });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 9000);
+
+  try {
     const baseHeaders: Record<string, string> = {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -213,9 +352,8 @@ export async function GET(req: NextRequest) {
       baseHeaders["Cookie"] = cachedFmkoreaCookies;
     }
 
-    let res = await fetch(targetUrl, {
+    let { response: res } = await fetchWithAllowedRedirects(targetUrl, {
       headers: baseHeaders,
-      redirect: "follow",
       signal: controller.signal,
       cache: "no-store",
     });
@@ -239,7 +377,8 @@ export async function GET(req: NextRequest) {
         const wasmCookies = await solveFmkoreaWasmInNode(
           arg0,
           arg1,
-          baseHeaders
+          baseHeaders,
+          controller.signal
         );
         const allCookieParts = [
           ...respCookies,
@@ -259,20 +398,21 @@ export async function GET(req: NextRequest) {
           },
           body: "is_dlc=1",
           redirect: "manual",
+          signal: controller.signal,
           cache: "no-store",
         }).catch(() => null);
 
-        res = await fetch(targetUrl, {
+        const retryResult = await fetchWithAllowedRedirects(targetUrl, {
           headers: {
             ...baseHeaders,
             Cookie: cachedFmkoreaCookies,
           },
-          redirect: "follow",
+          signal: controller.signal,
           cache: "no-store",
         });
+        res = retryResult.response;
       }
     }
-    clearTimeout(timeout);
 
     const arrayBuffer = await res.arrayBuffer();
     const contentType = res.headers.get("content-type") || "text/html";
@@ -310,10 +450,12 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err: unknown) {
+    if (err instanceof RelayForbiddenError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
+    }
     const message = err instanceof Error ? err.message : "Relay fetch failed";
-    return NextResponse.json(
-      { error: message },
-      { status: 502 }
-    );
+    return NextResponse.json({ error: message }, { status: 502 });
+  } finally {
+    clearTimeout(timeout);
   }
 }

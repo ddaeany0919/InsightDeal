@@ -379,10 +379,10 @@ data class ScoreBreakdown(
 )
 
 enum class DealBadge(val emoji: String, val text: String, val color: String) {
-    SUPER_HOT("●", "역대급 특가", "#FF3030"),
-    RECOMMENDED("⭐", "추천 핫딜", "#FF6B35"),
-    OKAY("●", "평균 이하", "#2196F3"),
-    CAUTION("●", "평소 수준", "#9E9E9E"),
+    SUPER_HOT("●", "역대급 특가", "#C92A37"),
+    RECOMMENDED("⭐", "추천 핫딜", "#B84500"),
+    OKAY("●", "평균 이하", "#1B64DA"),
+    CAUTION("●", "평소 수준", "#595959"),
     AVOID("●", "가격 높음", "#333333")
 }
 

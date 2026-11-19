@@ -3,7 +3,6 @@ package com.ddaeany0919.insightdeal.presentation.search
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -42,6 +41,7 @@ import com.ddaeany0919.insightdeal.presentation.PriceChart
 import com.ddaeany0919.insightdeal.presentation.formatPrice
 import com.ddaeany0919.insightdeal.presentation.home.DealCardComposable
 import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
+import com.ddaeany0919.insightdeal.presentation.theme.LocalIsDarkTheme
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
@@ -68,7 +68,7 @@ fun AdvancedSearchScreen(
     val context = LocalContext.current
     val searchAutoComplete = remember(context) { SearchAutoComplete.getInstance(context) }
     val searchHistory by searchAutoComplete.searchHistory.collectAsState()
-    val isDark = MaterialTheme.colorScheme.background.red < 0.2f
+    val isDark = LocalIsDarkTheme.current
     
     // 재사용할 HomeViewModel 상태
     val dealsPagingItems = viewModel.dealsPagingData.collectAsLazyPagingItems()
@@ -310,15 +310,20 @@ fun AdvancedSearchScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            Text(
-                                text = "전체 삭제",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            Box(
                                 modifier = Modifier
+                                    .heightIn(min = 48.dp)
                                     .clickable { searchAutoComplete.clearSearchHistory() }
-                                    .padding(vertical = 2.dp, horizontal = 4.dp)
-                            )
+                                    .padding(horizontal = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "전체 삭제",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -340,33 +345,47 @@ fun AdvancedSearchScreen(
                                     )
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                                        modifier = Modifier
+                                            .heightIn(min = 48.dp)
+                                            .padding(start = 12.dp, end = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
                                     ) {
-                                        Text(
-                                            text = historyKw,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.clickable { performSearch(historyKw) }
-                                        )
                                         Box(
                                             modifier = Modifier
-                                                .size(18.dp)
-                                                .background(
-                                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-                                                    shape = CircleShape
-                                                )
+                                                .heightIn(min = 48.dp)
+                                                .clickable { performSearch(historyKw) },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = historyKw,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .size(48.dp)
                                                 .clickable { searchAutoComplete.removeFromSearchHistory(historyKw) },
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Close,
-                                                contentDescription = "$historyKw 삭제",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(11.dp)
-                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .background(
+                                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                                                        shape = CircleShape
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "$historyKw 삭제",
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -508,7 +527,9 @@ fun AdvancedSearchScreen(
                                     if (idx < 3) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
                                     else MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)
                                 ),
-                                modifier = Modifier.clickable { performSearch(keyword) }
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .clickable { performSearch(keyword) }
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
@@ -607,6 +628,7 @@ private fun PopularRankingRowItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -785,9 +807,10 @@ fun KeywordPriceTrendSummaryCard(
 
                 Surface(
                     onClick = onRegisterKeywordAlarm,
+                    modifier = Modifier.heightIn(min = 48.dp),
                     shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.primary
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -874,6 +897,7 @@ fun KeywordPriceTrendSummaryCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = 48.dp)
                         .clickable { isChartExpanded = !isChartExpanded },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically

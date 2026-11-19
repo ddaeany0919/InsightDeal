@@ -53,9 +53,12 @@ interface ApiService {
         @Query("currency") currency: String? = null
     ): Response<List<PriceHistoryPoint>>
 
-    // 커뮤니티 핫딜 단건 상세 조회
+    // 커뮤니티 핫딜 단건 상세 조회 (1-RTT 요약 필 및 본인 투표 여부 수신)
     @GET("api/community/deals/{dealId}")
-    suspend fun getEnhancedDealInfo(@Path("dealId") dealId: Int): Response<DealItem>
+    suspend fun getEnhancedDealInfo(
+        @Path("dealId") dealId: Int,
+        @Query("user_id") userId: String? = null
+    ): Response<DealItem>
 
     // 쿠팡 상품 추적 API
     @GET("products")
@@ -73,7 +76,7 @@ interface ApiService {
         @Path("productId") productId: Int
     ): Response<ApiProduct>
 
-    @GET("products/{productId}/history")
+    @GET("api/product/{productId}/history")
     suspend fun getProductPriceHistory(
         @Path("productId") productId: Int
     ): Response<List<ApiPriceHistory>>
@@ -89,10 +92,15 @@ interface ApiService {
         @Path("productId") productId: Int
     ): Response<Unit>
 
-    // FCM 토큰 관리 API
+    // FCM 토큰 및 기기 푸시 설정 관리 API
     @POST("api/push/device")
     suspend fun registerFCMToken(
         @Body request: RegisterDeviceReq
+    ): Response<DeviceRegistrationResponse>
+
+    @PATCH("api/push/dnd")
+    suspend fun updateDndSettings(
+        @Body request: UpdateDndReq
     ): Response<ApiResponse>
 
     @POST("fcm/test")
@@ -117,6 +125,9 @@ interface ApiService {
 
     @GET("categories")
     suspend fun getCategories(): Response<List<Category>>
+
+    @GET("api/meta/categories")
+    suspend fun getMetaCategories(): Response<MetaCategoriesResponse>
 
     @GET("sites")
     suspend fun getSupportedSites(): Response<List<Site>>
@@ -151,22 +162,22 @@ interface ApiService {
     @POST("api/wishlist/from-url")
     suspend fun createWishlistFromUrl(@Body request: com.ddaeany0919.insightdeal.data.network.WishlistCreateFromUrlRequest): com.ddaeany0919.insightdeal.presentation.wishlist.WishlistApiResponse
 
-    @GET("api/wishlist")
+    @GET("api/wishlist/")
     suspend fun getWishlist(
-        @Query("user_id") userId: String = "default"
+        @Query("user_id") userId: String
     ): List<com.ddaeany0919.insightdeal.presentation.wishlist.WishlistApiResponse>
 
     @GET("api/wishlist/{wishlist_id}")
     suspend fun getWishlistItem(
         @Path("wishlist_id") wishlistId: Int,
-        @Query("user_id") userId: String = "default"
+        @Query("user_id") userId: String
     ): com.ddaeany0919.insightdeal.presentation.wishlist.WishlistApiResponse
 
     @PATCH("api/wishlist/{wishlist_id}")
     suspend fun updateWishlist(
         @Path("wishlist_id") wishlistId: Int,
         @Body request: com.ddaeany0919.insightdeal.data.network.WishlistUpdateRequest,
-        @Query("user_id") userId: String = "default"
+        @Query("user_id") userId: String
     ): com.ddaeany0919.insightdeal.presentation.wishlist.WishlistApiResponse
 
     @DELETE("api/wishlist/{wishlist_id}")
@@ -178,13 +189,13 @@ interface ApiService {
     @POST("api/wishlist/{wishlist_id}/check-price")
     suspend fun checkWishlistPrice(
         @Path("wishlist_id") wishlistId: Int,
-        @Query("user_id") userId: String = "default"
+        @Query("user_id") userId: String
     ): com.ddaeany0919.insightdeal.presentation.wishlist.PriceCheckResponse
 
     @GET("api/wishlist/{wishlist_id}/history")
     suspend fun getWishlistPriceHistory(
         @Path("wishlist_id") wishlistId: Int,
-        @Query("user_id") userId: String = "default",
+        @Query("user_id") userId: String,
         @Query("days") days: Int = 30
     ): List<com.ddaeany0919.insightdeal.presentation.wishlist.PriceHistoryApiResponse>
 
@@ -281,7 +292,7 @@ interface ApiService {
     @GET("api/community/deals/{id}/votes")
     suspend fun getDealVotes(
         @Path("id") dealId: Int,
-        @Query("user_id") userId: String
+        @Query("user_id") userId: String? = null
     ): Response<ApiDealVotes>
 
     @POST("api/community/deals/{id}/comments")
@@ -289,6 +300,12 @@ interface ApiService {
         @Path("id") dealId: Int,
         @Body req: ApiCommentCreate
     ): Response<ApiDealComment>
+
+    @DELETE("api/community/deals/{id}/comments/{comment_id}")
+    suspend fun deleteDealComment(
+        @Path("id") dealId: Int,
+        @Path("comment_id") commentId: Int
+    ): Response<ApiDeleteCommentResponse>
 
     @POST("api/community/deals/{id}/votes")
     suspend fun addDealVote(
@@ -375,21 +392,31 @@ data class UserWithdrawRequest(
 )
 
 data class ApiDealComment(
-    @SerializedName("id") val id: Int,
-    @SerializedName("user_id") val user_id: String,
-    @SerializedName("content") val content: String,
-    @SerializedName("created_at") val created_at: String
+    @SerializedName("id") val id: Int = 0,
+    @SerializedName(value = "deal_id", alternate = ["dealId"]) val deal_id: Int = 0,
+    @SerializedName(value = "user_id", alternate = ["userId"]) val user_id: String = "",
+    @SerializedName("nickname") val nickname: String = "익명의찰떡이",
+    @SerializedName("content") val content: String = "",
+    @SerializedName(value = "created_at", alternate = ["createdAt"]) val created_at: String? = null
 )
 
 data class ApiDealVotes(
-    @SerializedName("buy_count") val buy_count: Int,
-    @SerializedName("pass_count") val pass_count: Int,
-    @SerializedName("user_vote") val user_vote: String? = null
+    @SerializedName(value = "buy_count", alternate = ["buyCount"]) val buy_count: Int = 0,
+    @SerializedName(value = "pass_count", alternate = ["saveCount", "passCount", "save_count"]) val pass_count: Int = 0,
+    @SerializedName(value = "user_vote", alternate = ["userVote"]) val user_vote: String? = null
 )
 
 data class ApiCommentCreate(
     @SerializedName("user_id") val user_id: String,
-    @SerializedName("content") val content: String
+    @SerializedName("content") val content: String,
+    @SerializedName("nickname") val nickname: String = "익명의찰떡이"
+)
+
+data class ApiDeleteCommentResponse(
+    @SerializedName("status") val status: String? = null,
+    @SerializedName("message") val message: String = "",
+    @SerializedName("id") val id: Int = 0,
+    @SerializedName(value = "deal_id", alternate = ["dealId"]) val dealId: Int = 0
 )
 
 data class ApiVoteCreate(
@@ -448,11 +475,11 @@ data class ApiProduct(
 )
 
 data class ApiPriceHistory(
-    @SerializedName("price") val price: Int,
-    @SerializedName("original_price") val original_price: Int?,
-    @SerializedName("discount_rate") val discount_rate: Int?,
-    @SerializedName("tracked_at") val tracked_at: String,
-    @SerializedName("is_available") val is_available: Boolean
+    @SerializedName("price") val price: Int = 0,
+    @SerializedName("original_price") val original_price: Int? = null,
+    @SerializedName("discount_rate") val discount_rate: Int? = null,
+    @SerializedName(value = "tracked_at", alternate = ["date", "trackedAt"]) val tracked_at: String = "",
+    @SerializedName(value = "is_available", alternate = ["isAvailable"]) val is_available: Boolean = true
 )
 
 data class DealDetail(
@@ -488,11 +515,27 @@ data class EnhancedDealInfo(
 
 data class RegisterDeviceReq(
     @SerializedName("device_uuid") val device_uuid: String,
-    @SerializedName("fcm_token") val fcm_token: String,
+    @SerializedName("fcm_token") val fcm_token: String? = null,
     @SerializedName("night_push_consent") val night_push_consent: Boolean = false,
     @SerializedName("dnd_enabled") val dnd_enabled: Boolean = false,
     @SerializedName("dnd_start_time") val dnd_start_time: String = "21:00",
     @SerializedName("dnd_end_time") val dnd_end_time: String = "08:00",
+    @SerializedName("dnd_settings_json") val dnd_settings_json: String? = null
+)
+
+data class DeviceRegistrationResponse(
+    @SerializedName("status") val status: String? = null,
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("message") val message: String = "",
+    @SerializedName(value = "deviceToken", alternate = ["device_token"]) val deviceToken: String? = null,
+    @SerializedName(value = "deviceUuid", alternate = ["device_uuid"]) val deviceUuid: String? = null
+)
+
+data class UpdateDndReq(
+    @SerializedName("device_uuid") val device_uuid: String,
+    @SerializedName("dnd_enabled") val dnd_enabled: Boolean,
+    @SerializedName("dnd_start_time") val dnd_start_time: String,
+    @SerializedName("dnd_end_time") val dnd_end_time: String,
     @SerializedName("dnd_settings_json") val dnd_settings_json: String? = null
 )
 
@@ -509,6 +552,16 @@ data class PriceAlertRequest(
     @SerializedName("fcmToken") val fcmToken: String
 )
 
+data class MetaCategoryItem(
+    @SerializedName("key") val key: String = "",
+    @SerializedName("label") val label: String = ""
+)
+
+data class MetaCategoriesResponse(
+    @SerializedName("categories") val categories: List<MetaCategoryItem> = emptyList(),
+    @SerializedName("sources") val sources: List<String> = emptyList()
+)
+
 data class Category(
     @SerializedName("id") val id: String,
     @SerializedName("name") val name: String,
@@ -523,16 +576,16 @@ data class Site(
 )
 
 data class UserCommentDto(
-    @SerializedName("id") val id: Int,
-    @SerializedName("post_id") val post_id: Int,
-    @SerializedName("post_title") val post_title: String,
-    @SerializedName("user_id") val user_id: String,
-    @SerializedName("nickname") val nickname: String,
-    @SerializedName("content") val content: String,
-    @SerializedName("deal_url") val deal_url: String?,
-    @SerializedName("is_accepted") val is_accepted: Boolean,
-    @SerializedName("parent_id") val parent_id: Int?,
-    @SerializedName("created_at") val created_at: String?
+    @SerializedName("id") val id: Int = 0,
+    @SerializedName(value = "post_id", alternate = ["postId"]) val post_id: Int = 0,
+    @SerializedName(value = "post_title", alternate = ["postTitle"]) val post_title: String = "",
+    @SerializedName(value = "user_id", alternate = ["userId"]) val user_id: String = "",
+    @SerializedName("nickname") val nickname: String = "",
+    @SerializedName("content") val content: String = "",
+    @SerializedName(value = "deal_url", alternate = ["dealUrl"]) val deal_url: String? = null,
+    @SerializedName(value = "is_accepted", alternate = ["isAccepted"]) val is_accepted: Boolean = false,
+    @SerializedName(value = "parent_id", alternate = ["parentId"]) val parent_id: Int? = null,
+    @SerializedName(value = "created_at", alternate = ["createdAt"]) val created_at: String? = null
 )
 
 data class NotificationAlertDto(

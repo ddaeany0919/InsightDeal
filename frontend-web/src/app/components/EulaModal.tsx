@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useId, useRef } from "react";
+import { useDialogA11y } from "../lib/useDialogA11y";
 
 interface EulaModalProps {
   isOpen: boolean;
@@ -8,6 +9,11 @@ interface EulaModalProps {
 }
 
 export default function EulaModal({ isOpen, onClose }: EulaModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
+  useDialogA11y({ isOpen, onClose, containerRef: panelRef });
+
   if (!isOpen) return null;
 
   return (
@@ -28,6 +34,11 @@ export default function EulaModal({ isOpen, onClose }: EulaModalProps) {
       onClick={onClose}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className="glass-panel"
         style={{
           maxWidth: "520px",
@@ -46,6 +57,7 @@ export default function EulaModal({ isOpen, onClose }: EulaModalProps) {
       >
         <div>
           <h3
+            id={titleId}
             style={{
               fontSize: "1.25rem",
               fontWeight: 800,

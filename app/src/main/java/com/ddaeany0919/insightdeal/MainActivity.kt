@@ -1,8 +1,6 @@
 package com.ddaeany0919.insightdeal
 
-import android.content.Context
 import android.os.Bundle
-import android.provider.Settings
 import android.util.Log
 import android.Manifest
 import android.os.Build
@@ -39,7 +37,8 @@ import com.ddaeany0919.insightdeal.presentation.theme.InsightDealTheme
 import com.ddaeany0919.insightdeal.presentation.components.PinLockDialog
 import com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager
 import com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
-import java.util.UUID
+import com.ddaeany0919.insightdeal.data.KeywordPreferencesDataSource
+import com.ddaeany0919.insightdeal.data.LocalDataProvider
 import androidx.compose.foundation.clickable
 import com.google.firebase.messaging.FirebaseMessaging
 import com.ddaeany0919.insightdeal.network.NetworkModule
@@ -51,19 +50,13 @@ import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.lifecycle.lifecycleScope
-import com.ddaeany0919.insightdeal.presentation.auth.dataStore
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
-import kotlinx.coroutines.flow.firstOrNull
 
 private const val TAG_UI = "MainActivity"
 
 // [jetpack-compose-performance] 리컴포지션 시 불필요한 컬렉션 할당 방지를 위한 파일 레벨 상수 호이스팅
 private val BOTTOM_NAV_ROUTES = setOf(
     "home", "advanced_search", "category", "category_detail", "community",
-    "mypage", "watchlist", "my_posts", "my_comments", "recent_deals", "settings", "theme_settings"
+    "mypage", "watchlist", "my_posts", "my_comments", "recent_deals", "settings"
 )
 
 private val NAVIGATION_ITEMS = listOf(
@@ -73,15 +66,6 @@ private val NAVIGATION_ITEMS = listOf(
     BottomNavItem("community", "커뮤니티", Icons.Outlined.Forum, Icons.Filled.Forum, "커뮤니티"),
     BottomNavItem("mypage", "내정보", Icons.Outlined.Person, Icons.Filled.Person, "내정보 (마이페이지)")
 )
-
-fun generateDeviceUserId(context: Context): String {
-    return try {
-        val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-        if (androidId.isNullOrBlank() || androidId == "9774d56d682e549c") "device_${UUID.randomUUID().toString().take(12)}" else "device_${androidId.take(12)}"
-    } catch (e: Exception) {
-        Log.w(TAG_UI, "Failed to get device ID, using random", e); "device_${UUID.randomUUID().toString().take(12)}"
-    }
-}
 
 class MainActivity : FragmentActivity() {
     private val requestPermissionLauncher = registerForActivityResult(
@@ -114,24 +98,13 @@ class MainActivity : FragmentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
         }
-        val deviceUserId = generateDeviceUserId(this)
-        currentIntent = intent
-        
-        // ⚡ [자동로그인 가드] 최초 기동 시 자동로그인이 꺼져있다면 세션을 안전하게 guest로 청소
-        lifecycleScope.launch {
-            val prefs = this@MainActivity.dataStore.data.firstOrNull()
-            if (prefs != null) {
-                val autoLogin = prefs[booleanPreferencesKey("auto_login_enabled")] ?: true
-                if (!autoLogin) {
-                    this@MainActivity.dataStore.edit { editPrefs ->
-                        editPrefs[stringPreferencesKey("username")] = "guest"
-                        editPrefs[stringPreferencesKey("nickname")] = "guest"
-                    }
-                    Log.d("AuthGuard", "AutoLogin is disabled. Cleaned session to guest on Cold Start.")
-                }
+        val deviceUserId = runCatching { LocalDataProvider.getDeviceUuid() }
+            .onFailure { e ->
+                Log.e(TAG_UI, "기기 식별자(EncryptedPrefs) 초기화 실패 - 안전 모드로 동작: ${e.message}", e)
             }
-        }
-        
+            .getOrDefault("")
+        currentIntent = intent
+
         // Initialize Recent Deals & Notification History
         com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager.init(this)
         com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager.init(this)
@@ -145,21 +118,43 @@ class MainActivity : FragmentActivity() {
 
             val token = task.result
             Log.d(TAG_UI, "📱 FCM Token 가져오기 성공: ${token.take(20)}...")
+            LocalDataProvider.saveFcmToken(token)
 
-            val prefs = EncryptedPrefsManager.getEncryptedPrefs(this)
-            val nightPushConsent = prefs.getBoolean("night_push_consent", false)
-            
+            val nightPushConsent = runCatching {
+                EncryptedPrefsManager.getEncryptedPrefs(this).getBoolean("night_push_consent", false)
+            }.getOrDefault(false)
+            val keywordPrefs = runCatching { KeywordPreferencesDataSource() }.getOrNull()
+            val dndEnabled = runCatching { keywordPrefs?.getDndEnabled() ?: false }.getOrDefault(false)
+            val dndStart = runCatching { keywordPrefs?.getDndStartTime() ?: "21:00" }.getOrDefault("21:00")
+            val dndEnd = runCatching { keywordPrefs?.getDndEndTime() ?: "08:00" }.getOrDefault("08:00")
+            val dndJson = runCatching { keywordPrefs?.getWeekDndJson() }.getOrNull()
+
             CoroutineScope(Dispatchers.IO).launch {
+                val resolvedDeviceUuid = deviceUserId.ifBlank {
+                    runCatching { LocalDataProvider.getDeviceUuid() }.getOrDefault("")
+                }
+                if (resolvedDeviceUuid.isBlank()) {
+                    Log.w(TAG_UI, "기기 식별자 초기화 실패 상태로 FCM 토큰 서버 등록을 건너뜁니다.")
+                    return@launch
+                }
                 try {
                     val apiService = NetworkModule.createService<ApiService>()
                     val request = RegisterDeviceReq(
-                        device_uuid = deviceUserId,
+                        device_uuid = resolvedDeviceUuid,
                         fcm_token = token,
-                        night_push_consent = nightPushConsent
+                        night_push_consent = nightPushConsent,
+                        dnd_enabled = dndEnabled,
+                        dnd_start_time = dndStart,
+                        dnd_end_time = dndEnd,
+                        dnd_settings_json = dndJson
                     )
-                    
+
                     val response = apiService.registerFCMToken(request)
                     if (response.isSuccessful) {
+                        val issuedToken = response.body()?.deviceToken?.trim()?.takeIf { it.isNotBlank() }
+                        if (issuedToken != null) {
+                            LocalDataProvider.saveDeviceToken(issuedToken, resolvedDeviceUuid)
+                        }
                         Log.d(TAG_UI, "✅ FCM Token 서버 등록 (익명 가입) 성공")
                     } else {
                         Log.e(TAG_UI, "❌ FCM Token 서버 등록 실패: ${response.code()}")
@@ -177,20 +172,43 @@ class MainActivity : FragmentActivity() {
             val systemDark = isSystemInDarkTheme()
             val useDark = tm.shouldUseDarkTheme(systemDark)
             
-            // 보안 앱 잠금 상태 검사
+            // 보안 앱 잠금 상태 검사 (Keystore 영구 손상 시 비잠금 안전 모드로 동작)
             val context = this
-            val prefs = remember { EncryptedPrefsManager.getEncryptedPrefs(context) }
-            var correctPin by remember { mutableStateOf(prefs.getString("app_lock_pin", "") ?: "") }
+            val prefs = remember {
+                runCatching { EncryptedPrefsManager.getEncryptedPrefs(context) }
+                    .onFailure { e ->
+                        Log.e(TAG_UI, "보안 잠금 EncryptedPrefs 초기화 실패 - 비잠금 안전 모드로 동작: ${e.message}", e)
+                    }
+                    .getOrNull()
+            }
+            var correctPin by remember { mutableStateOf(prefs?.getString("app_lock_pin", "") ?: "") }
             var isLocked by remember { mutableStateOf(false) }
+
+            LaunchedEffect(prefs) {
+                if (prefs == null) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "보안 저장소 초기화에 실패하여 잠금 해제 안전 모드로 실행됩니다.",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
 
             // 생명주기 및 백그라운드-포그라운드 전환 시 PIN 및 생체 잠금 정밀 검사
             val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-            DisposableEffect(lifecycleOwner) {
+            DisposableEffect(lifecycleOwner, prefs) {
                 val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                     if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                        val pinLockEnabled = prefs.getBoolean("app_lock_enabled", false)
-                        val bioLockEnabled = prefs.getBoolean("biometric_lock_enabled", false)
-                        val pin = prefs.getString("app_lock_pin", "") ?: ""
+                        val activePrefs = prefs ?: runCatching {
+                            EncryptedPrefsManager.getEncryptedPrefs(context)
+                        }.getOrNull()
+                        if (activePrefs == null) {
+                            isLocked = false
+                            return@LifecycleEventObserver
+                        }
+                        val pinLockEnabled = activePrefs.getBoolean("app_lock_enabled", false)
+                        val bioLockEnabled = activePrefs.getBoolean("biometric_lock_enabled", false)
+                        val pin = activePrefs.getString("app_lock_pin", "") ?: ""
                         correctPin = pin
                         
                         if (bioLockEnabled) {
@@ -315,7 +333,9 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     return WishlistViewModel(
                         wishlistRepository = WishlistRepository(context = context),
-                        userIdProvider = { deviceUserId }
+                        userIdProvider = {
+                            runCatching { LocalDataProvider.getDeviceUuid() }.getOrDefault("")
+                        }
                     ) as T
                 }
             }
@@ -377,7 +397,6 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
             composable("mypage") { 
                 com.ddaeany0919.insightdeal.presentation.mypage.MyPageScreen(
                     onNavigateToSettings = { navController.navigate("settings") },
-                    onNavigateToAuth = { navController.navigate("auth") },
                     onNavigateToWatchlist = { navController.navigate("watchlist") },
                     onNavigateToMyPosts = { navController.navigate("my_posts") },
                     onNavigateToMyComments = { navController.navigate("my_comments") },
@@ -412,13 +431,7 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
             composable("settings") {
                 com.ddaeany0919.insightdeal.presentation.settings.SettingsScreen(
                     onBackClick = { navController.popBackStack() },
-                    onNavigateToKeywordManager = { navController.navigate("keyword_alarm") },
-                    onNavigateToAuth = { navController.navigate("auth") }
-                )
-            }
-            composable("auth") {
-                com.ddaeany0919.insightdeal.presentation.auth.AuthScreen(
-                    onBackClick = { navController.popBackStack() }
+                    onNavigateToKeywordManager = { navController.navigate("keyword_alarm") }
                 )
             }
             composable("keyword_alarm") {
@@ -447,7 +460,6 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                     }
                 )
             }
-            composable("theme_settings") { com.ddaeany0919.insightdeal.presentation.settings.ThemeSettingsScreen(onBackClick = { navController.popBackStack() }) }
             composable(
                 route = "webview/{url}",
                 arguments = listOf(androidx.navigation.navArgument("url") { type = androidx.navigation.NavType.StringType })
@@ -481,7 +493,7 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController, homeVi
                 val selected = when (item.route) {
                     "category" -> currentRoute == "category" || currentRoute == "category_detail"
                     "community" -> currentRoute == "community" || currentRoute == "community_write" || currentRoute == "community_edit" || currentRoute == "community_detail"
-                    "mypage" -> currentRoute == "mypage" || currentRoute == "watchlist" || currentRoute == "my_posts" || currentRoute == "my_comments" || currentRoute == "recent_deals" || currentRoute == "settings" || currentRoute == "theme_settings"
+                    "mypage" -> currentRoute == "mypage" || currentRoute == "watchlist" || currentRoute == "my_posts" || currentRoute == "my_comments" || currentRoute == "recent_deals" || currentRoute == "settings"
                     else -> currentRoute == item.route
                 }
 

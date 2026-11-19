@@ -1,5 +1,12 @@
-import type { DealSource, DealOptionItem } from "./types";
-import { hasTossBridge, logTossClick } from "./tossBridge";
+import type {
+  Deal,
+  DealSource,
+  DealOptionItem,
+  RawDealApiResponse,
+  WebDeviceAuth,
+  WishlistApiItem,
+} from "./types";
+import { hasTossBridge, isTossMiniAppEnv, logTossClick } from "./tossBridge";
 
 const NAMED_HTML_ENTITIES: Record<string, string> = {
   "&amp;": "&",
@@ -570,45 +577,95 @@ export const formatPrice = (
   return `${Math.round(parsedNum).toLocaleString()}원`;
 };
 
-// 제목 기반 카테고리 분류
+// 제목 기반 15종 표준 카테고리 분류
 export const categorizeDeal = (title: string): string => {
   const t = decodeHtmlEntities(title).toLowerCase();
   if (
     /pc|컴퓨터|그래픽|모니터|ssd|hdd|ram|램|메모리|키보드|마우스|노트북|글카|rtx|보드|cpu|인텔|amd|라이젠|지포스|로지텍|공유기|nas|웹캠|헤드셋/i.test(
       t
     )
-  )
-    return "PC/하드웨어";
+  ) {
+    return "PC용품";
+  }
   if (
-    /스마트폰|아이폰|갤럭시|충전|보조배터리|이어폰|버즈|에어팟|헤드폰|애플워치|워치|태블릿|패드|아이패드|케이스|케이블/i.test(
+    /스팀|steam|에픽|게임|닌텐도|스위치|ps5|플레이스테이션|xbox|소프트웨어|윈도우|오피스|디지털코드|gog/i.test(
       t
     )
-  )
-    return "모바일/상품권";
+  ) {
+    return "SW/게임";
+  }
   if (
-    /tv|티비|냉장고|청소기|세탁기|건조기|선풍기|에어컨|가습기|블렌더|모터|스타일러|공기청정기|안마|로봇|다이슨|lg|삼성/i.test(
+    /기저귀|분유|물티슈|아기|유아|육아|유모차|카시트|젖병|장난감|레고/i.test(
       t
     )
-  )
-    return "가전/TV";
+  ) {
+    return "육아/유아용품";
+  }
   if (
-    /나이키|아디다스|티셔츠|바지|신발|운동화|자켓|의류|패딩|모자|양말|구두|슬리퍼|가방|팬츠|아식스|뉴발/i.test(
+    /tv|티비|냉장고|청소기|세탁기|건조기|선풍기|에어컨|가습기|블렌더|스타일러|공기청정기|안마|로봇청소기|다이슨|lg|삼성|전자레인지|에어프라이어|커피머신/i.test(
       t
     )
-  )
-    return "의류/뷰티";
+  ) {
+    return "가전제품";
+  }
   if (
-    /물|생수|라면|커피|치킨|피자|콜라|제로|비타민|유산균|햇반|고기|돼지|소고기|과자|두유|우유|닭|스팸|참치|만두|볶음밥|삼다수|사이다|펩시|오레오/i.test(
+    /상품권|컬쳐|해피머니|도서문화|북앤라이프|문화상품권|온누리/i.test(
       t
     )
-  )
-    return "식품/건강";
+  ) {
+    return "상품권";
+  }
+  if (/적립|포인트|페이백|캐시백|출석체크|리워드|네이버페이/i.test(t)) {
+    return "적립";
+  }
+  if (/이벤트|응모|추첨|무료나눔|무료배포|체험단/i.test(t)) {
+    return "이벤트";
+  }
   if (
-    /상품권|컬쳐|해피머니|도서문화|구글|게임|기프트|쿠폰|편의점|cu|gs|포인트|페이|네이버페이|스팀/i.test(
+    /스마트폰|아이폰|갤럭시|충전|보조배터리|이어폰|버즈|에어팟|헤드폰|애플워치|워치|태블릿|패드|아이패드|케이스|케이블|기프티콘|기프트카드|편의점|cu|gs25/i.test(
       t
     )
-  )
-    return "모바일/상품권";
+  ) {
+    return "모바일/기프티콘";
+  }
+  if (
+    /스킨|로션|선크림|샴푸|린스|바디워시|클렌징|화장품|향수|마스크팩|올리브영|립/i.test(
+      t
+    )
+  ) {
+    return "뷰티";
+  }
+  if (
+    /나이키|아디다스|티셔츠|바지|신발|운동화|자켓|의류|패딩|모자|양말|구두|슬리퍼|가방|팬츠|아식스|뉴발|무신사/i.test(
+      t
+    )
+  ) {
+    return "패션";
+  }
+  if (
+    /물|생수|라면|커피|치킨|피자|콜라|제로|비타민|유산균|햇반|고기|돼지|소고기|과자|두유|우유|닭|스팸|참치|만두|볶음밥|삼다수|사이다|펩시|오레오|프로틴/i.test(
+      t
+    )
+  ) {
+    return "음식";
+  }
+  if (
+    /휴지|세제|섬유유연제|칫솔|치약|건전지|수건|쓰레기봉투|매트|이불|베개/i.test(
+      t
+    )
+  ) {
+    return "생활용품";
+  }
+  if (
+    /해외직구|직구|아마존|amazon|알리익스프레스|aliexpress|타오바오|아이허브|iherb|큐텐|테무|temu|뉴에그/i.test(
+      t
+    )
+  ) {
+    return "해외직구";
+  }
+  if (/모음전|총정리|핫딜모음|브랜드데이/i.test(t)) {
+    return "핫딜모음";
+  }
   return "기타";
 };
 
@@ -719,14 +776,14 @@ export const resolveOutboundUrl = (
         /itempage3\.auction\.co\.kr\/DetailView\.aspx\?.*?(?:itemno|itemNo)=([A-Za-z0-9]+)/i
       );
       if (auctionMatch && auctionMatch[1]) {
-        return `http://mitem.auction.co.kr/vip?itemNo=${auctionMatch[1]}`;
+        return `https://mitem.auction.co.kr/vip?itemNo=${auctionMatch[1]}`;
       }
 
       const gmarketMatch = url.match(
         /item\.gmarket\.co\.kr\/Item\?.*?goodscode=([0-9]+)/i
       );
       if (gmarketMatch && gmarketMatch[1]) {
-        return `http://mitem.gmarket.co.kr/vi/product/${gmarketMatch[1]}`;
+        return `https://mitem.gmarket.co.kr/vi/product/${gmarketMatch[1]}`;
       }
 
       const st11Match = url.match(/www\.11st\.co\.kr\/products\/([0-9]+)/i);
@@ -759,17 +816,23 @@ export const resolveOutboundUrl = (
         /mitem\.auction\.co\.kr\/vip\?.*?itemNo=([A-Za-z0-9]+)/i
       );
       if (mAuctionMatch && mAuctionMatch[1]) {
-        return `http://itempage3.auction.co.kr/DetailView.aspx?itemno=${mAuctionMatch[1]}`;
+        return `https://itempage3.auction.co.kr/DetailView.aspx?itemno=${mAuctionMatch[1]}`;
       }
       const mGmarketMatch = url.match(
         /m(?:item)?\.gmarket\.co\.kr\/vi\/product\/([0-9]+)/i
       );
       if (mGmarketMatch && mGmarketMatch[1]) {
-        return `http://item.gmarket.co.kr/Item?goodscode=${mGmarketMatch[1]}`;
+        return `https://item.gmarket.co.kr/Item?goodscode=${mGmarketMatch[1]}`;
       }
     }
   } catch {
     return url;
+  }
+
+  // 이미 http:// 로 들어온 옥션/지마켓 URL도 HTTPS로 강제 업그레이드 (Mixed Content 방어)
+  if (/^http:\/\/(?:mitem|itempage3)\.auction\.co\.kr/i.test(url) ||
+      /^http:\/\/(?:mitem|m|item)\.gmarket\.co\.kr/i.test(url)) {
+    return url.replace(/^http:\/\//i, "https://");
   }
 
   return url;
@@ -1053,11 +1116,43 @@ export const extractPromoCodes = (
   return Array.from(codes).slice(0, 10);
 };
 
-const VAPID_PUBLIC_KEY =
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
-  "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U";
+const DEVICE_UUID_KEY = "insightdeal_web_device_uuid";
+const LEGACY_DEVICE_UUID_KEY = "insightdeal_token";
+const DEVICE_TOKEN_KEY = "insightdeal_web_device_token";
+export const WISHLIST_ID_MAP_KEY = "insightdeal_wishlist_id_map";
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
+export interface WishlistIdEntry {
+  wishlistId: number;
+  keyword: string;
+}
+
+export type WebPushSupportStatus =
+  | "supported"
+  | "in_app_webview"
+  | "toss_miniapp"
+  | "unsupported";
+
+export interface EnsureWebPushResult {
+  deviceUuid: string;
+  deviceToken?: string;
+  pushGranted: boolean;
+  reason?:
+    | "unsupported"
+    | "in_app_webview"
+    | "toss_miniapp"
+    | "denied"
+    | "vapid_unavailable"
+    | "register_failed"
+    | "auth_failed"
+    | "subscribe_failed";
+}
+
+let deviceAuthInFlight: Promise<WebDeviceAuth> | null = null;
+let forceRefreshInFlight: Promise<WebDeviceAuth> | null = null;
+
+export function urlBase64ToUint8Array(
+  base64String: string
+): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
   const rawData = window.atob(base64);
@@ -1069,73 +1164,793 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   return outputArray;
 }
 
-export const getOrCreateWebDeviceUuid = (): string => {
-  if (typeof window === "undefined") return "web_guest";
-  let uuid =
-    localStorage.getItem("insightdeal_web_device_uuid") ||
-    localStorage.getItem("insightdeal_token");
-  if (!uuid || uuid === "web_guest") {
-    const randomPart =
-      typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-    uuid = `web_${randomPart}`;
-  }
-  localStorage.setItem("insightdeal_web_device_uuid", uuid);
-  localStorage.setItem("insightdeal_token", uuid);
-  return uuid;
+export const isInAppWebView = (): boolean => {
+  if (typeof navigator === "undefined") return false;
+  if (isTossMiniAppEnv()) return true;
+  const ua = navigator.userAgent || "";
+  return /KAKAOTALK|Instagram|NAVER|FBAN|FBAV|Line\/|DaumApps|Whale\/.*Mobile/i.test(
+    ua
+  );
 };
 
-export const ensureWebPushSubscribed = async (): Promise<{
-  deviceUuid: string;
-  pushGranted: boolean;
-}> => {
-  const deviceUuid = getOrCreateWebDeviceUuid();
+export const getWebPushSupportStatus = (): WebPushSupportStatus => {
+  if (typeof window === "undefined") return "unsupported";
+  if (isTossMiniAppEnv()) return "toss_miniapp";
+  if (isInAppWebView()) return "in_app_webview";
   if (
-    typeof window === "undefined" ||
     !("serviceWorker" in navigator) ||
     !("PushManager" in window) ||
     !("Notification" in window)
   ) {
-    return { deviceUuid, pushGranted: false };
+    return "unsupported";
+  }
+  return "supported";
+};
+
+function generateRandomDeviceUuid(): string {
+  const randomPart =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+  return `web_${randomPart}`;
+}
+
+export const getOrCreateWebDeviceUuid = (): string => {
+  if (typeof window === "undefined") return "web_guest";
+  let uuid =
+    localStorage.getItem(DEVICE_UUID_KEY) ||
+    localStorage.getItem(LEGACY_DEVICE_UUID_KEY);
+  if (!uuid || uuid === "web_guest") {
+    uuid = generateRandomDeviceUuid();
+  }
+  localStorage.setItem(DEVICE_UUID_KEY, uuid);
+  localStorage.setItem(LEGACY_DEVICE_UUID_KEY, uuid);
+  return uuid;
+};
+
+export const getStoredWebDeviceToken = (): string => {
+  if (typeof window === "undefined") return "";
+  return (localStorage.getItem(DEVICE_TOKEN_KEY) || "").trim();
+};
+
+function rotateNewWebDeviceUuid(): string {
+  const freshUuid = generateRandomDeviceUuid();
+  if (typeof window !== "undefined") {
+    localStorage.setItem(DEVICE_UUID_KEY, freshUuid);
+    localStorage.setItem(LEGACY_DEVICE_UUID_KEY, freshUuid);
+    localStorage.removeItem(DEVICE_TOKEN_KEY);
+    // 구 게정의 wishlistId 캐시가 새 세션에 남지 않도록 즉시 초기화
+    localStorage.removeItem(WISHLIST_ID_MAP_KEY);
+  }
+  return freshUuid;
+}
+
+async function performDeviceAuth(forceFreshSession = false): Promise<WebDeviceAuth> {
+  if (typeof window === "undefined") {
+    throw new Error("브라우저 환경에서만 기기 인증을 수행할 수 있어요.");
+  }
+
+  let deviceUuid = forceFreshSession
+    ? rotateNewWebDeviceUuid()
+    : getOrCreateWebDeviceUuid();
+  const existingToken = forceFreshSession ? "" : getStoredWebDeviceToken();
+
+  if (!forceFreshSession && deviceUuid && existingToken) {
+    return { deviceUuid, deviceToken: existingToken };
+  }
+
+  const registerOnce = async (
+    targetUuid: string,
+    tokenHeader?: string
+  ): Promise<Response> => {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (tokenHeader) {
+      headers["X-Device-Token"] = tokenHeader;
+    }
+    return fetch(apiUrl("/api/push/device"), {
+      method: "POST",
+      headers,
+      // fcm_token은 미전달(또는 미설정)로 유지해 기존 토큰을 공백으로 덮어쓰지 않도록 보호
+      body: JSON.stringify({
+        device_uuid: targetUuid,
+        platform: "web",
+      }),
+    });
+  };
+
+  let res = await registerOnce(deviceUuid);
+
+  if (res.status === 503) {
+    throw new Error(
+      "서버 기기 인증 설정이 준비되지 않았어요. 잠시 후 다시 시도해 주세요."
+    );
+  }
+
+  // 기존 UUID가 서버에 등록되어 있으나 로컬 토큰이 없거나 만료된 경우(401/403):
+  // 동일 UUID 무한 재시도 대신 1회만 새 게스트 세션 UUID로 회전 등록
+  if (res.status === 401 || res.status === 403) {
+    deviceUuid = rotateNewWebDeviceUuid();
+    res = await registerOnce(deviceUuid);
+    if (res.status === 503) {
+      throw new Error(
+        "서버 기기 인증 설정이 준비되지 않았어요. 잠시 후 다시 시도해 주세요."
+      );
+    }
+  }
+
+  if (!res.ok) {
+    throw new Error(`기기 인증에 실패했어요 (${res.status})`);
+  }
+
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const resolvedUuid = String(
+    data.device_uuid ?? data.deviceUuid ?? deviceUuid
+  ).trim();
+  const issuedToken = String(
+    data.device_token ?? data.deviceToken ?? ""
+  ).trim();
+
+  if (!resolvedUuid || !issuedToken) {
+    throw new Error("서버로부터 유효한 기기 인증 토큰을 받지 못했어요.");
+  }
+
+  localStorage.setItem(DEVICE_UUID_KEY, resolvedUuid);
+  localStorage.setItem(LEGACY_DEVICE_UUID_KEY, resolvedUuid);
+  localStorage.setItem(DEVICE_TOKEN_KEY, issuedToken);
+
+  return { deviceUuid: resolvedUuid, deviceToken: issuedToken };
+}
+
+/**
+ * 게스트 기기 식별자 및 HMAC X-Device-Token 확보 (비강제/강제 회전 In-Flight 분리 보장)
+ */
+export const ensureWebDeviceAuth = async (options?: {
+  forceRefresh?: boolean;
+}): Promise<WebDeviceAuth> => {
+  if (typeof window === "undefined") {
+    throw new Error("브라우저 환경에서만 기기 인증을 수행할 수 있어요.");
+  }
+
+  const forceRefresh = Boolean(options?.forceRefresh);
+  if (!forceRefresh) {
+    if (forceRefreshInFlight) {
+      return forceRefreshInFlight;
+    }
+    const existingUuid =
+      localStorage.getItem(DEVICE_UUID_KEY) ||
+      localStorage.getItem(LEGACY_DEVICE_UUID_KEY);
+    const existingToken = getStoredWebDeviceToken();
+    if (existingUuid && existingUuid !== "web_guest" && existingToken) {
+      return { deviceUuid: existingUuid, deviceToken: existingToken };
+    }
+    if (!deviceAuthInFlight) {
+      deviceAuthInFlight = performDeviceAuth(false).finally(() => {
+        deviceAuthInFlight = null;
+      });
+    }
+    return deviceAuthInFlight;
+  }
+
+  // 강제 회전 요청은 진행 중인 비강제 deviceAuthInFlight 프라미스를 재사용하지 않고
+  // 선행 요청 완료를 기다린 뒤 별도 forceRefreshInFlight로 새 세션을 발급한다.
+  if (!forceRefreshInFlight) {
+    localStorage.removeItem(DEVICE_TOKEN_KEY);
+    const pendingNormal = deviceAuthInFlight;
+    forceRefreshInFlight = (async () => {
+      if (pendingNormal) {
+        await pendingNormal.catch(() => null);
+      }
+      localStorage.removeItem(DEVICE_TOKEN_KEY);
+      return performDeviceAuth(true);
+    })().finally(() => {
+      forceRefreshInFlight = null;
+    });
+  }
+  return forceRefreshInFlight;
+};
+
+export type AuthFetchRequestBuilder = (
+  auth: WebDeviceAuth
+) => string | { pathOrUrl: string; init?: RequestInit };
+
+function rewriteAuthRequestUuid(
+  pathOrUrl: string,
+  init: RequestInit,
+  oldUuid: string,
+  newUuid: string
+): { url: string; requestInit: RequestInit } {
+  let rewrittenUrl = pathOrUrl;
+  if (oldUuid && newUuid && oldUuid !== newUuid) {
+    try {
+      const isAbsolute = /^https?:\/\//i.test(pathOrUrl);
+      const parsed = new URL(pathOrUrl, "http://placeholder.local");
+      let urlChanged = false;
+      for (const paramKey of ["user_id", "device_uuid"]) {
+        if (!parsed.searchParams.has(paramKey)) continue;
+        const values = parsed.searchParams.getAll(paramKey);
+        if (values.some((v) => v === oldUuid)) {
+          parsed.searchParams.delete(paramKey);
+          values.forEach((v) =>
+            parsed.searchParams.append(paramKey, v === oldUuid ? newUuid : v)
+          );
+          urlChanged = true;
+        }
+      }
+      if (urlChanged) {
+        rewrittenUrl = isAbsolute
+          ? parsed.toString()
+          : `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+    } catch {
+      // URL 파싱 실패 시 원본 유지
+    }
+  }
+
+  let nextInit: RequestInit = init;
+  if (
+    oldUuid &&
+    newUuid &&
+    oldUuid !== newUuid &&
+    typeof init.body === "string" &&
+    init.body.trim().startsWith("{")
+  ) {
+    try {
+      const parsedBody = JSON.parse(init.body) as Record<string, unknown>;
+      if (
+        parsedBody &&
+        typeof parsedBody === "object" &&
+        !Array.isArray(parsedBody)
+      ) {
+        let bodyChanged = false;
+        if (parsedBody.user_id === oldUuid) {
+          parsedBody.user_id = newUuid;
+          bodyChanged = true;
+        }
+        if (parsedBody.device_uuid === oldUuid) {
+          parsedBody.device_uuid = newUuid;
+          bodyChanged = true;
+        }
+        if (bodyChanged) {
+          nextInit = { ...init, body: JSON.stringify(parsedBody) };
+        }
+      }
+    } catch {
+      // JSON 파싱 실패 시 원본 바디 유지
+    }
+  }
+
+  return { url: rewrittenUrl, requestInit: nextInit };
+}
+
+/**
+ * X-Device-Token 자동 첨부 인증 fetch 래퍼 (401 수신 시 1회 세션 재인증 + UUID 정합화 후 재시도)
+ */
+export const authFetch = async (
+  pathOrUrlOrBuilder: string | AuthFetchRequestBuilder,
+  init: RequestInit = {}
+): Promise<Response> => {
+  const auth = await ensureWebDeviceAuth();
+
+  const resolveRequest = (
+    currentAuth: WebDeviceAuth
+  ): { url: string; requestInit: RequestInit } => {
+    if (typeof pathOrUrlOrBuilder === "function") {
+      const built = pathOrUrlOrBuilder(currentAuth);
+      if (typeof built === "string") {
+        return { url: built, requestInit: init };
+      }
+      return { url: built.pathOrUrl, requestInit: built.init ?? {} };
+    }
+    return { url: pathOrUrlOrBuilder, requestInit: init };
+  };
+
+  const firstReq = resolveRequest(auth);
+  const headers = new Headers(firstReq.requestInit.headers);
+  headers.set("X-Device-Token", auth.deviceToken);
+
+  let res = await fetch(apiUrl(firstReq.url), {
+    ...firstReq.requestInit,
+    headers,
+  });
+
+  if (res.status === 401) {
+    const currentToken = getStoredWebDeviceToken();
+    const currentUuid =
+      typeof window !== "undefined"
+        ? localStorage.getItem(DEVICE_UUID_KEY) ||
+          localStorage.getItem(LEGACY_DEVICE_UUID_KEY) ||
+          ""
+        : "";
+
+    const refreshed =
+      currentToken &&
+      currentUuid &&
+      currentUuid !== "web_guest" &&
+      currentToken !== auth.deviceToken
+        ? { deviceUuid: currentUuid, deviceToken: currentToken }
+        : await ensureWebDeviceAuth({ forceRefresh: true });
+
+    let retryReq = resolveRequest(refreshed);
+    if (
+      typeof pathOrUrlOrBuilder !== "function" &&
+      refreshed.deviceUuid !== auth.deviceUuid
+    ) {
+      retryReq = rewriteAuthRequestUuid(
+        retryReq.url,
+        retryReq.requestInit,
+        auth.deviceUuid,
+        refreshed.deviceUuid
+      );
+    }
+
+    const retryHeaders = new Headers(retryReq.requestInit.headers);
+    retryHeaders.set("X-Device-Token", refreshed.deviceToken);
+    res = await fetch(apiUrl(retryReq.url), {
+      ...retryReq.requestInit,
+      headers: retryHeaders,
+    });
+  }
+
+  return res;
+};
+
+/**
+ * 서버 VAPID 공개키 조회 (하드코딩 샘플 키 폴백 완전 제거, JSON/텍스트 양립 파싱)
+ */
+export const fetchVapidPublicKey = async (): Promise<string> => {
+  const envKey = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "").trim();
+  if (envKey && envKey.length >= 64) {
+    return envKey;
+  }
+
+  const res = await fetch(apiUrl("/api/push-public-key"), {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`VAPID 공개키를 불러오지 못했어요 (${res.status})`);
+  }
+
+  const rawText = (await res.text()).trim();
+  if (!rawText) {
+    throw new Error("VAPID 공개키 응답이 비어 있어요.");
+  }
+
+  let extracted = rawText;
+  if (rawText.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(rawText) as {
+        public_key?: string;
+        publicKey?: string;
+      };
+      extracted = String(parsed.public_key || parsed.publicKey || "").trim();
+    } catch {
+      extracted = "";
+    }
+  } else {
+    extracted = rawText.replace(/^"+|"+$/g, "").trim();
+  }
+
+  if (!extracted || extracted.length < 32 || extracted.includes("...")) {
+    throw new Error("유효한 VAPID 공개키가 설정되지 않았어요.");
+  }
+  return extracted;
+};
+
+/**
+ * Workbox /pwa-sw.js가 이미 등록된 프로덕션 환경에서는 기존 등록을 재사용하고,
+ * 미등록(개발 환경 등)일 때만 /sw.js를 등록해 캐싱 SW 덮어쓰기를 방지합니다.
+ */
+export const registerOrReusePushServiceWorker =
+  async (): Promise<ServiceWorkerRegistration> => {
+    const existing = await navigator.serviceWorker.getRegistration("/");
+    if (existing) {
+      const scriptUrl =
+        existing.active?.scriptURL ||
+        existing.waiting?.scriptURL ||
+        existing.installing?.scriptURL ||
+        "";
+      if (scriptUrl.includes("pwa-sw.js") || scriptUrl.includes("/sw.js")) {
+        return existing;
+      }
+    }
+    return navigator.serviceWorker.register("/sw.js");
+  };
+
+export const ensureWebPushSubscribed =
+  async (): Promise<EnsureWebPushResult> => {
+    let auth: WebDeviceAuth;
+    try {
+      auth = await ensureWebDeviceAuth();
+    } catch {
+      return {
+        deviceUuid: getOrCreateWebDeviceUuid(),
+        pushGranted: false,
+        reason: "auth_failed",
+      };
+    }
+
+    const support = getWebPushSupportStatus();
+    if (support !== "supported") {
+      return {
+        deviceUuid: auth.deviceUuid,
+        deviceToken: auth.deviceToken,
+        pushGranted: false,
+        reason: support,
+      };
+    }
+
+    try {
+      let permission = Notification.permission;
+      if (permission === "default") {
+        permission = await Notification.requestPermission();
+      }
+      if (permission !== "granted") {
+        return {
+          deviceUuid: auth.deviceUuid,
+          deviceToken: auth.deviceToken,
+          pushGranted: false,
+          reason: "denied",
+        };
+      }
+
+      const registration = await registerOrReusePushServiceWorker();
+      await navigator.serviceWorker.ready;
+
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        let vapidKey = "";
+        try {
+          vapidKey = await fetchVapidPublicKey();
+        } catch {
+          return {
+            deviceUuid: auth.deviceUuid,
+            deviceToken: auth.deviceToken,
+            pushGranted: false,
+            reason: "vapid_unavailable",
+          };
+        }
+
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        });
+      }
+
+      const subJson = subscription.toJSON();
+      const registerPath = API_BASE_URL
+        ? "/api/push/register-web"
+        : "/api/push-register";
+      const regRes = await authFetch((latestAuth) => ({
+        pathOrUrl: registerPath,
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            device_uuid: latestAuth.deviceUuid,
+            endpoint: subJson.endpoint,
+            keys: subJson.keys,
+          }),
+        },
+      }));
+
+      const latestAuth = await ensureWebDeviceAuth().catch(() => auth);
+
+      if (!regRes.ok) {
+        return {
+          deviceUuid: latestAuth.deviceUuid,
+          deviceToken: latestAuth.deviceToken,
+          pushGranted: false,
+          reason: "register_failed",
+        };
+      }
+
+      return {
+        deviceUuid: latestAuth.deviceUuid,
+        deviceToken: latestAuth.deviceToken,
+        pushGranted: true,
+      };
+    } catch {
+      return {
+        deviceUuid: auth.deviceUuid,
+        deviceToken: auth.deviceToken,
+        pushGranted: false,
+        reason: "subscribe_failed",
+      };
+    }
+  };
+
+/**
+ * 명시적 타임존 ISO-8601 타임스탬프 파싱 (+9h 인위 보정 제거)
+ */
+export function parseIsoTimestampMs(
+  dateInput?: string | number | null
+): number | null {
+  if (dateInput === null || dateInput === undefined || dateInput === "") {
+    return null;
+  }
+  if (typeof dateInput === "number") {
+    return Number.isFinite(dateInput) ? dateInput : null;
+  }
+
+  const trimmed = String(dateInput).trim();
+  if (!trimmed) return null;
+
+  if (/^\d{10,13}$/.test(trimmed)) {
+    const numeric = Number(trimmed);
+    return trimmed.length === 10 ? numeric * 1000 : numeric;
+  }
+
+  let isoStr = trimmed.replace(" ", "T");
+  if (!/(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(isoStr)) {
+    isoStr += "Z";
+  }
+
+  const ms = Date.parse(isoStr);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+export function formatRelativeTimeKo(
+  dateInput?: string | number | null,
+  nowMs: number = Date.now(),
+  fallbackLabel = "방금 전"
+): string {
+  const targetMs = parseIsoTimestampMs(dateInput);
+  if (targetMs === null) {
+    return fallbackLabel;
+  }
+
+  const diffMs = Math.max(0, nowMs - targetMs);
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "방금 전";
+  if (diffMin < 60) return `${diffMin}분 전`;
+
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}시간 전`;
+
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 7) return `${diffDay}일 전`;
+
+  const d = new Date(targetMs);
+  return `${d.getMonth() + 1}.${d.getDate()}`;
+}
+
+export function getCommunityName(id?: number): string {
+  if (!id) return "핫딜";
+  const map: Record<number, string> = {
+    1: "뽐뿌",
+    2: "루리웹",
+    3: "클리앙",
+    4: "알리뽐뿌",
+    5: "퀘이사존",
+    6: "펨코",
+    7: "빠삭국내",
+    8: "빠삭해외",
+    9: "빠삭육아",
+  };
+  return map[id] || "핫딜";
+}
+
+/**
+ * 백엔드 RawDealApiResponse(목록/상세 1-RTT/이중 키) -> 프론트 Deal 정규화 매핑
+ */
+export function mapRawDealToDeal(
+  d: RawDealApiResponse,
+  targetPlatform?: string
+): Deal {
+  const titleStr = decodeHtmlEntities(d.title || "");
+  const cleanEcommerce =
+    d.ecommerce_url && d.ecommerce_url.trim() !== ""
+      ? d.ecommerce_url.trim()
+      : null;
+  const cleanPost =
+    d.post_url && d.post_url.trim() !== "" ? d.post_url.trim() : null;
+  const cleanPostLink =
+    d.post_link && d.post_link.trim() !== "" ? d.post_link.trim() : null;
+  const cleanLink = d.link && d.link.trim() !== "" ? d.link.trim() : null;
+
+  const matchedSource =
+    targetPlatform &&
+    targetPlatform !== "전체" &&
+    Array.isArray(d.sources)
+      ? d.sources.find(
+          (s: DealSource) =>
+            String(s.site_name || "").includes(targetPlatform) && s.post_url
+        )
+      : null;
+
+  const finalEcommerce = cleanEcommerce || cleanPostLink || cleanLink || "#";
+  const finalPost =
+    (matchedSource && matchedSource.post_url) ||
+    cleanPost ||
+    cleanPostLink ||
+    cleanLink ||
+    "#";
+
+  const rawPriceNum = Number(String(d.price ?? "").replace(/[^0-9.-]/g, ""));
+  const isExplicitFree = Boolean(d.is_free ?? d.isFree);
+  const titleFallback =
+    !isExplicitFree &&
+    (d.price === null ||
+      d.price === undefined ||
+      String(d.price).trim() === "" ||
+      !Number.isFinite(rawPriceNum) ||
+      rawPriceNum <= 0)
+      ? extractPriceFromTitle(titleStr)
+      : null;
+
+  const rawShipping = d.shipping_fee || d.shippingFee || null;
+  const shippingStr = rawShipping ? decodeHtmlEntities(rawShipping) : null;
+  const optionsDataArr = Array.isArray(d.options_data)
+    ? d.options_data
+    : Array.isArray(d.optionsData)
+      ? d.optionsData
+      : undefined;
+
+  const resolvedShop = resolveDealShopName({
+    shop_name: d.shop_name ?? d.shopName,
+    title: titleStr,
+    ecommerce_url: finalEcommerce,
+  });
+
+  const rawCategory =
+    d.category && d.category.includes("해외핫딜") ? "해외직구" : d.category || "";
+
+  return {
+    id: d.id,
+    community_name:
+      d.site_name ||
+      (d.site_names && d.site_names[0]) ||
+      d.community_name ||
+      d.communityName ||
+      getCommunityName(d.source_community_id),
+    shop_name: resolvedShop || undefined,
+    title: titleStr,
+    price: isExplicitFree
+      ? "0"
+      : titleFallback
+        ? titleFallback.price
+        : d.price !== null &&
+            d.price !== undefined &&
+            String(d.price).trim() !== ""
+          ? String(d.price)
+          : "0",
+    image_url: d.image_url || d.imageUrl || null,
+    scraped_at: d.scraped_at || d.indexed_at || d.timeAgo || "방금 전",
+    post_link: finalPost,
+    ecommerce_url: finalEcommerce,
+    shipping_fee: shippingStr,
+    category: rawCategory || categorizeDeal(titleStr),
+    isClosed: Boolean(d.is_closed ?? d.isClosed),
+    originalDate: d.created_at || d.originalDate || d.indexed_at || undefined,
+    currency: titleFallback
+      ? titleFallback.currency
+      : d.currency || "KRW",
+    honeyScore: Number(d.honey_score ?? d.honeyScore ?? d.score ?? 0),
+    aiSummary: decodeHtmlEntities(d.ai_summary || d.aiSummary || ""),
+    contentHtml: d.content_html || d.contentHtml || "",
+    sources: d.sources || [],
+    tags: Array.isArray(d.tags)
+      ? d.tags.map((t) => decodeHtmlEntities(String(t))).filter(Boolean)
+      : [],
+    has_options: Boolean(d.has_options ?? d.hasOptions),
+    options_count:
+      d.options_count ?? (optionsDataArr ? optionsDataArr.length : undefined),
+    options_data: optionsDataArr,
+    buyCount:
+      d.buy_count ?? d.buyCount ?? d.like_count ?? undefined,
+    passCount:
+      d.pass_count ??
+      d.passCount ??
+      d.save_count ??
+      d.saveCount ??
+      d.dislike_count ??
+      undefined,
+    userVote: d.user_vote ?? d.userVote ?? null,
+    commentCount:
+      d.comment_count ?? d.commentCount ?? d.comments ?? undefined,
+    historyCount: d.history_count ?? d.historyCount ?? undefined,
+    isSearchFallback: Boolean(d.is_search_fallback ?? d.isSearchFallback),
+    isFree: isExplicitFree,
+  };
+}
+
+/**
+ * 찜 / 목표가 알림 공통 키워드 정규화
+ */
+export function buildDealWishlistKeyword(
+  dealTitle: string,
+  optionTitle?: string
+): string {
+  const source = optionTitle || dealTitle || "";
+  const cleaned = decodeHtmlEntities(source)
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/\([^)]*\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const fallback = decodeHtmlEntities(source).trim();
+  return (cleaned || fallback).slice(0, 50);
+}
+
+export function loadWishlistIdMap(): Record<string, WishlistIdEntry> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(WISHLIST_ID_MAP_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed as Record<string, WishlistIdEntry>;
+  } catch {
+    return {};
+  }
+}
+
+export function saveWishlistIdEntry(
+  key: string | number,
+  wishlistId: number,
+  keyword: string
+): void {
+  if (typeof window === "undefined" || !Number.isFinite(wishlistId)) return;
+  try {
+    const map = loadWishlistIdMap();
+    map[String(key)] = { wishlistId, keyword };
+    localStorage.setItem(WISHLIST_ID_MAP_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+export function removeWishlistIdEntry(key: string | number): void {
+  if (typeof window === "undefined") return;
+  try {
+    const map = loadWishlistIdMap();
+    delete map[String(key)];
+    localStorage.setItem(WISHLIST_ID_MAP_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+/**
+ * 로컬 ID 맵에 없을 때 서버 GET /api/wishlist/에서 keyword 일치 항목 ID를 조회
+ */
+export async function resolveServerWishlistId(
+  localKey: string | number,
+  keyword: string,
+  deviceUuid: string,
+  altKeywords: string[] = []
+): Promise<number | null> {
+  const map = loadWishlistIdMap();
+  const cached = map[String(localKey)];
+  if (cached && Number.isFinite(cached.wishlistId) && cached.wishlistId > 0) {
+    return cached.wishlistId;
   }
 
   try {
-    let permission = Notification.permission;
-    if (permission === "default") {
-      permission = await Notification.requestPermission();
+    const res = await authFetch(
+      (auth) => `/api/wishlist/?user_id=${encodeURIComponent(auth.deviceUuid)}`
+    );
+    if (!res.ok) return null;
+    const list = (await res.json()) as WishlistApiItem[];
+    if (!Array.isArray(list)) return null;
+
+    const candidates = new Set(
+      [keyword, ...altKeywords]
+        .map((k) => decodeHtmlEntities(k).trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    const matched = list.find((item) => {
+      const k = decodeHtmlEntities(item.keyword || "").trim().toLowerCase();
+      return candidates.has(k);
+    });
+    if (matched && Number.isFinite(matched.id)) {
+      saveWishlistIdEntry(localKey, matched.id, matched.keyword);
+      return matched.id;
     }
-    if (permission !== "granted") {
-      return { deviceUuid, pushGranted: false };
-    }
+  } catch {}
 
-    const registration = await navigator.serviceWorker.register("/sw.js");
-    await navigator.serviceWorker.ready;
-
-    let subscription = await registration.pushManager.getSubscription();
-    if (!subscription) {
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-      });
-    }
-
-    const subJson = subscription.toJSON();
-    await fetch(apiUrl("/api/push-register"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        device_uuid: deviceUuid,
-        endpoint: subJson.endpoint,
-        keys: subJson.keys,
-      }),
-    }).catch(() => null);
-
-    return { deviceUuid, pushGranted: true };
-  } catch {
-    return { deviceUuid, pushGranted: Notification.permission === "granted" };
-  }
-};
+  return null;
+}
 
 export const trackOutboundClick = (
   url: string | undefined | null,

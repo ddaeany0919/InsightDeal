@@ -2,6 +2,7 @@ package com.ddaeany0919.insightdeal.local.db
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.ddaeany0919.insightdeal.models.CategoryCatalog
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.models.DealOptionItem
 import com.ddaeany0919.insightdeal.models.DealSource
@@ -98,7 +99,7 @@ data class DealEntity(
                 siteNames = deal.siteNames,
                 sources = deal.sources ?: emptyList(),
                 shippingFee = deal.shippingFee,
-                category = deal.category,
+                category = deal.category?.takeIf { it.isNotBlank() }?.let { CategoryCatalog.normalizeCategoryKey(it) },
                 createdAt = deal.createdAt,
                 viewCount = deal.viewCount,
                 commentCount = deal.commentCount,

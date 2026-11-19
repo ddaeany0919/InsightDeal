@@ -2,7 +2,16 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { apiUrl, API_BASE_URL, getOrCreateWebDeviceUuid } from '../../lib/utils';
+import {
+  API_BASE_URL,
+  ensureWebDeviceAuth,
+  authFetch,
+  fetchVapidPublicKey,
+  urlBase64ToUint8Array,
+  getWebPushSupportStatus,
+  registerOrReusePushServiceWorker,
+  type WebPushSupportStatus,
+} from '../../lib/utils';
 import {
   logTossScreen,
   logTossClick,
@@ -21,13 +30,14 @@ interface RawKeywordDetail {
   is_active?: boolean;
 }
 
-const DEFAULT_VAPID_PUBLIC_KEY =
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
-  'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U';
+const STANDARD_DND_COPY =
+  '설정한 시간에는 푸시 알림을 보내지 않아요 (놓친 알림은 알림함에서 확인 가능)';
 
 export default function NotificationSettingsPage() {
-  const [isSupported, setIsSupported] = useState(false);
-  const [permission, setPermission] = useState<NotificationPermission>('default');
+  const [supportStatus, setSupportStatus] =
+    useState<WebPushSupportStatus>('unsupported');
+  const [permission, setPermission] =
+    useState<NotificationPermission>('default');
   const [isPushEnabled, setIsPushEnabled] = useState(false);
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [keywordInput, setKeywordInput] = useState('');
@@ -37,28 +47,29 @@ export default function NotificationSettingsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const getBrowserDeviceUuid = useCallback((): string => getOrCreateWebDeviceUuid(), []);
+  const isSupported = supportStatus === 'supported';
 
   const checkSubscription = useCallback(async () => {
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       setIsPushEnabled(!!subscription);
-    } catch (e) {
-      console.error('Failed to check push subscription', e);
+    } catch {
+      setIsPushEnabled(false);
     }
   }, []);
 
   const fetchSettings = useCallback(async () => {
     setIsLoading(true);
     try {
-      const deviceUuid = getBrowserDeviceUuid();
-      const response = await fetch(
-        apiUrl(`/api/push/keywords?device_uuid=${encodeURIComponent(deviceUuid)}`)
-      ).catch(() => null);
-      if (response && response.ok) {
+      await ensureWebDeviceAuth();
+      const response = await authFetch(
+        (latestAuth) =>
+          `/api/push/keywords?device_uuid=${encodeURIComponent(latestAuth.deviceUuid)}`
+      );
+      if (response.ok) {
         const data = await response.json();
-        const detailed = Array.isArray(data.detailed_keywords)
+        const detailed: Keyword[] = Array.isArray(data.detailed_keywords)
           ? data.detailed_keywords.map((k: RawKeywordDetail) => ({
               id: String(k.id ?? k.keyword),
               keyword: k.keyword,
@@ -73,129 +84,136 @@ export default function NotificationSettingsPage() {
         setIsDndEnabled(Boolean(data.dnd_enabled));
         setDndStart(data.dnd_start_time || '21:00');
         setDndEnd(data.dnd_end_time || '08:00');
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(
+            'insightdeal_web_keywords',
+            JSON.stringify(detailed)
+          );
+        }
       } else {
+        setErrorMsg(
+          '알림 설정을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
+        );
         const localSaved =
           typeof window !== 'undefined'
             ? localStorage.getItem('insightdeal_web_keywords')
             : null;
         if (localSaved) {
-          setKeywords(JSON.parse(localSaved));
-        } else {
+          try {
+            const parsed = JSON.parse(localSaved);
+            setKeywords(Array.isArray(parsed) ? parsed : []);
+          } catch {
+            setKeywords([]);
+          }
+        }
+      }
+    } catch {
+      setErrorMsg('알림 설정을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.');
+      const localSaved =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('insightdeal_web_keywords')
+          : null;
+      if (localSaved) {
+        try {
+          const parsed = JSON.parse(localSaved);
+          setKeywords(Array.isArray(parsed) ? parsed : []);
+        } catch {
           setKeywords([]);
         }
       }
-    } catch (e) {
-      console.error(e);
     } finally {
       setIsLoading(false);
     }
-  }, [getBrowserDeviceUuid]);
+  }, []);
 
   useEffect(() => {
     logTossScreen('keyword_settings_view');
-    if (
-      typeof window !== 'undefined' &&
-      'serviceWorker' in navigator &&
-      'PushManager' in window
-    ) {
-      setIsSupported(true);
+    const status = getWebPushSupportStatus();
+    setSupportStatus(status);
+    if (status === 'supported' && typeof Notification !== 'undefined') {
       setPermission(Notification.permission);
-      checkSubscription();
+      void checkSubscription();
     }
-    fetchSettings();
+    void fetchSettings();
   }, [checkSubscription, fetchSettings]);
 
-  const urlBase64ToUint8Array = (
-    base64String: string
-  ): Uint8Array<ArrayBuffer> | null => {
-    try {
-      if (!base64String || typeof base64String !== 'string') return null;
-      const cleanBase64 = base64String.trim().replace(/\.+$/, '');
-      const padding = '='.repeat((4 - (cleanBase64.length % 4)) % 4);
-      const base64 = (cleanBase64 + padding)
-        .replace(/-/g, '+')
-        .replace(/_/g, '/');
-      const rawData = window.atob(base64);
-      const buffer = new ArrayBuffer(rawData.length);
-      const outputArray = new Uint8Array(buffer);
-      for (let i = 0; i < rawData.length; ++i) {
-        outputArray[i] = rawData.charCodeAt(i);
-      }
-      return outputArray;
-    } catch (e) {
-      console.error('Failed to parse VAPID key to Uint8Array', e);
-      return null;
-    }
-  };
-
   const registerServiceWorkerAndSubscribe = async () => {
+    setErrorMsg(null);
+    let newlyCreatedSub: PushSubscription | null = null;
     try {
-      const registration = await navigator.serviceWorker.register('/sw.js');
+      await ensureWebDeviceAuth();
+      const registration = await registerOrReusePushServiceWorker();
+      await navigator.serviceWorker.ready;
 
-      let vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      if (!vapidKey) {
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        let vapidKey = '';
         try {
-          const vapidResponse = await fetch(
-            apiUrl('/api/push-public-key')
-          ).catch(() => null);
-          if (vapidResponse && vapidResponse.ok) {
-            const fetched = (await vapidResponse.text()).trim();
-            if (fetched && !fetched.includes('...')) {
-              vapidKey = fetched;
-            }
-          }
+          vapidKey = await fetchVapidPublicKey();
         } catch {
-          // 기본 공개키 사용
+          setErrorMsg(
+            '푸시 알림 서버 설정이 아직 준비되지 않았어요. 잠시 후 다시 시도해 주세요.'
+          );
+          return;
         }
-      }
-      if (!vapidKey || vapidKey.includes('...')) {
-        vapidKey = DEFAULT_VAPID_PUBLIC_KEY;
-      }
 
-      let appServerKey = urlBase64ToUint8Array(vapidKey);
-      if (!appServerKey) {
-        appServerKey = urlBase64ToUint8Array(DEFAULT_VAPID_PUBLIC_KEY);
+        const appServerKey = urlBase64ToUint8Array(vapidKey);
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: appServerKey,
+        });
+        newlyCreatedSub = subscription;
       }
-
-      if (!appServerKey) {
-        throw new Error('알림용 공개키를 불러오지 못했어요.');
-      }
-
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: appServerKey,
-      });
 
       const subJson = subscription.toJSON();
-      const deviceUuid = getBrowserDeviceUuid();
-      const pushRegisterEndpoint = API_BASE_URL
-        ? apiUrl('/api/push/register-web')
+      const pushRegisterPath = API_BASE_URL
+        ? '/api/push/register-web'
         : '/api/push-register';
-      await fetch(pushRegisterEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          endpoint: subJson.endpoint || subscription.endpoint,
-          keys: subJson.keys || {},
-          device_uuid: deviceUuid,
-        }),
-      });
+      const regRes = await authFetch((latestAuth) => ({
+        pathOrUrl: pushRegisterPath,
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            endpoint: subJson.endpoint || subscription.endpoint,
+            keys: subJson.keys || {},
+            device_uuid: latestAuth.deviceUuid,
+          }),
+        },
+      }));
+
+      if (!regRes.ok) {
+        if (newlyCreatedSub) {
+          await newlyCreatedSub.unsubscribe().catch(() => null);
+        }
+        setErrorMsg(
+          '푸시 알림 등록에 실패했어요. 잠시 후 다시 시도해 주세요.'
+        );
+        return;
+      }
 
       setIsPushEnabled(true);
-    } catch (e: unknown) {
-      console.error('Failed to subscribe to push notification', e);
+    } catch {
+      if (newlyCreatedSub) {
+        await newlyCreatedSub.unsubscribe().catch(() => null);
+      }
       setErrorMsg('푸시 알림을 연결하지 못했어요. 잠시 후 다시 시도해 주세요.');
     }
   };
 
   const requestPermission = async () => {
     if (!isSupported) return;
+    setErrorMsg(null);
     setIsLoading(true);
     try {
       const result = await Notification.requestPermission();
       setPermission(result);
       if (result === 'granted') {
         await registerServiceWorkerAndSubscribe();
+      } else if (result === 'denied') {
+        setErrorMsg(
+          '브라우저 알림 권한이 거부되어 있어요. 주소창 왼쪽 자물쇠/설정 아이콘에서 허용해 주세요.'
+        );
       }
     } catch {
       setErrorMsg('알림 권한을 확인하는 중 문제가 생겼어요.');
@@ -205,32 +223,43 @@ export default function NotificationSettingsPage() {
   };
 
   const unsubscribePush = async () => {
+    setErrorMsg(null);
     setIsLoading(true);
     try {
+      await ensureWebDeviceAuth();
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
-        const deviceUuid = getBrowserDeviceUuid();
-        await subscription.unsubscribe();
-        const pushDeleteEndpoint = API_BASE_URL
-          ? apiUrl(
-              `/api/push/register-web?endpoint=${encodeURIComponent(
+        const res = await authFetch((latestAuth) => ({
+          pathOrUrl: API_BASE_URL
+            ? `/api/push/register-web?endpoint=${encodeURIComponent(
                 subscription.endpoint
-              )}&device_uuid=${encodeURIComponent(deviceUuid)}`
-            )
-          : '/api/push-register';
-        await fetch(pushDeleteEndpoint, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            endpoint: subscription.endpoint,
-            device_uuid: deviceUuid,
-          }),
-        }).catch(() => null);
+              )}&device_uuid=${encodeURIComponent(latestAuth.deviceUuid)}`
+            : `/api/push-register?endpoint=${encodeURIComponent(
+                subscription.endpoint
+              )}&device_uuid=${encodeURIComponent(latestAuth.deviceUuid)}`,
+          init: {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              endpoint: subscription.endpoint,
+              device_uuid: latestAuth.deviceUuid,
+            }),
+          },
+        }));
+        if (!res.ok) {
+          setErrorMsg(
+            '푸시 알림 해제 요청에 실패했어요. 잠시 후 다시 시도해 주세요.'
+          );
+          return;
+        }
+        await subscription.unsubscribe();
         setIsPushEnabled(false);
       }
-    } catch (e) {
-      console.error(e);
+    } catch {
+      setErrorMsg(
+        '푸시 알림을 끄는 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.'
+      );
     } finally {
       setIsLoading(false);
     }
@@ -238,27 +267,51 @@ export default function NotificationSettingsPage() {
 
   const handleAddKeyword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!keywordInput.trim()) return;
-
     const newKeywordStr = keywordInput.trim();
+    if (!newKeywordStr) return;
+
     if (keywords.some((k) => k.keyword === newKeywordStr)) {
       setKeywordInput('');
       return;
     }
 
+    setErrorMsg(null);
     setIsLoading(true);
     try {
-      const deviceUuid = getBrowserDeviceUuid();
-      await fetch(apiUrl('/api/push/keywords'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device_uuid: deviceUuid, keyword: newKeywordStr }),
-      }).catch(() => null);
+      await ensureWebDeviceAuth();
+      const res = await authFetch((latestAuth) => ({
+        pathOrUrl: '/api/push/keywords',
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            device_uuid: latestAuth.deviceUuid,
+            keyword: newKeywordStr,
+          }),
+        },
+      }));
 
-      const newId = Date.now().toString();
+      if (!res.ok) {
+        setErrorMsg(
+          '키워드를 등록하지 못했어요. 잠시 후 다시 시도해 주세요.'
+        );
+        return;
+      }
+
+      const created = (await res.json().catch(() => null)) as {
+        id?: string | number;
+        keyword?: string;
+        is_active?: boolean;
+      } | null;
+
+      const newId = String(created?.id ?? Date.now());
       const updated = [
         ...keywords,
-        { id: newId, keyword: newKeywordStr, is_active: true },
+        {
+          id: newId,
+          keyword: created?.keyword || newKeywordStr,
+          is_active: created?.is_active !== false,
+        },
       ];
       setKeywords(updated);
       if (typeof window !== 'undefined') {
@@ -272,34 +325,40 @@ export default function NotificationSettingsPage() {
       });
       maybeRequestTossReview();
       setKeywordInput('');
-    } catch (e) {
-      console.error(e);
+    } catch {
+      setErrorMsg('네트워크 오류로 키워드를 등록하지 못했어요.');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleToggleKeyword = async (keywordStr: string) => {
+    setErrorMsg(null);
+    const prevSnapshot = keywords;
     try {
-      const deviceUuid = getBrowserDeviceUuid();
-      const res = await fetch(apiUrl('/api/push/keywords/toggle'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device_uuid: deviceUuid, keyword: keywordStr }),
-      }).catch(() => null);
-      let nextActive: boolean | undefined;
-      if (res && res.ok) {
-        const data = await res.json();
-        nextActive = Boolean(data.is_active);
+      await ensureWebDeviceAuth();
+      const res = await authFetch((latestAuth) => ({
+        pathOrUrl: '/api/push/keywords/toggle',
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            device_uuid: latestAuth.deviceUuid,
+            keyword: keywordStr,
+          }),
+        },
+      }));
+      if (!res.ok) {
+        setKeywords(prevSnapshot);
+        setErrorMsg(
+          '키워드 상태를 변경하지 못했어요. 잠시 후 다시 시도해 주세요.'
+        );
+        return;
       }
+      const data = await res.json();
+      const nextActive = Boolean(data.is_active);
       const updated = keywords.map((k) =>
-        k.keyword === keywordStr
-          ? {
-              ...k,
-              is_active:
-                nextActive !== undefined ? nextActive : k.is_active === false,
-            }
-          : k
+        k.keyword === keywordStr ? { ...k, is_active: nextActive } : k
       );
       setKeywords(updated);
       if (typeof window !== 'undefined') {
@@ -308,20 +367,35 @@ export default function NotificationSettingsPage() {
           JSON.stringify(updated)
         );
       }
-    } catch (e) {
-      console.error(e);
+    } catch {
+      setKeywords(prevSnapshot);
+      setErrorMsg('네트워크 오류로 키워드 상태를 변경하지 못했어요.');
     }
   };
 
   const handleDeleteKeyword = async (keywordStr: string) => {
+    setErrorMsg(null);
     setIsLoading(true);
     try {
-      const deviceUuid = getBrowserDeviceUuid();
-      await fetch(apiUrl('/api/push/keywords'), {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device_uuid: deviceUuid, keyword: keywordStr }),
-      }).catch(() => null);
+      await ensureWebDeviceAuth();
+      const res = await authFetch((latestAuth) => ({
+        pathOrUrl: '/api/push/keywords',
+        init: {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            device_uuid: latestAuth.deviceUuid,
+            keyword: keywordStr,
+          }),
+        },
+      }));
+
+      if (!res.ok) {
+        setErrorMsg(
+          '키워드를 삭제하지 못했어요. 잠시 후 다시 시도해 주세요.'
+        );
+        return;
+      }
 
       const updated = keywords.filter((k) => k.keyword !== keywordStr);
       setKeywords(updated);
@@ -331,8 +405,8 @@ export default function NotificationSettingsPage() {
           JSON.stringify(updated)
         );
       }
-    } catch (e) {
-      console.error(e);
+    } catch {
+      setErrorMsg('네트워크 오류로 키워드를 삭제하지 못했어요.');
     } finally {
       setIsLoading(false);
     }
@@ -341,29 +415,52 @@ export default function NotificationSettingsPage() {
   const syncDndToBackend = async (
     nextEnabled: boolean,
     startStr: string,
-    endStr: string
+    endStr: string,
+    prevSnapshot: { enabled: boolean; start: string; end: string }
   ) => {
+    setErrorMsg(null);
     try {
-      const deviceUuid = getBrowserDeviceUuid();
-      await fetch(apiUrl('/api/push/device'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          device_uuid: deviceUuid,
-          dnd_enabled: nextEnabled,
-          dnd_start_time: startStr,
-          dnd_end_time: endStr,
-        }),
-      }).catch(() => null);
-    } catch (e) {
-      console.error(e);
+      await ensureWebDeviceAuth();
+      const res = await authFetch((latestAuth) => ({
+        pathOrUrl: '/api/push/dnd',
+        init: {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            device_uuid: latestAuth.deviceUuid,
+            dnd_enabled: nextEnabled,
+            dnd_start_time: startStr,
+            dnd_end_time: endStr,
+          }),
+        },
+      }));
+      if (!res.ok) {
+        setIsDndEnabled(prevSnapshot.enabled);
+        setDndStart(prevSnapshot.start);
+        setDndEnd(prevSnapshot.end);
+        setErrorMsg(
+          '방해금지 시간 설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
+        );
+      }
+    } catch {
+      setIsDndEnabled(prevSnapshot.enabled);
+      setDndStart(prevSnapshot.start);
+      setDndEnd(prevSnapshot.end);
+      setErrorMsg(
+        '방해금지 시간 설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
+      );
     }
   };
 
   const handleToggleDnd = async () => {
+    const prevSnapshot = {
+      enabled: isDndEnabled,
+      start: dndStart,
+      end: dndEnd,
+    };
     const nextVal = !isDndEnabled;
     setIsDndEnabled(nextVal);
-    await syncDndToBackend(nextVal, dndStart, dndEnd);
+    await syncDndToBackend(nextVal, dndStart, dndEnd, prevSnapshot);
   };
 
   return (
@@ -416,6 +513,7 @@ export default function NotificationSettingsPage() {
 
         {errorMsg && (
           <div
+            role="alert"
             style={{
               marginBottom: '20px',
               background: 'rgba(239, 68, 68, 0.08)',
@@ -515,15 +613,82 @@ export default function NotificationSettingsPage() {
                 <button
                   type="button"
                   onClick={requestPermission}
-                  disabled={isLoading}
+                  disabled={isLoading || !isSupported || permission === 'denied'}
                   className="btn-primary"
+                  style={
+                    !isSupported || permission === 'denied'
+                      ? { opacity: 0.55, cursor: 'not-allowed' }
+                      : undefined
+                  }
                 >
-                  알림 켜기
+                  {!isSupported
+                    ? '현재 브라우저 미지원'
+                    : permission === 'denied'
+                      ? '브라우저에서 차단됨'
+                      : '알림 켜기'}
                 </button>
               )}
             </div>
-            {permission === 'denied' && (
+
+            {supportStatus === 'in_app_webview' && (
               <div
+                role="note"
+                style={{
+                  background: 'rgba(245, 158, 11, 0.08)',
+                  border: '1px solid rgba(245, 158, 11, 0.28)',
+                  padding: '12px 14px',
+                  borderRadius: '12px',
+                  fontSize: '0.86rem',
+                  color: '#b45309',
+                  fontWeight: 600,
+                  lineHeight: 1.5,
+                }}
+              >
+                카카오톡·인스타그램·네이버 등의 인앱 브라우저에서는 웹 푸시 알림이 지원되지 않아요.
+                Chrome 또는 Safari(홈 화면에 추가)로 열면 실시간 푸시를 받을 수 있으며, 등록한 키워드 알림 내역은 인앱 브라우저에서도 알림함에서 확인할 수 있어요.
+              </div>
+            )}
+
+            {supportStatus === 'toss_miniapp' && (
+              <div
+                role="note"
+                style={{
+                  background: 'rgba(var(--accent-rgb), 0.08)',
+                  border: '1px solid rgba(var(--accent-rgb), 0.24)',
+                  padding: '12px 14px',
+                  borderRadius: '12px',
+                  fontSize: '0.86rem',
+                  color: 'var(--accent)',
+                  fontWeight: 600,
+                  lineHeight: 1.5,
+                }}
+              >
+                토스 미니앱 환경에서는 브라우저 웹 푸시 대신 아래 키워드 등록 및 상단 알림함 기능을 이용해 주세요.
+              </div>
+            )}
+
+            {supportStatus === 'unsupported' && (
+              <div
+                role="note"
+                style={{
+                  background: 'rgba(245, 158, 11, 0.08)',
+                  border: '1px solid rgba(245, 158, 11, 0.28)',
+                  padding: '12px 14px',
+                  borderRadius: '12px',
+                  fontSize: '0.86rem',
+                  color: '#b45309',
+                  fontWeight: 600,
+                  lineHeight: 1.5,
+                }}
+              >
+                현재 브라우저에서는 웹 푸시 알림을 지원하지 않아요.
+                iOS Safari 사용 시 하단 공유 버튼 → &ldquo;홈 화면에 추가&rdquo; 후 실행하면 푸시 알림을 받을 수 있어요.
+              </div>
+            )}
+
+            {isSupported && permission === 'denied' && (
+              <div
+                role="note"
                 style={{
                   background: 'rgba(239, 68, 68, 0.06)',
                   border: '1px solid rgba(239, 68, 68, 0.2)',
@@ -583,7 +748,6 @@ export default function NotificationSettingsPage() {
                   color: 'var(--text-main)',
                   fontSize: '0.95rem',
                   fontWeight: 600,
-                  outline: 'none',
                 }}
               />
               <button
@@ -736,13 +900,15 @@ export default function NotificationSettingsPage() {
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            width: '36px',
-                            height: '36px',
+                            width: '44px',
+                            height: '44px',
+                            minWidth: '44px',
+                            minHeight: '44px',
                             borderRadius: '50%',
                             background: 'transparent',
                             border: 'none',
                             color: 'var(--text-muted)',
-                            fontSize: '12px',
+                            fontSize: '13px',
                             fontWeight: 800,
                             cursor: 'pointer',
                           }}
@@ -788,7 +954,7 @@ export default function NotificationSettingsPage() {
                   방해금지 시간대
                 </h2>
                 <p style={{ color: 'var(--text-sub)', fontSize: '0.88rem' }}>
-                  설정한 시간 동안에는 알림을 보내지 않고 끝난 뒤 모아 알려드려요
+                  {STANDARD_DND_COPY}
                 </p>
               </div>
 
@@ -863,9 +1029,19 @@ export default function NotificationSettingsPage() {
                   aria-label="방해금지 시작 시간"
                   value={dndStart}
                   onChange={(e) => {
+                    const prevSnapshot = {
+                      enabled: isDndEnabled,
+                      start: dndStart,
+                      end: dndEnd,
+                    };
                     const nextStart = e.target.value;
                     setDndStart(nextStart);
-                    syncDndToBackend(isDndEnabled, nextStart, dndEnd);
+                    void syncDndToBackend(
+                      isDndEnabled,
+                      nextStart,
+                      dndEnd,
+                      prevSnapshot
+                    );
                   }}
                   style={{
                     minHeight: '44px',
@@ -875,7 +1051,6 @@ export default function NotificationSettingsPage() {
                     padding: '8px 12px',
                     color: 'var(--text-main)',
                     fontWeight: 700,
-                    outline: 'none',
                   }}
                 />
                 <span style={{ fontSize: '0.88rem', color: 'var(--text-sub)', fontWeight: 700 }}>
@@ -886,9 +1061,19 @@ export default function NotificationSettingsPage() {
                   aria-label="방해금지 종료 시간"
                   value={dndEnd}
                   onChange={(e) => {
+                    const prevSnapshot = {
+                      enabled: isDndEnabled,
+                      start: dndStart,
+                      end: dndEnd,
+                    };
                     const nextEnd = e.target.value;
                     setDndEnd(nextEnd);
-                    syncDndToBackend(isDndEnabled, dndStart, nextEnd);
+                    void syncDndToBackend(
+                      isDndEnabled,
+                      dndStart,
+                      nextEnd,
+                      prevSnapshot
+                    );
                   }}
                   style={{
                     minHeight: '44px',
@@ -898,7 +1083,6 @@ export default function NotificationSettingsPage() {
                     padding: '8px 12px',
                     color: 'var(--text-main)',
                     fontWeight: 700,
-                    outline: 'none',
                   }}
                 />
                 <span style={{ fontSize: '0.88rem', color: 'var(--text-sub)', fontWeight: 700 }}>

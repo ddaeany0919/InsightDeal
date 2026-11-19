@@ -59,7 +59,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ddaeany0919.insightdeal.presentation.auth.AuthManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,8 +69,6 @@ fun KeywordManagerScreen(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
-    val username by AuthManager.getUsername(context).collectAsState(initial = "guest")
-    val isLoggedIn = username != "guest" && !username.isNullOrEmpty()
 
     // ViewModel StateFlow 구독
     val keywords by viewModel.keywords.collectAsState()
@@ -185,8 +182,8 @@ fun KeywordManagerScreen(
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(
-                                        Color(0xFF3A7BD5),
-                                        Color(0xFF3A6073)
+                                        Color(0xFF1B64DA),
+                                        Color(0xFF1E3A5F)
                                     )
                                 )
                             ),
@@ -195,7 +192,7 @@ fun KeywordManagerScreen(
                         Icon(
                             imageVector = Icons.Default.NotificationsActive,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = Color(0xFFF9FAFB),
                             modifier = Modifier.size(32.dp)
                         )
                     }
@@ -462,7 +459,7 @@ fun KeywordManagerScreen(
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "설정된 시간 동안에는 스마트 푸시 알림 발송을 서버에서 차단합니다.",
+                                        text = "설정한 시간에는 푸시 알림을 보내지 않아요 (놓친 알림은 알림함에서 확인 가능)",
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -586,6 +583,7 @@ fun KeywordManagerScreen(
                                         Box(
                                             modifier = Modifier
                                                 .weight(1f)
+                                                .heightIn(min = 48.dp)
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.06f))
                                                 .border(
@@ -635,7 +633,7 @@ fun KeywordManagerScreen(
                                         // 프리미엄 룩앤필의 둥근 모서리 요일 칩셋
                                         Box(
                                             modifier = Modifier
-                                                .size(38.dp)
+                                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .background(
                                                     when {
@@ -803,16 +801,8 @@ fun KeywordManagerScreen(
                             Button(
                                 onClick = {
                                     if (keywordInput.isNotBlank()) {
-                                        if (!isLoggedIn && keywords.size >= 3) {
-                                            Toast.makeText(
-                                                context,
-                                                "비로그인 상태에서는 최대 3개까지 등록할 수 있어요. 로그인하면 개수 제한 없이 등록할 수 있어요.",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        } else {
-                                            viewModel.addKeyword(keywordInput.trim())
-                                            keywordInput = ""
-                                        }
+                                        viewModel.addKeyword(keywordInput.trim())
+                                        keywordInput = ""
                                     }
                                 },
                                 modifier = Modifier.height(56.dp),
@@ -820,7 +810,11 @@ fun KeywordManagerScreen(
                                 enabled = !isLoading
                             ) {
                                 if (isLoading) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        strokeWidth = 2.dp
+                                    )
                                 } else {
                                     Icon(Icons.Default.Add, contentDescription = "추가")
                                 }
@@ -834,13 +828,15 @@ fun KeywordManagerScreen(
                         ) {
                             Box(
                                 modifier = Modifier
+                                    .heightIn(min = 48.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                                     .clickable {
                                         val base = keywordInput.trimEnd()
                                         keywordInput = if (base.isEmpty()) "-" else "$base -"
                                     }
-                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = "+ 제외단어 (-단어)",
@@ -851,13 +847,15 @@ fun KeywordManagerScreen(
                             }
                             Box(
                                 modifier = Modifier
+                                    .heightIn(min = 48.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                                     .clickable {
                                         val base = keywordInput.trimEnd()
                                         keywordInput = if (base.isEmpty()) ":" else "$base :"
                                     }
-                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = "+ 상한금액 (:가격)",
@@ -888,6 +886,7 @@ fun KeywordManagerScreen(
                         items(items = recommendedKeywords, key = { it }, contentType = { "recommended_keyword_chip" }) { keyword ->
                             Box(
                                 modifier = Modifier
+                                    .heightIn(min = 48.dp)
                                     .clip(RoundedCornerShape(30.dp))
                                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
                                     .border(
@@ -898,7 +897,8 @@ fun KeywordManagerScreen(
                                     .bounceClick {
                                         keywordInput = keyword
                                     }
-                                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = "#$keyword",
@@ -979,11 +979,9 @@ fun KeywordManagerScreen(
                                             )
                                         },
                                         trailingIcon = {
-                                            Icon(
-                                                imageVector = Icons.Default.Close,
-                                                contentDescription = "삭제",
+                                            Box(
                                                 modifier = Modifier
-                                                    .size(16.dp)
+                                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                                     .clickable(enabled = !isLoading) {
                                                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                                         isVisible = false
@@ -992,8 +990,15 @@ fun KeywordManagerScreen(
                                                             delay(300)
                                                             viewModel.deleteKeyword(keyword.keyword)
                                                         }
-                                                    }
-                                            )
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "삭제",
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
                                         },
                                         colors = InputChipDefaults.inputChipColors(
                                             selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
@@ -1079,7 +1084,7 @@ fun KeywordItem(keyword: String, onDelete: () -> Unit, isEnabled: Boolean) {
         IconButton(
             onClick = onDelete,
             enabled = isEnabled,
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(48.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.Delete,

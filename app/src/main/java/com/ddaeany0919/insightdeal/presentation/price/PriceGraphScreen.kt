@@ -1,29 +1,33 @@
 package com.ddaeany0919.insightdeal.presentation.price
 
-import android.view.ViewGroup
-import android.widget.LinearLayout
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.ddaeany0919.insightdeal.data.util.ImageUrlResolver
+import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.Entry
@@ -50,18 +54,51 @@ fun PriceGraphScreen(
         viewModel.loadProductData(productId.toIntOrNull() ?: 0)
     }
 
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // 에러 메시지 노출 후 소거 (재시도 액션 지원)
+    LaunchedEffect(errorMessage) {
+        val message = errorMessage ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = message,
+            actionLabel = "다시 시도",
+            duration = SnackbarDuration.Long
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            viewModel.loadProductData(productId.toIntOrNull() ?: 0)
+        }
+        viewModel.clearError()
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("가격 변동 그래프", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기")
+                    A11yIconButton(onClick = onBackClick, contentDescription = "뒤로가기") {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* 공유 기능 */ }) {
-                        Icon(Icons.Default.Share, contentDescription = "공유")
+                    A11yIconButton(
+                        onClick = {
+                            val title = product?.title ?: "InsightDeal 가격 변동 그래프"
+                            val priceText = product?.let {
+                                "${NumberFormat.getNumberInstance().format(it.currentPrice)}원"
+                            }.orEmpty()
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, "$title $priceText".trim())
+                            }
+                            runCatching {
+                                context.startActivity(Intent.createChooser(shareIntent, "공유하기"))
+                            }
+                        },
+                        contentDescription = "공유"
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -105,19 +142,52 @@ fun PriceGraphScreen(
                     )
                 }
 
-                // 📊 가격 그래프
+                // 📊 가격 그래프 (<2건일 때 표준 안내 카피 노출)
                 item {
-                    if (priceHistory.isNotEmpty()) {
+                    val filteredHistory = viewModel.getFilteredHistory(
+                        when (selectedPeriod) {
+                            "7일" -> 7
+                            "1개월" -> 30
+                            "3개월" -> 90
+                            "6개월" -> 180
+                            "1년" -> 365
+                            else -> -1
+                        }
+                    )
+                    if (filteredHistory.size >= 2) {
                         PriceChart(
-                            priceHistory = viewModel.getFilteredHistory(
-                                when (selectedPeriod) {
-                                    "7일" -> 7
-                                    "30일" -> 30
-                                    else -> -1
-                                }
-                            ),
+                            priceHistory = filteredHistory,
                             targetPrice = product?.targetPrice ?: 0
                         )
+                    } else {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(20.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = PriceChartViewModel.INSUFFICIENT_HISTORY_MESSAGE,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -142,13 +212,6 @@ fun PriceGraphScreen(
             }
         }
     }
-
-    // 에러 메시지 처리
-    errorMessage?.let { message ->
-        LaunchedEffect(message) {
-            viewModel.clearError()
-        }
-    }
 }
 
 @Composable
@@ -166,10 +229,23 @@ private fun ProductInfoCard(product: PriceChartViewModel.ProductData) {
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 상품 이미지
+            // 상품 이미지 (ImageUrlResolver + 백엔드 프록시 폴백 적용)
+            val resolvedPrimaryUrl = remember(product.imageUrl) {
+                ImageUrlResolver.resolve(product.imageUrl, targetWidth = 200)
+            }
+            val fallbackProxyUrl = remember(product.imageUrl) {
+                ImageUrlResolver.getFallbackBackendProxyUrl(product.imageUrl)
+            }
+            var activeUrl by remember(resolvedPrimaryUrl) { mutableStateOf(resolvedPrimaryUrl) }
+
             AsyncImage(
-                model = product.imageUrl,
+                model = activeUrl,
                 contentDescription = product.title,
+                onError = {
+                    if (fallbackProxyUrl != null && activeUrl != fallbackProxyUrl) {
+                        activeUrl = fallbackProxyUrl
+                    }
+                },
                 modifier = Modifier
                     .size(80.dp)
                     .clip(RoundedCornerShape(8.dp))
@@ -268,6 +344,10 @@ private fun PriceChart(
     priceHistory: List<PriceChartViewModel.PriceHistoryData>,
     targetPrice: Int
 ) {
+    val lineColor = MaterialTheme.colorScheme.primary.toArgb()
+    val axisTextColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+    val fillAlphaColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f).toArgb()
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -275,7 +355,7 @@ private fun PriceChart(
             .padding(horizontal = 16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         AndroidView(
             modifier = Modifier
@@ -289,27 +369,32 @@ private fun PriceChart(
                     setScaleEnabled(true)
                     setPinchZoom(true)
                     setDrawGridBackground(false)
-                    
+
                     xAxis.position = XAxis.XAxisPosition.BOTTOM
                     xAxis.setDrawGridLines(false)
+                    xAxis.textColor = axisTextColor
+                    axisLeft.textColor = axisTextColor
                     axisRight.isEnabled = false
                     legend.isEnabled = false
                 }
             },
             update = { chart ->
+                chart.xAxis.textColor = axisTextColor
+                chart.axisLeft.textColor = axisTextColor
+
                 val entries = priceHistory.mapIndexed { index, item ->
                     Entry(index.toFloat(), item.price.toFloat())
                 }
 
                 val dataSet = LineDataSet(entries, "Price").apply {
-                    color = android.graphics.Color.parseColor("#6200EE")
-                    setCircleColor(android.graphics.Color.parseColor("#6200EE"))
+                    color = lineColor
+                    setCircleColor(lineColor)
                     lineWidth = 2f
                     circleRadius = 4f
                     setDrawValues(false)
                     mode = LineDataSet.Mode.CUBIC_BEZIER
                     setDrawFilled(true)
-                    fillColor = android.graphics.Color.parseColor("#BB86FC")
+                    fillColor = fillAlphaColor
                     fillAlpha = 50
                 }
 
@@ -370,16 +455,18 @@ private fun StatisticItem(label: String, price: Int, color: Color) {
 
 @Composable
 private fun BuyingAdviceCard(advice: PriceChartViewModel.BuyingAdvice) {
+    val (containerColor, contentColor) = when (advice.timing) {
+        "지금 구매" -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+        "조금 더 기다리기" -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = when (advice.timing) {
-                "지금 구매" -> Color(0xFFE8F5E9)
-                "조금 더 기다리기" -> Color(0xFFE3F2FD)
-                else -> Color(0xFFFFF3E0)
-            }
+            containerColor = containerColor
         )
     ) {
         Row(
@@ -389,15 +476,11 @@ private fun BuyingAdviceCard(advice: PriceChartViewModel.BuyingAdvice) {
             Icon(
                 imageVector = when (advice.timing) {
                     "지금 구매" -> Icons.AutoMirrored.Filled.TrendingDown
-                    "조금 더 기다리기" -> Icons.Default.Share // Placeholder
+                    "조금 더 기다리기" -> Icons.Default.Info
                     else -> Icons.AutoMirrored.Filled.TrendingUp
                 },
                 contentDescription = null,
-                tint = when (advice.timing) {
-                    "지금 구매" -> Color(0xFF00C853)
-                    "조금 더 기다리기" -> Color(0xFF2962FF)
-                    else -> Color(0xFFFF6D00)
-                },
+                tint = contentColor,
                 modifier = Modifier.size(32.dp)
             )
 
@@ -407,12 +490,13 @@ private fun BuyingAdviceCard(advice: PriceChartViewModel.BuyingAdvice) {
                 Text(
                     text = advice.timing,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    fontSize = 16.sp,
+                    color = contentColor
                 )
                 Text(
                     text = advice.reason,
                     fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = contentColor.copy(alpha = 0.85f)
                 )
             }
         }

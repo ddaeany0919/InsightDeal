@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from typing import Optional
 import hmac
+import html
 import os
 import json
 import re
@@ -17,11 +19,10 @@ _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
 def _verify_admin_key(
     request: Request,
     x_admin_key: Optional[str] = Header(default=None, alias="X-Admin-Key"),
-    api_key: Optional[str] = Query(default=None),
 ):
     expected_key = os.getenv("ADMIN_API_KEY", "").strip()
     if expected_key:
-        provided_key = (x_admin_key or api_key or "").strip()
+        provided_key = (x_admin_key or "").strip()
         if not hmac.compare_digest(provided_key, expected_key):
             raise HTTPException(status_code=403, detail="관리자 인증 키가 유효하지 않습니다.")
     else:
@@ -105,11 +106,6 @@ HTML_TEMPLATE = """
         const communities = ["알리뽐뿌", "펨코", "퀘이사존", "루리웹", "클리앙", "뽐뿌", "빠삭국내", "빠삭해외", "빠삭육아"];
 
         function getAdminKey() {
-            const urlKey = new URLSearchParams(window.location.search).get('api_key');
-            if (urlKey) {
-                sessionStorage.setItem('admin_api_key', urlKey);
-                return urlKey;
-            }
             const inputEl = document.getElementById('admin-key-input');
             if (inputEl && inputEl.value.trim()) {
                 return inputEl.value.trim();
@@ -142,31 +138,43 @@ HTML_TEMPLATE = """
         
         function renderProgress(statusData) {
             const container = document.getElementById('progress-list');
-            container.innerHTML = '';
-            
+            container.textContent = '';
+
             communities.forEach(comm => {
                 const data = statusData[comm] || { status: '대기 중', time: '-', count: '' };
-                
+
                 let barClass = '';
-                let statusText = data.status;
+                let statusText = data.status || '대기 중';
                 if (data.status === '업데이트 완료') {
                     barClass = 'done';
-                    statusText = `${data.time} 완료 (${data.count})`;
+                    statusText = `${data.time || '-'} 완료 (${data.count || ''})`;
                 } else if (data.status === '진행 중') {
                     barClass = 'running';
-                    statusText = `수집 중 (시작: ${data.time})`;
+                    statusText = `수집 중 (시작: ${data.time || '-'})`;
                 }
 
-                const itemHTML = `
-                    <div class="progress-item">
-                        <div class="progress-name">${comm}</div>
-                        <div class="progress-bar-bg">
-                            <div class="progress-bar-fill ${barClass}"></div>
-                        </div>
-                        <div class="progress-info">${statusText}</div>
-                    </div>
-                `;
-                container.innerHTML += itemHTML;
+                const item = document.createElement('div');
+                item.className = 'progress-item';
+
+                const nameEl = document.createElement('div');
+                nameEl.className = 'progress-name';
+                nameEl.textContent = String(comm);
+
+                const barBg = document.createElement('div');
+                barBg.className = 'progress-bar-bg';
+
+                const barFill = document.createElement('div');
+                barFill.className = barClass ? `progress-bar-fill ${barClass}` : 'progress-bar-fill';
+                barBg.appendChild(barFill);
+
+                const infoEl = document.createElement('div');
+                infoEl.className = 'progress-info';
+                infoEl.textContent = String(statusText);
+
+                item.appendChild(nameEl);
+                item.appendChild(barBg);
+                item.appendChild(infoEl);
+                container.appendChild(item);
             });
         }
 
@@ -240,21 +248,66 @@ HTML_TEMPLATE = """
                 const d = await res.json();
                 const box = document.getElementById('monetization-box');
                 if (!box || !d.networks) return;
-                const nets = Object.values(d.networks).map(n => {
-                    const badge = n.configured
-                        ? '<span style="color:#16a34a;font-weight:bold;">활성</span>'
-                        : '<span style="color:#d97706;font-weight:bold;">미설정 (' + n.env_key + ')</span>';
-                    return `<div class="progress-item"><div style="flex:1;font-weight:bold;color:#333;">${n.name} <span style="font-size:12px;color:#666;font-weight:normal;">(수수료 ${n.commission_rate})</span></div><div>${badge}</div></div>`;
-                }).join('');
                 const cov = d.db_coverage || {};
                 const cs = d.click_stats || {};
-                box.innerHTML = `
-                    <div style="display:flex;justify-content:space-between;background:#f0f7ff;padding:10px 14px;border-radius:6px;margin-bottom:10px;font-size:13px;">
-                        <span>최근 ${cov.sampled_deals || 0}개 딜 중 제휴 전환 가능 비율: <strong style="color:#007bff;">${cov.monetizable_ratio_pct || 0}% (${cov.monetizable_deals || 0}건)</strong></span>
-                        <span>누적 구매 클릭: <strong>${cs.total_clicks || 0}회</strong> (예상 누적 수수료: <strong style="color:#16a34a;">₩${(cs.estimated_commission_krw || 0).toLocaleString()}</strong>)</span>
-                    </div>
-                    ${nets}
-                `;
+
+                box.textContent = '';
+
+                const summaryDiv = document.createElement('div');
+                summaryDiv.style.cssText = 'display:flex;justify-content:space-between;background:#f0f7ff;padding:10px 14px;border-radius:6px;margin-bottom:10px;font-size:13px;';
+
+                const leftSpan = document.createElement('span');
+                leftSpan.appendChild(document.createTextNode(`최근 ${Number(cov.sampled_deals || 0)}개 딜 중 제휴 전환 가능 비율: `));
+                const ratioStrong = document.createElement('strong');
+                ratioStrong.style.color = '#007bff';
+                ratioStrong.textContent = `${Number(cov.monetizable_ratio_pct || 0)}% (${Number(cov.monetizable_deals || 0)}건)`;
+                leftSpan.appendChild(ratioStrong);
+
+                const rightSpan = document.createElement('span');
+                rightSpan.appendChild(document.createTextNode('누적 구매 클릭: '));
+                const clicksStrong = document.createElement('strong');
+                clicksStrong.textContent = `${Number(cs.total_clicks || 0)}회`;
+                rightSpan.appendChild(clicksStrong);
+                rightSpan.appendChild(document.createTextNode(' (예상 누적 수수료: '));
+                const commStrong = document.createElement('strong');
+                commStrong.style.color = '#16a34a';
+                commStrong.textContent = `₩${Number(cs.estimated_commission_krw || 0).toLocaleString()}`;
+                rightSpan.appendChild(commStrong);
+                rightSpan.appendChild(document.createTextNode(')'));
+
+                summaryDiv.appendChild(leftSpan);
+                summaryDiv.appendChild(rightSpan);
+                box.appendChild(summaryDiv);
+
+                Object.values(d.networks).forEach(n => {
+                    const row = document.createElement('div');
+                    row.className = 'progress-item';
+
+                    const left = document.createElement('div');
+                    left.style.cssText = 'flex:1;font-weight:bold;color:#333;';
+                    left.textContent = `${n.name || ''} `;
+
+                    const rateSpan = document.createElement('span');
+                    rateSpan.style.cssText = 'font-size:12px;color:#666;font-weight:normal;';
+                    rateSpan.textContent = `(수수료 ${n.commission_rate || ''})`;
+                    left.appendChild(rateSpan);
+
+                    const right = document.createElement('div');
+                    const badge = document.createElement('span');
+                    badge.style.fontWeight = 'bold';
+                    if (n.configured) {
+                        badge.style.color = '#16a34a';
+                        badge.textContent = '활성';
+                    } else {
+                        badge.style.color = '#d97706';
+                        badge.textContent = `미설정 (${n.env_key || ''})`;
+                    }
+                    right.appendChild(badge);
+
+                    row.appendChild(left);
+                    row.appendChild(right);
+                    box.appendChild(row);
+                });
             } catch (e) {}
         }
 
@@ -279,7 +332,7 @@ async def get_admin_dashboard():
         except Exception:
             pass
             
-    return HTMLResponse(content=HTML_TEMPLATE.replace("{last_updated}", last_updated))
+    return HTMLResponse(content=HTML_TEMPLATE.replace("{last_updated}", html.escape(str(last_updated))))
 
 @router.get("/logs", dependencies=[Depends(_verify_admin_key)])
 def get_logs():
@@ -354,7 +407,7 @@ _LAST_ADMIN_TRIGGER_TS: float = 0.0
 @router.post("/backup-db", dependencies=[Depends(_verify_admin_key)])
 async def trigger_db_backup():
     from backend.database.session import db_manager
-    result = db_manager.perform_maintenance_and_backup(max_backups=3, slim_days=180)
+    result = await run_in_threadpool(db_manager.perform_maintenance_and_backup, max_backups=3, slim_days=180)
     return {"status": "ok", **result}
 
 

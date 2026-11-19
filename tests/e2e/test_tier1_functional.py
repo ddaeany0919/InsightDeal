@@ -235,16 +235,39 @@ class TestTier1FunctionalCoverage:
         list_resp = client.get("/api/community/hot-deals")
         assert list_resp.status_code == 200
         list_data = list_resp.json()
+        assert "has_more" in list_data
+        assert isinstance(list_data["has_more"], bool)
         items = list_data.get("deals") or list_data.get("items") or list_data
         assert any(d["id"] == deal.id for d in items)
 
         # 4. 단일 딜 상세 조회 (/api/community/deals/{id})
+        from backend.routers.community import clean_deal_title
+
         detail_resp = client.get(f"/api/community/deals/{deal.id}")
         assert detail_resp.status_code == 200
         detail_data = detail_resp.json()
         assert detail_data["id"] == deal.id
-        assert detail_data["title"] == deal.title
+        assert detail_data["title"] == clean_deal_title(deal.title)
+        assert detail_data["title"] == "[네이버] 칠성사이다 제로 24캔"
         assert "칠성사이다" in detail_data["content_html"]
+
+        # M1 1-RTT 요약 필 및 이중 키 계약 검증
+        for key in (
+            "buy_count",
+            "buyCount",
+            "pass_count",
+            "saveCount",
+            "passCount",
+            "comment_count",
+            "commentCount",
+            "history_count",
+            "historyCount",
+            "is_search_fallback",
+            "is_free",
+        ):
+            assert key in detail_data, f"1-RTT 요약 필 누락: {key}"
+        assert detail_data["is_search_fallback"] is False
+        assert detail_data["is_free"] is False
 
         # sources 필드 또는 has_options 확인
         assert "sources" in detail_data
