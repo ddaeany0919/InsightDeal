@@ -8,7 +8,7 @@ on:
 
 jobs:
   gate-1-backend:
-    name: Gate 1 — Backend Unit/E2E & Docker Check
+    name: Gate 1 — Backend Unit & E2E
     runs-on: ubuntu-latest
     env:
       ENABLE_SCHEDULER: "false"
@@ -46,12 +46,6 @@ jobs:
         run: |
           python -c "assert open('backend/scheduler/cloud_feeder.py','rb').read() == open('backend/scripts/cloud_feeder.py','rb').read(), 'cloud_feeder.py mismatch'"
 
-      - name: Validate docker-compose.prod.yml
-        run: docker compose -f docker-compose.prod.yml config -q
-
-      - name: Build backend Docker image
-        run: docker build -t insightdeal-api:ci ./backend
-
   gate-2-contract:
     name: Gate 2 — OpenAPI <-> Web & Android Contract
     runs-on: ubuntu-latest
@@ -79,7 +73,7 @@ jobs:
         run: python -m pytest tests/unit/test_openapi_cross_platform_contract.py -v
 
   gate-3-web:
-    name: Gate 3 — Web Lint, TSC, Vitest, Build & Toss/Docker
+    name: Gate 3 — Web Lint, TSC, Vitest, Build & Toss
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -127,10 +121,6 @@ jobs:
             STASHED=1
           fi
           NEXT_PUBLIC_TOSS_MINIAPP=true npx next build --webpack
-
-      - name: Build web Docker image
-        working-directory: .
-        run: docker build -t insightdeal-web:ci ./frontend-web
 
   gate-4-android:
     name: Gate 4 — Android UnitTest, LintRelease & AssembleRelease

@@ -49,7 +49,7 @@
 - ✅ 에픽 1: 프로젝트 위생 정리 (47파일 237MB 삭제, .gitignore 강화)
 - ✅ 에픽 2: Play Store 출시 준비 (Splash/아이콘/ProGuard 확인, 데드코드 제거)
 - ✅ 에픽 3: 웹 리팩토링 (types/utils/PriceTrendChart 및 모달/AI판독기/히어로 컴포넌트 분리 완료)
-- ✅ 에픽 4: Docker 포트 정합성 (8000→8080 통일)
+- ✅ 에픽 4: 전 구간 8080 포트 정합성 통일 및 미사용 레거시 Docker 제거 (GCP systemd+Caddy · Vercel · 앱인토스 네이티브 운영)
 - ⛔ 에픽 5: C2C 플랫폼 통합 (폐기 — 당근/번개장터 약관 위반 및 소송 리스크)
 
 

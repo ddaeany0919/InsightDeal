@@ -302,7 +302,18 @@ def test_standard_ux_copies_port_8080_turbopack_and_forbidden_patterns():
     )
 
     assert "turbopack: {}" in next_cfg
-    assert "http://localhost:8080" in next_cfg and "http://api:8080" in next_cfg
+    assert "http://localhost:8080" in next_cfg and "https://34.59.208.14.sslip.io" in next_cfg
+    assert "DOCKER_ENV" not in next_cfg and "DOCKER_ENV" not in push_reg_route
+    for legacy_docker_file in (
+        "docker-compose.yml",
+        "docker-compose.prod.yml",
+        "backend/Dockerfile",
+        "backend/docker-compose.yml",
+        "frontend-web/Dockerfile",
+    ):
+        assert not os.path.exists(os.path.join(_PROJECT_ROOT, legacy_docker_file)), (
+            f"미사용 레거시 Docker 파일 잔존: {legacy_docker_file}"
+        )
     assert ":8080" in push_reg_route
     assert "next build --webpack" in web_pkg
     assert "10.0.2.2:8080" in app_gradle
