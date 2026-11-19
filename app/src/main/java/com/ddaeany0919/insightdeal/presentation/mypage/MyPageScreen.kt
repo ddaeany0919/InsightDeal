@@ -20,8 +20,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,6 +52,9 @@ import com.ddaeany0919.insightdeal.presentation.mypage.history.MyCommentsUiState
 import com.ddaeany0919.insightdeal.presentation.mypage.history.MyCommentsViewModel
 import com.ddaeany0919.insightdeal.presentation.mypage.history.NotificationHistoryManager
 import com.ddaeany0919.insightdeal.presentation.mypage.history.RecentDealManager
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
+import com.ddaeany0919.insightdeal.presentation.theme.PriceTextStyle
+import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistViewModel
 import java.net.URLEncoder
 
 private fun buildProxiedThumbUrl(rawUrl: String?, targetWidth: Int = 200): String? {
@@ -61,9 +73,11 @@ fun MyPageScreen(
     onNavigateToMyPosts: () -> Unit,
     onNavigateToMyComments: () -> Unit,
     onNavigateToRecentDeals: () -> Unit,
-    navController: androidx.navigation.NavController? = null
+    navController: androidx.navigation.NavController? = null,
+    wishlistViewModel: WishlistViewModel? = null
 ) {
     val context = LocalContext.current
+    val semantic = LocalInsightDealColors.current
     val deviceUuid = remember {
         runCatching { LocalDataProvider.getDeviceUuid() }.getOrDefault("")
     }
@@ -100,8 +114,19 @@ fun MyPageScreen(
     val keywords by keywordViewModel.keywords.collectAsState()
     val activeKeywordCount = remember(keywords) { keywords.count { it.isActive } }
 
+    val deviceSyncViewModel: DeviceSyncViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val syncUiState by deviceSyncViewModel.uiState.collectAsState()
+    LaunchedEffect(syncUiState.syncCompletedSeq) {
+        if (syncUiState.syncCompletedSeq > 0) {
+            keywordViewModel.fetchKeywords()
+            wishlistViewModel?.syncFromServer()
+            NotificationHistoryManager.syncWithServer(context)
+        }
+    }
+
     var showNotificationHistory by remember { mutableStateOf(false) }
     var showKeywordDialog by remember { mutableStateOf(false) }
+    var showDeviceSyncSheet by remember { mutableStateOf(false) }
 
     val api = remember { NetworkModule.createService<ApiService>() }
     var recommendedDeals by remember { mutableStateOf<List<DealItem>>(emptyList()) }
@@ -396,7 +421,7 @@ fun MyPageScreen(
                                                             activeRecentUrl = fallbackUrl
                                                         }
                                                     },
-                                                    contentDescription = deal.title,
+                                                    contentDescription = null,
                                                     modifier = Modifier.fillMaxSize(),
                                                     contentScale = ContentScale.Crop
                                                 )
@@ -412,7 +437,7 @@ fun MyPageScreen(
                                             text = deal.title.replace(Regex("^[\\uD83C-\\uDBFF\\uDC00-\\uDFFF\\u2600-\\u27BF\\uFE0F]+\\s*"), ""),
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
+                                            maxLines = 2,
                                             overflow = TextOverflow.Ellipsis,
                                             color = MaterialTheme.colorScheme.onSurface,
                                             letterSpacing = (-0.2).sp
@@ -420,9 +445,8 @@ fun MyPageScreen(
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = formatPrice(deal.price, deal.currency, deal.title),
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = MaterialTheme.colorScheme.secondary
+                                            style = PriceTextStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.ExtraBold),
+                                            color = semantic.priceAccent
                                         )
                                     }
                                 }
@@ -488,7 +512,7 @@ fun MyPageScreen(
                                                             activeRecUrl = fallbackUrl
                                                         }
                                                     },
-                                                    contentDescription = deal.title,
+                                                    contentDescription = null,
                                                     modifier = Modifier.fillMaxSize(),
                                                     contentScale = ContentScale.Crop
                                                 )
@@ -536,16 +560,15 @@ fun MyPageScreen(
                                                 fontSize = 13.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1,
+                                                maxLines = 2,
                                                 overflow = TextOverflow.Ellipsis,
                                                 letterSpacing = (-0.2).sp
                                             )
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
                                                 text = formatPrice(deal.price, deal.currency, deal.title),
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                color = MaterialTheme.colorScheme.secondary
+                                                style = PriceTextStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.ExtraBold),
+                                                color = semantic.priceAccent
                                             )
                                         }
                                         Icon(
@@ -575,7 +598,9 @@ fun MyPageScreen(
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.onBackground,
                         letterSpacing = (-0.3).sp,
-                        modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp)
+                        modifier = Modifier
+                            .padding(horizontal = 2.dp, vertical = 6.dp)
+                            .semantics { heading() }
                     )
 
                     Card(
@@ -586,6 +611,17 @@ fun MyPageScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
+                            MyPageMenuItem(
+                                icon = Icons.Outlined.Sync,
+                                iconColor = MaterialTheme.colorScheme.primary,
+                                title = "다른 기기와 동기화",
+                                value = "6자리 코드",
+                                onClick = {
+                                    deviceSyncViewModel.clearFeedback()
+                                    showDeviceSyncSheet = true
+                                }
+                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
                             MyPageMenuItem(
                                 icon = Icons.Outlined.FavoriteBorder,
                                 title = "관심 상품 목록 (찜)",
@@ -661,6 +697,250 @@ fun MyPageScreen(
             onDismiss = { showKeywordDialog = false },
             keywordViewModel = keywordViewModel
         )
+    }
+
+    if (showDeviceSyncSheet) {
+        DeviceSyncBottomSheet(
+            uiState = syncUiState,
+            onIssueCode = { deviceSyncViewModel.issuePairingCode() },
+            onClaimCode = { code -> deviceSyncViewModel.claimPairingCode(code) },
+            onDismiss = { showDeviceSyncSheet = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DeviceSyncBottomSheet(
+    uiState: DeviceSyncUiState,
+    onIssueCode: () -> Unit,
+    onClaimCode: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var inputCode by remember { mutableStateOf("") }
+    val clipboardManager = LocalClipboardManager.current
+    val semantic = LocalInsightDealColors.current
+    var copiedNotice by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(
+                text = "다른 기기와 동기화",
+                fontSize = 19.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { heading() }
+            )
+            Text(
+                text = "로그인 없이 6자리 일회성 코드로 웹·토스·다른 안드로이드 기기와 관심 목록, 키워드, 방해금지 설정을 바로 연결할 수 있어요.",
+                fontSize = 12.5.sp,
+                lineHeight = 18.sp,
+                color = semantic.textMuted
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("내 코드 발급", "코드 입력하기").forEachIndexed { idx, label ->
+                    val isSelected = selectedTab == idx
+                    Surface(
+                        onClick = { selectedTab = idx },
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .semantics {
+                                role = Role.Tab
+                                selected = isSelected
+                            }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = label,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (selectedTab == 0) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, semantic.cardBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        val issuedCode = uiState.issuedCode
+                        if (issuedCode.isNullOrBlank()) {
+                            Text(
+                                text = "발급 버튼을 누르면 10분간 유효한 6자리 일회성 코드가 생성됩니다.",
+                                fontSize = 12.5.sp,
+                                color = semantic.textMuted,
+                                textAlign = TextAlign.Center
+                            )
+                        } else {
+                            val mins = uiState.remainingSec / 60
+                            val secs = uiState.remainingSec % 60
+                            Text(
+                                text = issuedCode.chunked(3).joinToString(" "),
+                                style = PriceTextStyle.copy(
+                                    fontSize = 30.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = 3.sp
+                                ),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = if (uiState.remainingSec > 0) {
+                                    String.format("남은 시간 %02d:%02d", mins, secs)
+                                } else {
+                                    "코드가 만료되었어요. 새로 발급해 주세요."
+                                },
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (uiState.remainingSec > 0) semantic.success else semantic.danger
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(issuedCode))
+                                    copiedNotice = true
+                                },
+                                modifier = Modifier.heightIn(min = 48.dp)
+                            ) {
+                                Text(
+                                    text = if (copiedNotice) "복사됨" else "코드 복사",
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        if (!uiState.issueError.isNullOrBlank()) {
+                            Text(
+                                text = uiState.issueError,
+                                fontSize = 12.sp,
+                                color = semantic.danger,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                copiedNotice = false
+                                onIssueCode()
+                            },
+                            enabled = !uiState.isIssuing,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (uiState.isIssuing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                Text(
+                                    text = if (uiState.issuedCode.isNullOrBlank()) "6자리 코드 발급" else "새 코드 다시 발급",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = inputCode,
+                        onValueChange = { raw ->
+                            inputCode = raw.filter { it.isDigit() }.take(6)
+                        },
+                        label = { Text("6자리 동기화 코드 입력") },
+                        placeholder = { Text("예: 482910") },
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = KeyboardType.Number
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    if (!uiState.claimError.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = semantic.dangerContainer,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = uiState.claimError,
+                                fontSize = 12.5.sp,
+                                color = semantic.onDangerContainer,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+
+                    if (!uiState.claimSuccessMessage.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = semantic.successContainer,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = uiState.claimSuccessMessage,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = semantic.onSuccessContainer,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = { onClaimCode(inputCode) },
+                        enabled = !uiState.isClaiming && inputCode.length == 6,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        if (uiState.isClaiming) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            Text("동기화 연결하기", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

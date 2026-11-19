@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Search
@@ -26,13 +27,20 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import com.ddaeany0919.insightdeal.models.DealItem
@@ -40,7 +48,7 @@ import com.ddaeany0919.insightdeal.network.PopularKeywordRankingItem
 import com.ddaeany0919.insightdeal.presentation.PriceChart
 import com.ddaeany0919.insightdeal.presentation.formatPrice
 import com.ddaeany0919.insightdeal.presentation.home.DealCardComposable
-import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 import com.ddaeany0919.insightdeal.presentation.theme.LocalIsDarkTheme
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
@@ -51,7 +59,7 @@ import kotlinx.coroutines.flow.debounce
 fun AdvancedSearchScreen(
     navController: NavController,
     initialQuery: String = "",
-    viewModel: HomeViewModel = viewModel()
+    viewModel: SearchViewModel = viewModel()
 ) {
     var searchQuery by androidx.compose.runtime.saveable.rememberSaveable(stateSaver = androidx.compose.ui.text.input.TextFieldValue.Saver) {
         val initTrimmed = initialQuery.trim()
@@ -69,8 +77,10 @@ fun AdvancedSearchScreen(
     val searchAutoComplete = remember(context) { SearchAutoComplete.getInstance(context) }
     val searchHistory by searchAutoComplete.searchHistory.collectAsState()
     val isDark = LocalIsDarkTheme.current
+    val semantic = LocalInsightDealColors.current
     
-    // 재사용할 HomeViewModel 상태
+    // 검색 전용 ViewModel 상태 (홈 피드 Room 테이블과 완전 분리)
+    val searchState by viewModel.searchState.collectAsState()
     val dealsPagingItems = viewModel.dealsPagingData.collectAsLazyPagingItems()
     val popularKeywords by viewModel.popularKeywords.collectAsState()
     val popularRankings by viewModel.popularRankings.collectAsState()
@@ -261,13 +271,13 @@ fun AdvancedSearchScreen(
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = if (isDark) Color(0x33FF5A26) else Color(0xFFFFF1EC)
+                                color = semantic.priceContainer
                             ) {
                                 Text(
                                     text = "TIP",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = Color(0xFFFF5A26),
+                                    color = semantic.priceAccent,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
@@ -276,7 +286,7 @@ fun AdvancedSearchScreen(
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
@@ -307,7 +317,8 @@ fun AdvancedSearchScreen(
                                     text = "최근 검색어",
                                     fontWeight = FontWeight.ExtraBold,
                                     fontSize = 15.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.semantics { heading() }
                                 )
                             }
                             Box(
@@ -321,7 +332,7 @@ fun AdvancedSearchScreen(
                                     text = "전체 삭제",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                                    color = semantic.textMuted
                                 )
                             }
                         }
@@ -417,7 +428,8 @@ fun AdvancedSearchScreen(
                                 text = "실시간 인기 검색어",
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 16.sp,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.semantics { heading() }
                             )
                         }
                         if (popularUpdatedAt.isNotBlank()) {
@@ -425,7 +437,7 @@ fun AdvancedSearchScreen(
                                 text = popularUpdatedAt,
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                color = semantic.textMuted
                             )
                         }
                     }
@@ -448,6 +460,7 @@ fun AdvancedSearchScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .height(IntrinsicSize.Min)
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.Top
                         ) {
@@ -474,7 +487,7 @@ fun AdvancedSearchScreen(
                                 Box(
                                     modifier = Modifier
                                         .width(0.8.dp)
-                                        .height(220.dp)
+                                        .fillMaxHeight()
                                         .padding(vertical = 8.dp)
                                         .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
                                 )
@@ -508,7 +521,9 @@ fun AdvancedSearchScreen(
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 18.dp)
+                        modifier = Modifier
+                            .padding(horizontal = 18.dp)
+                            .semantics { heading() }
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     FlowRow(
@@ -540,7 +555,7 @@ fun AdvancedSearchScreen(
                                         text = "#",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = if (idx < 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        color = if (idx < 3) MaterialTheme.colorScheme.primary else semantic.textMuted
                                     )
                                     Text(
                                         text = keyword,
@@ -554,10 +569,74 @@ fun AdvancedSearchScreen(
                     }
                 }
             } else {
-                Spacer(modifier = Modifier.height(8.dp))
-                if (dealsPagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
+                // P1-05: 종료딜(과거 역대가) 포함 검색 토글 바
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    FilterChip(
+                        selected = searchState.includeClosed,
+                        onClick = { viewModel.toggleIncludeClosed() },
+                        label = {
+                            Text(
+                                text = "종료딜(과거 역대가) 포함",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .semantics {
+                                role = Role.Tab
+                                selected = searchState.includeClosed
+                            }
+                    )
+                    Text(
+                        text = if (searchState.includeClosed) "종료된 딜도 함께 검색 중" else "진행 중인 딜만 검색",
+                        fontSize = 11.5.sp,
+                        color = semantic.textMuted
+                    )
+                }
+                val refreshState = dealsPagingItems.loadState.refresh
+                if (refreshState is LoadState.Loading && dealsPagingItems.itemCount == 0) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
+                    }
+                } else if (refreshState is LoadState.Error && dealsPagingItems.itemCount == 0) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ErrorOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Text(
+                                text = "검색 결과를 불러오지 못했어요.\n잠시 후 다시 시도해 주세요.",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Button(
+                                onClick = { dealsPagingItems.retry() },
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("다시 시도", fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 } else if (dealsPagingItems.itemCount == 0) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -611,6 +690,47 @@ fun AdvancedSearchScreen(
                                 )
                             }
                         }
+
+                        when (dealsPagingItems.loadState.append) {
+                            is LoadState.Loading -> {
+                                item(key = "search_append_loading", contentType = "append_loading") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                                    }
+                                }
+                            }
+                            is LoadState.Error -> {
+                                item(key = "search_append_error", contentType = "append_error") {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 12.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "추가 검색 결과를 불러오지 못했어요.",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        OutlinedButton(
+                                            onClick = { dealsPagingItems.retry() },
+                                            modifier = Modifier.heightIn(min = 48.dp),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Text("다시 시도", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                            else -> Unit
+                        }
                     }
                 }
             }
@@ -625,6 +745,7 @@ private fun PopularRankingRowItem(
     onClick: () -> Unit
 ) {
     val isTop3 = item.rank <= 3
+    val semantic = LocalInsightDealColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -650,7 +771,7 @@ private fun PopularRankingRowItem(
                 fontSize = 13.5.sp,
                 fontWeight = if (isTop3) FontWeight.Bold else FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
@@ -662,13 +783,13 @@ private fun PopularRankingRowItem(
             "HOT" -> {
                 Surface(
                     shape = RoundedCornerShape(4.dp),
-                    color = if (isDark) Color(0x33FF5A26) else Color(0xFFFFF1EC)
+                    color = semantic.priceContainer
                 ) {
                     Text(
                         text = "HOT",
                         fontSize = 9.5.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = Color(0xFFFF5A26),
+                        color = semantic.priceAccent,
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
                     )
                 }
@@ -678,7 +799,7 @@ private fun PopularRankingRowItem(
                     text = "▲",
                     fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFF5A26)
+                    color = semantic.priceAccent
                 )
             }
             "NEW" -> {
@@ -694,7 +815,7 @@ private fun PopularRankingRowItem(
                     text = "-",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    color = semantic.textMuted
                 )
             }
         }
@@ -848,13 +969,14 @@ fun KeywordPriceTrendSummaryCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                        val semanticColors = LocalInsightDealColors.current
                         Text("최저 핫딜가", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(3.dp))
                         Text(
                             text = formatPrice(minPrice, "KRW"),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.ExtraBold,
-                            color = Color(0xFF10B981)
+                            color = semanticColors.success
                         )
                     }
                     Box(
@@ -880,13 +1002,14 @@ fun KeywordPriceTrendSummaryCard(
                             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
                     )
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                        val semanticColors = LocalInsightDealColors.current
                         Text("최고 핫딜가", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(3.dp))
                         Text(
                             text = formatPrice(maxPrice, "KRW"),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFF59E0B)
+                            color = semanticColors.warning
                         )
                     }
                 }
@@ -911,7 +1034,7 @@ fun KeywordPriceTrendSummaryCard(
                     Text(
                         text = "터치하여 가격 비교",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        color = LocalInsightDealColors.current.textMuted
                     )
                 }
 

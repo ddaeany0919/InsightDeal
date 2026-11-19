@@ -39,6 +39,9 @@ class NotificationAlertDto(BaseModel):
     received_at: str
     dealUrl: str
     deal_url: str
+    is_read: bool = False
+    dnd_suppressed: bool = False
+    digest_sent_at: Optional[str] = None
 
 
 def _resolve_user_owner(auth_uuid: str, *candidates: Optional[str]) -> str:
@@ -238,6 +241,9 @@ def get_user_notifications(
                 received_at=received_iso,
                 dealUrl=deal_url_val,
                 deal_url=deal_url_val,
+                is_read=bool(getattr(a, "is_read", False)),
+                dnd_suppressed=bool(getattr(a, "dnd_suppressed", False)),
+                digest_sent_at=to_utc_iso(getattr(a, "digest_sent_at", None)),
             )
         )
     return result

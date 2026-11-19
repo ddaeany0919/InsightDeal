@@ -20,6 +20,9 @@ interface WishlistDao {
     @Query("SELECT * FROM wishlist WHERE id = :id LIMIT 1")
     suspend fun getWishlistById(id: Int): WishlistEntity?
 
+    @Query("SELECT * FROM wishlist")
+    suspend fun getAllWishlistsOnce(): List<WishlistEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertWishlist(wishlist: WishlistEntity): Long
 

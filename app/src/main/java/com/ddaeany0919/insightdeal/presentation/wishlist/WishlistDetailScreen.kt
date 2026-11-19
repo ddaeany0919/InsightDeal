@@ -59,7 +59,7 @@ fun WishlistDetailScreen(
                         it.lastChecked?.let { lastChecked ->
                             Text("마지막 체크: ${lastChecked.format(timeFormatter)}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }

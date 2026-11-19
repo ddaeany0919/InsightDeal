@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 
 /**
  * ⏳ 로딩 스켈레톤 (Shimmer Effect)
@@ -58,15 +60,17 @@ fun LoadingFeed() {
         modifier = Modifier.graphicsLayer { this.alpha = alpha }
     ) {
         items(count = 5, key = { it }, contentType = { "loading_skeleton" }) {
+            val semantic = LocalInsightDealColors.current
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp)
+                    .heightIn(min = 120.dp)
                     .padding(horizontal = 16.dp, vertical = 4.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                border = BorderStroke(1.dp, semantic.cardBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Row(
                     modifier = Modifier
@@ -183,7 +187,7 @@ fun EmptyFeedState(onRefresh: () -> Unit) {
         Text(
             text = "새로운 딜을 찾고 있어요",
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            color = MaterialTheme.colorScheme.onSurface
         )
         
         Spacer(modifier = Modifier.height(8.dp))
@@ -191,15 +195,17 @@ fun EmptyFeedState(onRefresh: () -> Unit) {
         Text(
             text = "잠시 후 다시 확인해 주세요",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            color = LocalInsightDealColors.current.textMuted
         )
         
         Spacer(modifier = Modifier.height(24.dp))
         
         Button(
             onClick = onRefresh,
+            modifier = Modifier.heightIn(min = 48.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             )
         ) {
             Icon(
@@ -241,7 +247,7 @@ fun OfflineErrorState(
         Text(
             text = message,
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+            color = MaterialTheme.colorScheme.onSurface
         )
         
         if (isOffline) {
@@ -255,7 +261,7 @@ fun OfflineErrorState(
                     text = "저장된 목록 보기",
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    color = LocalInsightDealColors.current.textMuted
                 )
             }
         }

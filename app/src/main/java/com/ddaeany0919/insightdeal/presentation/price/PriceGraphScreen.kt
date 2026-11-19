@@ -28,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.ddaeany0919.insightdeal.data.util.ImageUrlResolver
 import com.ddaeany0919.insightdeal.presentation.A11yIconButton
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.Entry
@@ -428,9 +429,10 @@ private fun PriceStatisticsCard(statistics: PriceChartViewModel.PriceStatistics)
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                StatisticItem("최저가", statistics.lowest, Color(0xFF00C853))
-                StatisticItem("평균가", statistics.averagePrice, Color(0xFF2962FF))
-                StatisticItem("최고가", statistics.highest, Color(0xFFD50000))
+                val semanticColors = LocalInsightDealColors.current
+                StatisticItem("최저가", statistics.lowest, semanticColors.success)
+                StatisticItem("평균가", statistics.averagePrice, semanticColors.info)
+                StatisticItem("최고가", statistics.highest, semanticColors.danger)
             }
         }
     }

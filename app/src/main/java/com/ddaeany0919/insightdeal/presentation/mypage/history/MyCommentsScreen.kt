@@ -23,6 +23,7 @@ import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.network.UserCommentDto
 import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import com.ddaeany0919.insightdeal.presentation.formatRelativeTime
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -176,7 +177,7 @@ fun MyCommentsScreen(
                                         Text(
                                             text = formattedTime,
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            color = LocalInsightDealColors.current.textMuted
                                         )
                                     }
                                 }

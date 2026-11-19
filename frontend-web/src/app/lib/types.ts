@@ -88,6 +88,10 @@ export interface RawDealApiResponse {
   isSearchFallback?: boolean;
   is_free?: boolean;
   isFree?: boolean;
+  body_images?: string[];
+  bodyImages?: string[];
+  report_count?: number;
+  reportCount?: number;
 }
 
 export interface Deal {
@@ -120,7 +124,15 @@ export interface Deal {
   commentCount?: number;
   historyCount?: number;
   isSearchFallback?: boolean;
+  is_search_fallback?: boolean;
   isFree?: boolean;
+  bodyImages?: string[];
+  reportCount?: number;
+}
+
+export interface NextCursor {
+  indexed_at: string;
+  id: number;
 }
 
 export interface HotDealsApiResponse {
@@ -129,7 +141,11 @@ export interface HotDealsApiResponse {
   has_more?: boolean;
   hasMore?: boolean;
   total?: number;
+  next_cursor?: NextCursor | null;
+  nextCursor?: NextCursor | null;
 }
+
+export type HotDealsResponse = HotDealsApiResponse;
 
 export interface DealVoteApiResponse {
   buy_count?: number;
@@ -202,3 +218,60 @@ export interface PopularKeywordRanking {
   recent_count: number;
   status: "HOT" | "UP" | "NEW" | "SAME" | string;
 }
+
+export interface PairingCodeResponse {
+  code: string;
+  expires_at?: string;
+  expiresAt?: string;
+  expires_in_sec?: number;
+}
+
+export interface ClaimPairingCodeResponse {
+  status?: string;
+  success?: boolean;
+  merged_keywords?: number;
+  mergedKeywords?: number;
+  merged_wishlists?: number;
+  mergedWishlists?: number;
+  merged_alerts?: number;
+  mergedAlerts?: number;
+  dnd_synced?: boolean;
+  dndSynced?: boolean;
+  detail?: string;
+}
+
+export interface AccountAuthResponse {
+  username: string;
+  nickname: string;
+  honey_points: number;
+  access_token?: string;
+  token_type?: string;
+  detail?: string;
+}
+
+export interface ReportClosedResponse {
+  status?: string;
+  deal_id?: number;
+  dealId?: number;
+  report_count?: number;
+  reportCount?: number;
+  is_closed?: boolean;
+  isClosed?: boolean;
+  threshold?: number;
+  detail?: string;
+}
+
+export interface NotificationLogItem {
+  id: string | number;
+  title: string;
+  keyword: string;
+  receivedAt?: number;
+  received_at?: string;
+  dealUrl?: string;
+  deal_url?: string;
+  is_read?: boolean;
+  dnd_suppressed?: boolean;
+  digest_sent_at?: string | null;
+}
+
+export type ThemeMode = "system" | "light" | "dark";

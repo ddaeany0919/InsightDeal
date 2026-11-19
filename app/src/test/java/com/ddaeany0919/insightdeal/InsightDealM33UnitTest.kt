@@ -14,8 +14,10 @@ import com.ddaeany0919.insightdeal.presentation.community.CommunityViewModel
 import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
 import com.ddaeany0919.insightdeal.presentation.home.HotDealsPagingSource
 import com.ddaeany0919.insightdeal.presentation.home.HotDealsRemoteMediator
+import com.ddaeany0919.insightdeal.presentation.mypage.DeviceSyncViewModel
 import com.ddaeany0919.insightdeal.presentation.price.PriceChartViewModel
 import com.ddaeany0919.insightdeal.presentation.recommendation.RecommendationViewModel
+import com.ddaeany0919.insightdeal.presentation.search.SearchViewModel
 import com.ddaeany0919.insightdeal.presentation.theme.AmoledColorScheme
 import com.ddaeany0919.insightdeal.presentation.theme.DarkColorScheme
 import com.ddaeany0919.insightdeal.presentation.theme.LightColorScheme
@@ -230,7 +232,9 @@ class InsightDealM33UnitTest {
             CommunityViewModel::class.java,
             RecommendationViewModel::class.java,
             CoupangTrackingViewModel::class.java,
-            WishlistViewModel::class.java
+            WishlistViewModel::class.java,
+            SearchViewModel::class.java,
+            DeviceSyncViewModel::class.java
         )
         val forbiddenTypeNames = setOf(
             "android.content.Context",
@@ -382,11 +386,13 @@ class InsightDealM33UnitTest {
     }
 
     @Test
-    fun categoryCatalog_and_filterState_alignWith15CategoriesAnd10Sources() {
+    fun categoryCatalog_and_filterState_alignWith15CategoriesAnd11Sources() {
         assertEquals(15, CategoryCatalog.STANDARD_CATEGORIES.size)
-        assertEquals(10, CategoryCatalog.STANDARD_SOURCES.size)
+        assertEquals(11, CategoryCatalog.STANDARD_SOURCES.size)
         assertTrue(CategoryCatalog.STANDARD_SOURCES.contains("전체"))
+        assertTrue(CategoryCatalog.STANDARD_SOURCES.contains("뽐뿌해외"))
         assertTrue(CategoryCatalog.STANDARD_SOURCES.contains("빠삭육아"))
+        assertTrue(CategoryCatalog.STANDARD_COMMUNITY_PLATFORMS.contains("뽐뿌해외"))
         assertTrue(CategoryCatalog.STANDARD_COMMUNITY_PLATFORMS.contains("빠삭육아"))
 
         // 레거시 별칭 정규화

@@ -14,7 +14,6 @@ export default defineConfig({
     withHomeButton: false,
     withTitle: true,
     transparentBackground: false,
-    theme: "light",
   },
   webView: {
     pullToRefreshEnabled: false,

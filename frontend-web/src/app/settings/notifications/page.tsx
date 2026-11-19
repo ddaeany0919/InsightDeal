@@ -10,12 +10,15 @@ import {
   urlBase64ToUint8Array,
   getWebPushSupportStatus,
   registerOrReusePushServiceWorker,
+  buildExternalBrowserIntentUrl,
+  isIosUserAgent,
   type WebPushSupportStatus,
 } from '../../lib/utils';
 import {
   logTossScreen,
   logTossClick,
   maybeRequestTossReview,
+  copyTextSafe,
 } from '../../lib/tossBridge';
 
 interface Keyword {
@@ -33,6 +36,9 @@ interface RawKeywordDetail {
 const STANDARD_DND_COPY =
   '설정한 시간에는 푸시 알림을 보내지 않아요 (놓친 알림은 알림함에서 확인 가능)';
 
+const STANDARD_DND_DIGEST_COPY =
+  '방해금지 해제 시각(기본 아침 08:00)에 "밤사이 놓친 핫딜 N건" 요약 푸시를 1회 보내드려요.';
+
 export default function NotificationSettingsPage() {
   const [supportStatus, setSupportStatus] =
     useState<WebPushSupportStatus>('unsupported');
@@ -46,6 +52,11 @@ export default function NotificationSettingsPage() {
   const [dndEnd, setDndEnd] = useState('08:00');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
+  const [safariCopyNotice, setSafariCopyNotice] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
 
   const isSupported = supportStatus === 'supported';
 
@@ -324,6 +335,7 @@ export default function NotificationSettingsPage() {
         button_name: 'settings_keyword_submit',
       });
       maybeRequestTossReview();
+      setLiveAnnouncement(`'${newKeywordStr}' 알림 키워드를 등록했어요.`);
       setKeywordInput('');
     } catch {
       setErrorMsg('네트워크 오류로 키워드를 등록하지 못했어요.');
@@ -367,6 +379,11 @@ export default function NotificationSettingsPage() {
           JSON.stringify(updated)
         );
       }
+      setLiveAnnouncement(
+        nextActive
+          ? `'${keywordStr}' 키워드 알림을 다시 켰어요.`
+          : `'${keywordStr}' 키워드 알림을 일시정지했어요.`
+      );
     } catch {
       setKeywords(prevSnapshot);
       setErrorMsg('네트워크 오류로 키워드 상태를 변경하지 못했어요.');
@@ -405,6 +422,7 @@ export default function NotificationSettingsPage() {
           JSON.stringify(updated)
         );
       }
+      setLiveAnnouncement(`'${keywordStr}' 키워드를 삭제했어요.`);
     } catch {
       setErrorMsg('네트워크 오류로 키워드를 삭제하지 못했어요.');
     } finally {
@@ -440,6 +458,12 @@ export default function NotificationSettingsPage() {
         setDndEnd(prevSnapshot.end);
         setErrorMsg(
           '방해금지 시간 설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
+        );
+      } else {
+        setLiveAnnouncement(
+          nextEnabled
+            ? `방해금지 시간대(${startStr}~${endStr})를 켰어요.`
+            : '방해금지 시간대를 껐어요.'
         );
       }
     } catch {
@@ -516,11 +540,11 @@ export default function NotificationSettingsPage() {
             role="alert"
             style={{
               marginBottom: '20px',
-              background: 'rgba(239, 68, 68, 0.08)',
-              border: '1px solid rgba(239, 68, 68, 0.25)',
+              background: 'var(--danger-bg)',
+              border: '1px solid var(--danger-border)',
               padding: '10px 12px 10px 16px',
               borderRadius: '14px',
-              color: '#ef4444',
+              color: 'var(--danger-text)',
               fontSize: '0.88rem',
               fontWeight: 700,
               display: 'flex',
@@ -542,7 +566,7 @@ export default function NotificationSettingsPage() {
                 borderRadius: '50%',
                 background: 'transparent',
                 border: 'none',
-                color: '#ef4444',
+                color: 'var(--danger-text)',
                 fontWeight: 800,
                 cursor: 'pointer',
                 display: 'inline-flex',
@@ -554,6 +578,10 @@ export default function NotificationSettingsPage() {
             </button>
           </div>
         )}
+
+        <div role="status" aria-live="polite" className="sr-only">
+          {liveAnnouncement}
+        </div>
 
         <main style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <section
@@ -598,12 +626,12 @@ export default function NotificationSettingsPage() {
                   className="bounce-click"
                   style={{
                     minHeight: '44px',
-                    background: 'rgba(239, 68, 68, 0.1)',
-                    color: '#ef4444',
+                    background: 'var(--danger-bg)',
+                    color: 'var(--danger-text)',
                     padding: '10px 20px',
                     borderRadius: '12px',
                     fontWeight: 700,
-                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    border: '1px solid var(--danger-border)',
                     cursor: 'pointer',
                   }}
                 >
@@ -634,18 +662,83 @@ export default function NotificationSettingsPage() {
               <div
                 role="note"
                 style={{
-                  background: 'rgba(245, 158, 11, 0.08)',
-                  border: '1px solid rgba(245, 158, 11, 0.28)',
+                  background: 'var(--warning-bg)',
+                  border: '1px solid var(--warning-border)',
                   padding: '12px 14px',
                   borderRadius: '12px',
                   fontSize: '0.86rem',
-                  color: '#b45309',
+                  color: 'var(--warning-text)',
                   fontWeight: 600,
                   lineHeight: 1.5,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  alignItems: 'flex-start',
                 }}
               >
-                카카오톡·인스타그램·네이버 등의 인앱 브라우저에서는 웹 푸시 알림이 지원되지 않아요.
-                Chrome 또는 Safari(홈 화면에 추가)로 열면 실시간 푸시를 받을 수 있으며, 등록한 키워드 알림 내역은 인앱 브라우저에서도 알림함에서 확인할 수 있어요.
+                <span>
+                  카카오톡·인스타그램·네이버 등의 인앱 브라우저에서는 웹 푸시 알림이 지원되지 않아요.
+                  Chrome 또는 Safari(홈 화면에 추가)로 열면 실시간 푸시를 받을 수 있으며, 등록한 키워드 알림 내역은 인앱 브라우저에서도 알림함에서 확인할 수 있어요.
+                </span>
+                {(() => {
+                  const intentUrl = !isIosUserAgent()
+                    ? buildExternalBrowserIntentUrl()
+                    : null;
+                  if (intentUrl) {
+                    return (
+                      <a
+                        href={intentUrl}
+                        className="btn-primary"
+                        style={{ minHeight: '44px', borderRadius: '10px', fontSize: '0.82rem' }}
+                      >
+                        외부 브라우저(Chrome)로 열기
+                      </a>
+                    );
+                  }
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ minHeight: '44px', borderRadius: '10px', fontSize: '0.82rem' }}
+                        onClick={async () => {
+                          if (typeof window === 'undefined') return;
+                          const ok = await copyTextSafe(window.location.href);
+                          const message = ok
+                            ? '현재 페이지 주소를 복사했어요. Safari 주소창에 붙여넣어 열어주세요.'
+                            : '주소를 복사하지 못했어요. 브라우저 메뉴에서 Safari로 열기를 선택해 주세요.';
+                          setLiveAnnouncement(message);
+                          setSafariCopyNotice({ ok, text: message });
+                        }}
+                      >
+                        Safari로 열기용 주소 복사
+                      </button>
+                      {safariCopyNotice && (
+                        <div
+                          role="status"
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            borderRadius: '10px',
+                            fontSize: '0.82rem',
+                            fontWeight: 700,
+                            background: safariCopyNotice.ok
+                              ? 'var(--accent-soft-bg)'
+                              : 'var(--danger-bg)',
+                            border: safariCopyNotice.ok
+                              ? '1px solid var(--accent-soft-border)'
+                              : '1px solid var(--danger-border)',
+                            color: safariCopyNotice.ok
+                              ? 'var(--accent)'
+                              : 'var(--danger-text)',
+                          }}
+                        >
+                          {safariCopyNotice.text}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             )}
 
@@ -653,8 +746,8 @@ export default function NotificationSettingsPage() {
               <div
                 role="note"
                 style={{
-                  background: 'rgba(var(--accent-rgb), 0.08)',
-                  border: '1px solid rgba(var(--accent-rgb), 0.24)',
+                  background: 'var(--accent-soft-bg)',
+                  border: '1px solid var(--accent-soft-border)',
                   padding: '12px 14px',
                   borderRadius: '12px',
                   fontSize: '0.86rem',
@@ -671,12 +764,12 @@ export default function NotificationSettingsPage() {
               <div
                 role="note"
                 style={{
-                  background: 'rgba(245, 158, 11, 0.08)',
-                  border: '1px solid rgba(245, 158, 11, 0.28)',
+                  background: 'var(--warning-bg)',
+                  border: '1px solid var(--warning-border)',
                   padding: '12px 14px',
                   borderRadius: '12px',
                   fontSize: '0.86rem',
-                  color: '#b45309',
+                  color: 'var(--warning-text)',
                   fontWeight: 600,
                   lineHeight: 1.5,
                 }}
@@ -690,12 +783,12 @@ export default function NotificationSettingsPage() {
               <div
                 role="note"
                 style={{
-                  background: 'rgba(239, 68, 68, 0.06)',
-                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  background: 'var(--danger-bg)',
+                  border: '1px solid var(--danger-border)',
                   padding: '12px 14px',
                   borderRadius: '12px',
                   fontSize: '0.86rem',
-                  color: '#dc2626',
+                  color: 'var(--danger-text)',
                   fontWeight: 600,
                 }}
               >
@@ -795,11 +888,11 @@ export default function NotificationSettingsPage() {
                     onClick={() => setKeywordInput(tag)}
                     className="bounce-click"
                     style={{
-                      minHeight: '40px',
+                      minHeight: '44px',
                       background: 'var(--surface-subtle)',
                       border: '1px solid var(--card-border)',
                       borderRadius: '99px',
-                      padding: '6px 14px',
+                      padding: '8px 14px',
                       fontSize: '0.8rem',
                       fontWeight: 600,
                       color: 'var(--text-sub)',
@@ -865,17 +958,17 @@ export default function NotificationSettingsPage() {
                           fontSize: '0.86rem',
                           fontWeight: 700,
                           border: isActive
-                            ? '1px solid rgba(var(--accent-rgb), 0.3)'
+                            ? '1px solid var(--accent-soft-border)'
                             : '1px solid var(--card-border)',
                           background: isActive
-                            ? 'rgba(var(--accent-rgb), 0.08)'
+                            ? 'var(--accent-soft-bg)'
                             : 'var(--surface-subtle)',
-                          color: isActive ? 'var(--accent)' : 'var(--text-sub)',
-                          opacity: isActive ? 1 : 0.72,
+                          color: isActive ? 'var(--accent)' : 'var(--text-muted)',
                         }}
                       >
                         <button
                           type="button"
+                          aria-pressed={isActive}
                           onClick={() => handleToggleKeyword(kw.keyword)}
                           title={isActive ? '알림 일시정지' : '알림 다시 켜기'}
                           style={{
@@ -956,6 +1049,9 @@ export default function NotificationSettingsPage() {
                 <p style={{ color: 'var(--text-sub)', fontSize: '0.88rem' }}>
                   {STANDARD_DND_COPY}
                 </p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '4px' }}>
+                  {STANDARD_DND_DIGEST_COPY}
+                </p>
               </div>
 
               <button
@@ -967,7 +1063,7 @@ export default function NotificationSettingsPage() {
                 className="bounce-click"
                 style={{
                   width: '56px',
-                  height: '32px',
+                  height: '44px',
                   minHeight: '44px',
                   background: 'transparent',
                   display: 'inline-flex',
@@ -984,7 +1080,7 @@ export default function NotificationSettingsPage() {
                     borderRadius: '99px',
                     background: isDndEnabled
                       ? 'var(--accent)'
-                      : 'rgba(148, 163, 184, 0.35)',
+                      : 'var(--switch-off-bg)',
                     position: 'relative',
                     transition: 'background-color 0.2s ease',
                     display: 'inline-block',

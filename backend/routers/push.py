@@ -1,14 +1,16 @@
 import json
 import logging
 import re
+import time
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from backend.core.device_auth import (
     assert_device_owner,
     create_device_token,
+    extract_client_ip,
     require_device_token,
     verify_device_token_value,
 )
@@ -21,6 +23,17 @@ logger = logging.getLogger(__name__)
 
 _PLACEHOLDER_DEVICE_UUIDS = {"default", "guest", "anonymous", "web_guest"}
 _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_DEVICE_ISSUE_MAX_PER_WINDOW = 120
+_DEVICE_ISSUE_WINDOW_SECONDS = 60
+_device_issue_rate_limit: dict[str, list[float]] = {}
+
+
+def reset_rate_limits() -> None:
+    """테스트 및 런타임 격리를 위한 기기 등록 레이트리밋 초기화 훅"""
+    _device_issue_rate_limit.clear()
+
+
+clear_rate_limits = reset_rate_limits
 
 
 def _validate_hhmm(value: str, field_name: str) -> str:
@@ -75,6 +88,7 @@ class KeywordReq(BaseModel):
 @router.post("/device")
 def register_device(
     req: RegisterDeviceReq,
+    request: Request,
     x_device_token: Optional[str] = Header(default=None, alias="X-Device-Token"),
     db: Session = Depends(get_db_session),
 ):
@@ -98,6 +112,18 @@ def register_device(
 
     device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == req_uuid).first()
     if not device:
+        now_ts = time.time()
+        client_ip = extract_client_ip(request)
+        entries = [
+            ts for ts in _device_issue_rate_limit.get(client_ip, [])
+            if (now_ts - ts) < _DEVICE_ISSUE_WINDOW_SECONDS
+        ]
+        if len(entries) >= _DEVICE_ISSUE_MAX_PER_WINDOW:
+            _device_issue_rate_limit[client_ip] = entries
+            raise HTTPException(status_code=429, detail="Too many device registration requests")
+        entries.append(now_ts)
+        _device_issue_rate_limit[client_ip] = entries
+
         device_token = create_device_token(req_uuid)
         clean_fcm = req.fcm_token.strip() if isinstance(req.fcm_token, str) and req.fcm_token.strip() else None
         device = models.DeviceToken(

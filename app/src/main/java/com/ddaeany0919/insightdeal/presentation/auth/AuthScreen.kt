@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import com.ddaeany0919.insightdeal.network.UserWithdrawRequest
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 
 enum class AuthTab {
     LOGIN, REGISTER
@@ -49,6 +50,7 @@ fun AuthScreen(
     val savedId by AuthManager.getSavedId(ctx).collectAsState(initial = "")
 
     val brandAccent = MaterialTheme.colorScheme.primary
+    val semanticColors = LocalInsightDealColors.current
     val isUserGuest = savedUsername == "guest" || savedUsername.isNullOrEmpty()
 
     // 🔒 회원 탈퇴 제어 상태들
@@ -399,7 +401,7 @@ fun AuthScreen(
                             Text(
                                 text = if (showPasswordFields) "접기 ▲" else "펼치기 ▼",
                                 fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -749,7 +751,7 @@ fun AuthScreen(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 style = androidx.compose.ui.text.TextStyle(
-                                    color = Color(0xFFFF9800), // 프리미엄 주황색(오렌지) 톤 수혈
+                                    color = semanticColors.warning,
                                     textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline // 명확한 액션 단추 느낌 부여
                                 ),
                                 modifier = Modifier
@@ -771,7 +773,7 @@ fun AuthScreen(
     if (showWithdrawPasswordDialog) {
         AlertDialog(
             onDismissRequest = { showWithdrawPasswordDialog = false },
-            title = { Text("회원 탈퇴 - 비밀번호 확인", fontWeight = FontWeight.Bold, color = Color(0xFFFF9800)) }, // 타이틀 주황색
+            title = { Text("회원 탈퇴 - 비밀번호 확인", fontWeight = FontWeight.Bold, color = semanticColors.warning) },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -783,7 +785,7 @@ fun AuthScreen(
                     OutlinedTextField(
                         value = withdrawPasswordInput,
                         onValueChange = { withdrawPasswordInput = it },
-                        label = { Text("비밀번호", color = Color(0xFFFF9800)) }, // 라벨 주황색
+                        label = { Text("비밀번호", color = semanticColors.warning) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         visualTransformation = if (isWithdrawPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
@@ -792,13 +794,13 @@ fun AuthScreen(
                                 Icon(
                                     imageVector = if (isWithdrawPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                     contentDescription = if (isWithdrawPasswordVisible) "비밀번호 숨기기" else "비밀번호 표시",
-                                    tint = Color(0xFFFF9800) // 아이콘 주황색
+                                    tint = semanticColors.warning
                                 )
                             }
                         },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFFFF9800), // 포커스 보더 주황색
-                            focusedLabelColor = Color(0xFFFF9800),
+                            focusedBorderColor = semanticColors.warning,
+                            focusedLabelColor = semanticColors.warning,
                             unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                             focusedContainerColor = MaterialTheme.colorScheme.background
                         )
@@ -816,12 +818,12 @@ fun AuthScreen(
                         }
                     }
                 ) {
-                    Text("다음", fontWeight = FontWeight.Bold, color = Color(0xFFFF9800)) // 버튼 텍스트 주황색
+                    Text("다음", fontWeight = FontWeight.Bold, color = semanticColors.warning)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showWithdrawPasswordDialog = false }) {
-                    Text("취소", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+                    Text("취소", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         )

@@ -6,18 +6,31 @@ import com.ddaeany0919.insightdeal.models.CategoryCatalog
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.ApiService
 import kotlinx.coroutines.CancellationException
+import java.util.concurrent.ConcurrentHashMap
 
 class HotDealsPagingSource(
     private val apiService: ApiService,
     private val category: String? = null,
     private val keyword: String? = null,
     private val platform: String? = null,
-    private val sort: String = "latest"
+    private val sort: String = "latest",
+    private val includeClosed: Boolean? = null,
+    private val onlyHot: Boolean? = null,
+    private val hideClosed: Boolean? = null
 ) : PagingSource<Int, DealItem>() {
 
+    private val cursorMap = ConcurrentHashMap<Int, Pair<String, Int>>()
+
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, DealItem> {
-        val offset = params.key ?: 0
+        val currentKey = params.key ?: 0
         val limit = params.loadSize
+        val cursor = if (currentKey == 0) {
+            cursorMap.clear()
+            null
+        } else {
+            cursorMap[currentKey]
+        }
+        val requestOffset = if (cursor != null) 0 else currentKey
 
         return try {
             val resolvedPlatform = when {
@@ -32,20 +45,34 @@ class HotDealsPagingSource(
             }
             val response = apiService.getCommunityHotDeals(
                 limit = limit,
-                offset = offset,
+                offset = requestOffset,
                 category = resolvedCategory,
-                keyword = keyword,
+                keyword = keyword?.takeIf { it.isNotBlank() },
                 platform = resolvedPlatform,
-                sort = sort
+                sort = sort,
+                cursorIndexedAt = cursor?.first,
+                cursorId = cursor?.second,
+                includeClosed = includeClosed,
+                onlyHot = onlyHot,
+                hideClosed = hideClosed
             )
             if (response.isSuccessful) {
                 val body = response.body()
                 val data = body?.deals ?: emptyList()
+                val nextCursor = body?.nextCursor
+                val hasValidCursor = nextCursor != null && nextCursor.indexedAt.isNotBlank() && nextCursor.id > 0
                 val hasMore = body?.hasMore ?: false
+                val endReached = data.isEmpty() || (!hasMore && !hasValidCursor)
+                val nextKey = if (endReached) null else currentKey + data.size
+
+                if (nextKey != null && hasValidCursor) {
+                    cursorMap[nextKey] = nextCursor!!.indexedAt to nextCursor.id
+                }
+
                 LoadResult.Page(
                     data = data,
-                    prevKey = if (offset <= 0) null else (offset - limit).coerceAtLeast(0),
-                    nextKey = if (data.isEmpty() || !hasMore) null else offset + data.size
+                    prevKey = if (currentKey <= 0) null else (currentKey - limit).coerceAtLeast(0),
+                    nextKey = nextKey
                 )
             } else {
                 LoadResult.Error(Exception("API Error: ${response.code()}"))

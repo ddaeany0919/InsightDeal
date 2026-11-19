@@ -12,6 +12,9 @@ import {
   MessageSquare,
   Bell,
   Info,
+  ZoomIn,
+  Flag,
+  Images,
 } from "lucide-react";
 import type {
   Deal,
@@ -20,6 +23,7 @@ import type {
   DealCommentItem,
   DealVoteApiResponse,
   RawDealApiResponse,
+  ReportClosedResponse,
   WishlistApiItem,
 } from "../lib/types";
 import {
@@ -31,6 +35,8 @@ import {
   trackOutboundClick,
   polishDealBodyText,
   extractPromoCodes,
+  extractBodyImagesFromHtml,
+  isSafeHttpUrl,
   getOrCreateWebDeviceUuid,
   getStoredWebDeviceToken,
   ensureWebDeviceAuth,
@@ -50,6 +56,8 @@ import type { PriceTrendStats } from "./PriceTrendChart";
 import DealDetailSecondarySections, {
   type AccordionSectionKey,
 } from "./DealDetailSecondarySections";
+import BrandImagePlaceholder from "./BrandImagePlaceholder";
+import ImageLightboxModal from "./ImageLightboxModal";
 import { useDialogA11y } from "../lib/useDialogA11y";
 import {
   logTossScreen,
@@ -64,6 +72,7 @@ interface DealDetailModalProps {
   onClose: () => void;
   showToast: (message: string) => void;
   onTargetAlertSaved?: (dealId: number) => void;
+  onDealClosed?: (dealId: number, isClosed: boolean, reportCount: number) => void;
 }
 
 const INITIAL_ACCORDION_STATE: Record<AccordionSectionKey, boolean> = {
@@ -78,6 +87,7 @@ export default function DealDetailModal({
   onClose,
   showToast,
   onTargetAlertSaved,
+  onDealClosed,
 }: DealDetailModalProps) {
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number>(0);
   const [chartStats, setChartStats] = useState<PriceTrendStats | null>(null);
@@ -89,6 +99,14 @@ export default function DealDetailModal({
   const [detailSources, setDetailSources] = useState<DealSource[]>([]);
   const [detailOptionsData, setDetailOptionsData] = useState<DealOptionItem[]>([]);
   const [detailShopName, setDetailShopName] = useState<string>("");
+  const [detailBodyImages, setDetailBodyImages] = useState<string[]>([]);
+  const [isClosedState, setIsClosedState] = useState<boolean>(false);
+  const [reportCount, setReportCount] = useState<number>(0);
+  const [hasReportedClosed, setHasReportedClosed] = useState<boolean>(false);
+  const [reportingClosed, setReportingClosed] = useState<boolean>(false);
+  const [failedImageMap, setFailedImageMap] = useState<Record<string, boolean>>({});
+  const [loadedImageMap, setLoadedImageMap] = useState<Record<string, boolean>>({});
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   // 1-RTT 요약 상태
   const [buyCount, setBuyCount] = useState<number>(0);
@@ -124,8 +142,19 @@ export default function DealDetailModal({
   const sheetOffsetYRef = useRef<number>(0);
   const dragStartYRef = useRef<number | null>(null);
   const closedByPopRef = useRef<boolean>(false);
+  const reportingClosedRef = useRef<boolean>(false);
+  const dealId = deal?.id ?? null;
+  const latestDealRef = useRef<Deal | null>(deal);
+
+  useEffect(() => {
+    latestDealRef.current = deal;
+  });
 
   const handleDismiss = useCallback(() => {
+    if (lightboxIndex !== null) {
+      setLightboxIndex(null);
+      return;
+    }
     sheetOffsetYRef.current = 0;
     dragStartYRef.current = null;
     setSheetOffsetY(0);
@@ -141,7 +170,7 @@ export default function DealDetailModal({
       return;
     }
     onClose();
-  }, [onClose]);
+  }, [lightboxIndex, onClose]);
 
   // WCAG 2.2 다이얼로그 포커스 이동 / 트랩 / Escape / 트리거 포커스 복귀
   useDialogA11y({
@@ -150,21 +179,30 @@ export default function DealDetailModal({
     containerRef: panelRef,
   });
 
-  // 모달 오픈 시 단건 상세 1-RTT 조회만 실행 (2급 영역은 펼침 시 Lazy-fetch)
+  // 모달 오픈 시 단건 상세 1-RTT 조회만 실행 (deal.id 전환 시에만 초기화)
   useEffect(() => {
+    const currentDeal = latestDealRef.current;
     setSelectedOptionIndex(0);
     setChartStats(null);
-    setDetailHtml(deal?.contentHtml || "");
-    setDetailSources(deal?.sources || []);
-    setDetailOptionsData(deal?.options_data || []);
-    setDetailShopName(deal?.shop_name || "");
-    setBuyCount(deal?.buyCount ?? 0);
-    setSaveCount(deal?.passCount ?? 0);
-    setUserVote(deal?.userVote ?? null);
-    setCommentCount(deal?.commentCount ?? 0);
-    setHistoryCount(deal?.historyCount ?? 0);
-    setIsSearchFallback(Boolean(deal?.isSearchFallback));
-    setIsFreeDeal(Boolean(deal?.isFree));
+    setDetailHtml(currentDeal?.contentHtml || "");
+    setDetailSources(currentDeal?.sources || []);
+    setDetailOptionsData(currentDeal?.options_data || []);
+    setDetailShopName(currentDeal?.shop_name || "");
+    setDetailBodyImages(currentDeal?.bodyImages || []);
+    setIsClosedState(Boolean(currentDeal?.isClosed));
+    setReportCount(currentDeal?.reportCount ?? 0);
+    reportingClosedRef.current = false;
+    setReportingClosed(false);
+    setFailedImageMap({});
+    setLoadedImageMap({});
+    setLightboxIndex(null);
+    setBuyCount(currentDeal?.buyCount ?? 0);
+    setSaveCount(currentDeal?.passCount ?? 0);
+    setUserVote(currentDeal?.userVote ?? null);
+    setCommentCount(currentDeal?.commentCount ?? 0);
+    setHistoryCount(currentDeal?.historyCount ?? 0);
+    setIsSearchFallback(Boolean(currentDeal?.isSearchFallback));
+    setIsFreeDeal(Boolean(currentDeal?.isFree));
     setExpandedSections({ ...INITIAL_ACCORDION_STATE });
     setVotesLoaded(false);
     setVotesLoading(false);
@@ -180,22 +218,35 @@ export default function DealDetailModal({
     setSheetOffsetY(0);
     setIsDraggingSheet(false);
 
-    if (!deal) return;
+    if (dealId === null || !currentDeal) {
+      setHasReportedClosed(false);
+      return;
+    }
+
+    try {
+      const reportedRaw = localStorage.getItem("insightdeal_reported_closed_ids");
+      const reportedIds = reportedRaw ? JSON.parse(reportedRaw) : [];
+      setHasReportedClosed(
+        Array.isArray(reportedIds) && reportedIds.includes(dealId)
+      );
+    } catch {
+      setHasReportedClosed(false);
+    }
 
     const uid = getOrCreateWebDeviceUuid();
     setCurrentDeviceUuid(uid);
 
     logTossScreen("deal_detail_view", {
-      deal_id: deal.id,
-      category: deal.category || "기타",
+      deal_id: dealId,
+      category: currentDeal.category || "기타",
     });
 
     const controller = new AbortController();
     const { signal } = controller;
 
-    const initCurr = (deal.currency || "KRW").toUpperCase();
+    const initCurr = (currentDeal.currency || "KRW").toUpperCase();
     const isSubunitInit = initCurr === "USD" || initCurr === "EUR" || initCurr === "CNY";
-    const rawPriceNum = parseInt(String(deal.price || "").replace(/[^0-9]/g, ""), 10) || 0;
+    const rawPriceNum = parseInt(String(currentDeal.price || "").replace(/[^0-9]/g, ""), 10) || 0;
     const defaultTarget = isSubunitInit
       ? rawPriceNum >= 500
         ? Math.max(1, Math.floor((rawPriceNum / 100) * 0.95))
@@ -206,9 +257,9 @@ export default function DealDetailModal({
     try {
       const mapStr = localStorage.getItem("insightdeal_target_prices");
       const targetMap = mapStr ? JSON.parse(mapStr) : {};
-      if (targetMap && targetMap[deal.id]) {
-        setSavedTargetPrice(Number(targetMap[deal.id]));
-        setTargetPriceInput(String(targetMap[deal.id]));
+      if (targetMap && targetMap[dealId]) {
+        setSavedTargetPrice(Number(targetMap[dealId]));
+        setTargetPriceInput(String(targetMap[dealId]));
       } else {
         setSavedTargetPrice(null);
         setTargetPriceInput(defaultTarget > 0 ? String(defaultTarget) : "");
@@ -226,7 +277,7 @@ export default function DealDetailModal({
 
     // 1-RTT 상세 조회 (본문 + 옵션 + 1-RTT 요약 필 통합 수신)
     fetch(
-      apiUrl(`/api/community/deals/${deal.id}?user_id=${encodeURIComponent(uid)}`),
+      apiUrl(`/api/community/deals/${dealId}?user_id=${encodeURIComponent(uid)}`),
       { signal, headers: detailHeaders }
     )
       .then((r) => (r.ok ? (r.json() as Promise<RawDealApiResponse>) : null))
@@ -267,15 +318,38 @@ export default function DealDetailModal({
 
         const nextFree = d.is_free ?? d.isFree;
         if (nextFree !== undefined) setIsFreeDeal(Boolean(nextFree));
+
+        const nextBodyImgs = d.body_images ?? d.bodyImages;
+        if (Array.isArray(nextBodyImgs)) {
+          setDetailBodyImages(nextBodyImgs.filter((img) => isSafeHttpUrl(img)));
+        }
+
+        const nextClosed = d.is_closed ?? d.isClosed;
+        if (nextClosed !== undefined) setIsClosedState(Boolean(nextClosed));
+
+        const nextReportCnt = d.report_count ?? d.reportCount;
+        if (nextReportCnt !== undefined) setReportCount(Number(nextReportCnt) || 0);
       })
       .catch(() => {});
 
     return () => {
       controller.abort();
     };
-  }, [deal]);
+  }, [dealId]);
 
-  const dealId = deal?.id ?? null;
+  const propIsClosed = Boolean(deal?.isClosed);
+  const propReportCount = deal?.reportCount;
+
+  // 부모에서 { ...prev, isClosed, reportCount } 갱신 시 모달 컨텍스트를 보존하고 종료/신고 수만 경량 동기화
+  useEffect(() => {
+    if (dealId === null) return;
+    if (propIsClosed) {
+      setIsClosedState(true);
+    }
+    if (typeof propReportCount === "number" && propReportCount > 0) {
+      setReportCount((prev) => Math.max(prev, propReportCount));
+    }
+  }, [dealId, propIsClosed, propReportCount]);
 
   useEffect(() => {
     if (dealId === null || typeof window === "undefined") return;
@@ -511,6 +585,18 @@ export default function DealDetailModal({
   });
   const displayTitle = stripLeadingShopBracket(deal.title, shopBadge);
   const displayShipping = deal.shipping_fee ? decodeHtmlEntities(deal.shipping_fee) : null;
+
+  const fallbackBodyImages =
+    detailBodyImages.length > 0
+      ? detailBodyImages
+      : extractBodyImagesFromHtml(detailHtml);
+  const galleryImages = Array.from(
+    new Set(
+      [activeImageUrl, ...fallbackBodyImages].filter(
+        (img): img is string => Boolean(img && isSafeHttpUrl(img))
+      )
+    )
+  );
 
   const isSelectedOptionZeroFree =
     selectedOption !== null &&
@@ -785,6 +871,78 @@ export default function DealDetailModal({
     }
   };
 
+  const handleReportClosed = async () => {
+    if (reportingClosedRef.current || reportingClosed) return;
+    if (hasReportedClosed) {
+      showToast("이미 품절 제보를 완료했어요");
+      return;
+    }
+    reportingClosedRef.current = true;
+    setReportingClosed(true);
+    try {
+      await ensureWebDeviceAuth();
+      const res = await authFetch(`/api/community/deals/${deal.id}/report-closed`, {
+        method: "POST",
+      });
+      const data = (await res.json().catch(() => null)) as ReportClosedResponse | null;
+
+      if (res.status === 409) {
+        setHasReportedClosed(true);
+        try {
+          const raw = localStorage.getItem("insightdeal_reported_closed_ids");
+          const prev = raw ? JSON.parse(raw) : [];
+          const next = Array.isArray(prev)
+            ? Array.from(new Set([...prev, deal.id]))
+            : [deal.id];
+          localStorage.setItem("insightdeal_reported_closed_ids", JSON.stringify(next));
+        } catch {}
+        showToast("이미 이 기기에서 품절 제보를 접수했어요");
+        return;
+      }
+
+      if (res.status === 429) {
+        showToast("제보 요청이 너무 많아요. 잠시 후 다시 시도해 주세요");
+        return;
+      }
+
+      if (!res.ok) {
+        showToast(data?.detail || "품절 제보를 접수하지 못했어요. 잠시 후 다시 시도해 주세요");
+        return;
+      }
+
+      const nextCount = Number(data?.report_count ?? data?.reportCount ?? reportCount + 1);
+      const nextClosed = Boolean(data?.is_closed ?? data?.isClosed ?? isClosedState);
+      const threshold = Number(data?.threshold ?? 3);
+
+      setReportCount(nextCount);
+      setHasReportedClosed(true);
+      if (nextClosed) {
+        setIsClosedState(true);
+      }
+
+      try {
+        const raw = localStorage.getItem("insightdeal_reported_closed_ids");
+        const prev = raw ? JSON.parse(raw) : [];
+        const next = Array.isArray(prev)
+          ? Array.from(new Set([...prev, deal.id]))
+          : [deal.id];
+        localStorage.setItem("insightdeal_reported_closed_ids", JSON.stringify(next));
+      } catch {}
+
+      onDealClosed?.(deal.id, nextClosed, nextCount);
+      showToast(
+        nextClosed
+          ? `품절 제보 ${nextCount}건이 누적되어 종료 처리되었어요`
+          : `품절 제보를 접수했어요 (${nextCount}/${threshold}명 누적 시 자동 종료)`
+      );
+    } catch {
+      showToast("네트워크 오류로 품절 제보에 실패했어요");
+    } finally {
+      reportingClosedRef.current = false;
+      setReportingClosed(false);
+    }
+  };
+
   const handleHeaderTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       dragStartYRef.current = e.touches[0].clientY;
@@ -850,50 +1008,133 @@ export default function DealDetailModal({
           <div className="deal-modal-grabber" aria-hidden="true" />
           <div className="deal-modal-header">
             <div className="deal-modal-header-main">
-              {activeImageUrl && (
-                <div
-                  key={activeImageUrl}
-                  className="deal-modal-thumb"
-                  style={{
-                    border: selectedOption
-                      ? "1.5px solid var(--accent)"
-                      : "1px solid var(--card-border)",
-                  }}
-                >
-                  <img
-                    src={getProxyImageUrl(activeImageUrl, { width: 400 })}
-                    alt={activeOptionTitle || deal.title}
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      const fallback = getFallbackProxyImageUrl(activeImageUrl);
-                      if (fallback && e.currentTarget.src !== fallback) {
-                        e.currentTarget.src = fallback;
-                      }
+              <div
+                key={activeImageUrl || "placeholder"}
+                className="deal-modal-thumb"
+                style={{
+                  border: selectedOption
+                    ? "1.5px solid var(--accent)"
+                    : "1px solid var(--card-border)",
+                }}
+              >
+                {activeImageUrl && !failedImageMap[activeImageUrl] ? (
+                  <button
+                    type="button"
+                    aria-label="상품 이미지 확대 보기"
+                    onClick={() => {
+                      const idx = galleryImages.indexOf(activeImageUrl);
+                      setLightboxIndex(idx >= 0 ? idx : 0);
                     }}
-                  />
-                  {selectedOption &&
-                    (selectedOptionIndex === 0 ||
-                      Boolean(selectedOption.image_url && selectedOption.image_url.trim() !== "")) && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          bottom: "3px",
-                          right: "3px",
-                          background: "rgba(15, 23, 42, 0.75)",
-                          color: "#fff",
-                          fontSize: "0.62rem",
-                          fontWeight: 800,
-                          padding: "1px 5px",
-                          borderRadius: "4px",
-                          backdropFilter: "blur(4px)",
-                        }}
-                      >
-                        #{selectedOptionIndex + 1}
-                      </span>
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      minWidth: "44px",
+                      minHeight: "44px",
+                      padding: 0,
+                      position: "relative",
+                      display: "block",
+                      overflow: "hidden",
+                      cursor: "zoom-in",
+                    }}
+                  >
+                    {!loadedImageMap[activeImageUrl] && (
+                      <div
+                        className="skeleton-shimmer"
+                        aria-hidden="true"
+                        style={{ position: "absolute", inset: 0 }}
+                      />
                     )}
-                </div>
-              )}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={getProxyImageUrl(activeImageUrl, { width: 400 })}
+                      alt={activeOptionTitle || deal.title}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        filter: isClosedState ? "grayscale(0.85)" : undefined,
+                        opacity: isClosedState ? 0.72 : 1,
+                      }}
+                      referrerPolicy="no-referrer"
+                      onLoad={() =>
+                        setLoadedImageMap((prev) => ({ ...prev, [activeImageUrl]: true }))
+                      }
+                      onError={(e) => {
+                        const img = e.currentTarget;
+                        const primarySrc = getProxyImageUrl(activeImageUrl, { width: 400 });
+                        const fallback = getFallbackProxyImageUrl(activeImageUrl);
+                        if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
+                          img.dataset.fallbackTried = "1";
+                          img.src = fallback;
+                          return;
+                        }
+                        img.dataset.fallbackTried = "1";
+                        setFailedImageMap((prev) => ({ ...prev, [activeImageUrl]: true }));
+                      }}
+                    />
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        position: "absolute",
+                        top: "4px",
+                        left: "4px",
+                        width: "20px",
+                        height: "20px",
+                        borderRadius: "6px",
+                        background: "rgba(15, 23, 42, 0.72)",
+                        color: "#fff",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <ZoomIn size={11} />
+                    </span>
+                  </button>
+                ) : (
+                  <BrandImagePlaceholder compact />
+                )}
+                {isClosedState && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "4px",
+                      right: "4px",
+                      background: "var(--danger-bg)",
+                      color: "var(--danger-text)",
+                      border: "1px solid var(--danger-border)",
+                      fontSize: "0.62rem",
+                      fontWeight: 800,
+                      padding: "1px 5px",
+                      borderRadius: "4px",
+                      pointerEvents: "none",
+                    }}
+                  >
+                    종료
+                  </span>
+                )}
+                {selectedOption &&
+                  (selectedOptionIndex === 0 ||
+                    Boolean(selectedOption.image_url && selectedOption.image_url.trim() !== "")) && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        bottom: "3px",
+                        right: "3px",
+                        background: "rgba(15, 23, 42, 0.75)",
+                        color: "#fff",
+                        fontSize: "0.62rem",
+                        fontWeight: 800,
+                        padding: "1px 5px",
+                        borderRadius: "4px",
+                        backdropFilter: "blur(4px)",
+                        pointerEvents: "none",
+                      }}
+                    >
+                      #{selectedOptionIndex + 1}
+                    </span>
+                  )}
+              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div
                   style={{
@@ -904,6 +1145,7 @@ export default function DealDetailModal({
                     flexWrap: "wrap",
                   }}
                 >
+                  {isClosedState && <span className="badge badge-danger">품절/종료</span>}
                   <span className="deal-source">{deal.community_name}</span>
                   {shopBadge && (
                     <span
@@ -1013,7 +1255,7 @@ export default function DealDetailModal({
                       fontSize: "0.72rem",
                       color: "var(--accent)",
                       fontWeight: 700,
-                      background: "rgba(var(--accent-rgb), 0.1)",
+                      background: "var(--accent-soft-bg)",
                       padding: "1px 6px",
                       borderRadius: "4px",
                     }}
@@ -1041,6 +1283,40 @@ export default function DealDetailModal({
                 </div>
               )}
             </div>
+
+            {!isClosedState && (
+              <button
+                type="button"
+                onClick={() => void handleReportClosed()}
+                disabled={reportingClosed}
+                aria-pressed={hasReportedClosed}
+                className="bounce-click"
+                style={{
+                  minHeight: "44px",
+                  minWidth: "44px",
+                  padding: "8px 12px",
+                  borderRadius: "10px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  fontSize: "0.78rem",
+                  fontWeight: 700,
+                  cursor: reportingClosed ? "not-allowed" : "pointer",
+                  background: hasReportedClosed ? "var(--danger-bg)" : "var(--card-bg)",
+                  color: hasReportedClosed ? "var(--danger-text)" : "var(--text-sub)",
+                  border: hasReportedClosed
+                    ? "1px solid var(--danger-border)"
+                    : "1px solid var(--card-border)",
+                }}
+              >
+                <Flag size={13} aria-hidden="true" />
+                <span>
+                  {hasReportedClosed
+                    ? `품절 제보 완료${reportCount > 0 ? ` (${reportCount})` : ""}`
+                    : `품절 제보${reportCount > 0 ? ` (${reportCount})` : ""}`}
+                </span>
+              </button>
+            )}
           </div>
 
           {isSearchFallback && (
@@ -1052,9 +1328,9 @@ export default function DealDetailModal({
                 gap: "8px",
                 padding: "9px 12px",
                 borderRadius: "10px",
-                background: "rgba(245, 158, 11, 0.12)",
-                border: "1px solid rgba(245, 158, 11, 0.3)",
-                color: "#b45309",
+                background: "var(--warning-bg)",
+                border: "1px solid var(--warning-border)",
+                color: "var(--warning-text)",
                 fontSize: "0.78rem",
                 fontWeight: 700,
               }}
@@ -1069,6 +1345,7 @@ export default function DealDetailModal({
         <div className="deal-summary-strip" aria-label="상세 요약 바로가기">
           <button
             type="button"
+            aria-expanded={expandedSections.chart}
             className={`deal-summary-pill ${expandedSections.chart ? "active" : ""}`}
             onClick={() => handleJumpToSection("chart")}
           >
@@ -1077,6 +1354,7 @@ export default function DealDetailModal({
           </button>
           <button
             type="button"
+            aria-expanded={expandedSections.vote}
             className={`deal-summary-pill ${expandedSections.vote ? "active" : ""}`}
             onClick={() => handleJumpToSection("vote")}
           >
@@ -1087,6 +1365,7 @@ export default function DealDetailModal({
           </button>
           <button
             type="button"
+            aria-expanded={expandedSections.comments}
             className={`deal-summary-pill ${expandedSections.comments ? "active" : ""}`}
             onClick={() => handleJumpToSection("comments")}
           >
@@ -1096,6 +1375,7 @@ export default function DealDetailModal({
           {canShowTargetAlert && (
             <button
               type="button"
+              aria-expanded={expandedSections.target}
               className={`deal-summary-pill ${expandedSections.target ? "active" : ""}`}
               onClick={() => handleJumpToSection("target")}
             >
@@ -1156,13 +1436,14 @@ export default function DealDetailModal({
                     display: "inline-flex",
                     alignItems: "center",
                     gap: "5px",
-                    minHeight: "36px",
-                    padding: "5px 10px",
+                    minHeight: "44px",
+                    minWidth: "44px",
+                    padding: "8px 12px",
                     borderRadius: "8px",
-                    background: "rgba(var(--accent-rgb), 0.1)",
-                    border: "1px dashed rgba(var(--accent-rgb), 0.45)",
+                    background: "var(--accent-soft-bg)",
+                    border: "1px dashed var(--accent-soft-border)",
                     color: "var(--accent)",
-                    fontSize: "0.76rem",
+                    fontSize: "0.78rem",
                     fontWeight: 800,
                     cursor: "pointer",
                   }}
@@ -1189,6 +1470,121 @@ export default function DealDetailModal({
               : deal.aiSummary ||
                 `[${deal.community_name}]에서 등록된 핫딜입니다. 쿠폰 및 카드 할인 조건은 아래 쇼핑몰 또는 원본 게시글에서 확인해 주세요.`}
           </div>
+
+          {galleryImages.length > 0 && (
+            <div
+              style={{
+                borderTop: "1px solid var(--card-border)",
+                paddingTop: "12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "8px",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "0.8rem",
+                    fontWeight: 800,
+                    color: "var(--accent)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                >
+                  <Images size={14} aria-hidden="true" />
+                  <span>상품 이미지 ({galleryImages.length}장)</span>
+                </span>
+                <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                  누르면 크게 볼 수 있어요
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  overflowX: "auto",
+                  paddingBottom: "4px",
+                }}
+              >
+                {galleryImages.map((imgUrl, idx) => {
+                  const isFailed = Boolean(failedImageMap[imgUrl]);
+                  const isLoaded = Boolean(loadedImageMap[imgUrl]);
+                  return (
+                    <button
+                      key={`${imgUrl}-${idx}`}
+                      type="button"
+                      aria-label={`본문 이미지 ${idx + 1} 크게 보기`}
+                      onClick={() => setLightboxIndex(idx)}
+                      className="bounce-click"
+                      style={{
+                        width: "96px",
+                        height: "96px",
+                        minWidth: "96px",
+                        minHeight: "96px",
+                        borderRadius: "12px",
+                        overflow: "hidden",
+                        border: "1px solid var(--card-border)",
+                        background: "var(--card-bg)",
+                        position: "relative",
+                        padding: 0,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {!isFailed ? (
+                        <>
+                          {!isLoaded && (
+                            <div
+                              className="skeleton-shimmer"
+                              aria-hidden="true"
+                              style={{ position: "absolute", inset: 0 }}
+                            />
+                          )}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={getProxyImageUrl(imgUrl, { width: 240 })}
+                            alt={`${displayTitle} 첨부 이미지 ${idx + 1}`}
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                              filter: isClosedState ? "grayscale(0.8)" : undefined,
+                            }}
+                            onLoad={() =>
+                              setLoadedImageMap((prev) => ({ ...prev, [imgUrl]: true }))
+                            }
+                            onError={(e) => {
+                              const img = e.currentTarget;
+                              const primarySrc = getProxyImageUrl(imgUrl, { width: 240 });
+                              const fallback = getFallbackProxyImageUrl(imgUrl);
+                              if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
+                                img.dataset.fallbackTried = "1";
+                                img.src = fallback;
+                                return;
+                              }
+                              img.dataset.fallbackTried = "1";
+                              setFailedImageMap((prev) => ({ ...prev, [imgUrl]: true }));
+                            }}
+                          />
+                        </>
+                      ) : (
+                        <BrandImagePlaceholder compact />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {optionSources.length > 0 && (
             <div
@@ -1251,6 +1647,7 @@ export default function DealDetailModal({
                       <div
                         role="button"
                         tabIndex={0}
+                        aria-pressed={isSelected}
                         onClick={() => {
                           if (selectedOptionIndex !== idx) {
                             setChartStats(null);
@@ -1293,7 +1690,8 @@ export default function DealDetailModal({
                             position: "relative",
                           }}
                         >
-                          {src.image_url ? (
+                          {src.image_url && !failedImageMap[src.image_url] ? (
+                            // eslint-disable-next-line @next/next/no-img-element
                             <img
                               src={getProxyImageUrl(src.image_url, { width: 120 })}
                               alt={optionTitle}
@@ -1301,11 +1699,20 @@ export default function DealDetailModal({
                               referrerPolicy="no-referrer"
                               loading="lazy"
                               onError={(e) => {
+                                const img = e.currentTarget;
+                                const primarySrc = getProxyImageUrl(src.image_url, { width: 120 });
                                 const fallback = getFallbackProxyImageUrl(src.image_url);
-                                if (fallback && e.currentTarget.src !== fallback) {
-                                  e.currentTarget.src = fallback;
-                                } else {
-                                  e.currentTarget.style.display = "none";
+                                if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
+                                  img.dataset.fallbackTried = "1";
+                                  img.src = fallback;
+                                  return;
+                                }
+                                img.dataset.fallbackTried = "1";
+                                if (src.image_url) {
+                                  setFailedImageMap((prev) => ({
+                                    ...prev,
+                                    [src.image_url!]: true,
+                                  }));
                                 }
                               }}
                             />
@@ -1380,7 +1787,16 @@ export default function DealDetailModal({
                       </div>
 
                       {/* 형제 액션 영역 (코드 복사 / 보조 링크 / 구매 버튼) */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          flexShrink: 0,
+                          flexWrap: "wrap",
+                          justifyContent: "flex-end",
+                        }}
+                      >
                         {src.code && (
                           <button
                             type="button"
@@ -1401,17 +1817,18 @@ export default function DealDetailModal({
                               display: "inline-flex",
                               alignItems: "center",
                               gap: "4px",
-                              minHeight: "36px",
-                              padding: "4px 8px",
-                              borderRadius: "6px",
+                              minHeight: "44px",
+                              minWidth: "44px",
+                              padding: "6px 10px",
+                              borderRadius: "8px",
                               background: isCopied
-                                ? "rgba(16, 185, 129, 0.15)"
-                                : "rgba(var(--accent-rgb), 0.1)",
+                                ? "var(--success-bg)"
+                                : "var(--accent-soft-bg)",
                               border: isCopied
-                                ? "1px solid #10B981"
-                                : "1px dashed rgba(var(--accent-rgb), 0.4)",
-                              color: isCopied ? "#10B981" : "var(--accent)",
-                              fontSize: "0.72rem",
+                                ? "1px solid var(--success-text)"
+                                : "1px dashed var(--accent-soft-border)",
+                              color: isCopied ? "var(--success-text)" : "var(--accent)",
+                              fontSize: "0.74rem",
                               fontWeight: 800,
                               cursor: "pointer",
                             }}
@@ -1439,7 +1856,13 @@ export default function DealDetailModal({
                                 openExternalUrlInToss(resolvedSubUrl, e);
                               }}
                               style={{
-                                fontSize: "0.7rem",
+                                minHeight: "44px",
+                                minWidth: "44px",
+                                padding: "0 8px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "0.76rem",
                                 color: "var(--text-sub)",
                                 textDecoration: "underline",
                                 fontWeight: 600,
@@ -1471,11 +1894,12 @@ export default function DealDetailModal({
                             display: "inline-flex",
                             alignItems: "center",
                             gap: "4px",
-                            minHeight: "38px",
-                            padding: "7px 12px",
+                            minHeight: "44px",
+                            minWidth: "44px",
+                            padding: "8px 14px",
                             borderRadius: "8px",
                             background: isSelected ? "var(--accent)" : "var(--primary-gradient)",
-                            color: "#fff",
+                            color: "var(--on-accent)",
                             fontSize: "0.78rem",
                             fontWeight: 700,
                             textDecoration: "none",
@@ -1485,7 +1909,7 @@ export default function DealDetailModal({
                           title="쇼핑몰 바로가기"
                         >
                           <span>구매</span>
-                          <ExternalLink size={12} color="#fff" aria-hidden="true" />
+                          <ExternalLink size={12} color="var(--on-accent)" aria-hidden="true" />
                         </a>
                       </div>
                     </div>
@@ -1576,12 +2000,14 @@ export default function DealDetailModal({
                   color: "var(--accent)",
                   fontWeight: 800,
                   cursor: "pointer",
-                  fontSize: "0.76rem",
+                  fontSize: "0.78rem",
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: "3px",
-                  padding: "2px 6px",
-                  borderRadius: "4px",
+                  gap: "4px",
+                  minHeight: "44px",
+                  minWidth: "44px",
+                  padding: "6px 10px",
+                  borderRadius: "8px",
                 }}
               >
                 <Copy size={12} aria-hidden="true" />
@@ -1653,6 +2079,14 @@ export default function DealDetailModal({
           </p>
         </div>
       </div>
+
+      <ImageLightboxModal
+        isOpen={lightboxIndex !== null && galleryImages.length > 0}
+        images={galleryImages}
+        initialIndex={lightboxIndex ?? 0}
+        title={displayTitle}
+        onClose={() => setLightboxIndex(null)}
+      />
     </div>
   );
 }

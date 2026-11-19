@@ -29,6 +29,7 @@ import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import com.ddaeany0919.insightdeal.presentation.home.DealCardComposable
 import com.ddaeany0919.insightdeal.presentation.home.HomeDealCardSkeleton
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 import com.ddaeany0919.insightdeal.utils.CustomTabLauncher
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -216,7 +217,7 @@ fun RecommendationScreen(
                                 Text(
                                     text = "관심 있는 상품을 둘러보면 취향에 맞는 특가를 추천해 드릴게요.",
                                     fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    color = LocalInsightDealColors.current.textMuted
                                 )
                             }
                         }

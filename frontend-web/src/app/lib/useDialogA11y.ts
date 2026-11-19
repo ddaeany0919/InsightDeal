@@ -76,6 +76,18 @@ export function useDialogA11y({
     });
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      // 중첩 다이얼로그(예: DealDetailModal 위의 ImageLightboxModal)에서 최상위 다이얼로그만 키 이벤트 처리
+      const openDialogs = document.querySelectorAll('[role="dialog"]');
+      if (
+        openDialogs.length > 1 &&
+        openDialogs[openDialogs.length - 1] !== container
+      ) {
+        return;
+      }
+
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
@@ -84,8 +96,6 @@ export function useDialogA11y({
       }
 
       if (e.key !== "Tab") return;
-      const container = containerRef.current;
-      if (!container) return;
 
       const focusables = getFocusableElements(container);
       if (focusables.length === 0) {

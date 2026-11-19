@@ -643,6 +643,9 @@ async def dispatch_github_cloud_feeder_job():
     except Exception as e:
         logger.warning(f"⚠️ [Cloud Scheduler] GitHub Actions 격발 실패: {e}")
 
+from backend.services.push_worker import dnd_morning_digest_job
+
+
 def start_scheduler():
     db_manager.init_database()
     scheduler = AsyncIOScheduler()
@@ -658,6 +661,14 @@ def start_scheduler():
         'cron',
         minute=0,
         id='fmkorea_trending_keywords',
+        replace_existing=True,
+    )
+    # ☀️ DND 해제 시각 아침 요약 푸시 배치 (5분 주기 점검)
+    scheduler.add_job(
+        dnd_morning_digest_job,
+        'interval',
+        minutes=5,
+        id='dnd_morning_digest',
         replace_existing=True,
     )
     # 🧹 DB 유지보수 및 이미지 캐시 LRU 정제 통합 배치 (매일 새벽 4시 실행)

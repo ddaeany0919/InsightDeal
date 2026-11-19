@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DealRemoteKeysEntity::class,
         KeywordEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -35,6 +35,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE deals ADD COLUMN bodyImages TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE deals ADD COLUMN isSearchFallback INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE deals ADD COLUMN isFree INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE deals ADD COLUMN reportCount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE deal_remote_keys ADD COLUMN nextCursorIndexedAt TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE deal_remote_keys ADD COLUMN nextCursorId INTEGER DEFAULT NULL")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -42,7 +53,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "insightdeal_db"
                 )
-                    .addMigrations(MIGRATION_6_7)
+                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

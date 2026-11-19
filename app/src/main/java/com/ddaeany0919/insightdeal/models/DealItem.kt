@@ -181,7 +181,13 @@ data class DealItem(
     val isSearchFallback: Boolean = false,
 
     @SerializedName(value = "is_free", alternate = ["isFree"])
-    val isFree: Boolean = false
+    val isFree: Boolean = false,
+
+    @SerializedName(value = "body_images", alternate = ["bodyImages"])
+    val bodyImages: List<String>? = emptyList(),
+
+    @SerializedName(value = "report_count", alternate = ["reportCount"])
+    val reportCount: Int = 0
 ) {
     /**
      * 할인된 가격 계산
@@ -246,6 +252,66 @@ data class DealItem(
                 .filter { it.startsWith("http", ignoreCase = true) && it != primaryUrl }
                 .distinct()
         }
+
+    /**
+     * 상세 본문 첨부 이미지 목록 (http/https/상대경로 안전 필터링 및 중복 제거)
+     */
+    val resolvedBodyImages: List<String>
+        get() {
+            val safeBodyImages = bodyImages ?: emptyList()
+            return safeBodyImages
+                .map { it.trim() }
+                .filter {
+                    it.isNotEmpty() &&
+                        (it.startsWith("http", ignoreCase = true) || it.startsWith("/"))
+                }
+                .distinct()
+        }
+
+    /**
+     * Gson 역직렬화 시 생략된 non-null 필드가 런타임 null로 남아있더라도
+     * data class copy() 호출 시 NPE가 발생하지 않도록 안전하게 방어 복사합니다.
+     */
+    @Suppress("USELESS_CAST")
+    fun withClosedReportState(closed: Boolean, count: Int): DealItem = DealItem(
+        id = id,
+        title = (title as String?) ?: "",
+        price = price,
+        currency = (currency as String?) ?: "KRW",
+        originalPrice = originalPrice,
+        discountRate = discountRate,
+        imageUrl = imageUrl,
+        ecommerceUrl = ecommerceUrl,
+        postUrl = postUrl,
+        shopName = shopName,
+        siteName = (siteName as String?) ?: "",
+        siteNames = (siteNames as List<String>?) ?: emptyList(),
+        sources = sources ?: emptyList(),
+        shippingFee = shippingFee,
+        category = category,
+        createdAt = createdAt,
+        viewCount = viewCount,
+        commentCount = commentCount,
+        likeCount = likeCount,
+        dislikeCount = dislikeCount,
+        tags = (tags as List<String>?) ?: emptyList(),
+        honeyScore = honeyScore,
+        aiSummary = aiSummary,
+        contentHtml = contentHtml,
+        isClosed = closed,
+        hasOptions = hasOptions,
+        optionsCount = optionsCount,
+        optionsData = (optionsData as List<DealOptionItem>?) ?: emptyList(),
+        subUrls = (subUrls as List<String>?) ?: emptyList(),
+        buyCount = buyCount,
+        passCount = passCount,
+        userVote = userVote,
+        historyCount = historyCount,
+        isSearchFallback = isSearchFallback,
+        isFree = isFree,
+        bodyImages = bodyImages ?: emptyList(),
+        reportCount = count
+    )
 }
 
 /**

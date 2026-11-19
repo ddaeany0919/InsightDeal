@@ -137,13 +137,14 @@ val Typography = Typography(
     )
 )
 
-// 💰 가격 전용 타이포그래피 확장
+// 💰 가격 전용 타이포그래피 확장 (tnum 고정폭 숫자 적용)
 val PriceTextStyle = TextStyle(
     fontFamily = DefaultFontFamily,
     fontWeight = FontWeight.Bold,
     fontSize = 20.sp,
     lineHeight = 26.sp,
-    letterSpacing = 0.sp
+    letterSpacing = (-0.3).sp,
+    fontFeatureSettings = "tnum"
 )
 
 val PriceLargeTextStyle = TextStyle(
@@ -151,7 +152,8 @@ val PriceLargeTextStyle = TextStyle(
     fontWeight = FontWeight.Bold,
     fontSize = 24.sp,
     lineHeight = 32.sp,
-    letterSpacing = (-0.25).sp
+    letterSpacing = (-0.3).sp,
+    fontFeatureSettings = "tnum"
 )
 
 val PriceSmallTextStyle = TextStyle(
@@ -159,5 +161,6 @@ val PriceSmallTextStyle = TextStyle(
     fontWeight = FontWeight.Medium,
     fontSize = 14.sp,
     lineHeight = 20.sp,
-    letterSpacing = 0.1.sp
+    letterSpacing = (-0.1).sp,
+    fontFeatureSettings = "tnum"
 )

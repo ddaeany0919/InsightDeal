@@ -57,7 +57,7 @@ fun MyPostsScreen(
     ) { paddingValues ->
         if (uiState is CommunityBoardUiState.Loading) {
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color(0xFFFF6B35))
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         } else if (myPosts.isEmpty()) {
             Box(

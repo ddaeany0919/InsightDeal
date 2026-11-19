@@ -116,6 +116,57 @@ class DatabaseManager:
             self.engine.dispose()
             logger.info("모든 데이터베이스 연결 종료")
 
+    def ensure_schema_migrations(self):
+        """구형 SQLite/PostgreSQL 스키마에 누락된 컬럼을 안전하게 추가 (무중단 자동 마이그레이션)"""
+        if self.engine is None:
+            return
+        from sqlalchemy import inspect
+        inspector = inspect(self.engine)
+        existing_tables = set(inspector.get_table_names())
+        is_sqlite = (self.engine.dialect.name == "sqlite")
+
+        migrations: dict[str, list[tuple[str, str, str]]] = {
+            "notification_alerts": [
+                ("is_read", "BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("dnd_suppressed", "BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("digest_sent_at", "TIMESTAMP NULL", "TIMESTAMPTZ NULL"),
+            ],
+            "users": [
+                ("token_version", "INTEGER NOT NULL DEFAULT 0", "INTEGER NOT NULL DEFAULT 0"),
+            ],
+            "deals": [
+                ("brand", "VARCHAR(100)", "VARCHAR(100)"),
+                ("model_code", "VARCHAR(100)", "VARCHAR(100)"),
+            ],
+            "device_tokens": [
+                ("dnd_enabled", "BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("dnd_start_time", "VARCHAR(5) NOT NULL DEFAULT '21:00'", "VARCHAR(5) NOT NULL DEFAULT '21:00'"),
+                ("dnd_end_time", "VARCHAR(5) NOT NULL DEFAULT '08:00'", "VARCHAR(5) NOT NULL DEFAULT '08:00'"),
+                ("dnd_settings_json", "TEXT", "TEXT"),
+                ("web_push_subscription", "TEXT", "TEXT"),
+            ],
+        }
+
+        for table_name, cols in migrations.items():
+            if table_name not in existing_tables:
+                continue
+            existing_cols = {c["name"] for c in inspector.get_columns(table_name)}
+            for col_name, sqlite_def, pg_def in cols:
+                if col_name in existing_cols:
+                    continue
+                col_sql = sqlite_def if is_sqlite else pg_def
+                stmt = (
+                    f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_sql}"
+                    if is_sqlite
+                    else f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {col_name} {col_sql}"
+                )
+                try:
+                    with self.engine.begin() as conn:
+                        conn.execute(text(stmt))
+                    logger.info(f"자동 마이그레이션 컬럼 추가 완료: {table_name}.{col_name}")
+                except Exception as e:
+                    logger.warning(f"자동 마이그레이션 컬럼 추가 스킵 ({table_name}.{col_name}): {e}")
+
     def ensure_performance_indexes(self):
         """6개월 시세 차트, DSU 클러스터링, 피드 필터링 고속화를 위한 복합 인덱스 자동 보장"""
         index_statements = [
@@ -124,7 +175,8 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_deals_base_product_indexed ON deals (base_product_name, indexed_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_deals_category_closed ON deals (category, is_closed, indexed_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_price_history_deal_checked ON price_history (deal_id, checked_at DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_wishlist_user_active ON wishlist (user_id, is_active, alert_enabled)"
+            "CREATE INDEX IF NOT EXISTS idx_wishlist_user_active ON wishlist (user_id, is_active, alert_enabled)",
+            "CREATE INDEX IF NOT EXISTS idx_notif_alerts_dnd_digest ON notification_alerts (user_id, dnd_suppressed, digest_sent_at)",
         ]
         created_count = 0
         for stmt in index_statements:
@@ -234,6 +286,7 @@ class DatabaseManager:
             
             CommunityBase.metadata.create_all(self.engine)
             WishlistBase.metadata.create_all(self.engine)
+            self.ensure_schema_migrations()
             self.ensure_performance_indexes()
             
             session = self.get_session()

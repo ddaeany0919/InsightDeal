@@ -1,10 +1,11 @@
 import base64
 import hashlib
 import hmac
+import ipaddress
 import logging
 import os
 from typing import Optional
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Request
 
 logger = logging.getLogger(__name__)
 _DEV_FALLBACK_SECRET = "insightdeal-dev-device-secret-local-only"
@@ -96,3 +97,44 @@ def assert_device_owner(auth_device_uuid: str, target_id: Optional[str]) -> str:
             detail="X-Device-Token does not match target device_uuid/user_id",
         )
     return auth_device_uuid
+
+
+def get_trusted_proxy_ips() -> set[str]:
+    """신뢰할 수 있는 리버스 프록시 IP/호스트 목록 반환 (환경변수 TRUSTED_PROXY_IPS)"""
+    raw = os.getenv("TRUSTED_PROXY_IPS", "127.0.0.1,::1,localhost,testclient")
+    return {item.strip().lower() for item in raw.split(",") if item.strip()}
+
+
+def extract_client_ip(request: Request) -> str:
+    """
+    신뢰 프록시 경유 시에만 X-Forwarded-For(우측 최초 비신뢰 유효 IP) / X-Real-IP를 신뢰하고,
+    외부 직접 접속 시에는 스푸핑 방지를 위해 request.client.host만 강제 사용합니다.
+    """
+    peer_ip = ((request.client.host if request.client else "") or "").strip()
+    trusted_proxies = get_trusted_proxy_ips()
+    if peer_ip.lower() not in trusted_proxies:
+        return peer_ip or "unknown"
+
+    xff = (request.headers.get("x-forwarded-for") or "").strip()
+    if xff:
+        parts = [p.strip() for p in xff.split(",") if p.strip()]
+        for raw_tok in reversed(parts):
+            try:
+                ip_obj = ipaddress.ip_address(raw_tok)
+                norm_ip = str(ip_obj)
+                if norm_ip.lower() not in trusted_proxies:
+                    return norm_ip
+            except ValueError:
+                break
+
+    xri = (request.headers.get("x-real-ip") or "").strip()
+    if xri:
+        try:
+            ip_obj = ipaddress.ip_address(xri)
+            norm_ip = str(ip_obj)
+            if norm_ip.lower() not in trusted_proxies:
+                return norm_ip
+        except ValueError:
+            pass
+
+    return peer_ip or "unknown"

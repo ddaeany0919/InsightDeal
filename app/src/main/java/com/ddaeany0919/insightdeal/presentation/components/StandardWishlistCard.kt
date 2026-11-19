@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import com.ddaeany0919.insightdeal.presentation.formatPrice
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 import com.ddaeany0919.insightdeal.presentation.theme.LocalIsDarkTheme
 import com.ddaeany0919.insightdeal.presentation.wishlist.PriceCheckResponse
 import com.ddaeany0919.insightdeal.presentation.wishlist.WishlistItem
@@ -173,10 +174,10 @@ fun StandardWishlistCard(
                     Text(
                         text = "${item.lastChecked.format(WISHLIST_TIME_FORMATTER)} 업데이트",
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        color = LocalInsightDealColors.current.textMuted
                     )
                 } else {
-                    Text("가격 확인 전", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                    Text("가격 확인 전", fontSize = 11.sp, color = LocalInsightDealColors.current.textMuted)
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

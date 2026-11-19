@@ -34,6 +34,7 @@ import com.ddaeany0919.insightdeal.data.util.ImageUrlResolver
 import coil.compose.AsyncImage
 import com.ddaeany0919.insightdeal.presentation.A11yIconButton
 import com.ddaeany0919.insightdeal.presentation.rememberRelativeTime
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 
 
 
@@ -264,7 +265,7 @@ fun HotDealCard(deal: HotDealDto, onClick: () -> Unit = {}) {
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             textDecoration = if (deal.isClosed) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
-                            color = if (deal.isClosed) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface
+                            color = if (deal.isClosed) LocalInsightDealColors.current.textMuted else MaterialTheme.colorScheme.onSurface
                         ),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
@@ -323,16 +324,17 @@ fun HotDealCard(deal: HotDealDto, onClick: () -> Unit = {}) {
                     if (deal.likeCount > 0 || deal.dislikeCount > 0 || deal.commentCount > 0) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            val semanticColors = LocalInsightDealColors.current
                             if (deal.likeCount > 0) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("추천 ", style = MaterialTheme.typography.labelSmall, color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
-                                    Text("${deal.likeCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B))
+                                    Text("추천 ", style = MaterialTheme.typography.labelSmall, color = semanticColors.danger, fontWeight = FontWeight.Bold)
+                                    Text("${deal.likeCount}", style = MaterialTheme.typography.labelSmall, color = semanticColors.textMuted)
                                 }
                             }
                             if (deal.dislikeCount > 0) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("비추천 ", style = MaterialTheme.typography.labelSmall, color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold)
-                                    Text("${deal.dislikeCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B))
+                                    Text("비추천 ", style = MaterialTheme.typography.labelSmall, color = semanticColors.info, fontWeight = FontWeight.Bold)
+                                    Text("${deal.dislikeCount}", style = MaterialTheme.typography.labelSmall, color = semanticColors.textMuted)
                                 }
                             }
                             if (deal.commentCount > 0) {

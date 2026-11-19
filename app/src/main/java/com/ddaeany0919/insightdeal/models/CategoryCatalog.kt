@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * 15종 표준 카테고리 및 10종 표준 출처 SSOT 카탈로그 (`backend/core/categories.py`와 1:1 정합)
+ * 15종 표준 카테고리 및 11종 표준 출처 SSOT 카탈로그 (`backend/core/categories.py`와 1:1 정합)
  */
 data class StandardCategory(
     val key: String,
@@ -37,6 +37,7 @@ object CategoryCatalog {
         "전체",
         "펨코",
         "뽐뿌",
+        "뽐뿌해외",
         "루리웹",
         "퀘이사존",
         "클리앙",

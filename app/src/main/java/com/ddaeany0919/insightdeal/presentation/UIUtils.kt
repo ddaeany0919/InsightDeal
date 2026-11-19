@@ -22,8 +22,13 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 import kotlinx.coroutines.delay
 
 /**
@@ -71,13 +76,14 @@ fun RefreshToastManager(
         enter = fadeIn(),
         exit = fadeOut()
     ) {
+        val semantic = LocalInsightDealColors.current
         val containerBg = if (refreshSuccess == true) {
-            Color(0xFF1B7A37)
+            semantic.success
         } else {
             MaterialTheme.colorScheme.surfaceVariant
         }
         val contentInk = if (refreshSuccess == true) {
-            Color(0xFFF9FAFB)
+            MaterialTheme.colorScheme.onPrimary
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         }
@@ -122,22 +128,23 @@ fun NetworkStatusIndicator(
     successCount: Int,
     totalPlatforms: Int
 ) {
-    val statusColor = when {
-        successCount >= totalPlatforms -> Color(0xFF4CAF50)
-        successCount >= totalPlatforms / 2 -> Color(0xFFFF9800)
-        else -> Color(0xFFE53935)
+    val semantic = LocalInsightDealColors.current
+    val (bgColor, fgColor) = when {
+        successCount >= totalPlatforms -> semantic.successContainer to semantic.onSuccessContainer
+        successCount >= totalPlatforms / 2 -> semantic.warningContainer to semantic.onWarningContainer
+        else -> semantic.dangerContainer to semantic.onDangerContainer
     }
 
     Surface(
-        color = statusColor.copy(alpha = 0.1f),
+        color = bgColor,
         shape = RoundedCornerShape(8.dp)
     ) {
         Text(
             text = "${successCount}/${totalPlatforms} (${responseTimeMs}ms)",
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelSmall,
-            color = statusColor,
-            fontWeight = FontWeight.Medium
+            color = fgColor,
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
@@ -179,11 +186,14 @@ fun CommunityBadge(community: String) {
  */
 fun Modifier.bounceClick(
     scaleDown: Float = 0.97f,
+    enabled: Boolean = true,
+    role: Role? = Role.Button,
+    onClickLabel: String? = null,
     onClick: () -> Unit
 ): Modifier = composed {
     var isPressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) scaleDown else 1f,
+        targetValue = if (isPressed && enabled) scaleDown else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessLow
@@ -196,12 +206,26 @@ fun Modifier.bounceClick(
             scaleX = scale
             scaleY = scale
         }
-        .pointerInput(onClick) {
+        .semantics(mergeDescendants = true) {
+            if (role != null) {
+                this.role = role
+            }
+            onClick(label = onClickLabel) {
+                if (enabled) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+        .pointerInput(enabled, onClick) {
+            if (!enabled) return@pointerInput
             val viewConfiguration = this.viewConfiguration
             val touchSlop = viewConfiguration.touchSlop
             
             awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = true)
+                awaitFirstDown(requireUnconsumed = true)
                 isPressed = true
                 var isCancelled = false
                 var accumulatedDragX = 0f

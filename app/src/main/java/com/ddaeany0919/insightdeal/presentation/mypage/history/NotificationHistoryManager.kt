@@ -7,6 +7,7 @@ import com.ddaeany0919.insightdeal.data.LocalDataProvider
 import com.ddaeany0919.insightdeal.network.AddNotificationRequest
 import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.network.NetworkModule
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -116,6 +117,8 @@ object NotificationHistoryManager {
                 } else {
                     safeLogE("서버 알림 수급 실패: ${response.code()}")
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 safeLogE("서버 알림 동기화 예외 발생: ${e.localizedMessage}")
             }
@@ -136,6 +139,8 @@ object NotificationHistoryManager {
                 if (response.isSuccessful) {
                     safeLogD("✅ 서버 알림 추가 성공")
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 safeLogE("서버 알림 추가 실패: ${e.message}")
             }
@@ -168,6 +173,8 @@ object NotificationHistoryManager {
                         safeLogD("✅ 서버 알림 개별 삭제 성공 ($id)")
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 safeLogE("서버 알림 삭제 실패: ${e.message}")
             }
@@ -190,6 +197,8 @@ object NotificationHistoryManager {
                 if (response.isSuccessful) {
                     safeLogD("✅ 서버 알림 전체 청소 성공")
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 safeLogE("서버 알림 전체 삭제 실패: ${e.message}")
             }

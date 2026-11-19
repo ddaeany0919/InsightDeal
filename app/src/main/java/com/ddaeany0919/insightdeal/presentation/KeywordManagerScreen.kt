@@ -53,12 +53,19 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -149,7 +156,7 @@ fun KeywordManagerScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(52.dp),
+                        .heightIn(min = 52.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary
@@ -161,11 +168,13 @@ fun KeywordManagerScreen(
             dismissButton = {
                 TextButton(
                     onClick = { showPermissionGuideDialog = false },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
                 ) {
                     Text(
                         "나중에 설정할게요",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        color = LocalInsightDealColors.current.textMuted,
                         fontSize = 14.sp
                     )
                 }
@@ -179,20 +188,13 @@ fun KeywordManagerScreen(
                         modifier = Modifier
                             .size(56.dp)
                             .clip(RoundedCornerShape(18.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(
-                                        Color(0xFF1B64DA),
-                                        Color(0xFF1E3A5F)
-                                    )
-                                )
-                            ),
+                            .background(MaterialTheme.colorScheme.primary),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.NotificationsActive,
                             contentDescription = null,
-                            tint = Color(0xFFF9FAFB),
+                            tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(32.dp)
                         )
                     }
@@ -223,7 +225,7 @@ fun KeywordManagerScreen(
                     // 혜택 리스트
                     val benefits = listOf(
                         "• 등록한 키워드가 포함된 특가가 올라오면 바로 알려드려요",
-                        "• 방해금지 시간을 설정해 밤에는 알림을 받지 않을 수 있어요",
+                        "• 방해금지 시간을 설정하면 해제 시각(기본 08:00)에 밤사이 놓친 핫딜을 1건으로 요약해 받아볼 수 있어요",
                         "• 인기 상품이 품절되기 전에 빠르게 확인할 수 있어요"
                     )
                     benefits.forEach { benefit ->
@@ -255,7 +257,7 @@ fun KeywordManagerScreen(
                     Text(
                         text = "본 알림 서비스는 정보통신망법(제50조)을 준수하며, 야간 시간대(21:00 ~ 익일 08:00)의 광고성 푸시는 수신 동의 여부와 관계없이 설정된 방해금지 규칙에 따라 완전히 필터링됩니다.",
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        color = LocalInsightDealColors.current.textMuted,
                         lineHeight = 16.sp,
                         textAlign = TextAlign.Center
                     )
@@ -425,14 +427,16 @@ fun KeywordManagerScreen(
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 16.sp,
                                             color = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.weight(1f, fill = false)
+                                            modifier = Modifier
+                                                .weight(1f, fill = false)
+                                                .semantics { heading() }
                                         )
                                         if (dndEnabled) {
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Surface(
                                                 shape = RoundedCornerShape(30.dp),
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                                                color = LocalInsightDealColors.current.successContainer,
+                                                border = BorderStroke(1.dp, LocalInsightDealColors.current.success.copy(alpha = 0.3f))
                                             ) {
                                                 Row(
                                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
@@ -442,16 +446,16 @@ fun KeywordManagerScreen(
                                                         modifier = Modifier
                                                             .size(6.dp)
                                                             .clip(CircleShape)
-                                                            .background(Color(0xFF34C759))
+                                                            .background(LocalInsightDealColors.current.success)
                                                     )
                                                     Spacer(modifier = Modifier.width(4.dp))
                                                     Text(
                                                         text = "동기화 완료",
-                                                        fontSize = 9.sp,
+                                                        fontSize = 10.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.primary,
-                                                        maxLines = 1,
-                                                        softWrap = false
+                                                        color = LocalInsightDealColors.current.onSuccessContainer,
+                                                        maxLines = 2,
+                                                        softWrap = true
                                                     )
                                                 }
                                             }
@@ -459,9 +463,9 @@ fun KeywordManagerScreen(
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "설정한 시간에는 푸시 알림을 보내지 않아요 (놓친 알림은 알림함에서 확인 가능)",
+                                        text = "설정한 시간에는 즉시 알림을 멈추고, 해제 시각(${dndEndTime})에 놓친 핫딜을 1건으로 요약해 보내드려요 (알림함에서도 확인 가능)",
                                         fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = LocalInsightDealColors.current.textMuted
                                     )
                                 }
                                 Switch(
@@ -559,7 +563,8 @@ fun KeywordManagerScreen(
                                     text = "요일별 개별 시간 설정",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.semantics { heading() }
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
@@ -620,10 +625,11 @@ fun KeywordManagerScreen(
                                     "sun" to "일"
                                 )
 
-                                Row(
+                                @OptIn(ExperimentalLayoutApi::class)
+                                FlowRow(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     days.forEach { (dayKey, dayName) ->
                                         val isSelected = selectedDayKey == dayKey
@@ -651,7 +657,12 @@ fun KeywordManagerScreen(
                                                     },
                                                     shape = RoundedCornerShape(12.dp)
                                                 )
-                                                .bounceClick {
+                                                .semantics {
+                                                    role = Role.Tab
+                                                    selected = isSelected
+                                                    stateDescription = "${dayName}요일 " + if (isDayEnabled) "차단 켜짐" else "차단 꺼짐"
+                                                }
+                                                .bounceClick(role = null) {
                                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                     selectedDayKey = dayKey
                                                 },
@@ -778,7 +789,9 @@ fun KeywordManagerScreen(
                             text = "알림 키워드 등록",
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            modifier = Modifier
+                                .padding(bottom = 8.dp)
+                                .semantics { heading() }
                         )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -805,7 +818,7 @@ fun KeywordManagerScreen(
                                         keywordInput = ""
                                     }
                                 },
-                                modifier = Modifier.height(56.dp),
+                                modifier = Modifier.heightIn(min = 56.dp),
                                 shape = RoundedCornerShape(14.dp),
                                 enabled = !isLoading
                             ) {
@@ -870,7 +883,7 @@ fun KeywordManagerScreen(
                             text = "제외할 단어 앞에 -를 붙이거나(예: 아이폰 -케이스), 상한 금액 앞에 :를 붙이면(예: 삼다수 :12000) 원하는 조건의 핫딜만 알림을 받을 수 있어요.",
                             fontSize = 11.5.sp,
                             lineHeight = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            color = LocalInsightDealColors.current.textMuted
                         )
                     }
                 }
@@ -921,12 +934,13 @@ fun KeywordManagerScreen(
                         Text(
                             text = "등록된 알림 키워드 (${keywords.size}개)",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
+                            fontSize = 16.sp,
+                            modifier = Modifier.semantics { heading() }
                         )
                         Text(
                             text = "칩을 누르면 알림 ON/OFF 전환",
                             fontSize = 11.5.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                            color = LocalInsightDealColors.current.textMuted
                         )
                     }
                 }
@@ -937,7 +951,7 @@ fun KeywordManagerScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(160.dp),
+                                .heightIn(min = 160.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(

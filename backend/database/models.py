@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, TIMESTAMP, TEXT, UniqueConstraint, Float, create_engine
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 # 데이터베이스 Base 선언
@@ -33,7 +33,12 @@ class Deal(Base):
     image_url = Column(String(2048))
     category = Column(String(100), default="기타", index=True)
     search_keywords = Column(TEXT, nullable=True) # Contains Chosung and Eng typo for search
-    indexed_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
+    indexed_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        index=True,
+    )
     is_closed = Column(Boolean, default=False, nullable=False, index=True)
     deal_type = Column(String(50), default='일반', nullable=False)
     content_html = Column(TEXT, nullable=True)
@@ -430,14 +435,20 @@ class CommunityPostComment(Base):
 
 class User(Base):
     __tablename__ = "users"
-    
+    __table_args__ = {"sqlite_autoincrement": True}
+
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False) # 로그인 ID
     password_hash = Column(String(255), nullable=False)
     nickname = Column(String(50), unique=True, nullable=False)
     honey_points = Column(Integer, default=0) # 활동 내공 (채택되면 증가)
+    token_version = Column(Integer, default=0, nullable=False)
     
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    created_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+    )
 
 class NaverPriceHistory(Base):
     """
@@ -465,6 +476,45 @@ class NotificationAlert(Base):
     keyword = Column(String(100), nullable=False)
     received_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     deal_url = Column(String(2048), nullable=True)
+    is_read = Column(Boolean, default=False, nullable=False)
+    dnd_suppressed = Column(Boolean, default=False, nullable=False)
+    digest_sent_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+
+class DevicePairingCode(Base):
+    """게스트 유지형 6자리 일회성 기기 동기화 코드 테이블"""
+    __tablename__ = "device_pairing_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(6), unique=True, index=True, nullable=False)
+    source_device_uuid = Column(String(100), index=True, nullable=False)
+    expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    used_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    claimed_by_device_uuid = Column(String(100), nullable=True)
+    failed_attempts = Column(Integer, default=0, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), default=func.now())
+
+
+class UserDeviceLink(Base):
+    """선택형 계정과 기기 UUID 간 1:N 소유권 매핑 테이블 (하이재킹 차단)"""
+    __tablename__ = "user_device_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_uuid = Column(String(100), unique=True, nullable=False, index=True)
+    linked_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), default=func.now())
+
+
+class DealClosedReport(Base):
+    """사용자 원클릭 품절/종료 제보 테이블 (중복 제보 방지)"""
+    __tablename__ = "deal_closed_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_uuid = Column(String(100), nullable=False, index=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), default=func.now())
+
+    __table_args__ = (UniqueConstraint("deal_id", "device_uuid", name="uq_deal_closed_report_device"),)
 
 
 class DealComment(Base):

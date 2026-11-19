@@ -40,7 +40,11 @@ data class DealEntity(
     val hasOptions: Boolean = false,
     val optionsCount: Int = 0,
     val optionsData: List<DealOptionItem> = emptyList(),
-    val subUrls: List<String> = emptyList()
+    val subUrls: List<String> = emptyList(),
+    val bodyImages: List<String> = emptyList(),
+    val isSearchFallback: Boolean = false,
+    val isFree: Boolean = false,
+    val reportCount: Int = 0
 ) {
     /**
      * Entity -> Domain Model 변환
@@ -75,28 +79,34 @@ data class DealEntity(
             hasOptions = hasOptions,
             optionsCount = optionsCount,
             optionsData = optionsData,
-            subUrls = subUrls
+            subUrls = subUrls,
+            isSearchFallback = isSearchFallback,
+            isFree = isFree,
+            bodyImages = bodyImages,
+            reportCount = reportCount
         )
     }
 
     companion object {
         /**
          * Domain Model -> Entity 변환
+         * (Gson 역직렬화 시 생략된 non-null 필드가 런타임 null로 남아있더라도 NPE 없이 방어)
          */
+        @Suppress("USELESS_CAST")
         fun fromDealItem(deal: DealItem): DealEntity {
             return DealEntity(
                 id = deal.id,
-                title = deal.title,
+                title = (deal.title as String?) ?: "",
                 price = deal.price,
-                currency = deal.currency,
+                currency = (deal.currency as String?)?.ifBlank { "KRW" } ?: "KRW",
                 originalPrice = deal.originalPrice,
                 discountRate = deal.discountRate,
                 imageUrl = deal.imageUrl,
                 ecommerceUrl = deal.ecommerceUrl,
                 postUrl = deal.postUrl,
                 shopName = deal.shopName,
-                siteName = deal.siteName,
-                siteNames = deal.siteNames,
+                siteName = (deal.siteName as String?) ?: "",
+                siteNames = (deal.siteNames as List<String>?) ?: emptyList(),
                 sources = deal.sources ?: emptyList(),
                 shippingFee = deal.shippingFee,
                 category = deal.category?.takeIf { it.isNotBlank() }?.let { CategoryCatalog.normalizeCategoryKey(it) },
@@ -105,15 +115,19 @@ data class DealEntity(
                 commentCount = deal.commentCount,
                 likeCount = deal.likeCount,
                 dislikeCount = deal.dislikeCount,
-                tags = deal.tags,
+                tags = (deal.tags as List<String>?) ?: emptyList(),
                 honeyScore = deal.honeyScore,
                 aiSummary = deal.aiSummary,
                 contentHtml = deal.contentHtml,
                 isClosed = deal.isClosed,
                 hasOptions = deal.hasMultipleOptions,
                 optionsCount = deal.resolvedOptionCount,
-                optionsData = deal.optionsData,
-                subUrls = deal.resolvedSubUrls
+                optionsData = (deal.optionsData as List<DealOptionItem>?) ?: emptyList(),
+                subUrls = deal.resolvedSubUrls,
+                bodyImages = deal.resolvedBodyImages,
+                isSearchFallback = deal.isSearchFallback,
+                isFree = deal.isFree,
+                reportCount = deal.reportCount
             )
         }
     }

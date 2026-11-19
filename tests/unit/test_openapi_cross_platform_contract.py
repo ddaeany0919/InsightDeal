@@ -5,7 +5,7 @@ tests/unit/test_openapi_cross_platform_contract.py
 Gate 2: OpenAPI 스펙 <-> Web(frontend-web/) <-> Android(app/) 교차 계약 자동 검증.
 - FastAPI app.openapi() 필수 20+ 경로/메서드 및 보안 헤더(X-Device-Token, X-Admin-Key) 검증
 - X-Feeder-Token HMAC(v1.<ts>.<hex>, 300s, ${ts}:${target_url}) 백엔드/릴레이 정합
-- 15종 표준 카테고리 & 10종 표준 출처 3자(Backend/Web/Android) 순서·키·라벨 1:1 정합
+- 15종 표준 카테고리 & 11종 표준 출처 3자(Backend/Web/Android) 순서·키·라벨 1:1 정합
 - 1-RTT 요약 필, 이중 키(snake_case + camelCase), has_more, honey_score >= 100 3자 정합
 - 3대 표준 UX 카피, 포트 8080, turbopack: {}, --webpack, 금지 패턴 부재 검증
 """
@@ -64,6 +64,11 @@ def test_openapi_required_p0_paths_and_methods():
         "/api/users/notifications": {"get", "post"},
         "/api/users/notifications/{alert_id}": {"delete"},
         "/api/coupang/track-click": {"post"},
+        "/api/auth/pairing-code": {"post"},
+        "/api/auth/claim-pairing-code": {"post"},
+        "/api/auth/merge-device": {"post"},
+        "/api/auth/link-device": {"post"},
+        "/api/community/deals/{deal_id}/report-closed": {"post"},
     }
 
     for path, expected_methods in required_endpoints.items():
@@ -87,6 +92,11 @@ def test_openapi_security_headers_and_hmac_contracts():
         ("/api/wishlist/{wishlist_id}", "delete"),
         ("/api/users/notifications", "get"),
         ("/api/users/notifications", "post"),
+        ("/api/auth/pairing-code", "post"),
+        ("/api/auth/claim-pairing-code", "post"),
+        ("/api/auth/merge-device", "post"),
+        ("/api/auth/link-device", "post"),
+        ("/api/community/deals/{deal_id}/report-closed", "post"),
     ]
     for path, method in device_token_ops:
         op = paths[path][method]
@@ -130,19 +140,21 @@ def test_openapi_security_headers_and_hmac_contracts():
     assert 'HEADER_DEVICE_TOKEN = "X-Device-Token"' in android_net_src
 
 
-def test_15_categories_and_10_sources_cross_platform_parity():
+def test_15_categories_and_11_sources_cross_platform_parity():
     backend_cats = [(c["key"], c["label"]) for c in STANDARD_CATEGORIES]
     backend_sources = list(STANDARD_SOURCES)
 
     assert len(backend_cats) == 15
-    assert len(backend_sources) == 10
+    assert len(backend_sources) == 11
+    assert "뽐뿌해외" in backend_sources
     assert ("가전제품", "가전/TV") in backend_cats
     assert ("해외직구", "해외직구") in backend_cats
     assert all("여행.해외핫딜" not in pair for pair in backend_cats)
     assert "빠삭육아" in backend_sources
 
-    # Web (frontend-web/src/app/page.tsx)
+    # Web (frontend-web/src/app/page.tsx & frontend-web/src/app/lib/utils.ts)
     web_page_src = _read_text("frontend-web/src/app/page.tsx")
+    web_utils_src = _read_text("frontend-web/src/app/lib/utils.ts")
     cat_block_match = re.search(
         r"const DEFAULT_CATEGORIES:\s*CategoryMetaItem\[\]\s*=\s*\[(.*?)\];",
         web_page_src,
@@ -157,8 +169,8 @@ def test_15_categories_and_10_sources_cross_platform_parity():
     assert web_cats[1:] == backend_cats, f"Web 카테고리 불일치: {web_cats[1:]} vs {backend_cats}"
 
     plat_block_match = re.search(
-        r"const PLATFORMS\s*=\s*\[(.*?)\];",
-        web_page_src,
+        r"(?:export\s+)?const PLATFORMS\s*=\s*\[(.*?)\](?:\s*as\s*const)?;",
+        web_utils_src,
         re.DOTALL,
     )
     assert plat_block_match, "Web PLATFORMS 블록 미발견"
@@ -204,7 +216,7 @@ def test_1rtt_summary_fields_dual_keys_has_more_and_honey_score_100():
         "app/src/main/java/com/ddaeany0919/insightdeal/network/ApiService.kt"
     )
 
-    # 1-RTT 요약 필 및 이중 키
+    # 1-RTT 요약 필 및 이중 키 (v1.1b P1-03/P1-06/P1-12 포함)
     required_summary_keys = (
         "buy_count",
         "buyCount",
@@ -218,17 +230,25 @@ def test_1rtt_summary_fields_dual_keys_has_more_and_honey_score_100():
         "history_count",
         "historyCount",
         "is_search_fallback",
+        "isSearchFallback",
         "is_free",
+        "body_images",
+        "bodyImages",
+        "report_count",
+        "reportCount",
     )
     for k in required_summary_keys:
         assert f'"{k}"' in community_src, f"Backend community.py 키 누락: {k}"
         assert k in web_types_src, f"Web types.ts 필드 누락: {k}"
         assert f'"{k}"' in deal_item_kt, f"Android DealItem.kt 어노테이션 누락: {k}"
 
-    # has_more
+    # has_more & next_cursor / nextCursor
     assert '"has_more"' in community_src
     assert "has_more" in web_types_src
     assert '"has_more"' in deals_api_kt and '"hasMore"' in deals_api_kt
+    assert '"next_cursor"' in community_src and '"nextCursor"' in community_src
+    assert "next_cursor" in web_types_src and "nextCursor" in web_types_src
+    assert '"next_cursor"' in deals_api_kt and '"nextCursor"' in deals_api_kt
 
     # 댓글/투표 이중 키
     for comment_key in ("user_id", "userId", "created_at", "createdAt"):
@@ -251,8 +271,9 @@ def test_1rtt_summary_fields_dual_keys_has_more_and_honey_score_100():
 
 
 def test_standard_ux_copies_port_8080_turbopack_and_forbidden_patterns():
-    # 3대 표준 UX 카피 (웹 + 앱)
+    # 3대 표준 UX 카피 (웹 + 앱, P1-04 DND 아침 요약 안내 포함)
     dnd_copy = "설정한 시간에는 푸시 알림을 보내지 않아요 (놓친 알림은 알림함에서 확인 가능)"
+    android_dnd_digest_copy = "놓친 핫딜을 1건으로 요약해 보내드려요 (알림함에서도 확인 가능)"
     fallback_copy = "직접 링크 미제공 · 쇼핑몰 검색 결과로 이동해요"
     fallback_cta = "쇼핑몰 검색 결과 보기"
     insufficient_history_copy = "아직 비교할 가격 이력이 충분하지 않아요"
@@ -281,7 +302,7 @@ def test_standard_ux_copies_port_8080_turbopack_and_forbidden_patterns():
         "app/src/main/java/com/ddaeany0919/insightdeal/presentation/category/CategoryDetailScreen.kt"
     )
 
-    assert dnd_copy in kt_kw
+    assert android_dnd_digest_copy in kt_kw
     assert fallback_copy in kt_detail and fallback_cta in kt_detail
     assert insufficient_history_copy in kt_detail
     assert hot_deals_err_copy in kt_home and hot_deals_err_copy in kt_cat_detail

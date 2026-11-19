@@ -669,6 +669,166 @@ export const categorizeDeal = (title: string): string => {
   return "기타";
 };
 
+export const PLATFORMS = [
+  "전체",
+  "펨코",
+  "뽐뿌",
+  "뽐뿌해외",
+  "루리웹",
+  "퀘이사존",
+  "클리앙",
+  "알리뽐뿌",
+  "빠삭국내",
+  "빠삭해외",
+  "빠삭육아",
+] as const;
+
+function isPrivateOrLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  if (!host) return true;
+
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    host === "[::1]" ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal")
+  ) {
+    return true;
+  }
+
+  if (
+    /^0\./.test(host) ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(?:1[6-9]|2\d|3[01])\./.test(host)
+  ) {
+    return true;
+  }
+
+  const bareHost = host.replace(/^\[|\]$/g, "");
+  if (
+    bareHost === "::1" ||
+    bareHost === "::" ||
+    /^fe[89ab][0-9a-f]:/i.test(bareHost) ||
+    /^f[cd][0-9a-f]{2}:/i.test(bareHost) ||
+    /^::ffff:/i.test(bareHost)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export const isSafeHttpUrl = (rawUrl?: string | null): boolean => {
+  if (!rawUrl || typeof rawUrl !== "string") return false;
+  const trimmed = rawUrl.trim();
+  if (!trimmed || trimmed.length > 2048) return false;
+  if (/[\x00-\x1f\x7f\s<>"'`\\]/.test(trimmed)) return false;
+
+  // M1 백엔드 프록시 정규화 상대경로 허용 (/api/proxy-image?...)
+  if (trimmed.startsWith("/api/proxy-image?")) {
+    const qIdx = trimmed.indexOf("?");
+    const pathPart = trimmed.slice(0, qIdx);
+    const queryPart = trimmed.slice(qIdx + 1);
+    if (pathPart !== "/api/proxy-image" || !queryPart) {
+      return false;
+    }
+    try {
+      const params = new URLSearchParams(queryPart);
+      for (const key of params.keys()) {
+        if (key.toLowerCase() === "url" && key !== "url") {
+          return false;
+        }
+      }
+      const urls = params.getAll("url");
+      if (urls.length !== 1) {
+        return false;
+      }
+      const rawProxiedUrl = urls[0];
+      const proxiedUrl = rawProxiedUrl.trim();
+      if (
+        !proxiedUrl ||
+        proxiedUrl !== rawProxiedUrl ||
+        !/^https?:\/\//i.test(proxiedUrl) ||
+        !isSafeHttpUrl(proxiedUrl)
+      ) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+    return true;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return false;
+  }
+  if (parsed.username || parsed.password) {
+    return false;
+  }
+  if (isPrivateOrLoopbackHost(parsed.hostname)) {
+    return false;
+  }
+  if (/(?:^|\/)(?:spacer|pixel|blank|1x1)\.(?:gif|png|jpe?g)$/i.test(parsed.pathname)) {
+    return false;
+  }
+  return true;
+};
+
+export const extractBodyImagesFromHtml = (
+  rawHtml?: string | null
+): string[] => {
+  if (!rawHtml || typeof rawHtml !== "string") return [];
+  const seen = new Set<string>();
+  const results: string[] = [];
+
+  const normalizeDedupKey = (urlStr: string): string => {
+    if (urlStr.startsWith("/")) return urlStr;
+    try {
+      return new URL(urlStr).toString();
+    } catch {
+      return urlStr;
+    }
+  };
+
+  const pushIfValid = (candidate: string) => {
+    const decoded = decodeHtmlEntities(candidate).trim();
+    if (!isSafeHttpUrl(decoded)) return;
+    const dedupKey = normalizeDedupKey(decoded);
+    if (seen.has(dedupKey)) return;
+    seen.add(dedupKey);
+    results.push(decoded);
+  };
+
+  const imgRegex = /<img[^>]+src=["']([^"']+)["']/gi;
+  let match: RegExpExecArray | null = imgRegex.exec(rawHtml);
+  while (match !== null) {
+    pushIfValid(match[1]);
+    match = imgRegex.exec(rawHtml);
+  }
+
+  const markerRegex = /\[상품이미지\s*:\s*((?:https?:\/\/|\/api\/proxy-image\?)[^\]\s]+)\]/gi;
+  let markerMatch: RegExpExecArray | null = markerRegex.exec(rawHtml);
+  while (markerMatch !== null) {
+    pushIfValid(markerMatch[1]);
+    markerMatch = markerRegex.exec(rawHtml);
+  }
+
+  return results.slice(0, 20);
+};
+
 // 외부 백엔드 API 기본 경로 (앱인토스 정적 빌드 시 NEXT_PUBLIC_API_BASE_URL 환경변수로 주입)
 export const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL || ""
@@ -1119,6 +1279,8 @@ export const extractPromoCodes = (
 const DEVICE_UUID_KEY = "insightdeal_web_device_uuid";
 const LEGACY_DEVICE_UUID_KEY = "insightdeal_token";
 const DEVICE_TOKEN_KEY = "insightdeal_web_device_token";
+const ACCOUNT_TOKEN_KEY = "insightdeal_web_account_token";
+const ACCOUNT_USER_KEY = "insightdeal_web_account_user";
 export const WISHLIST_ID_MAP_KEY = "insightdeal_wishlist_id_map";
 
 export interface WishlistIdEntry {
@@ -1173,6 +1335,36 @@ export const isInAppWebView = (): boolean => {
   );
 };
 
+export const isExternalInAppWebView = (): boolean => {
+  if (typeof navigator === "undefined") return false;
+  if (isTossMiniAppEnv()) return false;
+  return isInAppWebView();
+};
+
+export const isIosUserAgent = (): boolean => {
+  if (typeof navigator === "undefined") return false;
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+};
+
+export const buildExternalBrowserIntentUrl = (
+  targetUrl?: string
+): string | null => {
+  if (typeof window === "undefined") return null;
+  if (isIosUserAgent()) return null;
+  const raw = (targetUrl || window.location.href || "").trim();
+  if (!/^https?:\/\//i.test(raw)) return null;
+  try {
+    const parsed = new URL(raw);
+    const scheme = parsed.protocol.replace(":", "");
+    const pathAndQuery = `${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    return `intent://${pathAndQuery}#Intent;scheme=${scheme};package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(
+      parsed.toString()
+    )};end`;
+  } catch {
+    return null;
+  }
+};
+
 export const getWebPushSupportStatus = (): WebPushSupportStatus => {
   if (typeof window === "undefined") return "unsupported";
   if (isTossMiniAppEnv()) return "toss_miniapp";
@@ -1211,6 +1403,50 @@ export const getOrCreateWebDeviceUuid = (): string => {
 export const getStoredWebDeviceToken = (): string => {
   if (typeof window === "undefined") return "";
   return (localStorage.getItem(DEVICE_TOKEN_KEY) || "").trim();
+};
+
+export const getDeviceToken = getStoredWebDeviceToken;
+
+export interface StoredAccountUser {
+  username: string;
+  nickname: string;
+  honey_points?: number;
+}
+
+export const getStoredAccountToken = (): string => {
+  if (typeof window === "undefined") return "";
+  return (localStorage.getItem(ACCOUNT_TOKEN_KEY) || "").trim();
+};
+
+export const getStoredAccountUser = (): StoredAccountUser | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(ACCOUNT_USER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredAccountUser;
+    return parsed && parsed.username ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveStoredAccountAuth = (
+  accessToken: string,
+  user: StoredAccountUser
+): void => {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(ACCOUNT_TOKEN_KEY, accessToken);
+    localStorage.setItem(ACCOUNT_USER_KEY, JSON.stringify(user));
+  } catch {}
+};
+
+export const clearStoredAccountAuth = (): void => {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(ACCOUNT_TOKEN_KEY);
+    localStorage.removeItem(ACCOUNT_USER_KEY);
+  } catch {}
 };
 
 function rotateNewWebDeviceUuid(): string {
@@ -1728,6 +1964,7 @@ export function getCommunityName(id?: number): string {
     7: "빠삭국내",
     8: "빠삭해외",
     9: "빠삭육아",
+    10: "뽐뿌해외",
   };
   return map[id] || "핫딜";
 }
@@ -1852,7 +2089,17 @@ export function mapRawDealToDeal(
       d.comment_count ?? d.commentCount ?? d.comments ?? undefined,
     historyCount: d.history_count ?? d.historyCount ?? undefined,
     isSearchFallback: Boolean(d.is_search_fallback ?? d.isSearchFallback),
+    is_search_fallback: Boolean(d.is_search_fallback ?? d.isSearchFallback),
     isFree: isExplicitFree,
+    bodyImages: (() => {
+      const rawImgs = Array.isArray(d.body_images)
+        ? d.body_images
+        : Array.isArray(d.bodyImages)
+          ? d.bodyImages
+          : [];
+      return rawImgs.filter((img) => isSafeHttpUrl(img));
+    })(),
+    reportCount: Number(d.report_count ?? d.reportCount ?? 0),
   };
 }
 

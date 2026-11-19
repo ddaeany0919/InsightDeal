@@ -3,14 +3,17 @@
 import React, { useEffect, useState, useRef, useId, useCallback } from "react";
 import { Bell, Trash2, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import type { Deal } from "../lib/types";
+import type { Deal, NotificationLogItem, WishlistApiItem } from "../lib/types";
 import {
   formatPrice,
   decodeHtmlEntities,
   ensureWebDeviceAuth,
   authFetch,
   formatRelativeTimeKo,
+  isSafeHttpUrl,
+  loadWishlistIdMap,
 } from "../lib/utils";
+import { openExternalUrlInToss } from "../lib/tossBridge";
 import { useDialogA11y } from "../lib/useDialogA11y";
 
 interface NotificationDrawerProps {
@@ -18,17 +21,8 @@ interface NotificationDrawerProps {
   onClose: () => void;
   deals: Deal[];
   onSelectDeal: (deal: Deal) => void;
+  onSearchKeyword?: (keyword: string) => void;
   onServerAlertCountChange?: (count: number) => void;
-}
-
-interface NotificationLogItem {
-  id: string | number;
-  title: string;
-  keyword: string;
-  receivedAt?: number;
-  received_at?: string;
-  dealUrl?: string;
-  deal_url?: string;
 }
 
 function formatAlertTime(item: NotificationLogItem, referenceNow: number): string {
@@ -42,9 +36,11 @@ export default function NotificationDrawer({
   onClose,
   deals,
   onSelectDeal,
+  onSearchKeyword,
   onServerAlertCountChange,
 }: NotificationDrawerProps) {
   const [serverAlerts, setServerAlerts] = useState<NotificationLogItem[]>([]);
+  const [serverTargetWishlists, setServerTargetWishlists] = useState<WishlistApiItem[]>([]);
   const [alertIds, setAlertIds] = useState<number[]>([]);
   const [nowTs, setNowTs] = useState<number>(0);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -69,22 +65,42 @@ export default function NotificationDrawer({
       await ensureWebDeviceAuth();
       if (signal?.aborted) return;
 
-      const res = await authFetch(
-        (latestAuth) =>
-          `/api/users/notifications?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
-        { signal }
-      );
+      const [notifRes, wishlistRes] = await Promise.allSettled([
+        authFetch(
+          (latestAuth) =>
+            `/api/users/notifications?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
+          { signal }
+        ),
+        authFetch(
+          (latestAuth) =>
+            `/api/wishlist/?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
+          { signal }
+        ),
+      ]);
       if (signal?.aborted) return;
 
-      if (!res.ok) {
-        setFetchError("알림 내역을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
-        return;
+      let notifFailed = true;
+      if (notifRes.status === "fulfilled" && notifRes.value.ok) {
+        const data = await notifRes.value.json().catch(() => null);
+        if (!signal?.aborted && Array.isArray(data)) {
+          notifFailed = false;
+          setServerAlerts(data as NotificationLogItem[]);
+          onCountChangeRef.current?.(data.length);
+        }
       }
 
-      const data = await res.json();
-      if (!signal?.aborted && Array.isArray(data)) {
-        setServerAlerts(data as NotificationLogItem[]);
-        onCountChangeRef.current?.(data.length);
+      if (wishlistRes.status === "fulfilled" && wishlistRes.value.ok) {
+        const wData = await wishlistRes.value.json().catch(() => null);
+        if (!signal?.aborted && Array.isArray(wData)) {
+          const activeTargets = (wData as WishlistApiItem[]).filter(
+            (w) => w.alert_enabled !== false && Number(w.target_price) > 0
+          );
+          setServerTargetWishlists(activeTargets);
+        }
+      }
+
+      if (notifFailed) {
+        setFetchError("알림 내역을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
       }
     } catch (err) {
       if (signal?.aborted) return;
@@ -172,7 +188,32 @@ export default function NotificationDrawer({
 
   if (!isOpen) return null;
 
-  const watchedDeals = deals.filter((d) => alertIds.includes(d.id));
+  const idMap = loadWishlistIdMap();
+  const matchedDealIdsFromServer = new Set<number>();
+  for (const [dealKey, entry] of Object.entries(idMap)) {
+    if (serverTargetWishlists.some((w) => w.id === entry.wishlistId)) {
+      const parsedId = Number(dealKey.split("_")[0]);
+      if (Number.isFinite(parsedId)) matchedDealIdsFromServer.add(parsedId);
+    }
+  }
+
+  const watchedDeals = deals.filter(
+    (d) => alertIds.includes(d.id) || matchedDealIdsFromServer.has(d.id)
+  );
+  const watchedIds = new Set(watchedDeals.map((d) => d.id));
+  const serverOnlyTargets = serverTargetWishlists.filter((w) => {
+    const matchedDeal = deals.find((d) => {
+      if (!watchedIds.has(d.id)) return false;
+      const entry = idMap[String(d.id)];
+      if (entry && entry.wishlistId === w.id) return true;
+      return decodeHtmlEntities(d.title)
+        .toLowerCase()
+        .includes(decodeHtmlEntities(w.keyword).toLowerCase());
+    });
+    return !matchedDeal;
+  });
+
+  const watchedTotalCount = watchedDeals.length + serverOnlyTargets.length;
 
   return (
     <div
@@ -252,9 +293,9 @@ export default function NotificationDrawer({
             style={{
               fontSize: "0.82rem",
               fontWeight: 700,
-              color: "#EF4444",
-              background: "rgba(239, 68, 68, 0.08)",
-              border: "1px solid rgba(239, 68, 68, 0.25)",
+              color: "var(--error-text)",
+              background: "var(--error-bg)",
+              border: "1px solid var(--error-border)",
               borderRadius: "12px",
               padding: "10px 12px",
             }}
@@ -269,15 +310,15 @@ export default function NotificationDrawer({
             style={{
               padding: "16px",
               borderRadius: "14px",
-              background: "rgba(239, 68, 68, 0.06)",
-              border: "1px solid rgba(239, 68, 68, 0.22)",
+              background: "var(--error-bg)",
+              border: "1px solid var(--error-border)",
               display: "flex",
               flexDirection: "column",
               gap: "10px",
               alignItems: "flex-start",
             }}
           >
-            <span style={{ fontSize: "0.84rem", fontWeight: 700, color: "#EF4444" }}>
+            <span style={{ fontSize: "0.84rem", fontWeight: 700, color: "var(--error-text)" }}>
               {fetchError}
             </span>
             <button
@@ -285,7 +326,7 @@ export default function NotificationDrawer({
               onClick={() => void loadNotifications()}
               className="btn-primary"
               style={{
-                minHeight: "40px",
+                minHeight: "44px",
                 padding: "8px 14px",
                 fontSize: "0.8rem",
                 borderRadius: "10px",
@@ -331,8 +372,9 @@ export default function NotificationDrawer({
                 <span>전체 비우기</span>
               </button>
             </div>
-            {serverAlerts.slice(0, 12).map((item) => {
-              const targetLink = item.dealUrl || item.deal_url || "";
+            {serverAlerts.map((item) => {
+              const rawLink = (item.dealUrl || item.deal_url || "").trim();
+              const hasSafeLink = !rawLink.startsWith("/") && isSafeHttpUrl(rawLink);
               return (
                 <div
                   key={item.id}
@@ -384,16 +426,22 @@ export default function NotificationDrawer({
                       </button>
                     </div>
                   </div>
-                  {targetLink ? (
+                  {hasSafeLink ? (
                     <a
-                      href={targetLink}
+                      href={rawLink}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={(e) => {
+                        openExternalUrlInToss(rawLink, e);
+                      }}
                       style={{
                         fontSize: "0.85rem",
                         fontWeight: 700,
                         lineHeight: 1.4,
                         color: "var(--text-main)",
+                        minHeight: "44px",
+                        display: "inline-flex",
+                        alignItems: "center",
                       }}
                     >
                       {decodeHtmlEntities(item.title)}
@@ -416,12 +464,12 @@ export default function NotificationDrawer({
           </div>
         )}
 
-        {/* 2. 카드에서 종(🔔) 아이콘으로 켜둔 상품 목록 */}
+        {/* 2. 가격 변동 알림 켜둔 상품 (현재 피드 + 서버 동기화 목표가 항목) */}
         <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1 }}>
           <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-sub)" }}>
-            가격 변동 알림 켜둔 상품 ({watchedDeals.length})
+            가격 변동 알림 켜둔 상품 ({watchedTotalCount})
           </span>
-          {watchedDeals.length === 0 && serverAlerts.length === 0 && !fetchError && !isLoading ? (
+          {watchedTotalCount === 0 && serverAlerts.length === 0 && !fetchError && !isLoading ? (
             <div
               style={{
                 padding: "36px 16px",
@@ -439,59 +487,111 @@ export default function NotificationDrawer({
               원하는 키워드를 등록하거나 상품 카드의 알림 아이콘을 눌러보세요.
             </div>
           ) : (
-            watchedDeals.map((deal) => (
-              <button
-                key={deal.id}
-                type="button"
-                className="bounce-click"
-                onClick={() => {
-                  onClose();
-                  onSelectDeal(deal);
-                }}
-                style={{
-                  background: "var(--surface-subtle)",
-                  border: "1px solid var(--card-border)",
-                  borderRadius: "16px",
-                  padding: "14px",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "6px",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  width: "100%",
-                }}
-              >
-                <div
+            <>
+              {watchedDeals.map((deal) => (
+                <button
+                  key={deal.id}
+                  type="button"
+                  className="bounce-click"
+                  onClick={() => {
+                    onClose();
+                    onSelectDeal(deal);
+                  }}
                   style={{
+                    background: "var(--surface-subtle)",
+                    border: "1px solid var(--card-border)",
+                    borderRadius: "16px",
+                    padding: "14px",
+                    minHeight: "44px",
                     display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
+                    flexDirection: "column",
+                    gap: "6px",
+                    cursor: "pointer",
+                    textAlign: "left",
                     width: "100%",
                   }}
                 >
-                  <span className="deal-source" style={{ fontSize: "0.7rem", padding: "2px 6px" }}>
-                    {deal.community_name}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      width: "100%",
+                    }}
+                  >
+                    <span className="deal-source" style={{ fontSize: "0.7rem", padding: "2px 6px" }}>
+                      {deal.community_name}
+                    </span>
+                    <span style={{ fontSize: "0.85rem", color: "var(--deal-orange)", fontWeight: 800 }}>
+                      {deal.isFree ? "0원 (무료)" : formatPrice(deal.price, deal.currency, deal.title)}
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "0.85rem",
+                      fontWeight: 700,
+                      lineHeight: 1.4,
+                      color: "var(--text-main)",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {decodeHtmlEntities(deal.title)}
                   </span>
-                  <span style={{ fontSize: "0.85rem", color: "var(--deal-orange)", fontWeight: 800 }}>
-                    {deal.isFree ? "0원 (무료)" : formatPrice(deal.price, deal.currency, deal.title)}
-                  </span>
-                </div>
-                <span
+                </button>
+              ))}
+
+              {serverOnlyTargets.map((item) => (
+                <button
+                  key={`srv-alert-${item.id}`}
+                  type="button"
+                  className="bounce-click"
+                  onClick={() => {
+                    onClose();
+                    onSearchKeyword?.(item.keyword);
+                  }}
                   style={{
-                    fontSize: "0.85rem",
-                    fontWeight: 700,
-                    lineHeight: 1.4,
-                    color: "var(--text-main)",
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden",
+                    background: "var(--surface-subtle)",
+                    border: "1px solid var(--card-border)",
+                    borderRadius: "16px",
+                    padding: "14px",
+                    minHeight: "44px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    width: "100%",
                   }}
                 >
-                  {decodeHtmlEntities(deal.title)}
-                </span>
-              </button>
-            ))
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      width: "100%",
+                    }}
+                  >
+                    <span className="badge badge-mint">동기화된 목표가 알림</span>
+                    <span style={{ fontSize: "0.82rem", color: "var(--success-text)", fontWeight: 800 }}>
+                      {Number(item.target_price).toLocaleString()}원 이하
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "0.85rem",
+                      fontWeight: 700,
+                      lineHeight: 1.4,
+                      color: "var(--text-main)",
+                    }}
+                  >
+                    {decodeHtmlEntities(item.keyword)}
+                  </span>
+                </button>
+              ))}
+            </>
           )}
         </div>
 
@@ -500,8 +600,8 @@ export default function NotificationDrawer({
             style={{
               marginTop: "12px",
               minHeight: "48px",
-              background: "rgba(var(--accent-rgb), 0.1)",
-              border: "1px solid rgba(var(--accent-rgb), 0.3)",
+              background: "var(--accent-soft-bg)",
+              border: "1px solid var(--accent-soft-border)",
               borderRadius: "16px",
               padding: "13px 16px",
               textAlign: "center",

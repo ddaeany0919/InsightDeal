@@ -25,9 +25,13 @@ if "pytest" not in sys.modules and "PYTEST_CURRENT_TEST" not in os.environ:
         load_dotenv(os.path.join(_project_root, ".env"), override=False)
     except Exception:
         pass
+import asyncio
 import logging
 import ipaddress
+import tempfile
+import weakref
 import httpx
+from backend.core.url_utils import is_public_ip as _is_public_ip, is_safe_external_url as _is_safe_external_url
 from backend.routers import wishlist, product, community, health, push, admin, auth, users, coupang
 for _router_mod_name, _router_mod in (
     ("wishlist", wishlist),
@@ -169,41 +173,9 @@ FALLBACK_SVG_IMAGE = """<svg xmlns="http://www.w3.org/2000/svg" width="400" heig
 
 _MAX_IMAGE_BYTES = 10 * 1024 * 1024
 _MAX_IMAGE_REDIRECTS = 3
-
-
-def _is_public_ip(ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped is not None:
-        ip_obj = ip_obj.ipv4_mapped
-    return not (
-        ip_obj.is_private
-        or ip_obj.is_loopback
-        or ip_obj.is_link_local
-        or ip_obj.is_multicast
-        or ip_obj.is_reserved
-        or ip_obj.is_unspecified
-    )
-
-
-def _is_safe_external_url(url: str) -> bool:
-    """SSRF 방어를 위한 외부 이미지 URL 동기 기본 검증 (스킴/인증정보/리터럴 사설 IP 차단)"""
-    try:
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            return False
-        if parsed.username or parsed.password:
-            return False
-        host = (parsed.hostname or "").lower().strip().rstrip(".")
-        if not host or host in ("localhost", "0.0.0.0", "169.254.169.254") or host.endswith(".internal") or host.endswith(".local"):
-            return False
-        try:
-            ip = ipaddress.ip_address(host)
-            if not _is_public_ip(ip):
-                return False
-        except ValueError:
-            pass
-        return True
-    except Exception:
-        return False
+_PROXY_LOOP_INFLIGHT: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Task]] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 async def _is_safe_external_url_async(url: str) -> bool:
@@ -275,8 +247,29 @@ def _read_cached_image_sync(cache_file_path: str) -> bytes | None:
 
 
 def _write_cached_image_sync(cache_file_path: str, content: bytes) -> None:
-    with open(cache_file_path, "wb") as f:
-        f.write(content)
+    """동일 디렉토리 내 임시 파일 기록 후 os.replace로 원자적 캐시 교체 (.tmp 잔류 차단)"""
+    cache_dir = os.path.dirname(os.path.abspath(cache_file_path))
+    os.makedirs(cache_dir, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=".cache_tmp_", suffix=".tmp", dir=cache_dir)
+    try:
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+        except Exception:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            raise
+        os.replace(tmp_path, cache_file_path)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 def _remove_file_quietly_sync(file_path: str) -> None:
@@ -386,36 +379,20 @@ def _build_proxy_headers(target_url: str) -> dict:
         headers["Referer"] = f"{p.scheme}://{p.netloc}/" if p.scheme and p.netloc else "https://google.com/"
     return headers
 
-@app.get("/api/proxy-image")
-@app.get("/api/image-proxy")
-async def proxy_image(url: str):
-    import hashlib
+async def _fetch_and_cache_image_leader(
+    raw_input_url: str,
+    url: str,
+    cache_file_path: str,
+) -> tuple[int, bytes, str | None]:
+    """Single-flight 리더 코루틴: 모든 예외를 포착해 (404, b'', None)으로 안전 변환"""
     import re
-    raw_input_url = url
-    url = (url or "").replace("&amp;", "&").strip().rstrip(",)")
-    if url.startswith("//"):
-        url = "https:" + url
-    if ("gmarket.co.kr" in url or "esmplus.com" in url or "auction.co.kr" in url) and "?ver=" in url:
-        url = url.split("?ver=")[0]
-    url_hash = hashlib.md5(raw_input_url.encode('utf-8')).hexdigest()
-    cache_file_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}.cache")
 
     try:
-        if not await _is_safe_external_url_async(url):
-            raise ValueError("Unsafe or non-http external URL")
-        lower_u = url.lower()
-        if any(bad in lower_u for bad in ("no_image.svg", "thumb_no_image.svg", "noimage", "dot03.gif", "logo_f.svg", "49841804f3d132d75a6c11b1510af812.png")):
-            raise ValueError("Known placeholder image URL")
-
         cached_content = await run_in_threadpool(_read_cached_image_sync, cache_file_path)
         if cached_content is not None:
             detected_mime = _detect_image_mime(cached_content)
             if detected_mime:
-                return Response(
-                    content=cached_content,
-                    media_type=detected_mime,
-                    headers={"Cache-Control": "public, max-age=604800, immutable"}
-                )
+                return 200, cached_content, detected_mime
             await run_in_threadpool(_remove_file_quietly_sync, cache_file_path)
 
         candidates = [url]
@@ -436,11 +413,7 @@ async def proxy_image(url: str):
                 if not detected_mime or len(resp.content) < 60:
                     raise ValueError(f"Non-image or tiny payload returned from {cand}")
                 await run_in_threadpool(_write_cached_image_sync, cache_file_path, resp.content)
-                return Response(
-                    content=resp.content,
-                    media_type=detected_mime,
-                    headers={"Cache-Control": "public, max-age=604800, immutable"}
-                )
+                return 200, resp.content, detected_mime
             except Exception as ce:
                 last_err = ce
         raise last_err or ValueError("All primary candidates failed")
@@ -456,20 +429,69 @@ async def proxy_image(url: str):
                         await run_in_threadpool(_write_cached_image_sync, cache_file_path, b_resp.content)
                         if deal_id is not None:
                             await run_in_threadpool(_update_deal_image_url_sync, deal_id, backup_url)
-                        return Response(
-                            content=b_resp.content,
-                            media_type=b_mime,
-                            headers={"Cache-Control": "public, max-age=604800, immutable"}
-                        )
+                        return 200, b_resp.content, b_mime
                 except Exception as backup_err:
                     logger.debug("Proxy image backup candidate failed (%s): %s", backup_url, backup_err)
                     continue
         except Exception as fallback_err:
             logger.debug("Proxy image DB fallback failed for %s: %s", raw_input_url, fallback_err)
+        return 404, b"", None
+
+
+@app.get("/api/proxy-image")
+@app.get("/api/image-proxy")
+async def proxy_image(url: str):
+    import hashlib
+    raw_input_url = url
+    url = (url or "").replace("&amp;", "&").strip().rstrip(",)")
+    if url.startswith("//"):
+        url = "https:" + url
+    if ("gmarket.co.kr" in url or "esmplus.com" in url or "auction.co.kr" in url) and "?ver=" in url:
+        url = url.split("?ver=")[0]
+    url_hash = hashlib.md5(raw_input_url.encode('utf-8')).hexdigest()
+    cache_file_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}.cache")
+
+    try:
+        if not await _is_safe_external_url_async(url):
+            raise ValueError("Unsafe or non-http external URL")
+        lower_u = url.lower()
+        if any(bad in lower_u for bad in ("no_image.svg", "thumb_no_image.svg", "noimage", "dot03.gif", "logo_f.svg", "49841804f3d132d75a6c11b1510af812.png")):
+            raise ValueError("Known placeholder image URL")
+    except Exception:
         return Response(
             status_code=404,
             headers={"Cache-Control": "no-store"}
         )
+
+    loop = asyncio.get_running_loop()
+    inflight_map = _PROXY_LOOP_INFLIGHT.get(loop)
+    if inflight_map is None:
+        inflight_map = {}
+        _PROXY_LOOP_INFLIGHT[loop] = inflight_map
+
+    cache_key = f"{IMAGE_CACHE_DIR}:{url_hash}"
+    task = inflight_map.get(cache_key)
+    if task is None:
+        task = asyncio.create_task(_fetch_and_cache_image_leader(raw_input_url, url, cache_file_path))
+        inflight_map[cache_key] = task
+
+        def _cleanup_inflight(finished_task: asyncio.Task, m: dict = inflight_map, k: str = cache_key) -> None:
+            if m.get(k) is finished_task:
+                m.pop(k, None)
+
+        task.add_done_callback(_cleanup_inflight)
+
+    status_code, payload, detected_mime = await asyncio.shield(task)
+    if status_code == 200 and payload and detected_mime:
+        return Response(
+            content=payload,
+            media_type=detected_mime,
+            headers={"Cache-Control": "public, max-age=604800, immutable"}
+        )
+    return Response(
+        status_code=404,
+        headers={"Cache-Control": "no-store"}
+    )
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request, exc):

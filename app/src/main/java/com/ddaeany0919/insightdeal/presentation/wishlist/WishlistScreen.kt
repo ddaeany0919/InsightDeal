@@ -68,7 +68,7 @@ fun EmptyWishlistState() {
         Text(
             text = "마음에 드는 핫딜에 하트를 눌러보세요!",
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
     }

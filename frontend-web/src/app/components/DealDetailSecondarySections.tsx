@@ -202,10 +202,10 @@ export default function DealDetailSecondarySections({
                   flexWrap: "wrap",
                   padding: "8px 12px",
                   borderRadius: "10px",
-                  background: "rgba(239, 68, 68, 0.08)",
-                  border: "1px solid rgba(239, 68, 68, 0.22)",
+                  background: "var(--error-bg)",
+                  border: "1px solid var(--error-border)",
                   fontSize: "0.78rem",
-                  color: "#EF4444",
+                  color: "var(--error-text)",
                   fontWeight: 700,
                 }}
               >
@@ -218,9 +218,9 @@ export default function DealDetailSecondarySections({
                     minHeight: "44px",
                     padding: "8px 12px",
                     borderRadius: "8px",
-                    border: "1px solid rgba(239, 68, 68, 0.35)",
+                    border: "1px solid var(--error-border)",
                     background: "var(--card-bg)",
-                    color: "#EF4444",
+                    color: "var(--error-text)",
                     fontWeight: 700,
                     fontSize: "0.78rem",
                     display: "inline-flex",
@@ -237,6 +237,7 @@ export default function DealDetailSecondarySections({
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
               <button
                 type="button"
+                aria-pressed={userVote === "buy"}
                 onClick={() => onVote("buy")}
                 className="bounce-click"
                 style={{
@@ -253,11 +254,11 @@ export default function DealDetailSecondarySections({
                   fontWeight: 800,
                   fontSize: "0.86rem",
                   background:
-                    userVote === "buy" ? "rgba(16, 185, 129, 0.14)" : "var(--card-bg)",
-                  color: userVote === "buy" ? "#10B981" : "var(--text-main)",
+                    userVote === "buy" ? "var(--success-bg)" : "var(--card-bg)",
+                  color: userVote === "buy" ? "var(--success-text)" : "var(--text-main)",
                   border:
                     userVote === "buy"
-                      ? "1px solid rgba(16, 185, 129, 0.45)"
+                      ? "1px solid var(--success-border)"
                       : "1px solid var(--card-border)",
                 }}
               >
@@ -266,6 +267,7 @@ export default function DealDetailSecondarySections({
               </button>
               <button
                 type="button"
+                aria-pressed={userVote === "save"}
                 onClick={() => onVote("save")}
                 className="bounce-click"
                 style={{
@@ -282,11 +284,11 @@ export default function DealDetailSecondarySections({
                   fontWeight: 800,
                   fontSize: "0.86rem",
                   background:
-                    userVote === "save" ? "rgba(239, 68, 68, 0.14)" : "var(--card-bg)",
-                  color: userVote === "save" ? "#EF4444" : "var(--text-sub)",
+                    userVote === "save" ? "var(--error-bg)" : "var(--card-bg)",
+                  color: userVote === "save" ? "var(--error-text)" : "var(--text-sub)",
                   border:
                     userVote === "save"
-                      ? "1px solid rgba(239, 68, 68, 0.45)"
+                      ? "1px solid var(--error-border)"
                       : "1px solid var(--card-border)",
                 }}
               >
@@ -377,10 +379,10 @@ export default function DealDetailSecondarySections({
                   flexWrap: "wrap",
                   padding: "10px 12px",
                   borderRadius: "10px",
-                  background: "rgba(239, 68, 68, 0.08)",
-                  border: "1px solid rgba(239, 68, 68, 0.22)",
+                  background: "var(--error-bg)",
+                  border: "1px solid var(--error-border)",
                   fontSize: "0.8rem",
-                  color: "#EF4444",
+                  color: "var(--error-text)",
                   fontWeight: 700,
                 }}
               >
@@ -393,9 +395,9 @@ export default function DealDetailSecondarySections({
                     minHeight: "44px",
                     padding: "8px 12px",
                     borderRadius: "8px",
-                    border: "1px solid rgba(239, 68, 68, 0.35)",
+                    border: "1px solid var(--error-border)",
                     background: "var(--card-bg)",
-                    color: "#EF4444",
+                    color: "var(--error-text)",
                     fontWeight: 700,
                     fontSize: "0.78rem",
                     display: "inline-flex",
@@ -425,10 +427,10 @@ export default function DealDetailSecondarySections({
                       flexWrap: "wrap",
                       padding: "8px 12px",
                       borderRadius: "10px",
-                      background: "rgba(239, 68, 68, 0.08)",
-                      border: "1px solid rgba(239, 68, 68, 0.22)",
+                      background: "var(--error-bg)",
+                      border: "1px solid var(--error-border)",
                       fontSize: "0.78rem",
-                      color: "#EF4444",
+                      color: "var(--error-text)",
                       fontWeight: 700,
                     }}
                   >
@@ -441,9 +443,9 @@ export default function DealDetailSecondarySections({
                         minHeight: "44px",
                         padding: "8px 12px",
                         borderRadius: "8px",
-                        border: "1px solid rgba(239, 68, 68, 0.35)",
+                        border: "1px solid var(--error-border)",
                         background: "var(--card-bg)",
-                        color: "#EF4444",
+                        color: "var(--error-text)",
                         fontWeight: 700,
                         fontSize: "0.78rem",
                         display: "inline-flex",
@@ -541,9 +543,9 @@ export default function DealDetailSecondarySections({
                 style={
                   savedTargetPrice
                     ? {
-                        color: "#10b981",
-                        borderColor: "rgba(16, 185, 129, 0.35)",
-                        background: "rgba(16, 185, 129, 0.1)",
+                        color: "var(--success-text)",
+                        borderColor: "var(--success-border)",
+                        background: "var(--success-bg)",
                       }
                     : undefined
                 }
@@ -570,6 +572,7 @@ export default function DealDetailSecondarySections({
                     <button
                       key={preset.label}
                       type="button"
+                      aria-pressed={isSelected}
                       onClick={() => onSelectPreset(preset.value)}
                       style={{
                         fontSize: "0.76rem",
@@ -579,7 +582,7 @@ export default function DealDetailSecondarySections({
                         borderRadius: "999px",
                         cursor: "pointer",
                         background: isSelected ? "var(--accent)" : "var(--card-bg)",
-                        color: isSelected ? "#fff" : "var(--text-sub)",
+                        color: isSelected ? "var(--on-accent)" : "var(--text-sub)",
                         border: isSelected
                           ? "1px solid var(--accent)"
                           : "1px solid var(--card-border)",
@@ -646,7 +649,7 @@ export default function DealDetailSecondarySections({
                 <div
                   style={{
                     fontSize: "0.75rem",
-                    color: diffAmount > 0 ? "#10b981" : "var(--text-sub)",
+                    color: diffAmount > 0 ? "var(--success-text)" : "var(--text-sub)",
                     fontWeight: 700,
                   }}
                 >

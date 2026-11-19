@@ -9,42 +9,31 @@ import {
   Settings,
   Search,
   X,
-  Share2,
   Flame,
-  ChevronRight,
   RotateCcw,
-  ExternalLink,
   AlertCircle,
+  Smartphone,
 } from "lucide-react";
 import Link from "next/link";
 
 import type {
   Deal,
-  DealSource,
   PopularKeywordRanking,
   RawDealApiResponse,
   HotDealsApiResponse,
   CategoryMetaItem,
   WishlistApiItem,
+  NextCursor,
 } from "./lib/types";
 import {
+  PLATFORMS,
   formatPrice,
-  getProxyImageUrl,
-  getFallbackProxyImageUrl,
   apiUrl,
-  resolveOutboundUrl,
-  trackOutboundClick,
   getOrCreateWebDeviceUuid,
   ensureWebDeviceAuth,
   authFetch,
   ensureWebPushSubscribed,
-  getOptionSources,
   decodeHtmlEntities,
-  resolveDealShopName,
-  stripLeadingShopBracket,
-  normalizeMallAlias,
-  isNonMallLabel,
-  formatRelativeTimeKo,
   mapRawDealToDeal,
   buildDealWishlistKeyword,
   loadWishlistIdMap,
@@ -57,18 +46,19 @@ import {
   logTossScreen,
   logTossClick,
   maybeRequestTossReview,
-  openExternalUrlInToss,
   copyTextSafe,
 } from "./lib/tossBridge";
 
 import PrivacyModal from "./components/PrivacyModal";
 import EulaModal from "./components/EulaModal";
 import DealDetailModal from "./components/DealDetailModal";
-import LoginPromptModal from "./components/LoginPromptModal";
+import DeviceSyncModal from "./components/DeviceSyncModal";
 import WishlistDrawer from "./components/WishlistDrawer";
 import NotificationDrawer from "./components/NotificationDrawer";
 import TrendingKeywordsTicker from "./components/TrendingKeywordsTicker";
-import HighlightedTitle from "./components/HighlightedTitle";
+import ThemeToggle from "./components/ThemeToggle";
+import InAppBrowserBanner from "./components/InAppBrowserBanner";
+import DealCard from "./components/DealCard";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -92,19 +82,6 @@ const DEFAULT_CATEGORIES: CategoryMetaItem[] = [
   { key: "해외직구", label: "해외직구" },
   { key: "핫딜모음", label: "핫딜모음" },
   { key: "기타", label: "기타" },
-];
-
-const PLATFORMS = [
-  "전체",
-  "펨코",
-  "뽐뿌",
-  "루리웹",
-  "퀘이사존",
-  "클리앙",
-  "알리뽐뿌",
-  "빠삭국내",
-  "빠삭해외",
-  "빠삭육아",
 ];
 
 const HOT_DEALS_ERROR_COPY =
@@ -131,10 +108,7 @@ export default function Home() {
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [pullOffset, setPullOffset] = useState<number>(0);
   const [newDealsCount, setNewDealsCount] = useState<number>(0);
-  const touchStartYRef = useRef<number>(0);
-  const isPullingRef = useRef<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [wishlist, setWishlist] = useState<number[]>([]);
@@ -142,9 +116,14 @@ export default function Home() {
     {}
   );
   const [alerts, setAlerts] = useState<number[]>([]);
+  const [serverWishlists, setServerWishlists] = useState<WishlistApiItem[]>([]);
+  const serverWishlistsRef = useRef<WishlistApiItem[]>([]);
+  const dealsRef = useRef<Deal[]>([]);
   const wishlistRef = useRef<number[]>([]);
   const wishlistItemsMapRef = useRef<Record<number, Deal>>({});
   const alertsRef = useRef<number[]>([]);
+  const unwishlistedDealIdsRef = useRef<Set<number>>(new Set());
+  const hydrateEpochRef = useRef<number>(0);
   const idMutationQueueRef = useRef<Map<number, Promise<void>>>(new Map());
   const [serverAlertCount, setServerAlertCount] = useState<number>(0);
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
@@ -171,11 +150,15 @@ export default function Home() {
   const [popularUpdatedAt, setPopularUpdatedAt] = useState<string>("");
   const [onlyHotDeals, setOnlyHotDeals] = useState(false);
   const [hideClosedDeals, setHideClosedDeals] = useState(false);
+  const [includeClosedDeals, setIncludeClosedDeals] = useState(false);
+  const onlyHotDealsRef = useRef(false);
+  const hideClosedDealsRef = useRef(false);
+  const includeClosedDealsRef = useRef(false);
+  const nextCursorRef = useRef<NextCursor | null>(null);
   const [sortBy, setSortBy] = useState<"latest" | "popular" | "price_asc">(
     "latest"
   );
   const sortByRef = useRef<"latest" | "popular" | "price_asc">("latest");
-  const [hideKeywordBanner, setHideKeywordBanner] = useState(false);
   const [isTossMiniApp, setIsTossMiniApp] = useState(
     process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true"
   );
@@ -186,7 +169,7 @@ export default function Home() {
 
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showEulaModal, setShowEulaModal] = useState(false);
-  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveDealsAbortRef = useRef<AbortController | null>(null);
@@ -203,6 +186,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    dealsRef.current = deals;
+  }, [deals]);
+
+  useEffect(() => {
     wishlistRef.current = wishlist;
   }, [wishlist]);
 
@@ -213,6 +200,133 @@ export default function Home() {
   useEffect(() => {
     alertsRef.current = alerts;
   }, [alerts]);
+
+  const reconcileWishlistsWithDeals = useCallback(
+    (targetDeals: Deal[], serverList: WishlistApiItem[]) => {
+      if (typeof window === "undefined" || serverList.length === 0) return;
+
+      const idMap = loadWishlistIdMap();
+      const allKnownDeals = [
+        ...targetDeals,
+        ...Object.values(wishlistItemsMapRef.current),
+      ];
+      if (allKnownDeals.length === 0) return;
+
+      const nextWishlist = [...wishlistRef.current];
+      const nextAlerts = [...alertsRef.current];
+      const nextItemsMap = { ...wishlistItemsMapRef.current };
+      let targetMap: Record<string, number> = {};
+      try {
+        const rawTarget = localStorage.getItem("insightdeal_target_prices");
+        if (rawTarget) {
+          const parsed = JSON.parse(rawTarget);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            targetMap = parsed as Record<string, number>;
+          }
+        }
+      } catch {}
+
+      let matchedAny = false;
+      for (const wItem of serverList) {
+        const normKw = decodeHtmlEntities(wItem.keyword || "")
+          .trim()
+          .toLowerCase();
+        if (!normKw) continue;
+
+        let matchedDeal: Deal | undefined;
+        for (const [keyStr, entry] of Object.entries(idMap)) {
+          if (entry.wishlistId === wItem.id) {
+            const parsedId = Number(keyStr.split("_")[0]);
+            matchedDeal = allKnownDeals.find((d) => d.id === parsedId);
+            if (matchedDeal) break;
+          }
+        }
+        if (!matchedDeal) {
+          matchedDeal = allKnownDeals.find((d) => {
+            const kw = buildDealWishlistKeyword(d.title).toLowerCase();
+            const titleLower = decodeHtmlEntities(d.title).toLowerCase();
+            return kw === normKw || titleLower.includes(normKw);
+          });
+        }
+        if (matchedDeal) {
+          if (unwishlistedDealIdsRef.current.has(matchedDeal.id)) {
+            // 사용자가 찜을 해제한 딜은 알림용 항목(alert_enabled=true)으로 서버에 남아있더라도 재편입 금지
+            if (wItem.alert_enabled !== false && Number(wItem.target_price) > 0) {
+              saveWishlistIdEntry(matchedDeal.id, wItem.id, wItem.keyword);
+            }
+            continue;
+          }
+          matchedAny = true;
+          saveWishlistIdEntry(matchedDeal.id, wItem.id, wItem.keyword);
+          if (!nextWishlist.includes(matchedDeal.id)) {
+            nextWishlist.push(matchedDeal.id);
+          }
+          nextItemsMap[matchedDeal.id] = matchedDeal;
+          if (wItem.alert_enabled !== false && Number(wItem.target_price) > 0) {
+            if (!nextAlerts.includes(matchedDeal.id)) {
+              nextAlerts.push(matchedDeal.id);
+            }
+            targetMap[String(matchedDeal.id)] = Number(wItem.target_price);
+          }
+        }
+      }
+
+      if (!matchedAny) return;
+
+      wishlistRef.current = nextWishlist;
+      setWishlist(nextWishlist);
+      wishlistItemsMapRef.current = nextItemsMap;
+      setWishlistItemsMap(nextItemsMap);
+      alertsRef.current = nextAlerts;
+      setAlerts(nextAlerts);
+      try {
+        localStorage.setItem("insightdeal_wishlist", JSON.stringify(nextWishlist));
+        localStorage.setItem("insightdeal_wishlist_items", JSON.stringify(nextItemsMap));
+        localStorage.setItem("insightdeal_alerts", JSON.stringify(nextAlerts));
+        localStorage.setItem("insightdeal_target_prices", JSON.stringify(targetMap));
+      } catch {}
+    },
+    []
+  );
+
+  const hydrateFromServer = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const epoch = hydrateEpochRef.current;
+    try {
+      await ensureWebDeviceAuth();
+      if (epoch !== hydrateEpochRef.current) return;
+      const [notifRes, wishlistRes] = await Promise.allSettled([
+        authFetch(
+          (latestAuth) =>
+            `/api/users/notifications?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`
+        ),
+        authFetch(
+          (latestAuth) =>
+            `/api/wishlist/?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`
+        ),
+      ]);
+
+      if (notifRes.status === "fulfilled" && notifRes.value.ok) {
+        const notifData = await notifRes.value.json().catch(() => null);
+        if (Array.isArray(notifData)) {
+          setServerAlertCount(notifData.length);
+        }
+      }
+
+      if (wishlistRes.status === "fulfilled" && wishlistRes.value.ok) {
+        const wData = await wishlistRes.value.json().catch(() => null);
+        if (Array.isArray(wData)) {
+          if (epoch !== hydrateEpochRef.current) {
+            return;
+          }
+          const list = wData as WishlistApiItem[];
+          serverWishlistsRef.current = list;
+          setServerWishlists(list);
+          reconcileWishlistsWithDeals(dealsRef.current, list);
+        }
+      }
+    } catch {}
+  }, [reconcileWishlistsWithDeals]);
 
   const enqueueDealMutation = useCallback(
     (dealId: number, task: () => Promise<void>): Promise<void> => {
@@ -429,20 +543,31 @@ export default function Home() {
     e.stopPropagation();
     if (pendingWishlistRef.current.has(id)) return;
     pendingWishlistRef.current.add(id);
+    hydrateEpochRef.current += 1;
 
     await enqueueDealMutation(id, async () => {
+      let rollbackAction: (() => void) | null = null;
       try {
         const auth = await ensureWebDeviceAuth();
         setIsLoggedIn(true);
 
         const targetDeal =
-          deals.find((d) => d.id === id) || wishlistItemsMapRef.current[id];
+          dealsRef.current.find((d) => d.id === id) ||
+          wishlistItemsMapRef.current[id];
         const keyword = buildDealWishlistKeyword(targetDeal?.title || `deal_${id}`);
         const isAdded = wishlistRef.current.includes(id);
 
         if (isAdded) {
           const prevSavedDeal = wishlistItemsMapRef.current[id];
+          const wasUnwishlistedBefore = unwishlistedDealIdsRef.current.has(id);
+          unwishlistedDealIdsRef.current.add(id);
           applyWishlistRemove(id);
+          rollbackAction = () => {
+            if (!wasUnwishlistedBefore) {
+              unwishlistedDealIdsRef.current.delete(id);
+            }
+            applyWishlistAdd(id, prevSavedDeal);
+          };
 
           const isAlertStillOn = alertsRef.current.includes(id);
           let serverOk = true;
@@ -481,6 +606,10 @@ export default function Home() {
                       serverOk = false;
                     } else {
                       removeWishlistIdEntry(id);
+                      serverWishlistsRef.current = serverWishlistsRef.current.filter(
+                        (item) => item.id !== rotatedWishlistId
+                      );
+                      setServerWishlists(serverWishlistsRef.current);
                     }
                   }
                 } else {
@@ -488,18 +617,33 @@ export default function Home() {
                 }
               } else {
                 removeWishlistIdEntry(id);
+                serverWishlistsRef.current = serverWishlistsRef.current.filter(
+                  (item) => item.id !== wishlistId
+                );
+                setServerWishlists(serverWishlistsRef.current);
               }
             }
           }
 
           if (!serverOk) {
-            applyWishlistAdd(id, prevSavedDeal);
+            rollbackAction();
+            rollbackAction = null;
             showToast("찜 해제에 실패했어요. 잠시 후 다시 시도해 주세요");
             return;
           }
 
+          rollbackAction = null;
           showToast("찜 목록에서 뺐어요");
         } else {
+          const wasUnwishlisted = unwishlistedDealIdsRef.current.has(id);
+          unwishlistedDealIdsRef.current.delete(id);
+          rollbackAction = () => {
+            if (wasUnwishlisted) {
+              unwishlistedDealIdsRef.current.add(id);
+            } else {
+              unwishlistedDealIdsRef.current.delete(id);
+            }
+          };
           const existingMap = loadWishlistIdMap();
           if (!existingMap[String(id)]) {
             const postRes = await authFetch((latestAuth) => ({
@@ -515,6 +659,8 @@ export default function Home() {
               },
             }));
             if (!postRes.ok) {
+              rollbackAction();
+              rollbackAction = null;
               showToast("찜 등록에 실패했어요. 잠시 후 다시 시도해 주세요");
               return;
             }
@@ -526,6 +672,7 @@ export default function Home() {
             }
           }
 
+          rollbackAction = null;
           applyWishlistAdd(id, targetDeal);
           showToast("찜 목록에 담았어요");
           logTossClick("save_wishlist_deal", {
@@ -537,6 +684,7 @@ export default function Home() {
           }
         }
       } catch {
+        rollbackAction?.();
         showToast("찜 상태를 변경하지 못했어요. 잠시 후 다시 시도해 주세요");
       } finally {
         pendingWishlistRef.current.delete(id);
@@ -549,16 +697,21 @@ export default function Home() {
     e.stopPropagation();
     if (pendingAlertRef.current.has(id)) return;
     pendingAlertRef.current.add(id);
+    hydrateEpochRef.current += 1;
 
     await enqueueDealMutation(id, async () => {
+      let rollbackAction: (() => void) | null = null;
+      let isTurningOff = false;
       try {
         const auth = await ensureWebDeviceAuth();
         setIsLoggedIn(true);
 
         const targetDeal =
-          deals.find((d) => d.id === id) || wishlistItemsMapRef.current[id];
+          dealsRef.current.find((d) => d.id === id) ||
+          wishlistItemsMapRef.current[id];
         const keyword = buildDealWishlistKeyword(targetDeal?.title || `deal_${id}`);
         const isAlertOn = alertsRef.current.includes(id);
+        isTurningOff = isAlertOn;
 
         if (isAlertOn) {
           let prevTargetPriceVal: number | undefined;
@@ -569,6 +722,9 @@ export default function Home() {
           } catch {}
 
           applyAlertRemove(id);
+          rollbackAction = () => {
+            applyAlertAdd(id);
+          };
 
           const beforeUuid = auth.deviceUuid;
           const wishlistId = await resolveServerWishlistId(
@@ -602,6 +758,13 @@ export default function Home() {
                 } else {
                   serverOk = false;
                 }
+              } else {
+                serverWishlistsRef.current = serverWishlistsRef.current.map((item) =>
+                  item.id === wishlistId
+                    ? { ...item, alert_enabled: false, target_price: 0 }
+                    : item
+                );
+                setServerWishlists(serverWishlistsRef.current);
               }
             } else {
               const delRes = await authFetch(
@@ -629,6 +792,10 @@ export default function Home() {
                       serverOk = false;
                     } else {
                       removeWishlistIdEntry(id);
+                      serverWishlistsRef.current = serverWishlistsRef.current.filter(
+                        (item) => item.id !== rotatedWishlistId
+                      );
+                      setServerWishlists(serverWishlistsRef.current);
                     }
                   }
                 } else {
@@ -636,16 +803,22 @@ export default function Home() {
                 }
               } else {
                 removeWishlistIdEntry(id);
+                serverWishlistsRef.current = serverWishlistsRef.current.filter(
+                  (item) => item.id !== wishlistId
+                );
+                setServerWishlists(serverWishlistsRef.current);
               }
             }
           }
 
           if (!serverOk) {
-            applyAlertAdd(id);
+            rollbackAction();
+            rollbackAction = null;
             showToast("가격 알림 해제에 실패했어요. 잠시 후 다시 시도해 주세요");
             return;
           }
 
+          rollbackAction = null;
           if (typeof window !== "undefined" && prevTargetPriceVal !== undefined) {
             try {
               const mapStr = localStorage.getItem("insightdeal_target_prices");
@@ -707,6 +880,20 @@ export default function Home() {
             saveWishlistIdEntry(id, saved.id, saved.keyword || keyword);
           }
 
+          const wasUnwishlistedBefore = unwishlistedDealIdsRef.current.has(id);
+          const wasAlertedBefore = alertsRef.current.includes(id);
+          rollbackAction = () => {
+            if (!wasUnwishlistedBefore) {
+              unwishlistedDealIdsRef.current.delete(id);
+            }
+            if (!wasAlertedBefore) {
+              applyAlertRemove(id);
+            }
+          };
+
+          if (!wishlistRef.current.includes(id)) {
+            unwishlistedDealIdsRef.current.add(id);
+          }
           applyAlertAdd(id);
           if (typeof window !== "undefined") {
             try {
@@ -722,6 +909,7 @@ export default function Home() {
             } catch {}
           }
 
+          rollbackAction = null;
           const priceFormatted = formatPrice(
             autoTarget,
             targetDeal.currency,
@@ -739,7 +927,12 @@ export default function Home() {
           maybeRequestTossReview();
         }
       } catch {
-        showToast("가격 알림 설정에 실패했어요. 잠시 후 다시 시도해 주세요");
+        rollbackAction?.();
+        showToast(
+          isTurningOff
+            ? "가격 알림 해제에 실패했어요. 잠시 후 다시 시도해 주세요"
+            : "가격 알림 설정에 실패했어요. 잠시 후 다시 시도해 주세요"
+        );
       } finally {
         pendingAlertRef.current.delete(id);
       }
@@ -751,12 +944,62 @@ export default function Home() {
     try {
       await ensureWebDeviceAuth();
       setIsLoggedIn(true);
-      setShowLoginModal(false);
+      await hydrateFromServer();
       showToast("기기 연동을 완료했어요");
     } catch {
       showToast("기기 연동에 실패했어요. 잠시 후 다시 시도해 주세요");
     }
   };
+
+  const handleRemoveServerWishlist = async (wishlistId: number) => {
+    hydrateEpochRef.current += 1;
+    try {
+      await ensureWebDeviceAuth();
+      const res = await authFetch(
+        (latestAuth) =>
+          `/api/wishlist/${wishlistId}?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok && res.status !== 404) {
+        showToast("찜 해제에 실패했어요. 잠시 후 다시 시도해 주세요");
+        return;
+      }
+      const idMap = loadWishlistIdMap();
+      for (const [keyStr, entry] of Object.entries(idMap)) {
+        if (entry.wishlistId === wishlistId) {
+          const parsedId = Number(keyStr.split("_")[0]);
+          if (Number.isFinite(parsedId)) {
+            unwishlistedDealIdsRef.current.add(parsedId);
+            removeWishlistIdEntry(parsedId);
+            if (wishlistRef.current.includes(parsedId)) {
+              applyWishlistRemove(parsedId);
+            }
+          }
+        }
+      }
+      serverWishlistsRef.current = serverWishlistsRef.current.filter(
+        (item) => item.id !== wishlistId
+      );
+      setServerWishlists((prev) => prev.filter((item) => item.id !== wishlistId));
+      showToast("찜 목록에서 뺐어요");
+    } catch {
+      showToast("찜 해제에 실패했어요. 잠시 후 다시 시도해 주세요");
+    }
+  };
+
+  const handleDealClosed = useCallback(
+    (dealId: number, isClosed: boolean, reportCount: number) => {
+      setDeals((prev) =>
+        prev.map((d) =>
+          d.id === dealId ? { ...d, isClosed, reportCount } : d
+        )
+      );
+      setSelectedDeal((prev) =>
+        prev && prev.id === dealId ? { ...prev, isClosed, reportCount } : prev
+      );
+    },
+    []
+  );
 
   const fetchLiveDeals = useCallback(
     async (
@@ -765,7 +1008,13 @@ export default function Home() {
       targetTab = "전체",
       targetPlatform = "전체",
       overrideKeyword?: string,
-      overrideSort?: "latest" | "popular" | "price_asc"
+      overrideSort?: "latest" | "popular" | "price_asc",
+      overrides?: {
+        includeClosed?: boolean;
+        onlyHot?: boolean;
+        hideClosed?: boolean;
+        cursor?: NextCursor | null;
+      }
     ): Promise<boolean> => {
       if (liveDealsAbortRef.current) {
         liveDealsAbortRef.current.abort();
@@ -777,6 +1026,7 @@ export default function Home() {
       try {
         if (offset === 0) {
           setFetchError(null);
+          nextCursorRef.current = null;
         }
         if (showLoadingState) {
           setLoading(true);
@@ -795,14 +1045,32 @@ export default function Home() {
             ? overrideKeyword
             : appliedSearchRef.current;
         const activeSort = overrideSort ?? sortByRef.current;
+        const activeOnlyHot = overrides?.onlyHot ?? onlyHotDealsRef.current;
+        const activeHideClosed =
+          overrides?.hideClosed ?? hideClosedDealsRef.current;
+        const activeIncludeClosed =
+          overrides?.includeClosed ?? includeClosedDealsRef.current;
+        const activeCursor =
+          offset > 0 ? (overrides?.cursor ?? nextCursorRef.current) : null;
+
         const queryParam = activeKw.trim()
           ? `&keyword=${encodeURIComponent(activeKw.trim())}`
           : "";
         const sortParam = `&sort=${encodeURIComponent(activeSort)}`;
+        const filterParams = `${activeOnlyHot ? "&only_hot=true" : ""}${
+          activeHideClosed ? "&hide_closed=true" : ""
+        }${activeIncludeClosed ? "&include_closed=true" : ""}`;
+        const cursorParams =
+          activeCursor && activeCursor.indexed_at && Number.isFinite(activeCursor.id)
+            ? `&cursor_indexed_at=${encodeURIComponent(
+                activeCursor.indexed_at
+              )}&cursor_id=${activeCursor.id}`
+            : "";
+
         const url = apiUrl(
           `/api/community/hot-deals?limit=${limit}&offset=${offset}${
             apiCategory ? `&category=${encodeURIComponent(apiCategory)}` : ""
-          }${platformParam}${queryParam}${sortParam}`
+          }${platformParam}${queryParam}${sortParam}${filterParams}${cursorParams}`
         );
 
         let res: Response | null = null;
@@ -876,15 +1144,31 @@ export default function Home() {
               ? data.hasMore
               : undefined;
 
+        const parsedCursor = !Array.isArray(data)
+          ? data?.next_cursor ?? data?.nextCursor ?? null
+          : null;
+        nextCursorRef.current =
+          parsedCursor &&
+          typeof parsedCursor.indexed_at === "string" &&
+          Number.isFinite(parsedCursor.id)
+            ? parsedCursor
+            : null;
+
         if (formatted.length > 0) {
+          let mergedDealsForRef: Deal[];
           if (offset === 0) {
-            setDeals([...formatted]);
+            mergedDealsForRef = [...formatted];
+            dealsRef.current = mergedDealsForRef;
+            setDeals(mergedDealsForRef);
             if (
               typeof window !== "undefined" &&
               targetTab === "전체" &&
               targetPlatform === "전체" &&
               !activeKw.trim() &&
-              activeSort === "latest"
+              activeSort === "latest" &&
+              !activeOnlyHot &&
+              !activeHideClosed &&
+              !activeIncludeClosed
             ) {
               localStorage.setItem(
                 "insightdeal_cached_deals",
@@ -892,13 +1176,26 @@ export default function Home() {
               );
             }
           } else {
+            const existingIds = new Set(dealsRef.current.map((item) => item.id));
+            const newDeals = formatted.filter(
+              (item: Deal) => !existingIds.has(item.id)
+            );
+            mergedDealsForRef = [...dealsRef.current, ...newDeals];
+            dealsRef.current = mergedDealsForRef;
             setDeals((prev) => {
-              const existingIds = new Set(prev.map((item) => item.id));
-              const newDeals = formatted.filter(
-                (item: Deal) => !existingIds.has(item.id)
+              const prevIds = new Set(prev.map((item) => item.id));
+              const appended = formatted.filter(
+                (item: Deal) => !prevIds.has(item.id)
               );
-              return [...prev, ...newDeals];
+              return [...prev, ...appended];
             });
+          }
+
+          if (serverWishlistsRef.current.length > 0) {
+            reconcileWishlistsWithDeals(
+              mergedDealsForRef,
+              serverWishlistsRef.current
+            );
           }
 
           setHasMore(
@@ -908,6 +1205,7 @@ export default function Home() {
           );
         } else {
           if (offset === 0) {
+            dealsRef.current = [];
             setDeals([]);
           }
           setHasMore(explicitHasMore !== undefined ? explicitHasMore : false);
@@ -936,18 +1234,23 @@ export default function Home() {
             !activeKwOnErr.trim() &&
             targetTab === "전체" &&
             targetPlatform === "전체" &&
-            activeSortOnErr === "latest"
+            activeSortOnErr === "latest" &&
+            !onlyHotDealsRef.current &&
+            !hideClosedDealsRef.current &&
+            !includeClosedDealsRef.current
           ) {
             try {
               const cached = localStorage.getItem("insightdeal_cached_deals");
               if (cached) {
                 const parsed = JSON.parse(cached);
                 if (Array.isArray(parsed) && parsed.length > 0) {
+                  dealsRef.current = parsed;
                   setDeals(parsed);
                 }
               }
             } catch {}
           } else {
+            dealsRef.current = [];
             setDeals([]);
           }
           setHasMore(false);
@@ -964,7 +1267,7 @@ export default function Home() {
         }
       }
     },
-    [showToast]
+    [reconcileWishlistsWithDeals, showToast]
   );
 
   const handleRefresh = async () => {
@@ -1138,6 +1441,53 @@ export default function Home() {
     fetchLiveDeals(true, 0, "전체", "전체", trimmed);
   };
 
+  const handleToggleOnlyHot = () => {
+    const next = !onlyHotDealsRef.current;
+    onlyHotDealsRef.current = next;
+    setOnlyHotDeals(next);
+    setIsFetchingMore(false);
+    setHasMore(true);
+    fetchLiveDeals(true, 0, activeTab, activePlatform, undefined, undefined, {
+      onlyHot: next,
+    });
+  };
+
+  const handleToggleHideClosed = () => {
+    const next = !hideClosedDealsRef.current;
+    hideClosedDealsRef.current = next;
+    setHideClosedDeals(next);
+    let nextInclude = includeClosedDealsRef.current;
+    if (next && nextInclude) {
+      nextInclude = false;
+      includeClosedDealsRef.current = false;
+      setIncludeClosedDeals(false);
+    }
+    setIsFetchingMore(false);
+    setHasMore(true);
+    fetchLiveDeals(true, 0, activeTab, activePlatform, undefined, undefined, {
+      hideClosed: next,
+      includeClosed: nextInclude,
+    });
+  };
+
+  const handleToggleIncludeClosed = () => {
+    const next = !includeClosedDealsRef.current;
+    includeClosedDealsRef.current = next;
+    setIncludeClosedDeals(next);
+    let nextHide = hideClosedDealsRef.current;
+    if (next && nextHide) {
+      nextHide = false;
+      hideClosedDealsRef.current = false;
+      setHideClosedDeals(false);
+    }
+    setIsFetchingMore(false);
+    setHasMore(true);
+    fetchLiveDeals(true, 0, activeTab, activePlatform, undefined, undefined, {
+      includeClosed: next,
+      hideClosed: nextHide,
+    });
+  };
+
   const handleResetAllFilters = () => {
     clearSearchDebounce();
     isComposingRef.current = false;
@@ -1145,14 +1495,22 @@ export default function Home() {
     updateAppliedSearch("");
     setActiveTab("전체");
     setActivePlatform("전체");
+    onlyHotDealsRef.current = false;
     setOnlyHotDeals(false);
+    hideClosedDealsRef.current = false;
     setHideClosedDeals(false);
+    includeClosedDealsRef.current = false;
+    setIncludeClosedDeals(false);
     sortByRef.current = "latest";
     setSortBy("latest");
     setIsFetchingMore(false);
     setDeals([]);
     setHasMore(true);
-    fetchLiveDeals(true, 0, "전체", "전체", "", "latest");
+    fetchLiveDeals(true, 0, "전체", "전체", "", "latest", {
+      onlyHot: false,
+      hideClosed: false,
+      includeClosed: false,
+    });
     showToast("필터를 초기화했어요");
   };
 
@@ -1162,6 +1520,7 @@ export default function Home() {
     activeTab !== "전체" ||
     onlyHotDeals ||
     hideClosedDeals ||
+    includeClosedDeals ||
     sortBy !== "latest";
 
   useEffect(() => {
@@ -1192,10 +1551,6 @@ export default function Home() {
         if (Number.isSafeInteger(parsedId) && parsedId > 0) {
           initialDealId = parsedId;
         }
-      }
-
-      if (localStorage.getItem("insightdeal_hide_kw_banner") === "1") {
-        setHideKeywordBanner(true);
       }
 
       const ua = navigator.userAgent || "";
@@ -1302,7 +1657,8 @@ export default function Home() {
       if (saved && !initialSharedKw) {
         try {
           cachedDeals = JSON.parse(saved);
-          if (cachedDeals && cachedDeals.length > 0) {
+          if (Array.isArray(cachedDeals) && cachedDeals.length > 0) {
+            dealsRef.current = cachedDeals;
             setDeals(cachedDeals);
             setLoading(false);
           }
@@ -1312,18 +1668,6 @@ export default function Home() {
       const token = getOrCreateBrowserUserId();
       if (token) {
         setIsLoggedIn(true);
-        ensureWebDeviceAuth()
-          .then(() =>
-            authFetch(
-              (latestAuth) =>
-                `/api/users/notifications?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`
-            )
-          )
-          .then((r) => (r.ok ? r.json() : []))
-          .then((list) => {
-            if (Array.isArray(list)) setServerAlertCount(list.length);
-          })
-          .catch(() => {});
       }
       const savedWishlist = localStorage.getItem("insightdeal_wishlist");
       if (savedWishlist) {
@@ -1364,6 +1708,9 @@ export default function Home() {
           if (Array.isArray(parsed)) setRecentSearches(parsed.slice(0, 8));
         } catch {}
       }
+      if (token) {
+        void hydrateFromServer();
+      }
     }
 
     const initFetch = async () => {
@@ -1393,7 +1740,7 @@ export default function Home() {
         );
       }
     };
-  }, [clearSearchDebounce, fetchLiveDeals, getOrCreateBrowserUserId, updateAppliedSearch]);
+  }, [clearSearchDebounce, fetchLiveDeals, getOrCreateBrowserUserId, hydrateFromServer, updateAppliedSearch]);
 
   useEffect(() => {
     if (!isMounted || !hasMore || loading || isRefreshing) return;
@@ -1404,7 +1751,15 @@ export default function Home() {
           setIsFetchingMore(true);
           try {
             const currentOffset = deals.length;
-            await fetchLiveDeals(false, currentOffset, activeTab, activePlatform);
+            await fetchLiveDeals(
+              false,
+              currentOffset,
+              activeTab,
+              activePlatform,
+              undefined,
+              undefined,
+              { cursor: nextCursorRef.current }
+            );
           } finally {
             setIsFetchingMore(false);
           }
@@ -1431,89 +1786,6 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const handleTouchStart = (e: TouchEvent) => {
-      if (
-        selectedDeal ||
-        isWishlistOpen ||
-        isNotificationOpen ||
-        showPrivacyModal ||
-        showEulaModal ||
-        showLoginModal
-      ) {
-        isPullingRef.current = false;
-        return;
-      }
-      if (window.scrollY <= 0 && e.touches.length === 1) {
-        touchStartYRef.current = e.touches[0].clientY;
-        isPullingRef.current = true;
-      } else {
-        isPullingRef.current = false;
-      }
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (!isPullingRef.current || isRefreshing) return;
-      if (window.scrollY > 0) {
-        isPullingRef.current = false;
-        setPullOffset(0);
-        return;
-      }
-      const currentY = e.touches[0].clientY;
-      const diff = currentY - touchStartYRef.current;
-      if (diff > 0) {
-        const damped = Math.min(75, Math.pow(diff, 0.82) * 1.2);
-        setPullOffset(damped);
-      } else {
-        setPullOffset(0);
-      }
-    };
-
-    const handleTouchEnd = async () => {
-      if (!isPullingRef.current) return;
-      isPullingRef.current = false;
-      if (pullOffset >= 50 && !isRefreshing) {
-        setPullOffset(46);
-        setIsRefreshing(true);
-        setNewDealsCount(0);
-        try {
-          const ok = await fetchLiveDeals(false, 0, activeTab, activePlatform);
-          showToast(ok ? "최신 딜을 불러왔어요" : HOT_DEALS_ERROR_COPY);
-        } finally {
-          setIsRefreshing(false);
-          setPullOffset(0);
-        }
-      } else {
-        setPullOffset(0);
-      }
-    };
-
-    window.addEventListener("touchstart", handleTouchStart, { passive: true });
-    window.addEventListener("touchmove", handleTouchMove, { passive: true });
-    window.addEventListener("touchend", handleTouchEnd);
-
-    return () => {
-      window.removeEventListener("touchstart", handleTouchStart);
-      window.removeEventListener("touchmove", handleTouchMove);
-      window.removeEventListener("touchend", handleTouchEnd);
-    };
-  }, [
-    isRefreshing,
-    activeTab,
-    activePlatform,
-    pullOffset,
-    selectedDeal,
-    isWishlistOpen,
-    isNotificationOpen,
-    showPrivacyModal,
-    showEulaModal,
-    showLoginModal,
-    fetchLiveDeals,
-    showToast,
-  ]);
-
-  useEffect(() => {
     if (!isMounted || deals.length === 0) return;
 
     const checkInterval = setInterval(async () => {
@@ -1529,10 +1801,13 @@ export default function Home() {
         const queryParam = appliedSearch
           ? `&keyword=${encodeURIComponent(appliedSearch)}`
           : "";
+        const filterParams = `${onlyHotDeals ? "&only_hot=true" : ""}${
+          hideClosedDeals ? "&hide_closed=true" : ""
+        }${includeClosedDeals ? "&include_closed=true" : ""}`;
         const checkUrl = apiUrl(
           `/api/community/hot-deals?limit=8&offset=0${
             apiCategory ? `&category=${encodeURIComponent(apiCategory)}` : ""
-          }${platformParam}${queryParam}`
+          }${platformParam}${queryParam}${filterParams}`
         );
 
         const res = await fetch(checkUrl);
@@ -1554,12 +1829,16 @@ export default function Home() {
     }, 50000);
 
     return () => clearInterval(checkInterval);
-  }, [isMounted, deals, activeTab, activePlatform, appliedSearch]);
-
-  const getLiveTimeAgo = (dateStr?: string, fallback?: string) => {
-    if (!isMounted || currentTime <= 0) return fallback || "최근";
-    return formatRelativeTimeKo(dateStr, currentTime, fallback || "최근");
-  };
+  }, [
+    isMounted,
+    deals,
+    activeTab,
+    activePlatform,
+    appliedSearch,
+    onlyHotDeals,
+    hideClosedDeals,
+    includeClosedDeals,
+  ]);
 
   const filteredDeals = deals
     .filter((d) => {
@@ -1569,7 +1848,7 @@ export default function Home() {
         const commNames = (d.community_name || "")
           .split(",")
           .map((s) => s.trim());
-        const srcNames = (d.sources || []).map((s: DealSource) =>
+        const srcNames = (d.sources || []).map((s) =>
           String(s.site_name || "")
             .replace(/ - .*$/, "")
             .trim()
@@ -1627,38 +1906,13 @@ export default function Home() {
 
   return (
     <>
-      {(pullOffset > 0 || isRefreshing) && (
-        <div
-          className="ptr-spinner"
-          style={{
-            top: `calc(${Math.max(12, Math.min(84, pullOffset + 12))}px + env(safe-area-inset-top, 0px))`,
-            transition: isPullingRef.current
-              ? "none"
-              : "top 0.25s ease, opacity 0.25s ease",
-            opacity: isRefreshing ? 1 : Math.min(1, pullOffset / 40),
-          }}
-        >
-          <RefreshCw
-            size={16}
-            color="var(--accent)"
-            className={isRefreshing ? "spin-animation" : ""}
-            style={{
-              transform: isRefreshing
-                ? undefined
-                : `rotate(${pullOffset * 6}deg)`,
-              transition: isRefreshing ? undefined : "transform 0.05s linear",
-            }}
-          />
-        </div>
-      )}
-
       {newDealsCount > 0 && (
         <button
           type="button"
           onClick={handleScrollToTopAndRefresh}
           className="floating-new-deals-pill bounce-click"
         >
-          <RefreshCw size={14} />
+          <RefreshCw size={14} aria-hidden="true" />
           <span>새 핫딜 {newDealsCount}건 보기</span>
         </button>
       )}
@@ -1672,22 +1926,7 @@ export default function Home() {
             display: "inline-flex",
             alignItems: "center",
           }}
-          onClick={() => {
-            clearSearchDebounce();
-            isComposingRef.current = false;
-            setSearchQuery("");
-            updateAppliedSearch("");
-            setActiveTab("전체");
-            setActivePlatform("전체");
-            setOnlyHotDeals(false);
-            setHideClosedDeals(false);
-            sortByRef.current = "latest";
-            setSortBy("latest");
-            setIsFetchingMore(false);
-            setDeals([]);
-            setHasMore(true);
-            fetchLiveDeals(true, 0, "전체", "전체", "", "latest");
-          }}
+          onClick={handleResetAllFilters}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -1699,24 +1938,21 @@ export default function Home() {
             style={{ width: 30, height: 30, objectFit: "contain", display: "block" }}
           />
           <span>얼만데</span>
-          <span
-            style={{
-              background: "rgba(0, 184, 122, 0.14)",
-              color: "#009965",
-              fontSize: "0.68rem",
-              fontWeight: 800,
-              padding: "2px 6px",
-              borderRadius: "5px",
-              letterSpacing: "0.02em",
-              lineHeight: 1.2,
-            }}
-          >
-            LIVE
-          </span>
+          <span className="live-badge">LIVE</span>
         </button>
 
         <div className="nav-actions">
+          <ThemeToggle />
           <div className="global-counters">
+            <button
+              type="button"
+              className="counter-item bounce-click"
+              aria-label="기기 동기화 및 계정 연결"
+              onClick={() => setShowSyncModal(true)}
+            >
+              <Smartphone size={16} color="var(--text-sub)" aria-hidden="true" />
+              <span className="counter-label">기기 동기화</span>
+            </button>
             <button
               type="button"
               className="counter-item bounce-click"
@@ -1725,8 +1961,9 @@ export default function Home() {
             >
               <Heart
                 size={16}
-                color={wishlist.length > 0 ? "#EF4444" : "var(--text-sub)"}
-                fill={wishlist.length > 0 ? "#EF4444" : "none"}
+                color={wishlist.length > 0 ? "var(--danger-text)" : "var(--text-sub)"}
+                fill={wishlist.length > 0 ? "var(--danger-text)" : "none"}
+                aria-hidden="true"
               />
               <span className="counter-label">찜</span>
               {wishlist.length > 0 && (
@@ -1753,6 +1990,7 @@ export default function Home() {
                     ? "var(--accent)"
                     : "none"
                 }
+                aria-hidden="true"
               />
               <span className="counter-label">알림 내역</span>
               {alerts.length + serverAlertCount > 0 && (
@@ -1767,7 +2005,7 @@ export default function Home() {
               aria-label="키워드 알림 설정"
               style={{ textDecoration: "none" }}
             >
-              <Settings size={16} color="var(--text-sub)" />
+              <Settings size={16} color="var(--text-sub)" aria-hidden="true" />
               <span className="counter-label">키워드 알림</span>
             </Link>
           </div>
@@ -1778,7 +2016,7 @@ export default function Home() {
               aria-label="앱 설치"
               onClick={handleInstallApp}
             >
-              <Download size={17} />
+              <Download size={17} aria-hidden="true" />
               <span>앱 설치</span>
             </button>
           )}
@@ -1786,118 +2024,8 @@ export default function Home() {
       </header>
 
       <div className="web-container">
-        <section style={{ padding: "16px 0 80px 0" }}>
-          {!hideKeywordBanner && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "4px 6px 4px 14px",
-                marginBottom: "16px",
-                borderRadius: "12px",
-                background: "var(--card-bg)",
-                border: "1px solid var(--card-border)",
-                boxShadow: "var(--glass-shadow)",
-                gap: "8px",
-              }}
-            >
-              <Link
-                href="/settings/notifications"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  flex: 1,
-                  minHeight: "44px",
-                  textDecoration: "none",
-                  gap: "10px",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "26px",
-                      height: "26px",
-                      borderRadius: "8px",
-                      background: "var(--deal-orange-bg)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Bell
-                      size={14}
-                      strokeWidth={2.3}
-                      color="var(--deal-orange)"
-                    />
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: "0.88rem",
-                        color: "var(--text-main)",
-                        fontWeight: 700,
-                      }}
-                    >
-                      찾는 상품 키워드 알림 받기
-                    </span>
-                    <span
-                      style={{
-                        fontSize: "0.8rem",
-                        color: "var(--text-sub)",
-                        fontWeight: 500,
-                      }}
-                    >
-                      새 특가가 올라오면 바로 알려드려요
-                    </span>
-                  </div>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "2px",
-                    fontWeight: 700,
-                    fontSize: "0.82rem",
-                    color: "var(--deal-orange)",
-                    flexShrink: 0,
-                  }}
-                >
-                  설정 <ChevronRight size={15} />
-                </div>
-              </Link>
-              <button
-                type="button"
-                aria-label="배너 닫기"
-                title="배너 닫기"
-                className="banner-close-btn"
-                onClick={() => {
-                  setHideKeywordBanner(true);
-                  if (typeof window !== "undefined") {
-                    localStorage.setItem("insightdeal_hide_kw_banner", "1");
-                  }
-                }}
-              >
-                <X size={16} />
-              </button>
-            </div>
-          )}
-
+        <InAppBrowserBanner onShowToast={showToast} />
+        <section style={{ padding: "10px 0 80px 0" }}>
           <div
             style={{
               display: "flex",
@@ -1920,8 +2048,7 @@ export default function Home() {
                 실시간 핫딜 모아보기
               </h1>
               <p style={{ color: "var(--text-sub)", fontSize: "0.9rem" }}>
-                뽐뿌 · 펨코 · 루리웹 · 퀘이사존 · 클리앙 · 빠삭의 특가를 한곳에서
-                비교하세요
+                11개 주요 커뮤니티의 실시간 핫딜을 한곳에서 모아보세요
               </p>
             </div>
 
@@ -1935,7 +2062,8 @@ export default function Home() {
             >
               <button
                 type="button"
-                onClick={() => setOnlyHotDeals((prev) => !prev)}
+                aria-pressed={onlyHotDeals}
+                onClick={handleToggleOnlyHot}
                 className="filter-chip-btn bounce-click"
                 style={{
                   background: onlyHotDeals
@@ -1947,17 +2075,18 @@ export default function Home() {
                     : "1px solid var(--card-border)",
                 }}
               >
-                <Flame size={14} />
+                <Flame size={14} aria-hidden="true" />
                 <span>인기 딜만</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => setHideClosedDeals((prev) => !prev)}
+                aria-pressed={hideClosedDeals}
+                onClick={handleToggleHideClosed}
                 className="filter-chip-btn bounce-click"
                 style={{
                   background: hideClosedDeals
-                    ? "rgba(var(--accent-rgb), 0.1)"
+                    ? "var(--accent-soft-bg)"
                     : "var(--card-bg)",
                   color: hideClosedDeals ? "var(--accent)" : "var(--text-sub)",
                   border: hideClosedDeals
@@ -1966,6 +2095,24 @@ export default function Home() {
                 }}
               >
                 품절 숨기기
+              </button>
+
+              <button
+                type="button"
+                aria-pressed={includeClosedDeals}
+                onClick={handleToggleIncludeClosed}
+                className="filter-chip-btn bounce-click"
+                style={{
+                  background: includeClosedDeals
+                    ? "var(--secondary-soft-bg)"
+                    : "var(--card-bg)",
+                  color: includeClosedDeals ? "var(--secondary)" : "var(--text-sub)",
+                  border: includeClosedDeals
+                    ? "1px solid var(--secondary)"
+                    : "1px solid var(--card-border)",
+                }}
+              >
+                종료딜 포함
               </button>
 
               <div className="sort-segment-group" role="group" aria-label="정렬 기준">
@@ -1981,11 +2128,12 @@ export default function Home() {
                     <button
                       key={opt.key}
                       type="button"
+                      aria-pressed={active}
                       className="sort-segment-btn"
                       onClick={() => handleSortChange(opt.key)}
                       style={{
                         background: active ? "var(--accent)" : "transparent",
-                        color: active ? "#FFFFFF" : "var(--text-sub)",
+                        color: active ? "var(--on-accent)" : "var(--text-sub)",
                         fontWeight: active ? 700 : 600,
                       }}
                     >
@@ -2001,12 +2149,12 @@ export default function Home() {
                   className="filter-chip-btn bounce-click"
                   onClick={handleResetAllFilters}
                   style={{
-                    background: "rgba(var(--accent-rgb), 0.1)",
+                    background: "var(--accent-soft-bg)",
                     color: "var(--accent)",
-                    border: "1px solid rgba(var(--accent-rgb), 0.3)",
+                    border: "1px solid var(--accent-soft-border)",
                   }}
                 >
-                  <RotateCcw size={13} />
+                  <RotateCcw size={13} aria-hidden="true" />
                   <span>초기화</span>
                 </button>
               )}
@@ -2027,6 +2175,7 @@ export default function Home() {
                 <RefreshCw
                   size={14}
                   color="var(--accent)"
+                  aria-hidden="true"
                   className={isRefreshing ? "spin-animation" : ""}
                 />
                 <span>새로고침</span>
@@ -2138,9 +2287,11 @@ export default function Home() {
                         onClick={() => handleSelectPopularKeyword(kw)}
                         style={{
                           cursor: "pointer",
+                          minWidth: "44px",
                           minHeight: "44px",
                           display: "inline-flex",
                           alignItems: "center",
+                          justifyContent: "center",
                           paddingRight: "4px",
                           fontWeight: "inherit",
                           fontSize: "inherit",
@@ -2229,13 +2380,14 @@ export default function Home() {
                 onClick={() => handleQuickSubscribeKeyword(searchQuery)}
                 className="bounce-click"
                 style={{
-                  minHeight: "40px",
+                  minHeight: "44px",
+                  minWidth: "44px",
                   padding: "8px 14px",
                   borderRadius: "10px",
                   background: "var(--accent)",
-                  color: "#FFFFFF",
+                  color: "var(--on-accent)",
                   fontWeight: 700,
-                  fontSize: "0.8rem",
+                  fontSize: "0.82rem",
                   border: "none",
                   cursor: "pointer",
                 }}
@@ -2253,19 +2405,20 @@ export default function Home() {
             onSelectKeyword={handleSelectPopularKeyword}
           />
 
-          <div className="platform-chips-row">
+          <div className="platform-chips-row" role="group" aria-label="커뮤니티 필터">
             {PLATFORMS.map((platform) => {
               const isSelected = activePlatform === platform;
               return (
                 <button
                   key={platform}
                   type="button"
+                  aria-pressed={isSelected}
                   onClick={() => handlePlatformChange(platform)}
                   className="platform-chip bounce-click"
                   style={{
                     fontWeight: isSelected ? 700 : 600,
                     background: isSelected ? "var(--accent)" : "var(--card-bg)",
-                    color: isSelected ? "#FFFFFF" : "var(--text-sub)",
+                    color: isSelected ? "var(--on-accent)" : "var(--text-sub)",
                     border: isSelected
                       ? "1px solid var(--accent)"
                       : "1px solid var(--card-border)",
@@ -2278,19 +2431,21 @@ export default function Home() {
           </div>
 
           <div className="tabs-container">
-            <div className="tabs">
-              {categories.map((cat) => (
-                <button
-                  key={cat.key}
-                  type="button"
-                  className={`tab bounce-click ${
-                    activeTab === cat.key ? "active" : ""
-                  }`}
-                  onClick={() => handleTabChange(cat.key)}
-                >
-                  {cat.label}
-                </button>
-              ))}
+            <div className="tabs" role="group" aria-label="카테고리 필터">
+              {categories.map((cat) => {
+                const isCatActive = activeTab === cat.key;
+                return (
+                  <button
+                    key={cat.key}
+                    type="button"
+                    aria-pressed={isCatActive}
+                    className={`tab bounce-click ${isCatActive ? "active" : ""}`}
+                    onClick={() => handleTabChange(cat.key)}
+                  >
+                    {cat.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -2338,16 +2493,16 @@ export default function Home() {
                       gap: "4px",
                       padding: "6px 12px",
                       borderRadius: "999px",
-                      background: "rgba(var(--accent-rgb), 0.1)",
+                      background: "var(--accent-soft-bg)",
                       color: "var(--accent)",
-                      border: "1px solid rgba(var(--accent-rgb), 0.28)",
+                      border: "1px solid var(--accent-soft-border)",
                       fontSize: "0.76rem",
                       fontWeight: 700,
                       cursor: "pointer",
                     }}
                   >
                     <span>검색: {appliedSearch}</span>
-                    <X size={12} />
+                    <X size={12} aria-hidden="true" />
                   </button>
                 )}
                 {activePlatform !== "전체" && (
@@ -2370,7 +2525,7 @@ export default function Home() {
                     }}
                   >
                     <span>커뮤니티: {activePlatform}</span>
-                    <X size={12} />
+                    <X size={12} aria-hidden="true" />
                   </button>
                 )}
                 {activeTab !== "전체" && (
@@ -2397,7 +2552,7 @@ export default function Home() {
                       {categories.find((c) => c.key === activeTab)?.label ||
                         activeTab}
                     </span>
-                    <X size={12} />
+                    <X size={12} aria-hidden="true" />
                   </button>
                 )}
                 {onlyHotDeals && (
@@ -2422,6 +2577,17 @@ export default function Home() {
                     · 품절 숨김
                   </span>
                 )}
+                {includeClosedDeals && (
+                  <span
+                    style={{
+                      fontSize: "0.76rem",
+                      fontWeight: 700,
+                      color: "var(--secondary)",
+                    }}
+                  >
+                    · 종료딜 포함
+                  </span>
+                )}
               </div>
               <button
                 type="button"
@@ -2442,7 +2608,7 @@ export default function Home() {
                   cursor: "pointer",
                 }}
               >
-                <RotateCcw size={12} />
+                <RotateCcw size={12} aria-hidden="true" />
                 <span>전체 초기화</span>
               </button>
             </div>
@@ -2460,9 +2626,9 @@ export default function Home() {
                 padding: "10px 14px",
                 marginBottom: "16px",
                 borderRadius: "12px",
-                background: "rgba(239, 68, 68, 0.08)",
-                border: "1px solid rgba(239, 68, 68, 0.28)",
-                color: "#EF4444",
+                background: "var(--danger-bg)",
+                border: "1px solid var(--danger-border)",
+                color: "var(--danger-text)",
                 fontSize: "0.84rem",
                 fontWeight: 700,
               }}
@@ -2478,10 +2644,10 @@ export default function Home() {
                 }
                 className="btn-primary bounce-click"
                 style={{
-                  minHeight: "38px",
-                  padding: "6px 14px",
+                  minHeight: "44px",
+                  padding: "8px 14px",
                   borderRadius: "10px",
-                  fontSize: "0.8rem",
+                  fontSize: "0.82rem",
                 }}
               >
                 다시 시도
@@ -2507,7 +2673,7 @@ export default function Home() {
                 }}
               >
                 {fetchError && !loading && (
-                  <AlertCircle size={28} color="#EF4444" aria-hidden="true" />
+                  <AlertCircle size={28} color="var(--danger-text)" aria-hidden="true" />
                 )}
                 <p
                   style={{
@@ -2532,6 +2698,7 @@ export default function Home() {
                     className="btn-primary bounce-click"
                     style={{
                       marginTop: "4px",
+                      minHeight: "44px",
                       padding: "10px 18px",
                       borderRadius: "12px",
                       fontSize: "0.85rem",
@@ -2559,12 +2726,13 @@ export default function Home() {
                         className="btn-primary bounce-click"
                         style={{
                           marginTop: "4px",
+                          minHeight: "44px",
                           padding: "10px 18px",
                           borderRadius: "12px",
                           fontSize: "0.85rem",
                         }}
                       >
-                        <RotateCcw size={15} />
+                        <RotateCcw size={15} aria-hidden="true" />
                         <span>필터 초기화</span>
                       </button>
                     </>
@@ -2572,409 +2740,22 @@ export default function Home() {
                 )}
               </div>
             ) : (
-              filteredDeals.map((deal) => {
-                const isWishlisted = wishlist.includes(deal.id);
-                const isAlertSet = alerts.includes(deal.id);
-
-                const hasValidEcommerceLink =
-                  deal.ecommerce_url &&
-                  deal.ecommerce_url !== "#" &&
-                  String(deal.ecommerce_url).trim() !== "";
-                const outboundTarget = hasValidEcommerceLink
-                  ? resolveOutboundUrl(deal.ecommerce_url)
-                  : deal.post_link && deal.post_link !== "#"
-                    ? resolveOutboundUrl(deal.post_link)
-                    : "#";
-
-                const optionSources = getOptionSources(
-                  deal.sources,
-                  deal.options_data
-                );
-                const optionCount = deal.options_count || optionSources.length;
-                const isMultiDeal = Boolean(
-                  deal.has_options || optionCount >= 2
-                );
-                const displayCount =
-                  optionCount >= 2 ? optionCount : deal.has_options ? 2 : 0;
-
-                const shopBadge = resolveDealShopName({
-                  shop_name: deal.shop_name,
-                  title: deal.title,
-                  ecommerce_url: deal.ecommerce_url,
-                });
-                const displayTitle = stripLeadingShopBracket(
-                  deal.title,
-                  shopBadge
-                );
-                const displayShipping = deal.shipping_fee
-                  ? decodeHtmlEntities(deal.shipping_fee)
-                  : null;
-
-                const badgeSources: DealSource[] =
-                  deal.sources && deal.sources.length > 0
-                    ? deal.sources
-                    : deal.community_name.split(", ").map((cName) => ({
-                        site_name: cName,
-                        post_url: deal.post_link,
-                      }));
-
-                const uniqueBadgeSources: DealSource[] = [];
-                badgeSources.forEach((src: DealSource) => {
-                  const nameClean = src.site_name
-                    ? src.site_name.replace(/ - .*$/, "").trim()
-                    : "";
-                  if (
-                    !uniqueBadgeSources.some(
-                      (x: DealSource) =>
-                        (x.site_name
-                          ? x.site_name.replace(/ - .*$/, "").trim()
-                          : "") === nameClean
-                    )
-                  ) {
-                    uniqueBadgeSources.push(src);
-                  }
-                });
-
-                return (
-                  <article
-                    key={deal.id}
-                    className="glass-panel deal-card"
-                    style={
-                      deal.isClosed
-                        ? { opacity: 0.6, filter: "grayscale(0.5)" }
-                        : undefined
-                    }
-                  >
-                    {/* 1. 본문 클릭 영역 (비인터랙티브 자식만 포함 -> 상세 모달 오픈) */}
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className="deal-card-body-trigger"
-                      aria-label={`${displayTitle} 상세 정보 보기`}
-                      onClick={() => setSelectedDeal(deal)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          setSelectedDeal(deal);
-                        }
-                      }}
-                    >
-                      <div className="deal-image-wrapper">
-                        {deal.image_url ? (
-                          <img
-                            src={getProxyImageUrl(deal.image_url, { width: 400 })}
-                            alt={displayTitle}
-                            className="deal-image"
-                            loading="lazy"
-                            referrerPolicy="no-referrer"
-                            onError={(e) => {
-                              const fallback = getFallbackProxyImageUrl(
-                                deal.image_url
-                              );
-                              if (fallback && e.currentTarget.src !== fallback) {
-                                e.currentTarget.src = fallback;
-                              }
-                            }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              color: "var(--text-sub)",
-                              background: "var(--badge-bg)",
-                              fontSize: "0.8rem",
-                              fontWeight: 600,
-                            }}
-                          >
-                            이미지 없음
-                          </div>
-                        )}
-
-                        {isMultiDeal && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              bottom: "8px",
-                              left: "8px",
-                              background: "rgba(25, 31, 40, 0.78)",
-                              backdropFilter: "blur(6px)",
-                              color: "#FFFFFF",
-                              border: "1px solid rgba(255, 255, 255, 0.14)",
-                              padding: "3px 8px",
-                              borderRadius: "6px",
-                              fontSize: "0.72rem",
-                              fontWeight: 700,
-                              display: "inline-flex",
-                              alignItems: "center",
-                              zIndex: 2,
-                            }}
-                          >
-                            <span>
-                              {displayCount >= 2
-                                ? `${displayCount}종 옵션`
-                                : "옵션 상품"}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      <h3 className="deal-title">
-                        <HighlightedTitle
-                          title={displayTitle}
-                          query={appliedSearch}
-                        />
-                      </h3>
-                    </div>
-
-                    {/* 2. 출처 링크 + 쇼핑몰 + 시간 메타 바 (본문 트리거의 형제 요소) */}
-                    <div className="deal-info">
-                      <div className="deal-meta">
-                        {uniqueBadgeSources.map(
-                          (source: DealSource, idx: number) => {
-                            const displaySiteName = source.site_name
-                              ? source.site_name.replace(/ - .*$/, "").trim()
-                              : "";
-                            const targetPostUrl = source.post_url || deal.post_link;
-                            const hasPostUrl = Boolean(
-                              targetPostUrl && targetPostUrl !== "#"
-                            );
-                            const resolvedPostUrl = hasPostUrl
-                              ? resolveOutboundUrl(targetPostUrl)
-                              : "#";
-                            return hasPostUrl ? (
-                              <a
-                                key={idx}
-                                href={resolvedPostUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="deal-source deal-source-link"
-                                title={`${displaySiteName} 원본 글 보기`}
-                                onClick={(e) => {
-                                  openExternalUrlInToss(resolvedPostUrl, e);
-                                }}
-                                style={{
-                                  border:
-                                    "1px solid rgba(var(--accent-rgb), 0.18)",
-                                }}
-                              >
-                                {displaySiteName}
-                              </a>
-                            ) : (
-                              <span key={idx} className="deal-source">
-                                {displaySiteName}
-                              </span>
-                            );
-                          }
-                        )}
-                        {shopBadge && (
-                          <span
-                            style={{
-                              fontSize: "0.72rem",
-                              fontWeight: 700,
-                              color: "var(--text-main)",
-                              background: "var(--badge-bg)",
-                              border: "1px solid var(--card-border)",
-                              padding: "2px 7px",
-                              borderRadius: "5px",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              lineHeight: 1.3,
-                            }}
-                          >
-                            {shopBadge}
-                          </span>
-                        )}
-                        <span>·</span>
-                        <span>
-                          {getLiveTimeAgo(deal.originalDate, deal.scraped_at)}
-                        </span>
-                      </div>
-
-                      {/* 3. 가격 + 배지(중복 N종 옵션 배지 제거) + 찜/알림/공유 액션 */}
-                      <div className="price-section">
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "baseline",
-                            gap: "6px",
-                            flexWrap: "wrap",
-                            minWidth: 0,
-                          }}
-                        >
-                          <span className="deal-price">
-                            {deal.isFree
-                              ? "0원 (무료)"
-                              : formatPrice(deal.price, deal.currency, deal.title)}
-                          </span>
-                          {deal.isClosed ? (
-                            <span
-                              className="deal-tag"
-                              style={{
-                                background: "var(--badge-bg)",
-                                color: "var(--text-muted)",
-                              }}
-                            >
-                              종료
-                            </span>
-                          ) : (
-                            (deal.honeyScore || 0) >= 100 && (
-                              <span
-                                className="deal-tag"
-                                style={{
-                                  background: "var(--deal-orange-bg)",
-                                  color: "var(--deal-orange)",
-                                }}
-                              >
-                                인기
-                              </span>
-                            )
-                          )}
-                          {displayShipping && !deal.isClosed && (
-                            <span
-                              className="deal-tag"
-                              style={{
-                                background: "rgba(var(--accent-rgb), 0.1)",
-                                color: "var(--accent)",
-                              }}
-                            >
-                              {displayShipping}
-                            </span>
-                          )}
-                          {!deal.isClosed &&
-                            deal.tags &&
-                            deal.tags.map((tag, tIdx) => {
-                              const cleanTag = decodeHtmlEntities(String(tag))
-                                .replace(
-                                  /^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]+\s*/gu,
-                                  ""
-                                )
-                                .trim();
-                              if (!cleanTag) return null;
-                              if (
-                                shopBadge &&
-                                normalizeMallAlias(cleanTag) === shopBadge
-                              ) {
-                                return null;
-                              }
-                              if (
-                                isNonMallLabel(cleanTag) &&
-                                cleanTag !== "역대가" &&
-                                cleanTag !== "할인코드"
-                              ) {
-                                return null;
-                              }
-                              return (
-                                <span
-                                  key={tIdx}
-                                  className="deal-tag"
-                                  style={{
-                                    background: "var(--badge-bg)",
-                                    color: "var(--badge-text)",
-                                    border: "1px solid var(--card-border)",
-                                  }}
-                                >
-                                  {cleanTag}
-                                </span>
-                              );
-                            })}
-                        </div>
-
-                        <div className="deal-card-actions">
-                          <button
-                            type="button"
-                            onClick={(e) => handleShareDeal(e, deal)}
-                            className="deal-card-icon-btn bounce-click"
-                            aria-label="공유하기"
-                            title="공유하기"
-                          >
-                            <Share2 size={18} color="var(--text-sub)" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => toggleAlert(e, deal.id)}
-                            className="deal-card-icon-btn bounce-click"
-                            aria-label="가격 알림 설정"
-                            title="가격 알림"
-                          >
-                            <Bell
-                              size={18}
-                              color={
-                                isAlertSet ? "var(--accent)" : "var(--text-sub)"
-                              }
-                              fill={isAlertSet ? "var(--accent)" : "none"}
-                            />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => toggleWishlist(e, deal.id)}
-                            className="deal-card-icon-btn bounce-click"
-                            aria-label="찜하기"
-                            title="찜하기"
-                          >
-                            <Heart
-                              size={18}
-                              color={isWishlisted ? "#EF4444" : "var(--text-sub)"}
-                              fill={isWishlisted ? "#EF4444" : "none"}
-                            />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* 4. 하단 독립 2버튼: 상세 보기 <button> + 독립 형제 <a> 바로구매 (44px+ 터치 타깃) */}
-                      <div className="deal-card-footer-actions">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedDeal(deal)}
-                          className="deal-card-detail-btn bounce-click"
-                        >
-                          <span>상세 · 의견 보기</span>
-                        </button>
-                        <a
-                          href={outboundTarget}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn-primary bounce-click deal-card-buy-link"
-                          aria-label={`${displayTitle} ${
-                            deal.isSearchFallback
-                              ? "쇼핑몰 검색 결과 보기"
-                              : "바로구매"
-                          } (새 창)`}
-                          onClick={(e) => {
-                            if (!outboundTarget || outboundTarget === "#") {
-                              e.preventDefault();
-                              showToast("이동할 수 있는 상품 주소를 찾지 못했어요");
-                              return;
-                            }
-                            if (!hasValidEcommerceLink) {
-                              showToast(
-                                "구매처 바로가기가 없어 원본 게시글로 이동해요"
-                              );
-                            }
-                            trackOutboundClick(
-                              outboundTarget,
-                              deal.id,
-                              deal.price,
-                              deal.currency
-                            );
-                            openExternalUrlInToss(outboundTarget, e);
-                          }}
-                        >
-                          <span>
-                            {deal.isSearchFallback
-                              ? "검색 결과 보기"
-                              : "바로구매"}
-                          </span>
-                          <ExternalLink size={14} aria-hidden="true" />
-                        </a>
-                      </div>
-                    </div>
-                  </article>
-                );
-              })
+              filteredDeals.map((deal) => (
+                <DealCard
+                  key={deal.id}
+                  deal={deal}
+                  appliedSearch={appliedSearch}
+                  isMounted={isMounted}
+                  currentTime={currentTime}
+                  isWishlisted={wishlist.includes(deal.id)}
+                  isAlertSet={alerts.includes(deal.id)}
+                  onSelectDeal={(selected) => setSelectedDeal(selected)}
+                  onShareDeal={handleShareDeal}
+                  onToggleAlert={toggleAlert}
+                  onToggleWishlist={toggleWishlist}
+                  onShowToast={showToast}
+                />
+              ))
             )}
           </div>
 
@@ -3013,7 +2794,9 @@ export default function Home() {
           )}
         </section>
 
-        {toastMessage && <div className="toast">{toastMessage}</div>}
+        <div role="status" aria-live="polite" aria-atomic="true">
+          {toastMessage && <div className="toast">{toastMessage}</div>}
+        </div>
 
         <footer className="footer">
           <div
@@ -3056,9 +2839,9 @@ export default function Home() {
                 type="button"
                 className="footer-link-btn"
                 onClick={() => setIsWishlistOpen(true)}
-                style={{ color: "#EF4444", fontWeight: 700 }}
+                style={{ color: "var(--danger-text)", fontWeight: 700 }}
               >
-                <Heart size={14} fill="#EF4444" />
+                <Heart size={14} fill="var(--danger-text)" aria-hidden="true" />
                 <span>내 찜 목록</span>
               </button>
               <span style={{ color: "var(--card-border)" }}>|</span>
@@ -3093,8 +2876,13 @@ export default function Home() {
         onClose={() => setSelectedDeal(null)}
         showToast={showToast}
         onTargetAlertSaved={(dealId) => {
+          hydrateEpochRef.current += 1;
+          if (!wishlistRef.current.includes(dealId)) {
+            unwishlistedDealIdsRef.current.add(dealId);
+          }
           applyAlertAdd(dealId);
         }}
+        onDealClosed={handleDealClosed}
       />
 
       <NotificationDrawer
@@ -3102,6 +2890,7 @@ export default function Home() {
         onClose={() => setIsNotificationOpen(false)}
         deals={deals}
         onSelectDeal={(deal) => setSelectedDeal(deal)}
+        onSearchKeyword={(kw) => handleSelectPopularKeyword(kw)}
         onServerAlertCountChange={(cnt) => setServerAlertCount(cnt)}
       />
 
@@ -3109,19 +2898,23 @@ export default function Home() {
         isOpen={isWishlistOpen}
         onClose={() => setIsWishlistOpen(false)}
         wishlistDeals={wishlistDeals}
+        serverWishlists={serverWishlists}
         onRemoveDeal={toggleWishlist}
+        onRemoveServerWishlist={handleRemoveServerWishlist}
         onSelectDeal={(deal) => {
           setIsWishlistOpen(false);
           setSelectedDeal(deal);
         }}
+        onSearchKeyword={(kw) => handleSelectPopularKeyword(kw)}
         isLoggedIn={isLoggedIn}
         onLoginSimulate={handleLoginSimulate}
       />
 
-      <LoginPromptModal
-        isOpen={showLoginModal}
-        onClose={() => setShowLoginModal(false)}
-        onActivateGuest={handleLoginSimulate}
+      <DeviceSyncModal
+        isOpen={showSyncModal}
+        onClose={() => setShowSyncModal(false)}
+        onSyncComplete={hydrateFromServer}
+        onShowToast={showToast}
       />
 
       <PrivacyModal

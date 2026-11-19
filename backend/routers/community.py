@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from backend.database.session import get_db_session
 from fastapi.responses import StreamingResponse
 import hmac
+import html as _html
 import httpx
 from backend.database import models
 from backend.core.categories import normalize_category_key
 from backend.core.device_auth import assert_device_owner, require_device_token
+from backend.core.url_utils import is_safe_external_url, is_search_or_community_url
 from backend.core.utils import to_utc_iso
 from backend.routers.admin import _verify_admin_key
 import logging
@@ -15,6 +17,7 @@ import os
 import re
 import requests
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote as _unquote, urlsplit as _urlsplit, urlunsplit as _urlunsplit
 
 import json
 from pydantic import BaseModel
@@ -111,16 +114,277 @@ def _safe_loaded_attr(obj, attr_name: str, default=""):
     return val if val is not None else default
 
 _COMMUNITY_ID_CACHE: dict[int, str] = {}
+_COMMUNITY_DISPLAY_MAP: dict[str, str] = {
+    "fmkorea": "펨코",
+    "ppomppu": "뽐뿌",
+    "ppomppu_overseas": "뽐뿌해외",
+    "ruliweb": "루리웹",
+    "clien": "클리앙",
+    "quasarzone": "퀘이사존",
+    "ali_ppomppu": "알리뽐뿌",
+    "bbasak_domestic": "빠삭국내",
+    "bbasak_overseas": "빠삭해외",
+    "bbasak_parenting": "빠삭육아",
+}
+
+_REPORT_CLOSED_THRESHOLD = 3
+_REPORT_CLOSED_HOURLY_LIMIT = 15
+_REPORT_CLOSED_WINDOW_SEC = 3600
+_REPORT_CLOSED_RATE_LIMIT: dict[str, list[float]] = {}
+
+
+def reset_rate_limits() -> None:
+    """테스트 및 런타임 격리용 커뮤니티 레이트리밋 초기화 훅"""
+    _REPORT_CLOSED_RATE_LIMIT.clear()
+
+
+clear_rate_limits = reset_rate_limits
+
+
+def _format_cursor_iso(dt: Optional[datetime]) -> Optional[str]:
+    """키셋 커서 정밀도(마이크로초 포함) 보존 ISO-8601 UTC 문자열 반환"""
+    if dt is None:
+        return None
+    if getattr(dt, "tzinfo", None) is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    if dt.microsecond:
+        return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _compute_is_search_fallback(clean_ecom_url: str, resolved_ecom_url: str) -> bool:
+    """직접 상품 링크가 없고 쇼핑몰 검색 폴백 링크로 우회된 경우 True 반환"""
+    if not clean_ecom_url and bool(resolved_ecom_url):
+        return True
+    if resolved_ecom_url and is_search_or_community_url(resolved_ecom_url):
+        return True
+    return False
+
+
+_DANGEROUS_IMAGE_URL_TOKENS = (
+    "javascript:",
+    "vbscript:",
+    "data:",
+    "<script",
+    "</script",
+    "onerror=",
+    "onload=",
+    "onclick=",
+    "onmouseover=",
+    "onfocus=",
+    "onblur=",
+    "eval(",
+    "expression(",
+    "<",
+    ">",
+    '"',
+    "'",
+    "user:pass@",
+)
+
+_PLACEHOLDER_IMAGE_TOKENS = (
+    "no_image.svg",
+    "thumb_no_image.svg",
+    "noimage",
+    "dot03.gif",
+    "logo_f.svg",
+    "49841804f3d132d75a6c11b1510af812.png",
+    "https:undefined",
+    "/web/upload/",
+    "emoticon",
+    "sticker",
+    "lazyloading",
+    "/t.gif",
+    "drag_img",
+    "spacer.",
+    "pixel.",
+    "blank.",
+    "1x1.",
+)
+
+
+# 알려진 HTML/DOM 이벤트 핸들러 및 속성 탈출 컨텍스트(공백·따옴표 등 뒤 임의 on*=) 차단용 정규식
+# (?ver=1&online=1, ?only=1, ?once=1, ?ongoing=1 등 정상 영단어 쿼리 키 오탐 방지)
+_KNOWN_DOM_EVENT_HANDLER_NAMES = (
+    "abort", "activate", "afterprint", "afterscriptexecute",
+    "animationcancel", "animationend", "animationiteration", "animationstart",
+    "auxclick", "beforeactivate", "beforecopy", "beforecut", "beforedeactivate",
+    "beforeinput", "beforematch", "beforepaste", "beforeprint",
+    "beforescriptexecute", "beforetoggle", "beforeunload", "begin", "blur",
+    "bounce", "cancel", "canplay", "canplaythrough", "change", "click", "close",
+    "contentvisibilityautostatechange", "contextmenu", "copy", "cuechange", "cut",
+    "dblclick", "deactivate", "drag", "dragend", "dragenter", "dragexit",
+    "dragleave", "dragover", "dragstart", "drop", "durationchange", "emptied",
+    "encrypted", "end", "ended", "error", "filterchange", "finish", "focus",
+    "focusin", "focusout", "formdata", "fullscreenchange", "fullscreenerror",
+    "gotpointercapture", "hashchange", "input", "invalid", "keydown", "keypress",
+    "keyup", "languagechange", "load", "loadeddata", "loadedmetadata", "loadend",
+    "loadstart", "lostpointercapture", "message", "messageerror", "mousedown",
+    "mouseenter", "mouseleave", "mousemove", "mouseout", "mouseover", "mouseup",
+    "mousewheel", "offline", "online", "open", "pagehide", "pagereveal",
+    "pageshow", "pageswap", "paste", "pause", "play", "playing", "pointercancel",
+    "pointerdown", "pointerenter", "pointerleave", "pointermove", "pointerout",
+    "pointerover", "pointerup", "popstate", "progress", "ratechange",
+    "readystatechange", "rejectionhandled", "repeat", "reset", "resize", "scroll",
+    "scrollend", "scrollsnapchange", "scrollsnapchanging", "search",
+    "securitypolicyviolation", "seeked", "seeking", "select", "selectionchange",
+    "selectstart", "show", "slotchange", "stalled", "start", "storage", "submit",
+    "suspend", "timeupdate", "toggle", "touchcancel", "touchend", "touchmove",
+    "touchstart", "transitioncancel", "transitionend", "transitionrun",
+    "transitionstart", "unhandledrejection", "unload", "visibilitychange",
+    "volumechange", "waiting", "waitingforkey", "webkitanimationend",
+    "webkitanimationiteration", "webkitanimationstart", "webkittransitionend",
+    "wheel",
+)
+_EVENT_HANDLER_ATTR_RE = re.compile(
+    r"(?:(?<![a-z0-9])on(?:" + "|".join(_KNOWN_DOM_EVENT_HANDLER_NAMES) + r")\s*=|(?:^|[\s\"'<>`])on[a-z]{2,24}\s*=)"
+)
+_SEMICOLON_HTML_ENTITY_RE = re.compile(r"&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#\d+|#[xX][0-9a-fA-F]+);")
+_SECURITY_HTML_ENTITY_RE = re.compile(r"&(?:[a-zA-Z][a-zA-Z0-9]{1,31};|#\d+;?|#[xX][0-9a-fA-F]+;?)")
+_IMG_TAG_RE = re.compile(r"<img\b([^>]*)>", flags=re.IGNORECASE)
+_IMG_ATTR_RE = re.compile(
+    r'(?:^|[\s/])(data-original|data-src|src)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s"\'<>`]+))',
+    flags=re.IGNORECASE,
+)
+
+
+def _unescape_semicolon_entities(text: str) -> str:
+    """HTML5 속성 값 파싱 규칙에 맞춰 명시적 세미콜론(;) 종결 엔티티만 1회 디코딩"""
+    return _SEMICOLON_HTML_ENTITY_RE.sub(lambda m: _html.unescape(m.group(0)), text)
+
+
+def _unescape_html_for_security(text: str) -> str:
+    """보안 검증용 HTML 엔티티 디코딩 (세미콜론 없는 &reg=/&lt= 오변환 방지, 숫자 문자 참조는 세미콜론 선택 허용)"""
+    return _SECURITY_HTML_ENTITY_RE.sub(lambda m: _html.unescape(m.group(0)), text)
+
+
+def _normalize_and_validate_body_image(raw_candidate: str) -> Optional[str]:
+    if not raw_candidate:
+        return None
+    # 반환용 URL 정제는 HTML5 속성 규칙에 따라 명시적 세미콜론 엔티티만 1회 디코딩
+    cand = _unescape_semicolon_entities(str(raw_candidate)).strip().rstrip(",)")
+    if not cand:
+        return None
+    if cand.startswith("//"):
+        cand = "https:" + cand
+    if len(cand) > 2048 or re.search(r"[\x00-\x1f\x7f\s<>\"'`\\]", cand):
+        return None
+    if not is_safe_external_url(cand):
+        return None
+
+    variants: list[str] = [cand]
+    seen_variants: set[str] = {cand}
+    cur = cand
+    # URL 디코딩과 HTML 엔티티 디코딩을 고정점까지 최대 16회 교차 적용하여 다중·혼합 인코딩 XSS 우회 차단
+    for _ in range(16):
+        unquoted = _unquote(cur)
+        unescaped = _unescape_html_for_security(unquoted)
+        progressed = False
+        for candidate_variant in (unquoted, unescaped):
+            if candidate_variant not in seen_variants:
+                seen_variants.add(candidate_variant)
+                variants.append(candidate_variant)
+                progressed = True
+        next_cur = unescaped if unescaped != cur else unquoted
+        if not progressed and next_cur == cur:
+            break
+        cur = next_cur
+
+    for variant in variants:
+        if re.search(r"[\x00-\x1f\x7f<>\"'`\\]", variant):
+            return None
+        if any(ch.isspace() and ch != " " for ch in variant):
+            return None
+        low_var = variant.lower()
+        if any(tok in low_var for tok in _DANGEROUS_IMAGE_URL_TOKENS):
+            return None
+        if _EVENT_HANDLER_ATTR_RE.search(low_var):
+            return None
+        if any(bad in low_var for bad in _PLACEHOLDER_IMAGE_TOKENS):
+            return None
+        if variant != cand:
+            try:
+                parsed_v = _urlsplit(variant)
+            except ValueError:
+                return None
+            if parsed_v.scheme.lower() not in ("http", "https") or not parsed_v.netloc:
+                return None
+            if any(ch.isspace() for ch in parsed_v.scheme) or any(ch.isspace() for ch in parsed_v.netloc):
+                return None
+            sanitized_variant = _urlunsplit((
+                parsed_v.scheme,
+                parsed_v.netloc,
+                parsed_v.path.replace(" ", "%20"),
+                parsed_v.query.replace(" ", "%20"),
+                parsed_v.fragment.replace(" ", "%20"),
+            ))
+            if not is_safe_external_url(sanitized_variant):
+                return None
+    return cand
+
+
+def _extract_body_images(raw_html: str) -> list[str]:
+    """본문 정제 전 원본 HTML/텍스트에서 안전한 다중 첨부 이미지를 추출·정규화·중복제거"""
+    if not raw_html:
+        return []
+    candidates: list[str] = []
+
+    for img_match in _IMG_TAG_RE.finditer(raw_html):
+        attrs_raw = img_match.group(1) or ""
+        attr_map: dict[str, str] = {}
+        for attr_match in _IMG_ATTR_RE.finditer(attrs_raw):
+            attr_name = (attr_match.group(1) or "").lower()
+            attr_val = attr_match.group(2) or attr_match.group(3) or attr_match.group(4) or ""
+            if attr_name and attr_name not in attr_map and attr_val.strip():
+                attr_map[attr_name] = attr_val
+        for preferred in ("data-original", "data-src", "src"):
+            if preferred in attr_map:
+                candidates.append(attr_map[preferred])
+                break
+
+    for m in re.finditer(r"\[상품이미지\s*:\s*([^\]]+)\]", raw_html, flags=re.IGNORECASE):
+        candidates.append(m.group(1))
+
+    for m in re.finditer(r"\[첨부된\s*이미지\s*링크들\]\s*:?\s*([^\n\r<]+)", raw_html, flags=re.IGNORECASE):
+        for part in re.split(r"[\s,]+", m.group(1)):
+            if part:
+                candidates.append(part)
+
+    results: list[str] = []
+    seen_unquoted: set[str] = set()
+    for raw_cand in candidates:
+        valid_url = _normalize_and_validate_body_image(raw_cand)
+        if not valid_url:
+            continue
+        dedup_key = _unquote(valid_url)
+        if dedup_key in seen_unquoted:
+            continue
+        seen_unquoted.add(dedup_key)
+        results.append(valid_url)
+        if len(results) >= 20:
+            break
+    return results
+
+
+def _merge_body_images(existing_imgs: list[str], new_imgs: list[str]) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for u in (existing_imgs or []) + (new_imgs or []):
+        k = _unquote(u)
+        if k not in seen:
+            seen.add(k)
+            merged.append(u)
+        if len(merged) >= 20:
+            break
+    return merged
+
 
 def get_community_display_name_by_id(cid: int, db=None) -> Optional[str]:
     if cid in _COMMUNITY_ID_CACHE:
         return _COMMUNITY_ID_CACHE[cid]
-    COMMUNITY_MAP = {
-        "fmkorea": "펨코", "ppomppu": "뽐뿌", "ruliweb": "루리웹",
-        "clien": "클리앙", "quasarzone": "퀘이사존", "ali_ppomppu": "알리뽐뿌",
-        "bbasak_domestic": "빠삭국내", "bbasak_overseas": "빠삭해외",
-        "bbasak_parenting": "빠삭육아"
-    }
+    COMMUNITY_MAP = _COMMUNITY_DISPLAY_MAP
     if db:
         try:
             all_comms = db.query(models.Community).all()
@@ -132,7 +396,8 @@ def get_community_display_name_by_id(cid: int, db=None) -> Optional[str]:
             logger.debug(f"get_community_display_name_by_id DB lookup fallback (cid={cid}): {exc}")
     fallback_id_map = {
         1: "뽐뿌", 2: "루리웹", 3: "클리앙", 4: "알리뽐뿌",
-        5: "퀘이사존", 6: "펨코", 7: "빠삭국내", 8: "빠삭해외", 9: "빠삭육아"
+        5: "퀘이사존", 6: "펨코", 7: "빠삭국내", 8: "빠삭해외", 9: "빠삭육아",
+        10: "뽐뿌해외",
     }
     return fallback_id_map.get(cid)
 
@@ -1028,6 +1293,8 @@ def build_dsu(deals, time_window_days=1):
             words_set = curr_words_set
             matched = False
             for cluster in name_clusters:
+                if curr_model and cluster.get('model_code') and curr_model != cluster['model_code']:
+                    continue
                 time_diff_ok = False
                 if deal_time:
                     for c_time in cluster.get('times', []):
@@ -1066,6 +1333,8 @@ def build_dsu(deals, time_window_days=1):
                         )
                     ):
                         dsu.union(deal.id, cluster['id'])
+                        if curr_model and not cluster.get('model_code'):
+                            cluster['model_code'] = curr_model
                         if deal_time:
                             cluster.setdefault('times', []).append(deal_time)
                         matched = True
@@ -1077,6 +1346,7 @@ def build_dsu(deals, time_window_days=1):
                     'words': words_set,
                     'core_words': curr_core_set,
                     'sc': curr_sc,
+                    'model_code': curr_model,
                     'price': curr_price,
                     'currency': curr_currency,
                     'times': [deal_time] if deal_time else []
@@ -1292,12 +1562,7 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
                 )
             ).order_by(models.Deal.indexed_at.desc()).limit(200).all()
 
-        COMMUNITY_MAP = {
-            "fmkorea": "펨코", "ppomppu": "뽐뿌", "ruliweb": "루리웹",
-            "clien": "클리앙", "quasarzone": "퀘이사존", "ali_ppomppu": "알리뽐뿌",
-            "bbasak_domestic": "빠삭국내", "bbasak_overseas": "빠삭해외",
-            "bbasak_parenting": "빠삭육아"
-        }
+        COMMUNITY_MAP = _COMMUNITY_DISPLAY_MAP
 
         cluster_map = {}
         grouped_result = []
@@ -1322,9 +1587,13 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
             cluster_key = dsu.find(deal.id)
             image_url = _resolve_best_image_url(deal, BASE_URL)
             serialized_opts = _serialize_options_data(getattr(deal, "options_data", None), deal.id)
+            deal_body_imgs = _extract_body_images(getattr(deal, "content_html", "") or "")
 
             if cluster_key in cluster_map:
                 existing = cluster_map[cluster_key]
+                merged_imgs = _merge_body_images(existing.get("body_images", []), deal_body_imgs)
+                existing["body_images"] = merged_imgs
+                existing["bodyImages"] = merged_imgs
                 if total_price > 0:
                     existing_krw = _to_krw_equiv(existing.get("total_price", 0), existing.get("currency", "KRW"))
                     cand_krw = _to_krw_equiv(total_price, resolved_currency)
@@ -1341,11 +1610,15 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
                         if image_url or not existing.get("image_url") or "ui-avatars.com" in (existing.get("image_url", "") or ""):
                             existing["image_url"] = image_url or existing.get("image_url")
                             
-                        new_ecom_url = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
+                        clean_top_ecom = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
+                        new_ecom_url = clean_top_ecom
                         if not new_ecom_url:
                             new_ecom_url = _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
                         if new_ecom_url or not existing.get("ecommerce_url"):
                             existing["ecommerce_url"] = new_ecom_url
+                            top_fb = _compute_is_search_fallback(clean_top_ecom, new_ecom_url)
+                            existing["is_search_fallback"] = top_fb
+                            existing["isSearchFallback"] = top_fb
                         new_shop = _resolve_canonical_shop_name(deal, new_ecom_url)
                         if new_shop or not existing.get("shop_name"):
                             existing["shop_name"] = new_shop
@@ -1396,7 +1669,9 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     buy_count += reaction.positive_reactions
                     save_count = reaction.negative_reactions
 
-                resolved_top_ecom = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi) or _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
+                clean_top_ecom = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
+                resolved_top_ecom = clean_top_ecom or _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
+                top_fallback = _compute_is_search_fallback(clean_top_ecom, resolved_top_ecom)
                 deal_dict = {
                     "id": deal.id,
                     "title": clean_title,
@@ -1426,6 +1701,10 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     "ai_summary": ai_sum,
                     "content_html": _clean_content_text(deal.content_html or "", clean_title),
                     "has_options": bool(getattr(deal, "has_options", False) or serialized_opts),
+                    "body_images": deal_body_imgs,
+                    "bodyImages": deal_body_imgs,
+                    "is_search_fallback": top_fallback,
+                    "isSearchFallback": top_fallback,
                 }
                 cluster_map[cluster_key] = deal_dict
                 grouped_result.append(deal_dict)
@@ -1471,39 +1750,91 @@ def get_hot_deals(
     source: Optional[str] = Query(None, description="커뮤니티/사이트 필터 (alias for platform)"),
     sort: str = Query("latest", description="정렬 기준: latest | popular | price_asc"),
     popular_only: bool = Query(False, description="인기 딜(honey_score >= 100)만 필터링"),
+    cursor_indexed_at: Optional[str] = Query(None, description="커서 기준 indexed_at (ISO-8601, latest 전용)"),
+    cursor_id: Optional[int] = Query(None, description="커서 기준 id (latest 전용)"),
+    include_closed: bool = Query(False, description="종료된 딜 포함 여부"),
+    only_hot: bool = Query(False, description="인기/슈퍼핫딜 필터"),
+    hide_closed: bool = Query(False, description="종료된 딜 강제 숨김 (include_closed보다 우선)"),
     db: Session = Depends(get_db_session)
 ):
     try:
+        from sqlalchemy import and_, not_, or_
         from sqlalchemy.orm import joinedload
+
+        if limit < 1 or limit > 1000:
+            raise HTTPException(status_code=400, detail="Invalid limit")
+        if offset < 0:
+            raise HTTPException(status_code=400, detail="Invalid offset")
+
+        if (cursor_indexed_at is None) != (cursor_id is None):
+            raise HTTPException(status_code=400, detail="Both cursor_indexed_at and cursor_id are required")
+        if cursor_id is not None and cursor_id <= 0:
+            raise HTTPException(status_code=400, detail="Invalid cursor_id")
+
+        cursor_dt: Optional[datetime] = None
+        if cursor_indexed_at is not None:
+            try:
+                parsed_cursor = datetime.fromisoformat(cursor_indexed_at.strip().replace("Z", "+00:00"))
+                cursor_dt = _to_utc_naive(parsed_cursor)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid cursor_indexed_at format")
+
+        effective_include_closed = bool(include_closed) and not bool(hide_closed)
+        effective_only_hot = bool(only_hot) or bool(popular_only)
+
         target_platform = platform or source
         now_ts = _feed_time.time()
         db_bind_id = id(db.get_bind())
         sort_mode = (sort or "latest").strip().lower()
         cat_raw = (category or "").strip()
-        cache_key = (db_bind_id, cat_raw, (keyword or "").strip(), (target_platform or "").strip(), sort_mode, bool(popular_only))
-        cached_entry = _HOT_DEALS_API_CACHE.get(cache_key)
-        if (
-            cached_entry is not None
-            and (now_ts - cached_entry["ts"]) < _FEED_CACHE_TTL_SEC
-        ):
-            cached_grouped = cached_entry["grouped"]
-            cached_slice = cached_grouped[offset:offset+limit]
-            return {
-                "deals": cached_slice,
-                "has_more": (offset + len(cached_slice)) < len(cached_grouped),
-            }
+        cache_key = (
+            db_bind_id,
+            cat_raw,
+            (keyword or "").strip(),
+            (target_platform or "").strip(),
+            sort_mode,
+            effective_only_hot,
+            effective_include_closed,
+        )
+        if cursor_dt is None:
+            cached_entry = _HOT_DEALS_API_CACHE.get(cache_key)
+            if (
+                cached_entry is not None
+                and (now_ts - cached_entry["ts"]) < _FEED_CACHE_TTL_SEC
+            ):
+                cached_grouped = cached_entry["grouped"]
+                is_exhausted = bool(cached_entry.get("exhausted", True))
+                if is_exhausted or (offset + limit < len(cached_grouped)):
+                    cached_slice = cached_grouped[offset:offset + limit]
+                    cached_has_more = (offset + len(cached_slice)) < len(cached_grouped)
+                    cached_next_cursor = None
+                    if sort_mode == "latest" and cached_has_more and cached_slice:
+                        cursors_map = cached_entry.get("cursors", {})
+                        cached_next_cursor = cursors_map.get(offset + len(cached_slice) - 1)
+                    return {
+                        "deals": cached_slice,
+                        "has_more": cached_has_more,
+                        "next_cursor": cached_next_cursor,
+                        "nextCursor": cached_next_cursor,
+                    }
 
         query = db.query(models.Deal).join(models.Community).options(
             joinedload(models.Deal.community),
             joinedload(models.Deal.deal_reactions)
         )
-        
-        # 블라인드 처리된 게시글 및 종료된 딜은 기본 목록에서 제외 (신뢰성 보존)
-        from sqlalchemy import not_
-        query = query.filter(
-            not_(models.Deal.title.like("%블라인드%")),
-            models.Deal.is_closed == False
-        )
+
+        # 블라인드 처리된 게시글 제외 + include_closed/hide_closed 반영
+        query = query.filter(not_(models.Deal.title.like("%블라인드%")))
+        if not effective_include_closed:
+            query = query.filter(models.Deal.is_closed == False)
+        if effective_only_hot:
+            query = query.filter(
+                or_(
+                    models.Deal.honey_score >= 100,
+                    models.Deal.is_super_hotdeal == True,
+                    models.Deal.like_count >= 8,
+                )
+            )
         
         if cat_raw and cat_raw != "전체":
             cat_lower = cat_raw.lower()
@@ -1756,265 +2087,433 @@ def get_hot_deals(
             if platform_conditions:
                 query = query.filter(or_(*platform_conditions))
             
-        # 넉넉하게 가져와서 파이썬 단에서 클러스터링
-        deals = query.order_by(models.Deal.indexed_at.desc()).limit(300).all()
-        matched_seed_ids = {d.id for d in deals}
+        # [300건 상한 해제 + latest 키셋 커서/popular 전수 페이징]
+        def _build_grouped_from_raw(raw_seed_list: list):
+            deals_all = list(raw_seed_list)
+            seed_ids = {d.id for d in raw_seed_list}
 
-        # [스마트 DSU 백필 가드 (DSU Backfill Guard)]
-        # 검색(keyword)이나 플랫폼 필터링 시 병합되어야 할 다른 커뮤니티 딜이 누락되는 현상 방지
-        # 단, 루트 도메인(https://ko.aliexpress.com/ 등) 공유로 무관한 딜이 섞이거나 클러스터링 실패 딜이 단독 노출되는 현상을 차단
-        _GENERIC_BROKEN_LINKS = {
-            "https://item.gmarket.co.kr/item",
-            "https://itempage3.auction.co.kr/detailview.aspx",
-            "https://bbs.ruliweb.com/link.php",
-            "https://www.11st.co.kr/product/sellerproductdetail.tmall",
-            "https://item.gmarket.co.kr/detailview/item.asp",
-            "https://www.hyundaihmall.com/front/shitemdetailr.do",
-            "https://click.linkprice.com/click.php",
-            "https://www.lotteimall.com/goods/viewgoodsdetail.lotte",
-        }
-        if deals and has_search_or_platform_filter:
-            from urllib.parse import urlparse as _urlparse
-            from backend.core.url_utils import extract_canonical_product_key
+            _GENERIC_BROKEN_LINKS = {
+                "https://item.gmarket.co.kr/item",
+                "https://itempage3.auction.co.kr/detailview.aspx",
+                "https://bbs.ruliweb.com/link.php",
+                "https://www.11st.co.kr/product/sellerproductdetail.tmall",
+                "https://item.gmarket.co.kr/detailview/item.asp",
+                "https://www.hyundaihmall.com/front/shitemdetailr.do",
+                "https://click.linkprice.com/click.php",
+                "https://www.lotteimall.com/goods/viewgoodsdetail.lotte",
+            }
+            if deals_all and has_search_or_platform_filter:
+                from urllib.parse import urlparse as _urlparse
+                from backend.core.url_utils import extract_canonical_product_key
 
-            ecom_links = []
-            for d in deals:
-                if d.ecommerce_link and len(d.ecommerce_link) > 15:
-                    link = d.ecommerce_link.strip()
-                    if link.lower() in _GENERIC_BROKEN_LINKS:
-                        continue
-                    if any(c in link.lower() for c in ["fmkorea.", "ppomppu.", "ruliweb.", "quasarzone.", "clien.", "bbasak."]):
-                        continue
-                    parsed_u = _urlparse(link)
-                    has_concrete_target = bool(
-                        extract_canonical_product_key(link)
-                        or (parsed_u.path and parsed_u.path.strip("/") != "")
+                ecom_links = []
+                for d in deals_all:
+                    if d.ecommerce_link and len(d.ecommerce_link) > 15:
+                        link = d.ecommerce_link.strip()
+                        if link.lower() in _GENERIC_BROKEN_LINKS:
+                            continue
+                        if any(c in link.lower() for c in ["fmkorea.", "ppomppu.", "ruliweb.", "quasarzone.", "clien.", "bbasak."]):
+                            continue
+                        parsed_u = _urlparse(link)
+                        has_concrete_target = bool(
+                            extract_canonical_product_key(link)
+                            or (parsed_u.path and parsed_u.path.strip("/") != "")
+                        )
+                        if not has_concrete_target:
+                            continue
+                        ecom_links.append(link)
+                        if link.endswith('/'):
+                            ecom_links.append(link[:-1])
+                        else:
+                            ecom_links.append(link + '/')
+                if ecom_links:
+                    existing_ids = {d.id for d in deals_all}
+                    backfill_q = db.query(models.Deal).join(models.Community).options(
+                        joinedload(models.Deal.community),
+                        joinedload(models.Deal.deal_reactions)
+                    ).filter(
+                        models.Deal.ecommerce_link.in_(ecom_links),
+                        ~models.Deal.id.in_(existing_ids),
                     )
-                    if not has_concrete_target:
-                        continue
-                    ecom_links.append(link)
-                    if link.endswith('/'):
-                        ecom_links.append(link[:-1])
-                    else:
-                        ecom_links.append(link + '/')
-            if ecom_links:
-                existing_ids = {d.id for d in deals}
-                additional_deals = db.query(models.Deal).join(models.Community).options(
-                    joinedload(models.Deal.community),
-                    joinedload(models.Deal.deal_reactions)
-                ).filter(
-                    models.Deal.ecommerce_link.in_(ecom_links),
-                    ~models.Deal.id.in_(existing_ids),
-                    models.Deal.is_closed == False
-                ).limit(100).all()
-                if additional_deals:
-                    deals.extend(additional_deals)
+                    if not effective_include_closed:
+                        backfill_q = backfill_q.filter(models.Deal.is_closed == False)
+                    additional_deals = backfill_q.limit(100).all()
+                    if additional_deals:
+                        deals_all.extend(additional_deals)
 
-        COMMUNITY_MAP = {
-            "fmkorea": "펨코", "ppomppu": "뽐뿌", "ruliweb": "루리웹",
-            "clien": "클리앙", "quasarzone": "퀘이사존", "ali_ppomppu": "알리뽐뿌",
-            "bbasak_domestic": "빠삭국내", "bbasak_overseas": "빠삭해외",
-            "bbasak_parenting": "빠삭육아"
-        }
+            COMMUNITY_MAP = _COMMUNITY_DISPLAY_MAP
+            c_map = {}
+            g_list = []
+            dsu_obj = build_dsu(deals_all)
+            valid_c_keys = {dsu_obj.find(sid) for sid in seed_ids} if has_search_or_platform_filter else None
 
-        cluster_map = {}
-        grouped_result = []
-        dsu = build_dsu(deals)
-        valid_cluster_keys = {dsu.find(sid) for sid in matched_seed_ids} if has_search_or_platform_filter else None
+            for deal in deals_all:
+                c_key = dsu_obj.find(deal.id)
+                if valid_c_keys is not None and c_key not in valid_c_keys:
+                    continue
 
-        for deal in deals:
-            cluster_key = dsu.find(deal.id)
-            if valid_cluster_keys is not None and cluster_key not in valid_cluster_keys:
-                continue
+                is_multi = False
+                ecommerce_link = getattr(deal, 'ecommerce_link', None)
+                post_link = getattr(deal, 'post_link', None)
+                title = getattr(deal, 'title', '') or ''
+                ai_summary = getattr(deal, 'ai_summary', '') or ''
+                if (ecommerce_link == post_link) or (title and ("," in title or "모음" in title or "선택" in title or "외/" in title)) or ("[모음전]" in ai_summary):
+                    is_multi = True
 
-            # 모음전/다중 딜 여부 판별
-            is_multi = False
-            ecommerce_link = getattr(deal, 'ecommerce_link', None)
-            post_link = getattr(deal, 'post_link', None)
-            title = getattr(deal, 'title', '') or ''
-            ai_summary = getattr(deal, 'ai_summary', '') or ''
-            if (ecommerce_link == post_link) or (title and ("," in title or "모음" in title or "선택" in title or "외/" in title)) or ("[모음전]" in ai_summary):
-                is_multi = True
+                comp_name = getattr(deal.community, 'display_name', None) or COMMUNITY_MAP.get(deal.community.name, deal.community.name)
+                image_url = _resolve_best_image_url(deal, BASE_URL)
+                clean_title = clean_deal_title(deal.title)
+                parsed_price_int, resolved_currency = resolve_deal_price_and_currency(deal)
+                norm_shipping_fee = _normalize_shipping_fee(deal.shipping_fee, title_hint=deal.title or "")
+                total_price = _compute_total_price(parsed_price_int, resolved_currency, norm_shipping_fee)
+                serialized_opts = _serialize_options_data(getattr(deal, "options_data", None), deal.id)
+                deal_body_imgs = _extract_body_images(getattr(deal, "content_html", "") or "")
 
-            comp_name = getattr(deal.community, 'display_name', None) or COMMUNITY_MAP.get(deal.community.name, deal.community.name)
+                if c_key in c_map:
+                    existing = c_map[c_key]
+                    merged_imgs = _merge_body_images(existing.get("body_images", []), deal_body_imgs)
+                    existing["body_images"] = merged_imgs
+                    existing["bodyImages"] = merged_imgs
 
-            image_url = _resolve_best_image_url(deal, BASE_URL)
-
-            # UI를 위해 제목에서 가격 태그 날리기
-            clean_title = clean_deal_title(deal.title)
-            
-            parsed_price_int, resolved_currency = resolve_deal_price_and_currency(deal)
-            norm_shipping_fee = _normalize_shipping_fee(deal.shipping_fee, title_hint=deal.title or "")
-            total_price = _compute_total_price(parsed_price_int, resolved_currency, norm_shipping_fee)
-            serialized_opts = _serialize_options_data(getattr(deal, "options_data", None), deal.id)
-
-            if cluster_key in cluster_map:
-                existing = cluster_map[cluster_key]
-                
-                if total_price > 0:
-                    existing_krw = _to_krw_equiv(existing.get("total_price", 0), existing.get("currency", "KRW"))
-                    cand_krw = _to_krw_equiv(total_price, resolved_currency)
-                    if existing_krw <= 0 or cand_krw < existing_krw:
-                        # 더 싼 딜이 발견되면 대표 가격, 이미지, 제목 갱신
-                        existing["price"] = parsed_price_int
-                        existing["shipping_fee"] = norm_shipping_fee
-                        existing["total_price"] = total_price
-                        existing["currency"] = resolved_currency
-                        
-                        if image_url or not existing.get("image_url") or "ui-avatars.com" in (existing.get("image_url", "") or ""):
-                            existing["image_url"] = image_url or existing.get("image_url")
-                            
-                        existing["title"] = clean_title
-                        new_ecom_url = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
-                        if not new_ecom_url:
-                            new_ecom_url = _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
-                        if new_ecom_url or not existing.get("ecommerce_url"):
-                            existing["ecommerce_url"] = new_ecom_url
-                        new_shop = _resolve_canonical_shop_name(deal, new_ecom_url)
-                        if new_shop or not existing.get("shop_name"):
-                            existing["shop_name"] = new_shop
-                        if serialized_opts:
-                            existing["options_data"] = serialized_opts
-                        
-                        # 사이트 이름(메인 뱃지)도 더 싼 곳이 앞으로 오도록 조정
-                        if comp_name in existing.setdefault("site_names", []):
-                            existing["site_names"].remove(comp_name)
-                        existing["site_names"].insert(0, comp_name)
-                        existing["site_name"] = ", ".join(existing["site_names"])
-                    else:
-                        # 더 비싼 딜이라도 실제 이미지가 있고, 기존 이미지가 없거나 아바타라면 실제 이미지로 보강
-                        if image_url and (not existing.get("image_url") or "ui-avatars.com" in (existing.get("image_url", "") or "")):
-                            existing["image_url"] = image_url
-                        if serialized_opts and not existing.get("options_data"):
-                            existing["options_data"] = serialized_opts
-
-                    
-                    # 출처 배지 추가 (post_url 중복 방지)
-                    if not any(s.get('post_url') == (deal.post_link or "") for s in existing.setdefault("sources", [])):
-                        if comp_name not in existing.setdefault("site_names", []):
-                            existing["site_names"].append(comp_name)
+                    if total_price > 0:
+                        existing_krw = _to_krw_equiv(existing.get("total_price", 0), existing.get("currency", "KRW"))
+                        cand_krw = _to_krw_equiv(total_price, resolved_currency)
+                        if existing_krw <= 0 or cand_krw < existing_krw:
+                            existing["price"] = parsed_price_int
+                            existing["shipping_fee"] = norm_shipping_fee
+                            existing["total_price"] = total_price
+                            existing["currency"] = resolved_currency
+                            if image_url or not existing.get("image_url") or "ui-avatars.com" in (existing.get("image_url", "") or ""):
+                                existing["image_url"] = image_url or existing.get("image_url")
+                            existing["title"] = clean_title
+                            clean_new_ecom = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
+                            new_ecom_url = clean_new_ecom
+                            if not new_ecom_url:
+                                new_ecom_url = _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
+                            if new_ecom_url or not existing.get("ecommerce_url"):
+                                existing["ecommerce_url"] = new_ecom_url
+                                cand_fb = _compute_is_search_fallback(clean_new_ecom, new_ecom_url)
+                                existing["is_search_fallback"] = cand_fb
+                                existing["isSearchFallback"] = cand_fb
+                            new_shop = _resolve_canonical_shop_name(deal, new_ecom_url)
+                            if new_shop or not existing.get("shop_name"):
+                                existing["shop_name"] = new_shop
+                            if serialized_opts:
+                                existing["options_data"] = serialized_opts
+                            if comp_name in existing.setdefault("site_names", []):
+                                existing["site_names"].remove(comp_name)
+                            existing["site_names"].insert(0, comp_name)
                             existing["site_name"] = ", ".join(existing["site_names"])
-                        extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db))
-                else:
-                    if existing.get("total_price", 0) == 0:
+                        else:
+                            if image_url and (not existing.get("image_url") or "ui-avatars.com" in (existing.get("image_url", "") or "")):
+                                existing["image_url"] = image_url
+                            if serialized_opts and not existing.get("options_data"):
+                                existing["options_data"] = serialized_opts
                         if not any(s.get('post_url') == (deal.post_link or "") for s in existing.setdefault("sources", [])):
                             if comp_name not in existing.setdefault("site_names", []):
                                 existing["site_names"].append(comp_name)
                                 existing["site_name"] = ", ".join(existing["site_names"])
                             extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db))
-                            
-                # 하나라도 살아있다면 전체 딜을 진행중인 것으로 처리
-                existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
-                existing["has_options"] = existing.get("has_options", False) or bool(getattr(deal, "has_options", False)) or bool(serialized_opts)
-                
-                # 다수의 중복 딜 중 하나라도 핫딜이면 핫딜 상태 병합
-                if getattr(deal, 'honey_score', 0) >= 100:
-                    existing["honey_score"] = max(existing.get("honey_score", 0), 100)
-                if deal.ai_summary and ("🔥" in deal.ai_summary or "인증 핫딜" in deal.ai_summary):
-                    if not existing.get("ai_summary"):
-                        existing["ai_summary"] = "[커뮤니티 인증 핫딜]"
-                    elif "인증 핫딜" not in existing["ai_summary"]:
-                        existing["ai_summary"] = "[커뮤니티 인증 핫딜] " + existing["ai_summary"]
-            else:
+                    else:
+                        if existing.get("total_price", 0) == 0:
+                            if not any(s.get('post_url') == (deal.post_link or "") for s in existing.setdefault("sources", [])):
+                                if comp_name not in existing.setdefault("site_names", []):
+                                    existing["site_names"].append(comp_name)
+                                    existing["site_name"] = ", ".join(existing["site_names"])
+                                extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db))
 
-                buy_count = deal.like_count or 0
-                save_count = 0
-                if hasattr(deal, 'deal_reactions') and deal.deal_reactions:
-                    reaction = deal.deal_reactions[0]
-                    buy_count += reaction.positive_reactions
-                    save_count = reaction.negative_reactions
+                    existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
+                    existing["has_options"] = existing.get("has_options", False) or bool(getattr(deal, "has_options", False)) or bool(serialized_opts)
+                    if getattr(deal, 'honey_score', 0) >= 100:
+                        existing["honey_score"] = max(existing.get("honey_score", 0), 100)
+                    if getattr(deal, 'is_super_hotdeal', False):
+                        existing["is_super_hotdeal"] = True
+                    if deal.ai_summary and ("🔥" in deal.ai_summary or "인증 핫딜" in deal.ai_summary):
+                        if not existing.get("ai_summary"):
+                            existing["ai_summary"] = "[커뮤니티 인증 핫딜]"
+                        elif "인증 핫딜" not in existing["ai_summary"]:
+                            existing["ai_summary"] = "[커뮤니티 인증 핫딜] " + existing["ai_summary"]
+                else:
+                    buy_count = deal.like_count or 0
+                    save_count = 0
+                    if hasattr(deal, 'deal_reactions') and deal.deal_reactions:
+                        reaction = deal.deal_reactions[0]
+                        buy_count += reaction.positive_reactions
+                        save_count = reaction.negative_reactions
 
-                site_names_list = [comp_name]
-                if getattr(deal, 'merged_communities', None):
-                    for cid_str in deal.merged_communities.split(','):
-                        try:
-                            cid = int(cid_str.split('::')[0].strip())
-                            m_name = get_community_display_name_by_id(cid, db)
-                            if m_name and m_name not in site_names_list:
-                                site_names_list.append(m_name)
-                        except (ValueError, TypeError) as exc:
-                            logger.debug(f"Invalid merged_communities cid token {cid_str!r}: {exc}")
+                    site_names_list = [comp_name]
+                    if getattr(deal, 'merged_communities', None):
+                        for cid_str in deal.merged_communities.split(','):
+                            try:
+                                cid = int(cid_str.split('::')[0].strip())
+                                m_name = get_community_display_name_by_id(cid, db)
+                                if m_name and m_name not in site_names_list:
+                                    site_names_list.append(m_name)
+                            except (ValueError, TypeError) as exc:
+                                logger.debug(f"Invalid merged_communities cid token {cid_str!r}: {exc}")
 
-                resolved_ecom_url = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
-                if not resolved_ecom_url:
-                    resolved_ecom_url = _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
-                is_hot = bool(getattr(deal, 'is_super_hotdeal', False) or (deal.honey_score or 0) >= 100 or (buy_count >= 8))
-                final_honey_score = 100 if is_hot else (deal.honey_score or 0)
+                    clean_ecom_url = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
+                    resolved_ecom_url = clean_ecom_url
+                    if not resolved_ecom_url:
+                        resolved_ecom_url = _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
+                    is_fb = _compute_is_search_fallback(clean_ecom_url, resolved_ecom_url)
+                    is_hot = bool(getattr(deal, 'is_super_hotdeal', False) or (deal.honey_score or 0) >= 100 or (buy_count >= 8))
+                    final_honey_score = 100 if is_hot else (deal.honey_score or 0)
 
-                deal_dict = {
-                    "id": deal.id,
-                    "title": clean_title,
-                    "price": parsed_price_int,
-                    "shipping_fee": norm_shipping_fee,
-                    "total_price": total_price,
-                    "currency": resolved_currency,
-                    "image_url": image_url,
-                    "ecommerce_url": resolved_ecom_url,
-                    "shop_name": _resolve_canonical_shop_name(deal, resolved_ecom_url),
-                    "post_url": deal.post_link or "",
-                    "site_name": ", ".join(site_names_list),
-                    "site_names": site_names_list,
-                    "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
-                    "options_data": serialized_opts,
-                    "category": normalize_category_key(deal.category),
-                    "honey_score": final_honey_score,
-                    "is_super_hotdeal": is_hot,
-                    "ai_summary": _clean_ai_summary(deal.ai_summary or ""),
-                    "content_html": _clean_content_text(deal.content_html or "", clean_title),
-                    "is_closed": getattr(deal, 'is_closed', False),
-                    "created_at": to_utc_iso(deal.indexed_at),
-                    "view_count": deal.view_count or 0,
-                    "comment_count": deal.comment_count or 0,
-                    "like_count": buy_count,
-                    "dislike_count": save_count,
-                    "tags": extract_deal_benefit_tags(deal.title, deal.content_html),
-                    "has_options": bool(getattr(deal, "has_options", False) or serialized_opts),
-                }
-                cluster_map[cluster_key] = deal_dict
-                grouped_result.append(deal_dict)
+                    deal_dict = {
+                        "id": deal.id,
+                        "title": clean_title,
+                        "price": parsed_price_int,
+                        "shipping_fee": norm_shipping_fee,
+                        "total_price": total_price,
+                        "currency": resolved_currency,
+                        "image_url": image_url,
+                        "ecommerce_url": resolved_ecom_url,
+                        "shop_name": _resolve_canonical_shop_name(deal, resolved_ecom_url),
+                        "post_url": deal.post_link or "",
+                        "site_name": ", ".join(site_names_list),
+                        "site_names": site_names_list,
+                        "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
+                        "options_data": serialized_opts,
+                        "category": normalize_category_key(deal.category),
+                        "honey_score": final_honey_score,
+                        "is_super_hotdeal": is_hot,
+                        "ai_summary": _clean_ai_summary(deal.ai_summary or ""),
+                        "content_html": _clean_content_text(deal.content_html or "", clean_title),
+                        "is_closed": getattr(deal, 'is_closed', False),
+                        "created_at": to_utc_iso(deal.indexed_at),
+                        "view_count": deal.view_count or 0,
+                        "comment_count": deal.comment_count or 0,
+                        "like_count": buy_count,
+                        "dislike_count": save_count,
+                        "tags": extract_deal_benefit_tags(deal.title, deal.content_html),
+                        "has_options": bool(getattr(deal, "has_options", False) or serialized_opts),
+                        "body_images": deal_body_imgs,
+                        "bodyImages": deal_body_imgs,
+                        "is_search_fallback": is_fb,
+                        "isSearchFallback": is_fb,
+                    }
+                    c_map[c_key] = deal_dict
+                    g_list.append(deal_dict)
 
-        if search_max_price is not None and search_max_price > 0:
-            grouped_result = [
-                g for g in grouped_result
-                if 0 < _to_krw_equiv(g.get("price"), g.get("currency")) <= search_max_price
-            ]
+            if search_max_price is not None and search_max_price > 0:
+                g_list = [
+                    g for g in g_list
+                    if 0 < _to_krw_equiv(g.get("price"), g.get("currency")) <= search_max_price
+                ]
 
-        if popular_only:
-            grouped_result = [
-                g for g in grouped_result
-                if int(g.get("honey_score") or 0) >= 100
-            ]
+            if effective_only_hot:
+                g_list = [
+                    g for g in g_list
+                    if int(g.get("honey_score") or 0) >= 100 or bool(g.get("is_super_hotdeal"))
+                ]
 
-        if sort_mode == "popular":
-            grouped_result.sort(
-                key=lambda x: (
-                    int(x.get("honey_score") or 0),
-                    int(x.get("like_count") or 0),
-                    int(x.get("comment_count") or 0)
+            return g_list, dsu_obj
+
+        raw_seed_deals = []
+        grouped_result = []
+        dsu = None
+        db_exhausted = True
+
+        is_sqlite_dialect = getattr(getattr(db.get_bind(), "dialect", None), "name", None) == "sqlite"
+        if is_sqlite_dialect:
+            from sqlalchemy import case, func
+            base_clean = func.replace(
+                func.replace(
+                    func.replace(func.coalesce(models.Deal.indexed_at, ""), "T", " "),
+                    "Z",
+                    "",
                 ),
-                reverse=True
+                "+00:00",
+                "",
             )
-        elif sort_mode == "price_asc":
-            grouped_result.sort(
-                key=lambda x: (
-                    0 if int(x.get("price") or 0) > 0 else 1,
-                    _to_krw_equiv(x.get("price"), x.get("currency")),
-                    _to_krw_equiv(x.get("total_price") or x.get("price"), x.get("currency")),
+            order_ts_expr = case(
+                [
+                    (func.length(base_clean) <= 19, base_clean.op("||")(".000000")),
+                    (func.length(base_clean) < 26, func.substr(base_clean.op("||")("000000"), 1, 26)),
+                ],
+                else_=func.substr(base_clean, 1, 26),
+            )
+        else:
+            order_ts_expr = models.Deal.indexed_at
+
+        if sort_mode == "latest":
+            effective_offset = 0 if cursor_dt is not None else max(0, offset)
+            target_needed = effective_offset + limit + 1
+            chunk_size = max(target_needed * 3, 150)
+            chunk_cursor_dt = cursor_dt
+            chunk_cursor_id = cursor_id
+            db_exhausted = False
+
+            lookback_rows: list = []
+            if cursor_dt is not None and cursor_id is not None:
+                lookback_limit = 500
+                if is_sqlite_dialect:
+                    init_cursor_val = cursor_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+                    lb_q = query.filter(
+                        or_(
+                            order_ts_expr > init_cursor_val,
+                            and_(
+                                order_ts_expr == init_cursor_val,
+                                models.Deal.id >= cursor_id,
+                            ),
+                        )
+                    )
+                else:
+                    lb_q = query.filter(
+                        or_(
+                            models.Deal.indexed_at > cursor_dt,
+                            and_(
+                                models.Deal.indexed_at == cursor_dt,
+                                models.Deal.id >= cursor_id,
+                            ),
+                        )
+                    )
+                lookback_chunk = lb_q.order_by(
+                    order_ts_expr.asc(),
+                    models.Deal.id.asc(),
+                ).limit(lookback_limit).all()
+                lookback_rows = list(reversed(lookback_chunk))
+
+            for _ in range(20):
+                chunk_q = query
+                if chunk_cursor_dt is not None and chunk_cursor_id is not None:
+                    if is_sqlite_dialect:
+                        chunk_cursor_val = _to_utc_naive(chunk_cursor_dt).strftime("%Y-%m-%d %H:%M:%S.%f")
+                        chunk_q = chunk_q.filter(
+                            or_(
+                                order_ts_expr < chunk_cursor_val,
+                                and_(
+                                    order_ts_expr == chunk_cursor_val,
+                                    models.Deal.id < chunk_cursor_id,
+                                ),
+                            )
+                        )
+                    else:
+                        chunk_q = chunk_q.filter(
+                            or_(
+                                models.Deal.indexed_at < chunk_cursor_dt,
+                                and_(
+                                    models.Deal.indexed_at == chunk_cursor_dt,
+                                    models.Deal.id < chunk_cursor_id,
+                                ),
+                            )
+                        )
+                chunk = chunk_q.order_by(
+                    order_ts_expr.desc(),
+                    models.Deal.id.desc(),
+                ).limit(chunk_size).all()
+                raw_seed_deals.extend(chunk)
+                if len(chunk) < chunk_size:
+                    db_exhausted = True
+                else:
+                    chunk_cursor_dt = chunk[-1].indexed_at
+                    chunk_cursor_id = chunk[-1].id
+
+                if lookback_rows:
+                    combined_raw = lookback_rows + raw_seed_deals
+                    grouped_all, dsu = _build_grouped_from_raw(combined_raw)
+                    lookback_cluster_keys = {dsu.find(d.id) for d in lookback_rows}
+                    grouped_result = [
+                        g for g in grouped_all
+                        if dsu.find(g["id"]) not in lookback_cluster_keys
+                    ]
+                else:
+                    grouped_result, dsu = _build_grouped_from_raw(raw_seed_deals)
+                if db_exhausted or len(grouped_result) >= target_needed:
+                    break
+
+            final_result = grouped_result[effective_offset:effective_offset + limit]
+            has_more = (effective_offset + len(final_result)) < len(grouped_result)
+            if not has_more and not db_exhausted:
+                has_more = True
+        else:
+            raw_limit = max(2000, offset + limit + 500)
+            if sort_mode == "popular":
+                raw_seed_deals = query.order_by(
+                    models.Deal.honey_score.desc(),
+                    models.Deal.like_count.desc(),
+                    order_ts_expr.desc(),
+                    models.Deal.id.desc(),
+                ).limit(raw_limit).all()
+            else:
+                raw_seed_deals = query.order_by(
+                    order_ts_expr.desc(),
+                    models.Deal.id.desc(),
+                ).limit(raw_limit).all()
+            db_exhausted = len(raw_seed_deals) < raw_limit
+            grouped_result, dsu = _build_grouped_from_raw(raw_seed_deals)
+
+            if sort_mode == "popular":
+                grouped_result.sort(
+                    key=lambda x: (
+                        int(x.get("honey_score") or 0),
+                        int(x.get("like_count") or 0),
+                        int(x.get("comment_count") or 0)
+                    ),
+                    reverse=True
                 )
-            )
+            elif sort_mode == "price_asc":
+                grouped_result.sort(
+                    key=lambda x: (
+                        0 if int(x.get("price") or 0) > 0 else 1,
+                        _to_krw_equiv(x.get("price"), x.get("currency")),
+                        _to_krw_equiv(x.get("total_price") or x.get("price"), x.get("currency")),
+                    )
+                )
 
-        if len(_HOT_DEALS_API_CACHE) > 50:
-            _HOT_DEALS_API_CACHE.clear()
-        _HOT_DEALS_API_CACHE[cache_key] = {
-            "ts": now_ts,
-            "grouped": grouped_result,
-        }
+            final_result = grouped_result[offset:offset + limit]
+            has_more = (offset + len(final_result)) < len(grouped_result)
 
-        # 그룹핑된 결과에서 페이지네이션 수행
-        final_result = grouped_result[offset:offset+limit]
+        def _compute_next_cursor_for_slice(slice_end_idx: int) -> Optional[dict]:
+            if sort_mode != "latest" or dsu is None or not raw_seed_deals:
+                return None
+            if slice_end_idx < 0 or slice_end_idx >= len(grouped_result):
+                return None
+            last_emitted_id = grouped_result[slice_end_idx]["id"]
+            seed_pos_map = {d.id: idx for idx, d in enumerate(raw_seed_deals)}
+            rep_idx = seed_pos_map.get(last_emitted_id)
+            if rep_idx is None:
+                return None
+            remaining_cluster_keys = {dsu.find(d["id"]) for d in grouped_result[slice_end_idx + 1:]}
+            cursor_raw = raw_seed_deals[rep_idx]
+            k = rep_idx + 1
+            while k < len(raw_seed_deals):
+                if dsu.find(raw_seed_deals[k].id) in remaining_cluster_keys:
+                    break
+                cursor_raw = raw_seed_deals[k]
+                k += 1
+            return {
+                "indexed_at": _format_cursor_iso(cursor_raw.indexed_at),
+                "id": int(cursor_raw.id),
+            }
+
+        next_cursor_obj = None
+        if sort_mode == "latest" and has_more and final_result:
+            slice_base = 0 if cursor_dt is not None else max(0, offset)
+            next_cursor_obj = _compute_next_cursor_for_slice(slice_base + len(final_result) - 1)
+
+        if cursor_dt is None:
+            cursors_map: dict[int, dict] = {}
+            if sort_mode == "latest":
+                for idx in range(len(grouped_result) - 1):
+                    nc = _compute_next_cursor_for_slice(idx)
+                    if nc:
+                        cursors_map[idx] = nc
+            if len(_HOT_DEALS_API_CACHE) > 50:
+                _HOT_DEALS_API_CACHE.clear()
+            _HOT_DEALS_API_CACHE[cache_key] = {
+                "ts": now_ts,
+                "grouped": grouped_result,
+                "exhausted": db_exhausted,
+                "cursors": cursors_map,
+            }
+
         return {
             "deals": final_result,
-            "has_more": (offset + len(final_result)) < len(grouped_result),
+            "has_more": has_more,
+            "next_cursor": next_cursor_obj,
+            "nextCursor": next_cursor_obj,
         }
 
     except HTTPException:
@@ -2279,12 +2778,7 @@ def get_deal(
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
         
-    COMMUNITY_MAP = {
-        "fmkorea": "펨코", "ppomppu": "뽐뿌", "ruliweb": "루리웹",
-        "clien": "클리앙", "quasarzone": "퀘이사존", "ali_ppomppu": "알리뽐뿌",
-        "bbasak_domestic": "빠삭국내", "bbasak_overseas": "빠삭해외",
-        "bbasak_parenting": "빠삭육아"
-    }
+    COMMUNITY_MAP = _COMMUNITY_DISPLAY_MAP
     
     # 현재 딜과 cluster_key가 동일한 딜들을 모아서 출처(sources) 병합 (최신 250건 범위로 제한하여 응답속도 최적화)
     deal_idx_utc = _to_utc_naive(deal.indexed_at)
@@ -2424,7 +2918,13 @@ def get_deal(
     detail_ecom_url = clean_detail_ecom_url
     if not detail_ecom_url:
         detail_ecom_url = _build_direct_mall_search_url(getattr(best_deal, "shop_name", "") or "", getattr(best_deal, "title", "") or deal.title or "", getattr(best_deal, "post_link", "") or "", community_name)
-    is_search_fallback = (not bool(clean_detail_ecom_url)) and bool(detail_ecom_url)
+    is_search_fallback = _compute_is_search_fallback(clean_detail_ecom_url, detail_ecom_url)
+
+    raw_detail_content = getattr(best_deal, "content_html", "") or getattr(deal, "content_html", "") or ""
+    body_images = _extract_body_images(raw_detail_content)
+    report_count = db.query(models.DealClosedReport).filter(
+        models.DealClosedReport.deal_id == deal_id
+    ).count()
 
     from backend.core.deal_normalizer import parse_title_price_and_shipping
     title_for_free = getattr(best_deal, "title", None) or getattr(deal, "title", "") or ""
@@ -2489,7 +2989,7 @@ def get_deal(
         "is_closed": is_closed,
         "score": getattr(best_deal, "honey_score", 0) or getattr(deal, "honey_score", 0),
         "ai_summary": _clean_ai_summary(getattr(best_deal, "ai_summary", "") or getattr(deal, "ai_summary", "") or ""),
-        "content_html": _clean_content_text(getattr(best_deal, "content_html", "") or getattr(deal, "content_html", "") or "", deal.title or ""),
+        "content_html": _clean_content_text(raw_detail_content, deal.title or ""),
         "has_options": bool(getattr(best_deal, "has_options", False) or getattr(deal, "has_options", False) or serialized_detail_opts),
         "buy_count": buy_count,
         "buyCount": buy_count,
@@ -2503,7 +3003,73 @@ def get_deal(
         "history_count": history_count,
         "historyCount": history_count,
         "is_search_fallback": is_search_fallback,
+        "isSearchFallback": is_search_fallback,
         "is_free": is_free,
+        "body_images": body_images,
+        "bodyImages": body_images,
+        "report_count": report_count,
+        "reportCount": report_count,
+    }
+
+
+@router.post("/deals/{deal_id}/report-closed")
+def report_deal_closed(
+    deal_id: int,
+    request: Request,
+    auth_uuid: str = Depends(require_device_token),
+    db: Session = Depends(get_db_session),
+):
+    """사용자 원클릭 품절/종료 제보 (X-Device-Token 필수, 3명 누적 시 자동 종료 전환)"""
+    now_ts = _time.time()
+    recent = [
+        ts for ts in _REPORT_CLOSED_RATE_LIMIT.get(auth_uuid, [])
+        if (now_ts - ts) < _REPORT_CLOSED_WINDOW_SEC
+    ]
+    if len(recent) >= _REPORT_CLOSED_HOURLY_LIMIT:
+        _REPORT_CLOSED_RATE_LIMIT[auth_uuid] = recent
+        raise HTTPException(status_code=429, detail="Too many closed reports; please try again later")
+
+    deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found")
+
+    existing = db.query(models.DealClosedReport).filter(
+        models.DealClosedReport.deal_id == deal_id,
+        models.DealClosedReport.device_uuid == auth_uuid,
+    ).first()
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Already reported by this device")
+
+    recent.append(now_ts)
+    _REPORT_CLOSED_RATE_LIMIT[auth_uuid] = recent
+
+    try:
+        db.add(models.DealClosedReport(deal_id=deal_id, device_uuid=auth_uuid))
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Already reported by this device")
+
+    report_count = db.query(models.DealClosedReport).filter(
+        models.DealClosedReport.deal_id == deal_id
+    ).count()
+
+    if report_count >= _REPORT_CLOSED_THRESHOLD and not deal.is_closed:
+        deal.is_closed = True
+
+    db.commit()
+    invalidate_feed_api_cache()
+
+    is_closed_val = bool(deal.is_closed)
+    return {
+        "status": "ok",
+        "deal_id": deal_id,
+        "dealId": deal_id,
+        "report_count": report_count,
+        "reportCount": report_count,
+        "is_closed": is_closed_val,
+        "isClosed": is_closed_val,
+        "threshold": _REPORT_CLOSED_THRESHOLD,
     }
 
 @router.get("/deals/{deal_id}/history")

@@ -1,9 +1,124 @@
 import html
+import ipaddress
 import os
 import re
+import socket
 import threading
 import time
+import unicodedata
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse, unquote, quote
+
+_NUMERIC_IPV4_PART_RE = re.compile(r"^(?:0[xX][0-9a-fA-F]+|[0-9]+)$")
+_CGNAT_NETWORK = ipaddress.IPv4Network("100.64.0.0/10")
+_IPV6_6TO4_NETWORK = ipaddress.IPv6Network("2002::/16")
+_IPV6_TEREDO_NETWORK = ipaddress.IPv6Network("2001::/32")
+_IPV6_SITE_LOCAL_NETWORK = ipaddress.IPv6Network("fec0::/10")
+
+
+def is_public_ip(ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """공인 IPv4/IPv6 여부 확인 (IPv4-mapped·6to4·Teredo·Site-Local 포함 사설·루프백·링크로컬·CGNAT·비공인 대역 차단)"""
+    if isinstance(ip_obj, ipaddress.IPv6Address):
+        # 폐기된 6to4(2002::/16), Teredo(2001::/32), Site-Local(fec0::/10) 터널·사설 대역 전면 차단
+        if (
+            ip_obj.is_site_local
+            or ip_obj.sixtofour is not None
+            or ip_obj.teredo is not None
+            or ip_obj in _IPV6_6TO4_NETWORK
+            or ip_obj in _IPV6_TEREDO_NETWORK
+            or ip_obj in _IPV6_SITE_LOCAL_NETWORK
+        ):
+            return False
+        if ip_obj.ipv4_mapped is not None:
+            ip_obj = ip_obj.ipv4_mapped
+    if isinstance(ip_obj, ipaddress.IPv4Address) and ip_obj in _CGNAT_NETWORK:
+        return False
+    return not (
+        ip_obj.is_private
+        or ip_obj.is_loopback
+        or ip_obj.is_link_local
+        or ip_obj.is_multicast
+        or ip_obj.is_reserved
+        or ip_obj.is_unspecified
+        or not ip_obj.is_global
+    )
+
+
+def is_safe_external_url(url: str) -> bool:
+    """SSRF 방어를 위한 외부 이미지/상품 URL 동기 기본 검증 (스킴/포트/인증정보/IDNA 전각·비표준 IPv4·사설 IP 차단)"""
+    try:
+        if not url or not isinstance(url, str):
+            return False
+        trimmed = url.strip()
+        if not trimmed or len(trimmed) > 2048:
+            return False
+        if re.search(r"[\x00-\x1f\x7f\s<>\"'`\\]", trimmed):
+            return False
+        parsed = urlparse(trimmed)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        if parsed.port not in (None, 80, 443):
+            return False
+        if parsed.username or parsed.password:
+            return False
+        raw_host = (parsed.hostname or "").strip()
+        if not raw_host or "%" in raw_host or "+" in raw_host:
+            return False
+        # 전각/아랍-인도 숫자 등 비ASCII 십진 숫자가 포함된 호스트는 SSRF 우회 방지를 위해 즉시 차단
+        if any(not ch.isascii() and unicodedata.category(ch) == "Nd" for ch in raw_host):
+            return False
+        try:
+            host = raw_host.encode("idna").decode("ascii").lower().strip(".")
+        except UnicodeError:
+            return False
+        if not host or not host.isascii():
+            return False
+        if (
+            host in ("localhost", "0.0.0.0", "169.254.169.254")
+            or host.endswith(".internal")
+            or host.endswith(".local")
+            or host.endswith(".localhost")
+        ):
+            return False
+        try:
+            ip = ipaddress.ip_address(host)
+            if not is_public_ip(ip):
+                return False
+        except ValueError:
+            # 1) 단일 32비트 정수 IPv4 표기 (예: 2130706433, 0)
+            # 단, 선행 0이 붙은 단일 8진수 정수(예: 01200000001)는 해석 차이로 인한 SSRF 우회 방지를 위해 즉시 차단
+            if host.isdigit():
+                if len(host) > 1 and host.startswith("0"):
+                    return False
+                try:
+                    int_val = int(host)
+                    if 0 <= int_val <= 0xFFFFFFFF:
+                        if not is_public_ip(ipaddress.IPv4Address(int_val)):
+                            return False
+                    else:
+                        return False
+                except Exception:
+                    return False
+            else:
+                # 2) 점분리 숫자/8진수/16진수/단축 IPv4 표기 차단 (예: 0177.0.0.1, 0x7f000001, 127.1)
+                parts = host.split(".")
+                if parts and all(_NUMERIC_IPV4_PART_RE.match(p) for p in parts):
+                    # 선행 0 옥텟(8진수 등, 16진수 0x 제외) 즉시 차단
+                    for p in parts:
+                        if p.startswith("0") and len(p) > 1 and not p.startswith("0x"):
+                            return False
+            # 3) OS 리졸버(socket.inet_aton) 공통 검증으로 단일 8진수·16진수·축약형 비표준 IPv4 재차단
+            try:
+                packed = socket.inet_aton(host)
+                if not is_public_ip(ipaddress.IPv4Address(packed)):
+                    return False
+            except OSError:
+                if host.isdigit() or (
+                    host.split(".") and all(_NUMERIC_IPV4_PART_RE.match(p) for p in host.split("."))
+                ):
+                    return False
+        return True
+    except Exception:
+        return False
 
 _SHORTLINK_UNWRAP_CACHE: dict[str, str] = {}
 _AFFILIATE_DEEPLINK_CACHE: dict[str, str] = {}
@@ -705,6 +820,22 @@ def is_search_or_community_url(url: str) -> bool:
         "browse.gmarket.co.kr",
         "browse.auction.co.kr/search",
         "11st.co.kr/browsing/search",
+        "search.11st.co.kr",
+        "search.29cm.co.kr",
+        "ohou.se/productions/feed",
+        "search.do?",
+        "totalsearch",
+        "search_result.html",
+        "/product/search.html",
+        "search.html?",
+        "/browse?q=",
+        "/search.ssg",
+        "/search.ecn",
+        "/search/result/",
+        "/search/goods?",
+        "search.htm?",
+        "qoo10.com/s/",
+        "getsearchmain.do",
         "search?keyword=",
         "search/all?query=",
         "total-search?kwd=",
@@ -720,6 +851,10 @@ def is_search_or_community_url(url: str) -> bool:
         "/search#",
     )
     if any(si in u for si in search_indicators) or u.endswith("/search"):
+        return True
+    if re.search(r"amazon\.[a-z.]+/s(?:[/?#]|$)", u):
+        return True
+    if re.match(r"^https?://(?:www\.)?tagtag\.co\.kr/?$", u):
         return True
 
     return False

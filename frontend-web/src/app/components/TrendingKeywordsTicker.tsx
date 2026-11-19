@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { TrendingUp, ChevronDown, ChevronUp } from "lucide-react";
 import type { PopularKeywordRanking } from "../lib/types";
 
@@ -21,6 +21,7 @@ export default function TrendingKeywordsTicker({
 }: TrendingKeywordsTickerProps) {
   const [tickerIndex, setTickerIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
+  const boardId = useId();
 
   const items: PopularKeywordRanking[] =
     rankings && rankings.length > 0
@@ -81,15 +82,17 @@ export default function TrendingKeywordsTicker({
         <button
           type="button"
           className="trending-expand-btn"
+          aria-expanded={isExpanded}
+          aria-controls={boardId}
           onClick={() => setIsExpanded((prev) => !prev)}
         >
           <span>{isExpanded ? "순위 접기" : "전체 순위"}</span>
-          {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+          {isExpanded ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
         </button>
       </div>
 
       {isExpanded && (
-        <div className="trending-board-card">
+        <div id={boardId} className="trending-board-card">
           <div className="trending-board-header">
             <span className="trending-board-title">
               <TrendingUp size={15} color="var(--accent)" />

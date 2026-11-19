@@ -54,6 +54,29 @@ def migrate():
         cursor.execute("ALTER TABLE device_tokens ADD COLUMN dnd_end_time VARCHAR(5) NOT NULL DEFAULT '08:00'")
     else:
         print("[INFO] 'dnd_end_time' column already exists in device_tokens table.")
+
+    # 3. notification_alerts 테이블 컬럼 추가
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='notification_alerts'")
+    if cursor.fetchone():
+        cursor.execute("PRAGMA table_info(notification_alerts)")
+        alert_columns = [col[1] for col in cursor.fetchall()]
+        for col_name, col_def in (
+            ("is_read", "BOOLEAN NOT NULL DEFAULT 0"),
+            ("dnd_suppressed", "BOOLEAN NOT NULL DEFAULT 0"),
+            ("digest_sent_at", "TIMESTAMP NULL"),
+        ):
+            if col_name not in alert_columns:
+                print(f"[ADD] Adding '{col_name}' column to notification_alerts table...")
+                cursor.execute(f"ALTER TABLE notification_alerts ADD COLUMN {col_name} {col_def}")
+
+    # 4. users 테이블 컬럼 추가
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+    if cursor.fetchone():
+        cursor.execute("PRAGMA table_info(users)")
+        user_columns = [col[1] for col in cursor.fetchall()]
+        if "token_version" not in user_columns:
+            print("[ADD] Adding 'token_version' column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0")
         
     conn.commit()
     conn.close()

@@ -6,7 +6,9 @@ import androidx.paging.PagingState
 import androidx.paging.RemoteMediator
 import androidx.room.withTransaction
 import com.ddaeany0919.insightdeal.local.db.AppDatabase
+import com.ddaeany0919.insightdeal.local.db.DealDao
 import com.ddaeany0919.insightdeal.local.db.DealEntity
+import com.ddaeany0919.insightdeal.local.db.DealRemoteKeysDao
 import com.ddaeany0919.insightdeal.local.db.DealRemoteKeysEntity
 import com.ddaeany0919.insightdeal.models.CategoryCatalog
 import com.ddaeany0919.insightdeal.models.DealItem
@@ -18,32 +20,77 @@ import java.io.IOException
 /**
  * Paging 3 RemoteMediator
  * - 네트워크 API로부터 데이터를 불러와 로컬 Room DB에 오프라인 캐싱을 수행합니다.
+ * - Room DealDao의 정렬(popular/price_asc 등)과 무관하게 전용 센티넬 키(dealId = -1)로
+ *   마지막 수신 페이지의 커서/오프셋을 독립 추적하여 APPEND 무한 루프를 차단합니다.
  */
 @OptIn(ExperimentalPagingApi::class)
 class HotDealsRemoteMediator(
-    private val database: AppDatabase,
+    private val dealDao: DealDao,
+    private val dealRemoteKeysDao: DealRemoteKeysDao,
+    private val runInTransaction: suspend (suspend () -> Unit) -> Unit,
     private val apiService: ApiService,
     private val category: String?,
     private val keyword: String?,
     private val platform: String?,
-    private val sort: String = "latest"
+    private val sort: String = "latest",
+    private val onlyHot: Boolean = false,
+    private val hideClosed: Boolean = false,
+    private val includeClosed: Boolean = false
 ) : RemoteMediator<Int, DealEntity>() {
+
+    constructor(
+        database: AppDatabase,
+        apiService: ApiService,
+        category: String?,
+        keyword: String?,
+        platform: String?,
+        sort: String = "latest",
+        onlyHot: Boolean = false,
+        hideClosed: Boolean = false,
+        includeClosed: Boolean = false
+    ) : this(
+        dealDao = database.dealDao(),
+        dealRemoteKeysDao = database.dealRemoteKeysDao(),
+        runInTransaction = { block -> database.withTransaction { block() } },
+        apiService = apiService,
+        category = category,
+        keyword = keyword,
+        platform = platform,
+        sort = sort,
+        onlyHot = onlyHot,
+        hideClosed = hideClosed,
+        includeClosed = includeClosed
+    )
 
     override suspend fun load(
         loadType: LoadType,
         state: PagingState<Int, DealEntity>
     ): MediatorResult {
         return try {
+            var cursorIndexedAt: String? = null
+            var cursorId: Int? = null
             val offset = when (loadType) {
                 LoadType.REFRESH -> 0
                 LoadType.PREPEND -> {
                     return MediatorResult.Success(endOfPaginationReached = true)
                 }
                 LoadType.APPEND -> {
-                    val remoteKeys = getRemoteKeyForLastItem(state)
-                    val nextKey = remoteKeys?.nextKey
-                        ?: return MediatorResult.Success(endOfPaginationReached = remoteKeys != null)
-                    nextKey
+                    val remoteKeys = dealRemoteKeysDao.getRemoteKeysForDealId(STREAM_CURSOR_SENTINEL_ID)
+                        ?: getRemoteKeyForLastItem(state)
+                    if (remoteKeys == null) {
+                        val hasExistingData = state.pages.any { it.data.isNotEmpty() }
+                        return MediatorResult.Success(endOfPaginationReached = hasExistingData)
+                    }
+                    val cursorTs = remoteKeys.nextCursorIndexedAt?.trim()?.takeIf { it.isNotEmpty() }
+                    val cursorItemId = remoteKeys.nextCursorId?.takeIf { it > 0 }
+                    if (cursorTs != null && cursorItemId != null) {
+                        cursorIndexedAt = cursorTs
+                        cursorId = cursorItemId
+                        0
+                    } else {
+                        remoteKeys.nextKey
+                            ?: return MediatorResult.Success(endOfPaginationReached = true)
+                    }
                 }
             }
 
@@ -61,34 +108,79 @@ class HotDealsRemoteMediator(
                 category = resolvedCategory,
                 keyword = if (keyword.isNullOrBlank()) null else keyword,
                 platform = resolvedPlatform,
-                sort = sort
+                sort = sort,
+                cursorIndexedAt = cursorIndexedAt,
+                cursorId = cursorId,
+                includeClosed = if (includeClosed) true else null,
+                onlyHot = if (onlyHot) true else null,
+                hideClosed = if (hideClosed) true else null
             )
 
             if (response.isSuccessful) {
                 val responseBody = response.body()
                 val deals = responseBody?.deals ?: emptyList()
+                val nextCursor = responseBody?.nextCursor
+                val resolvedNextCursorTs = nextCursor?.indexedAt?.trim()?.takeIf { it.isNotEmpty() }
+                val resolvedNextCursorId = nextCursor?.id?.takeIf { it > 0 }
+                val hasValidCursor = resolvedNextCursorTs != null && resolvedNextCursorId != null
                 val hasMore = responseBody?.hasMore ?: false
-                val endOfPaginationReached = deals.isEmpty() || !hasMore
 
-                database.withTransaction {
+                val isSameCursor = loadType == LoadType.APPEND &&
+                    cursorIndexedAt != null &&
+                    cursorId != null &&
+                    hasValidCursor &&
+                    resolvedNextCursorTs == cursorIndexedAt &&
+                    resolvedNextCursorId == cursorId
+
+                val candidateNextOffset = offset + deals.size
+                val isOffsetNonAdvancing = loadType == LoadType.APPEND &&
+                    !hasValidCursor &&
+                    candidateNextOffset <= offset
+
+                var endOfPaginationReached = deals.isEmpty() || !hasMore || isSameCursor || isOffsetNonAdvancing
+
+                runInTransaction {
                     if (loadType == LoadType.REFRESH) {
-                        database.dealRemoteKeysDao().clearRemoteKeys()
-                        database.dealDao().clearAllDeals()
+                        dealRemoteKeysDao.clearRemoteKeys()
+                        dealDao.clearAllDeals()
+                    } else if (!endOfPaginationReached && deals.isNotEmpty()) {
+                        val allAlreadyFetched = deals.all {
+                            dealRemoteKeysDao.getRemoteKeysForDealId(it.id) != null
+                        }
+                        if (allAlreadyFetched) {
+                            endOfPaginationReached = true
+                        }
                     }
 
-                    val prevKey = if (offset <= 0) null else (offset - limit).coerceAtLeast(0)
-                    val nextKey = if (endOfPaginationReached) null else offset + deals.size
+                    val prevKey = if (offset <= 0 || hasValidCursor) null else (offset - limit).coerceAtLeast(0)
+                    val nextKey = if (endOfPaginationReached || hasValidCursor) null else candidateNextOffset
+                    val persistedCursorTs = if (endOfPaginationReached || !hasValidCursor) null else resolvedNextCursorTs
+                    val persistedCursorId = if (endOfPaginationReached || !hasValidCursor) null else resolvedNextCursorId
 
-                    val keys = deals.map { deal ->
-                        DealRemoteKeysEntity(
-                            dealId = deal.id,
-                            prevKey = prevKey,
-                            nextKey = nextKey
-                        )
+                    val sentinelKey = DealRemoteKeysEntity(
+                        dealId = STREAM_CURSOR_SENTINEL_ID,
+                        prevKey = prevKey,
+                        nextKey = nextKey,
+                        nextCursorIndexedAt = persistedCursorTs,
+                        nextCursorId = persistedCursorId
+                    )
+
+                    val dealKeys = deals
+                        .filter { it.id != STREAM_CURSOR_SENTINEL_ID }
+                        .map { deal ->
+                            DealRemoteKeysEntity(
+                                dealId = deal.id,
+                                prevKey = prevKey,
+                                nextKey = nextKey,
+                                nextCursorIndexedAt = persistedCursorTs,
+                                nextCursorId = persistedCursorId
+                            )
+                        }
+
+                    dealRemoteKeysDao.insertAll(dealKeys + sentinelKey)
+                    if (deals.isNotEmpty()) {
+                        dealDao.insertAll(deals.map { toCachedEntityForCategory(it, resolvedCategory) })
                     }
-
-                    database.dealRemoteKeysDao().insertAll(keys)
-                    database.dealDao().insertAll(deals.map { toCachedEntityForCategory(it, resolvedCategory) })
                 }
 
                 MediatorResult.Success(endOfPaginationReached = endOfPaginationReached)
@@ -105,6 +197,8 @@ class HotDealsRemoteMediator(
     }
 
     companion object {
+        const val STREAM_CURSOR_SENTINEL_ID = -1
+
         internal fun toCachedEntityForCategory(deal: DealItem, resolvedCategory: String?): DealEntity {
             val baseEntity = DealEntity.fromDealItem(deal)
             if (resolvedCategory.isNullOrBlank() || resolvedCategory == "전체" || resolvedCategory == "핫딜모음") {
@@ -144,7 +238,7 @@ class HotDealsRemoteMediator(
     private suspend fun getRemoteKeyForLastItem(state: PagingState<Int, DealEntity>): DealRemoteKeysEntity? {
         return state.pages.lastOrNull { it.data.isNotEmpty() }?.data?.lastOrNull()
             ?.let { deal ->
-                database.dealRemoteKeysDao().getRemoteKeysForDealId(deal.id)
+                dealRemoteKeysDao.getRemoteKeysForDealId(deal.id)
             }
     }
 }

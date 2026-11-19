@@ -202,7 +202,9 @@ class HomeViewModel : ViewModel() {
         val category: String,
         val keyword: String?,
         val platform: String?,
-        val sortBy: String
+        val sortBy: String,
+        val hideClosed: Boolean,
+        val popularOnly: Boolean
     )
 
     private val _filterState = MutableStateFlow(FilterState())
@@ -215,7 +217,9 @@ class HomeViewModel : ViewModel() {
                 category = it.category,
                 keyword = it.keyword,
                 platform = it.resolvedPlatformQuery(),
-                sortBy = it.sortBy
+                sortBy = it.sortBy,
+                hideClosed = it.hideClosed,
+                popularOnly = it.popularOnly
             )
         }
         .distinctUntilChanged()
@@ -233,7 +237,10 @@ class HomeViewModel : ViewModel() {
                     category = query.category,
                     keyword = query.keyword,
                     platform = query.platform,
-                    sort = query.sortBy
+                    sort = query.sortBy,
+                    onlyHot = query.popularOnly,
+                    hideClosed = query.hideClosed,
+                    includeClosed = false
                 ),
                 pagingSourceFactory = {
                     db.dealDao().getPagedDeals(
@@ -340,16 +347,7 @@ class HomeViewModel : ViewModel() {
         }
 
         val SUPPORTED_SORTS = setOf("latest", "popular", "price_asc")
-        val COMMUNITY_FILTER_CHIPS = listOf(
-            "전체",
-            "뽐뿌",
-            "펨코",
-            "퀘이사존",
-            "루리웹",
-            "클리앙",
-            "알리뽐뿌",
-            "빠삭"
-        )
+        val COMMUNITY_FILTER_CHIPS = CategoryCatalog.STANDARD_SOURCES
         val ALL_COMMUNITY_PLATFORMS = CategoryCatalog.STANDARD_COMMUNITY_PLATFORMS
     }
 }

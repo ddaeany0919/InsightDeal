@@ -7,16 +7,27 @@ import androidx.compose.animation.core.*
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import com.ddaeany0919.insightdeal.presentation.home.BrandPlaceholder
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 import com.ddaeany0919.insightdeal.presentation.theme.LocalIsDarkTheme
+import com.ddaeany0919.insightdeal.presentation.theme.PriceTextStyle
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -27,11 +38,13 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
@@ -51,18 +64,33 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.ddaeany0919.insightdeal.models.DealItem
@@ -90,10 +118,13 @@ private val PERIOD_OPTIONS = listOf(
 )
 private val DETAIL_DATE_FORMATTER: java.time.format.DateTimeFormatter =
     java.time.format.DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm", Locale.getDefault())
+private val DETAIL_CLOSED_COLOR_FILTER by lazy {
+    ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+}
 
 // [현안 4] 옵션명 다중 중첩 접두사("알리검색 - ", "네이버검색 - ", "옵션 - " 등) 정제용 정규식
 private val OPTION_PREFIX_REGEX = Regex(
-    "^(?:옵션|알리검색|네이버검색|다나와검색|쿠팡검색|알리뽐뿌|뽐뿌|클리앙|루리웹|퀘이사존|에펨코리아|빠삭|알리|네이버)\\s*[-:·]\\s*",
+    "^(?:옵션|알리검색|네이버검색|다나와검색|쿠팡검색|알리뽐뿌|뽐뿌해외|뽐뿌|클리앙|루리웹|퀘이사존|에펨코리아|빠삭|알리|네이버)\\s*[-:·]\\s*",
     RegexOption.IGNORE_CASE
 )
 private val OPTION_LEADING_NUM_REGEX = Regex("^(?:\\d{1,2}\\s*[.)](?!\\d)\\s+|[\\u2460-\\u2473]\\s*)")
@@ -180,25 +211,6 @@ fun extractPromoCodesFromText(text: String, title: String): List<String> {
 }
 
 /**
- * 상세 화면 전용 가격 표시 헬퍼 (StringUtils.formatPrice 기존 동작은 유지하면서 0원 옵션/무료 딜을 명확히 표시)
- */
-internal fun formatDetailPriceText(
-    price: Long,
-    currency: String?,
-    titleHint: String?,
-    isFree: Boolean = false
-): String {
-    if (price > 0L) {
-        return formatPrice(price, currency, titleHint)
-    }
-    val base = formatPrice(0L, currency, titleHint)
-    return when {
-        isFree || base == "무료" -> "0원 (무료)"
-        else -> "0원"
-    }
-}
-
-/**
  * 사이트 칩의 메타 정보를 담는 고성능 정적 데이터 클래스
  */
 @Immutable
@@ -276,6 +288,16 @@ fun DealDetailRoute(
 
     LaunchedEffect(dealId) {
         viewModel.loadDealData(dealId)
+    }
+
+    LaunchedEffect(uiState.reportClosedFeedbackSeq) {
+        val msg = uiState.reportClosedFeedback
+        if (uiState.reportClosedFeedbackSeq > 0 && !msg.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(
+                message = msg,
+                duration = SnackbarDuration.Short
+            )
+        }
     }
 
     if (uiState.isLoading) {
@@ -456,6 +478,11 @@ fun DealDetailRoute(
         historyCount = uiState.historyCount,
         isSearchFallback = uiState.isSearchFallback,
         isFree = uiState.isFree,
+        isClosed = uiState.isClosed || deal.isClosed,
+        reportCount = maxOf(uiState.reportCount, deal.reportCount),
+        isReportingClosed = uiState.isReportingClosed,
+        hasReportedClosed = uiState.hasReportedClosed,
+        onReportClosed = { viewModel.reportClosed() },
         comments = uiState.comments,
         commentsLoaded = uiState.commentsLoaded,
         isCommentsLoading = uiState.isCommentsLoading,
@@ -586,6 +613,11 @@ fun DealDetailScreen(
     historyCount: Int = deal.historyCount,
     isSearchFallback: Boolean = deal.isSearchFallback,
     isFree: Boolean = deal.isFree,
+    isClosed: Boolean = deal.isClosed,
+    reportCount: Int = deal.reportCount,
+    isReportingClosed: Boolean = false,
+    hasReportedClosed: Boolean = false,
+    onReportClosed: () -> Unit = {},
     comments: List<ApiDealComment> = emptyList(),
     commentsLoaded: Boolean = false,
     isCommentsLoading: Boolean = false,
@@ -820,7 +852,7 @@ fun DealDetailScreen(
                                     fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     letterSpacing = (-0.2).sp,
-                                    maxLines = 1,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
@@ -859,7 +891,7 @@ fun DealDetailScreen(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
                                     color = MaterialTheme.colorScheme.onPrimary,
-                                    maxLines = 1,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                     letterSpacing = (-0.2).sp
                                 )
@@ -941,8 +973,8 @@ fun DealDetailScreen(
                     multiOptions = multiOptions,
                     isSearchFallbackActive = isUsingSearchFallback,
                     isFreeDeal = effectiveIsFree,
+                    isClosed = isClosed,
                     onSelectOption = onSelectOption,
-                    onOpenOrigin = onOpenOrigin,
                     onOpenPurchaseUrl = onOpenPurchaseUrl,
                     summaryPillsContent = {
                         DealSummaryPillsRow(
@@ -952,6 +984,11 @@ fun DealDetailScreen(
                             commentCount = effectiveCommentCount,
                             showTargetAlertPill = canShowTargetAlert,
                             isTargetAlertConfigured = initialTargetPrice != null && initialTargetPrice > 0,
+                            isClosed = isClosed,
+                            reportCount = reportCount,
+                            isReportingClosed = isReportingClosed,
+                            hasReportedClosed = hasReportedClosed,
+                            onReportClosed = onReportClosed,
                             onHistoryPillClick = {
                                 chartExpanded = true
                                 scope.launch { listState.animateScrollToItem(1) }
@@ -1097,7 +1134,7 @@ fun DealDetailScreen(
                 Text(
                     text = "쿠팡 파트너스 및 제휴 마케팅 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                    color = LocalInsightDealColors.current.textMuted,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 4.dp, bottom = 12.dp)
@@ -1118,11 +1155,17 @@ private fun DealSummaryPillsRow(
     commentCount: Int,
     showTargetAlertPill: Boolean,
     isTargetAlertConfigured: Boolean,
+    isClosed: Boolean = false,
+    reportCount: Int = 0,
+    isReportingClosed: Boolean = false,
+    hasReportedClosed: Boolean = false,
+    onReportClosed: () -> Unit = {},
     onHistoryPillClick: () -> Unit,
     onVotePillClick: () -> Unit,
     onCommentsPillClick: () -> Unit,
     onTargetPillClick: () -> Unit
 ) {
+    val semantic = LocalInsightDealColors.current
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxWidth()
@@ -1155,6 +1198,54 @@ private fun DealSummaryPillsRow(
                     label = if (isTargetAlertConfigured) "목표가 설정됨" else "목표가 알림",
                     onClick = onTargetPillClick
                 )
+            }
+        }
+        item(key = "pill_report_closed") {
+            val reportLabel = when {
+                isClosed -> "품절/종료됨"
+                hasReportedClosed -> if (reportCount > 0) "품절 제보 완료 (${reportCount})" else "품절 제보 완료"
+                isReportingClosed -> "제보 중..."
+                else -> if (reportCount > 0) "품절 제보 (${reportCount})" else "품절 제보"
+            }
+            val canClickReport = !isClosed && !hasReportedClosed && !isReportingClosed
+            Surface(
+                onClick = onReportClosed,
+                enabled = canClickReport,
+                shape = RoundedCornerShape(999.dp),
+                color = if (isClosed || hasReportedClosed) semantic.dangerContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                border = BorderStroke(
+                    1.dp,
+                    if (isClosed || hasReportedClosed) semantic.danger.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                ),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        role = Role.Button
+                        stateDescription = when {
+                            isClosed -> "품절 또는 종료된 딜"
+                            hasReportedClosed -> "품절 제보 완료됨"
+                            else -> "제보 가능"
+                        }
+                    }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Flag,
+                        contentDescription = null,
+                        tint = if (isClosed || hasReportedClosed) semantic.onDangerContainer else semantic.danger,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = reportLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isClosed || hasReportedClosed) semantic.onDangerContainer else MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
         }
     }
@@ -1218,6 +1309,10 @@ private fun DetailAccordionSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 56.dp)
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        stateDescription = if (expanded) "펼쳐짐" else "접힘"
+                    }
                     .clickable(onClick = onToggle)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1746,8 +1841,7 @@ private fun PriceAlertRegistrationButton(
         onClick = { showDialog = true },
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
-            .bounceClick { showDialog = true },
+            .heightIn(min = 52.dp),
         colors = ButtonDefaults.outlinedButtonColors(
             contentColor = if (isConfigured) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
         ),
@@ -1839,6 +1933,7 @@ private fun PriceAlertRegistrationButton(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             if (historyMinPrice != null) {
+                                val semantic = LocalInsightDealColors.current
                                 FilterChip(
                                     selected = (calculatedPrice == historyMinPrice),
                                     onClick = { inputPrice = formatEditableTargetInput(historyMinPrice, isSubunitCurrency) },
@@ -1846,7 +1941,7 @@ private fun PriceAlertRegistrationButton(
                                         Box(
                                             modifier = Modifier
                                                 .size(7.dp)
-                                                .background(Color(0xFF10B981), RoundedCornerShape(4.dp))
+                                                .background(semantic.success, RoundedCornerShape(4.dp))
                                         )
                                     },
                                     label = {
@@ -1858,8 +1953,8 @@ private fun PriceAlertRegistrationButton(
                                     },
                                     shape = RoundedCornerShape(8.dp),
                                     colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Color(0xFF10B981).copy(alpha = 0.16f),
-                                        selectedLabelColor = Color(0xFF10B981)
+                                        selectedContainerColor = semantic.successContainer,
+                                        selectedLabelColor = semantic.onSuccessContainer
                                     )
                                 )
                             }
@@ -2104,10 +2199,11 @@ private fun PriceHistoryInteractiveCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
-                    letterSpacing = (-0.3).sp
+                    letterSpacing = (-0.3).sp,
+                    modifier = Modifier.semantics { heading() }
                 )
 
-                // 기간 선택 칩들 (7일, 30일, 90일)
+                // 기간 선택 칩들 (7일, 1개월, 3개월, 6개월)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -2118,23 +2214,33 @@ private fun PriceHistoryInteractiveCard(
                         val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                         val borderStroke = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
 
-                        androidx.compose.material3.Surface(
-                            onClick = { onPeriodSelected(periodKey) },
-                            shape = RoundedCornerShape(8.dp),
-                            color = containerColor,
-                            contentColor = contentColor,
-                            border = borderStroke,
-                            modifier = Modifier.height(28.dp)
+                        Box(
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .semantics(mergeDescendants = true) {
+                                    role = Role.Tab
+                                    selected = isSelected
+                                }
+                                .clickable { onPeriodSelected(periodKey) },
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.padding(horizontal = 10.dp)
+                            androidx.compose.material3.Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = containerColor,
+                                contentColor = contentColor,
+                                border = borderStroke,
+                                modifier = Modifier.heightIn(min = 32.dp)
                             ) {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                )
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
                             }
                         }
                     }
@@ -2157,6 +2263,7 @@ private fun PriceHistoryInteractiveCard(
                     if (avgPrice > 0) (((latestPrice - avgPrice).toFloat() / avgPrice) * 100).toInt() else 0
                 }
 
+                val chartSemantic = LocalInsightDealColors.current
                 // 핫구사(Hotgusa) 스타일 핵심 3대 가격 요약 지표 바 (역대 최저가 / 평균 핫딜가 / 최고가)
                 Surface(
                     shape = RoundedCornerShape(14.dp),
@@ -2182,7 +2289,7 @@ private fun PriceHistoryInteractiveCard(
                                 text = formatPrice(minPrice.toLong(), currency),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = Color(0xFF10B981)
+                                color = chartSemantic.success
                             )
                         }
                         Box(
@@ -2222,7 +2329,7 @@ private fun PriceHistoryInteractiveCard(
                                 text = formatPrice(maxPrice.toLong(), currency),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFF59E0B)
+                                color = chartSemantic.warning
                             )
                         }
                     }
@@ -2233,9 +2340,9 @@ private fun PriceHistoryInteractiveCard(
                     val posFraction = ((latestPrice - minPrice).toFloat() / (maxPrice - minPrice).toFloat()).coerceIn(0f, 1f)
                     val posPercent = (posFraction * 100f).toInt()
                     val pinColor = when {
-                        posPercent <= 25 -> Color(0xFF10B981)
+                        posPercent <= 25 -> chartSemantic.success
                         posPercent <= 60 -> MaterialTheme.colorScheme.primary
-                        else -> Color(0xFFF59E0B)
+                        else -> chartSemantic.warning
                     }
                     Surface(
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
@@ -2253,7 +2360,7 @@ private fun PriceHistoryInteractiveCard(
                                     text = "최저가 구간",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF10B981)
+                                    color = chartSemantic.success
                                 )
                                 Text(
                                     text = if (posPercent == 0) "현재 역대 최저가 (0%)" else "현재 가격 위치 하위 ${posPercent}%",
@@ -2265,7 +2372,7 @@ private fun PriceHistoryInteractiveCard(
                                     text = "최고가 구간",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFF59E0B)
+                                    color = chartSemantic.warning
                                 )
                             }
                             Spacer(modifier = Modifier.height(6.dp))
@@ -2282,9 +2389,9 @@ private fun PriceHistoryInteractiveCard(
                                         .background(
                                             brush = Brush.horizontalGradient(
                                                 colors = listOf(
-                                                    Color(0xFF10B981),
+                                                    chartSemantic.success,
                                                     MaterialTheme.colorScheme.primary,
-                                                    Color(0xFFF59E0B)
+                                                    chartSemantic.warning
                                                 )
                                             ),
                                             shape = RoundedCornerShape(999.dp)
@@ -2323,7 +2430,7 @@ private fun PriceHistoryInteractiveCard(
                     }
                 }
                 val isFavorablePrice = latestPrice <= minPrice || vsAvgPercent < 0
-                val badgeAccentColor = if (isFavorablePrice) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
+                val badgeAccentColor = if (isFavorablePrice) chartSemantic.success else MaterialTheme.colorScheme.primary
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -2356,7 +2463,7 @@ private fun PriceHistoryInteractiveCard(
                 Text(
                     text = "차트를 좌우로 움직여 날짜별 가격을 확인해 보세요",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    color = LocalInsightDealColors.current.textMuted,
                     letterSpacing = (-0.1).sp
                 )
             }
@@ -2452,17 +2559,19 @@ private fun AIBuyerGuide(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column {
+                    val guideSemantic = LocalInsightDealColors.current
                     Text(
                         text = "시세 요약",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.ExtraBold,
                         color = titleColor,
-                        letterSpacing = (-0.3).sp
+                        letterSpacing = (-0.3).sp,
+                        modifier = Modifier.semantics { heading() }
                     )
                     Text(
                         text = if (isRecordLow || isGoodDeal) "지금 구매하기 좋은 가격이에요" else "목표가 알림 설정을 추천해요",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (isRecordLow || isGoodDeal) Color(0xFF22C55E) else Color(0xFF64748B),
+                        color = if (isRecordLow || isGoodDeal) guideSemantic.success else guideSemantic.textMuted,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.2).sp
                     )
@@ -2473,13 +2582,14 @@ private fun AIBuyerGuide(
             Spacer(Modifier.height(16.dp))
 
             if (validHistory.size <= 1) {
+                val guideSemantic = LocalInsightDealColors.current
                 Text(
                     text = "커뮤니티 추천도 ${deal.honeyScore}점",
                     style = MaterialTheme.typography.titleMedium,
                     color = if (isGoodDeal) {
-                        if (isDark) Color(0xFF34D399) else Color(0xFF059669)
+                        guideSemantic.success
                     } else {
-                        if (isDark) Color(0xFFE2E8F0) else Color(0xFF334155)
+                        MaterialTheme.colorScheme.onSurface
                     },
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = (-0.3).sp
@@ -2561,6 +2671,7 @@ private fun AIBuyerGuide(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DealHeader(
     deal: DealItem,
@@ -2569,12 +2680,14 @@ fun DealHeader(
     multiOptions: List<DealSource> = emptyList(),
     isSearchFallbackActive: Boolean = deal.isSearchFallback,
     isFreeDeal: Boolean = deal.isFree,
+    isClosed: Boolean = deal.isClosed,
     onSelectOption: (Int) -> Unit,
-    onOpenOrigin: (String) -> Unit,
     onOpenPurchaseUrl: (String, Long?, String?) -> Unit,
     summaryPillsContent: (@Composable () -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val semantic = LocalInsightDealColors.current
+    val scope = rememberCoroutineScope()
     var copiedCode by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(copiedCode) {
         if (copiedCode != null) {
@@ -2586,66 +2699,235 @@ fun DealHeader(
         extractPromoCodesFromText(deal.contentHtml ?: deal.title, deal.title)
     }
     val effectiveImageUrl = selectedOption?.imageUrl?.takeIf { it.isNotBlank() } ?: deal.imageUrl
+    val galleryImages = remember(deal.id, effectiveImageUrl, deal.bodyImages) {
+        buildList {
+            effectiveImageUrl?.trim()?.takeIf { it.isNotEmpty() }?.let(::add)
+            addAll(deal.resolvedBodyImages)
+        }
+            .map { it.trim() }
+            .filter { it.startsWith("http", ignoreCase = true) || it.startsWith("/") }
+            .distinct()
+    }
+    var showLightbox by remember { mutableStateOf(false) }
+    var lightboxInitialIndex by remember { mutableIntStateOf(0) }
+
+    if (showLightbox && galleryImages.isNotEmpty()) {
+        DealImageLightboxDialog(
+            images = galleryImages,
+            initialIndex = lightboxInitialIndex.coerceIn(0, galleryImages.lastIndex),
+            siteName = deal.siteName,
+            postUrl = deal.postUrl,
+            onDismiss = { showLightbox = false }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxWidth()) {
-        if (!effectiveImageUrl.isNullOrEmpty()) {
-            val primaryHeaderUrl = remember(deal.id, effectiveImageUrl) {
-                com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(effectiveImageUrl, targetWidth = 600)
-            }
-            val fallbackHeaderUrl = remember(deal.id, effectiveImageUrl) {
-                com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(effectiveImageUrl)
-            }
-            var activeHeaderUrl by remember(primaryHeaderUrl) { mutableStateOf(primaryHeaderUrl) }
-            var imageLoadFailed by remember(primaryHeaderUrl) { mutableStateOf(false) }
-            val headerImageRequest = remember(activeHeaderUrl, deal.postUrl) {
-                coil.request.ImageRequest.Builder(context)
-                    .data(activeHeaderUrl)
-                    .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
-                    .setHeader("Referer", deal.postUrl ?: "https://insightdeal.com/")
-                    .crossfade(true)
-                    .precision(coil.size.Precision.EXACT)
-                    .build()
-            }
-            if (!imageLoadFailed && !primaryHeaderUrl.isNullOrBlank()) {
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        if (galleryImages.isEmpty()) {
+            // P1-02: 이미지 미존재 시에도 카드 영역을 숨기지 않고 BrandPlaceholder 렌더링
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, semantic.cardBorder),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            val shopUrl = selectedOption?.ecommerceUrl?.takeIf { it.isNotBlank() }
-                                ?: deal.ecommerceUrl?.takeIf { it.isNotBlank() }
-                            if (!shopUrl.isNullOrBlank()) {
-                                onOpenPurchaseUrl(
-                                    shopUrl,
-                                    selectedOption?.price ?: deal.price,
-                                    selectedOption?.currency ?: deal.currency
+                        .heightIn(min = 176.dp, max = 220.dp)
+                ) {
+                    BrandPlaceholder(
+                        siteName = deal.siteName,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    if (isClosed) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = semantic.dangerContainer,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                text = "품절/종료",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = semantic.onDangerContainer,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            val pagerState = rememberPagerState(initialPage = 0, pageCount = { galleryImages.size })
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, semantic.cardBorder),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        contentDescription = "상품 이미지 크게 보기 (${pagerState.currentPage + 1}/${galleryImages.size})"
+                    }
+                    .clickable(onClickLabel = "상품 이미지 크게 보기") {
+                        lightboxInitialIndex = pagerState.currentPage
+                        showLightbox = true
+                    }
+            ) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { pageIdx ->
+                        val rawUrl = galleryImages[pageIdx]
+                        val primaryHeaderUrl = remember(deal.id, rawUrl) {
+                            com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(rawUrl, targetWidth = 800)
+                        }
+                        val fallbackHeaderUrl = remember(deal.id, rawUrl) {
+                            com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(rawUrl)
+                        }
+                        var activeHeaderUrl by remember(primaryHeaderUrl) { mutableStateOf(primaryHeaderUrl) }
+                        var imageLoadFailed by remember(primaryHeaderUrl) { mutableStateOf(false) }
+
+                        if (imageLoadFailed || activeHeaderUrl.isNullOrBlank()) {
+                            BrandPlaceholder(
+                                siteName = deal.siteName,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 176.dp, max = 220.dp)
+                            )
+                        } else {
+                            val headerImageRequest = remember(activeHeaderUrl, deal.postUrl) {
+                                ImageRequest.Builder(context)
+                                    .data(activeHeaderUrl)
+                                    .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
+                                    .setHeader("Referer", deal.postUrl ?: "https://insightdeal.com/")
+                                    .crossfade(true)
+                                    .precision(coil.size.Precision.EXACT)
+                                    .build()
+                            }
+                            AsyncImage(
+                                model = headerImageRequest,
+                                contentDescription = null,
+                                onError = {
+                                    if (fallbackHeaderUrl != null && activeHeaderUrl != fallbackHeaderUrl) {
+                                        activeHeaderUrl = fallbackHeaderUrl
+                                    } else {
+                                        imageLoadFailed = true
+                                    }
+                                },
+                                colorFilter = if (isClosed) DETAIL_CLOSED_COLOR_FILTER else null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 176.dp, max = 280.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentScale = ContentScale.Fit,
+                                alpha = 1.0f
+                            )
+                        }
+                    }
+
+                    if (isClosed) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = semantic.dangerContainer,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                text = "품절/종료",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = semantic.onDangerContainer,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = Color(0xCC111827),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(12.dp)
+                            .clearAndSetSemantics {}
+                    ) {
+                        Text(
+                            text = "${pagerState.currentPage + 1} / ${galleryImages.size} · 확대",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+            }
+
+            if (galleryImages.size > 1) {
+                Spacer(modifier = Modifier.height(10.dp))
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(galleryImages.size) { idx ->
+                        val isCurrent = pagerState.currentPage == idx
+                        val thumbRaw = galleryImages[idx]
+                        val thumbPrimary = remember(deal.id, thumbRaw) {
+                            com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(thumbRaw, targetWidth = 200)
+                        }
+                        val thumbFallback = remember(deal.id, thumbRaw) {
+                            com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(thumbRaw)
+                        }
+                        var activeThumb by remember(thumbPrimary) { mutableStateOf(thumbPrimary) }
+                        var thumbFailed by remember(thumbPrimary) { mutableStateOf(false) }
+
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .border(
+                                    width = if (isCurrent) 2.dp else 1.dp,
+                                    color = if (isCurrent) MaterialTheme.colorScheme.primary else semantic.cardBorder,
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .semantics {
+                                    role = Role.Tab
+                                    selected = isCurrent
+                                    contentDescription = "이미지 썸네일 ${idx + 1}"
+                                }
+                                .clickable {
+                                    scope.launch { pagerState.animateScrollToPage(idx) }
+                                }
+                        ) {
+                            if (thumbFailed || activeThumb.isNullOrBlank()) {
+                                BrandPlaceholder(
+                                    siteName = deal.siteName,
+                                    modifier = Modifier.fillMaxSize()
                                 )
                             } else {
-                                val postTarget = selectedOption?.postUrl?.takeIf { it.isNotBlank() } ?: deal.postUrl.orEmpty()
-                                if (postTarget.isNotBlank()) {
-                                    onOpenOrigin(postTarget)
-                                }
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(activeThumb)
+                                        .setHeader("Referer", deal.postUrl ?: "https://insightdeal.com/")
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = null,
+                                    onError = {
+                                        if (thumbFallback != null && activeThumb != thumbFallback) {
+                                            activeThumb = thumbFallback
+                                        } else {
+                                            thumbFailed = true
+                                        }
+                                    },
+                                    colorFilter = if (isClosed) DETAIL_CLOSED_COLOR_FILTER else null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
                             }
                         }
-                ) {
-                    AsyncImage(
-                        model = headerImageRequest,
-                        contentDescription = deal.title,
-                        onError = {
-                            if (fallbackHeaderUrl != null && activeHeaderUrl != fallbackHeaderUrl) {
-                                activeHeaderUrl = fallbackHeaderUrl
-                            } else {
-                                imageLoadFailed = true
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 120.dp, max = 280.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentScale = ContentScale.Fit,
-                        alpha = 1.0f
-                    )
+                    }
                 }
             }
         }
@@ -2732,6 +3014,20 @@ fun DealHeader(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    if (isClosed) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = semantic.dangerContainer
+                        ) {
+                            Text(
+                                text = "품절/종료",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = semantic.onDangerContainer,
                                 modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                             )
                         }
@@ -2829,18 +3125,19 @@ fun DealHeader(
                     )
                 }
                 val isUnconfirmedPrice = priceText == "가격 확인"
+                val basePriceStyle = if (isUnconfirmedPrice) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge
                 Text(
                     text = priceText,
-                    style = if (isUnconfirmedPrice) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Black,
+                    style = basePriceStyle.copy(
+                        fontFeatureSettings = PriceTextStyle.fontFeatureSettings,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-0.5).sp
+                    ),
                     color = if (isUnconfirmedPrice) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else if (LocalIsDarkTheme.current) {
-                        Color(0xFFFF7A45)
+                        semantic.textMuted
                     } else {
-                        Color(0xFFFF5A26)
-                    },
-                    letterSpacing = (-0.5).sp
+                        semantic.priceAccent
+                    }
                 )
 
                 if (isUnconfirmedPrice) {
@@ -2848,7 +3145,7 @@ fun DealHeader(
                     Icon(
                         imageVector = Icons.Default.Info,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        tint = semantic.textMuted,
                         modifier = Modifier.size(20.dp).padding(bottom = 2.dp)
                     )
                 }
@@ -2876,20 +3173,20 @@ fun DealHeader(
                 Text(
                     text = "등록 $timeDisplayText",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    color = semantic.textMuted,
                     fontWeight = FontWeight.Medium
                 )
 
                 Text(
                     text = "•",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    color = semantic.textMuted
                 )
 
                 Text(
                     text = "조회 ${deal.viewCount}회",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    color = semantic.textMuted,
                     fontWeight = FontWeight.Medium
                 )
             }
@@ -2898,8 +3195,8 @@ fun DealHeader(
                 Spacer(modifier = Modifier.height(12.dp))
                 Surface(
                     shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    color = semantic.warningContainer,
+                    border = BorderStroke(1.dp, semantic.onWarningContainer.copy(alpha = 0.25f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -2910,14 +3207,14 @@ fun DealHeader(
                         Icon(
                             imageVector = Icons.Default.Info,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            tint = semantic.onWarningContainer,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             text = "직접 링크 미제공 · 쇼핑몰 검색 결과로 이동해요",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                            color = semantic.onWarningContainer
                         )
                     }
                 }
@@ -2943,7 +3240,7 @@ fun DealHeader(
                             onClick = {
                                 onOpenPurchaseUrl(subUrl, deal.price, deal.currency)
                             },
-                            modifier = Modifier.heightIn(min = 40.dp),
+                            modifier = Modifier.heightIn(min = 48.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                             shape = RoundedCornerShape(8.dp),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -3052,7 +3349,8 @@ fun DealHeader(
                         text = "상품 상세 본문",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.semantics { heading() }
                     )
                     if (promoCodes.isNotEmpty()) {
                         Text(
@@ -3166,7 +3464,7 @@ fun DealHeader(
                             Text(
                                 text = "선택 시 가격·시세 반영",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                color = LocalInsightDealColors.current.textMuted
                             )
                         }
 
@@ -3195,6 +3493,9 @@ fun DealHeader(
                                 border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .semantics {
+                                        selected = isSelected
+                                    }
                                     .clickable {
                                         onSelectOption(index)
                                     }
@@ -3421,6 +3722,213 @@ fun DealHeader(
                             color = MaterialTheme.colorScheme.onSurface,
                             letterSpacing = (-0.2).sp
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * P1-03 전체화면 핀치줌·스와이프 라이트박스 이미지 뷰어 다이얼로그
+ * - scale == 1f에서는 HorizontalPager 좌우 스와이프가 정상 작동하며, 확대 시(scale > 1.02f) 팬과 경계 클램핑이 활성화됩니다.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DealImageLightboxDialog(
+    images: List<String>,
+    initialIndex: Int,
+    siteName: String,
+    postUrl: String?,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val pagerState = rememberPagerState(initialPage = initialIndex, pageCount = { images.size })
+    var currentScale by remember { mutableFloatStateOf(1f) }
+    var currentOffset by remember { mutableStateOf(Offset.Zero) }
+
+    LaunchedEffect(pagerState.currentPage) {
+        currentScale = 1f
+        currentOffset = Offset.Zero
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                userScrollEnabled = currentScale <= 1.02f,
+                modifier = Modifier.fillMaxSize()
+            ) { pageIdx ->
+                val rawUrl = images[pageIdx]
+                val primaryUrl = remember(rawUrl) {
+                    com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(rawUrl, targetWidth = 1200)
+                }
+                val fallbackUrl = remember(rawUrl) {
+                    com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(rawUrl)
+                }
+                var activeUrl by remember(primaryUrl) { mutableStateOf(primaryUrl) }
+                var loadFailed by remember(primaryUrl) { mutableStateOf(false) }
+                var containerSize by remember { mutableStateOf(IntSize.Zero) }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onSizeChanged { containerSize = it }
+                        .pointerInput(pageIdx) {
+                            detectTapGestures(
+                                onDoubleTap = {
+                                    if (currentScale > 1.02f) {
+                                        currentScale = 1f
+                                        currentOffset = Offset.Zero
+                                    } else {
+                                        currentScale = 2.5f
+                                        currentOffset = Offset.Zero
+                                    }
+                                }
+                            )
+                        }
+                        .pointerInput(pageIdx) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                do {
+                                    val event = awaitPointerEvent()
+                                    val pressedCount = event.changes.count { it.pressed }
+                                    val zoomChange = event.calculateZoom()
+                                    val panChange = event.calculatePan()
+                                    if (pressedCount >= 2 || currentScale > 1.02f) {
+                                        val nextScale = (currentScale * zoomChange).coerceIn(1f, 4f)
+                                        val maxX = ((containerSize.width * (nextScale - 1f)) / 2f).coerceAtLeast(0f)
+                                        val maxY = ((containerSize.height * (nextScale - 1f)) / 2f).coerceAtLeast(0f)
+                                        val nextOffset = if (nextScale <= 1.02f) {
+                                            Offset.Zero
+                                        } else {
+                                            Offset(
+                                                x = (currentOffset.x + panChange.x).coerceIn(-maxX, maxX),
+                                                y = (currentOffset.y + panChange.y).coerceIn(-maxY, maxY)
+                                            )
+                                        }
+                                        currentScale = nextScale
+                                        currentOffset = nextOffset
+                                        event.changes.forEach { it.consume() }
+                                    }
+                                } while (event.changes.any { it.pressed })
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (loadFailed || activeUrl.isNullOrBlank()) {
+                        BrandPlaceholder(
+                            siteName = siteName,
+                            modifier = Modifier
+                                .fillMaxWidth(0.75f)
+                                .heightIn(min = 200.dp, max = 260.dp)
+                        )
+                    } else {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(activeUrl)
+                                .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
+                                .setHeader("Referer", postUrl ?: "https://insightdeal.com/")
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "상품 확대 이미지 ${pageIdx + 1}",
+                            onError = {
+                                if (fallbackUrl != null && activeUrl != fallbackUrl) {
+                                    activeUrl = fallbackUrl
+                                } else {
+                                    loadFailed = true
+                                }
+                            },
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    scaleX = currentScale
+                                    scaleY = currentScale
+                                    translationX = currentOffset.x
+                                    translationY = currentOffset.y
+                                }
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .align(Alignment.TopCenter),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color(0xAA111827)
+                ) {
+                    Text(
+                        text = "${pagerState.currentPage + 1} / ${images.size}",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .background(Color(0xAA111827), RoundedCornerShape(999.dp))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "이미지 뷰어 닫기",
+                        tint = Color.White
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 16.dp)
+                    .align(Alignment.BottomCenter),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color(0xAA111827)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = "두 손가락 확대 · 더블탭 1x/2.5x",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                        if (currentScale > 1.02f) {
+                            TextButton(
+                                onClick = {
+                                    currentScale = 1f
+                                    currentOffset = Offset.Zero
+                                },
+                                modifier = Modifier.heightIn(min = 48.dp)
+                            ) {
+                                Text("원본 크기", color = Color(0xFF34D399), fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }

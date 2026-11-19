@@ -44,6 +44,13 @@ data class DealDetailUiState(
     val historyCount: Int = 0,
     val isSearchFallback: Boolean = false,
     val isFree: Boolean = false,
+    // P1-06 품절/종료 배지 및 원클릭 품절 제보 상태
+    val isClosed: Boolean = false,
+    val reportCount: Int = 0,
+    val isReportingClosed: Boolean = false,
+    val hasReportedClosed: Boolean = false,
+    val reportClosedFeedback: String? = null,
+    val reportClosedFeedbackSeq: Int = 0,
     // 2급 [안 B] 아코디언 Lazy-fetch & CRUD 상태
     val comments: List<ApiDealComment> = emptyList(),
     val commentsLoaded: Boolean = false,
@@ -79,6 +86,7 @@ class DealDetailViewModel(
     private var currentDealId: Int? = null
     private var detailJob: Job? = null
     private var historyJob: Job? = null
+    private var reportJob: Job? = null
     private val historyCache = ConcurrentHashMap<String, List<PriceHistoryPoint>>()
 
     private fun resolveDeviceUuid(): String {
@@ -201,6 +209,7 @@ class DealDetailViewModel(
         currentDealId = dealId
         detailJob?.cancel()
         historyJob?.cancel()
+        reportJob?.cancel()
         detailJob = vmScope.launch {
             val myUuid = resolveDeviceUuid()
             _uiState.value = _uiState.value.copy(
@@ -287,6 +296,8 @@ class DealDetailViewModel(
                         historyCount = maxOf(deal.historyCount, history.size),
                         isSearchFallback = deal.isSearchFallback,
                         isFree = deal.isFree,
+                        isClosed = deal.isClosed,
+                        reportCount = deal.reportCount,
                         comments = emptyList(),
                         commentsLoaded = false,
                         isCommentsLoading = false,
@@ -605,14 +616,93 @@ class DealDetailViewModel(
         _uiState.value = _uiState.value.copy(
             voteError = null,
             commentActionError = null,
-            commentsError = null
+            commentsError = null,
+            reportClosedFeedback = null
         )
+    }
+
+    /**
+     * 원클릭 품절/종료 제보 (POST /api/community/deals/{deal_id}/report-closed)
+     */
+    fun reportClosed() {
+        val dealId = currentDealId ?: return
+        val current = _uiState.value
+        if (current.isReportingClosed || current.hasReportedClosed || current.isClosed) return
+
+        reportJob?.cancel()
+        reportJob = vmScope.launch {
+            _uiState.value = _uiState.value.copy(isReportingClosed = true)
+            try {
+                val response = withContext(ioDispatcher) {
+                    apiService.reportDealClosed(dealId)
+                }
+                if (currentDealId != dealId) return@launch
+                val body = if (response.isSuccessful) response.body() else null
+                if (body != null) {
+                    val stateNow = _uiState.value
+                    val updatedClosed = body.isClosed || stateNow.isClosed
+                    val updatedCount = maxOf(body.reportCount, stateNow.reportCount)
+                    val threshold = body.threshold.coerceAtLeast(1)
+                    val msg = if (updatedClosed) {
+                        "품절/종료 처리되었어요"
+                    } else {
+                        "품절 제보가 접수되었어요 (${updatedCount}/${threshold})"
+                    }
+                    _uiState.value = stateNow.copy(
+                        isClosed = updatedClosed,
+                        reportCount = updatedCount,
+                        deal = stateNow.deal?.withClosedReportState(updatedClosed, updatedCount),
+                        isReportingClosed = false,
+                        hasReportedClosed = true,
+                        reportClosedFeedback = msg,
+                        reportClosedFeedbackSeq = stateNow.reportClosedFeedbackSeq + 1
+                    )
+                } else {
+                    val stateNow = _uiState.value
+                    when (response.code()) {
+                        409 -> {
+                            _uiState.value = stateNow.copy(
+                                isReportingClosed = false,
+                                hasReportedClosed = true,
+                                reportClosedFeedback = "이미 품절 제보를 완료했어요",
+                                reportClosedFeedbackSeq = stateNow.reportClosedFeedbackSeq + 1
+                            )
+                        }
+                        429 -> {
+                            _uiState.value = stateNow.copy(
+                                isReportingClosed = false,
+                                reportClosedFeedback = "요청이 너무 많아요. 잠시 후 다시 시도해 주세요",
+                                reportClosedFeedbackSeq = stateNow.reportClosedFeedbackSeq + 1
+                            )
+                        }
+                        else -> {
+                            _uiState.value = stateNow.copy(
+                                isReportingClosed = false,
+                                reportClosedFeedback = "품절 제보 처리에 실패했어요. 잠시 후 다시 시도해 주세요",
+                                reportClosedFeedbackSeq = stateNow.reportClosedFeedbackSeq + 1
+                            )
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (currentDealId != dealId) return@launch
+                val stateNow = _uiState.value
+                _uiState.value = stateNow.copy(
+                    isReportingClosed = false,
+                    reportClosedFeedback = "품절 제보 처리에 실패했어요. 잠시 후 다시 시도해 주세요",
+                    reportClosedFeedbackSeq = stateNow.reportClosedFeedbackSeq + 1
+                )
+            }
+        }
     }
 
     override fun onCleared() {
         super.onCleared()
         detailJob?.cancel()
         historyJob?.cancel()
+        reportJob?.cancel()
     }
 
     companion object {

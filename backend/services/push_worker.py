@@ -15,6 +15,30 @@ logger = logging.getLogger(__name__)
 
 # Rate Limiting을 위한 전역 In-Memory Cache (실제 프로덕션은 Redis 활용 권장)
 _push_rate_limit: dict = {}  # {device_id: {"count": 0, "date": "2023-10-01"}}
+_DAILY_PUSH_LIMIT = 3
+
+
+def reset_rate_limits() -> None:
+    """테스트 및 런타임 격리를 위한 푸시 일일 레이트리밋 초기화 훅"""
+    _push_rate_limit.clear()
+
+
+clear_rate_limits = reset_rate_limits
+
+
+def _is_push_rate_limited(device_id: int, current_date_str: str) -> bool:
+    rate_info = _push_rate_limit.get(device_id)
+    if not rate_info or rate_info.get("date") != current_date_str:
+        return False
+    return int(rate_info.get("count", 0)) >= _DAILY_PUSH_LIMIT
+
+
+def _consume_push_rate_limit(device_id: int, current_date_str: str) -> None:
+    rate_info = _push_rate_limit.get(device_id)
+    if not rate_info or rate_info.get("date") != current_date_str:
+        rate_info = {"count": 0, "date": current_date_str}
+    rate_info["count"] = int(rate_info.get("count", 0)) + 1
+    _push_rate_limit[device_id] = rate_info
 
 
 def _get_dev_field(device: Any, name: str, default: Any = None) -> Any:
@@ -34,10 +58,12 @@ def is_in_dnd_range(now_time: datetime.time, start_str: str, end_str: str) -> bo
         start_time = datetime.time(start_hour, start_min)
         end_time = datetime.time(end_hour, end_min)
 
-        if start_time <= end_time:
-            return start_time <= now_time <= end_time
+        if start_time == end_time:
+            return False
+        if start_time < end_time:
+            return start_time <= now_time < end_time
         else:
-            return now_time >= start_time or now_time <= end_time
+            return now_time >= start_time or now_time < end_time
     except Exception as e:
         logger.error(f"DND 시간대 파싱 및 대조 오류: {e} (입력값: start={start_str}, end={end_str})")
         return False
@@ -164,7 +190,14 @@ def _match_smart_keyword(raw_keyword: str, deal: Deal, deal_price_int: int) -> t
     return True, display_name
 
 
-def _record_notification_alert(db, user_id: str, title: str, keyword: str, deal_url: str):
+def _record_notification_alert(
+    db,
+    user_id: str,
+    title: str,
+    keyword: str,
+    deal_url: str,
+    dnd_suppressed: bool = False,
+):
     if not user_id or not title:
         return
     try:
@@ -179,6 +212,7 @@ def _record_notification_alert(db, user_id: str, title: str, keyword: str, deal_
                     title=title,
                     keyword=keyword,
                     deal_url=deal_url or "",
+                    dnd_suppressed=bool(dnd_suppressed),
                 )
             )
             db.commit()
@@ -273,28 +307,27 @@ def background_trigger_keyword_alarms(
 
             stats["matched_keywords"] += 1
             alert_body = f"{deal.title} · {deal_price_int:,}원" if deal_price_int > 0 else deal.title
-            # ① DND 판별 전 인앱 알림함 선적재 (drop_with_history)
+
+            # ① 공통 DND/야간 차단 판별 (DND 억제 여부를 NotificationAlert에 반영)
+            suppressed, reason = should_suppress_push(device, now)
+            is_dnd_suppressed = bool(suppressed and reason == "dnd_active")
+
+            # ② 인앱 알림함 선적재 (drop_with_history)
             _record_notification_alert(
                 db=db,
                 user_id=device.device_uuid,
                 title=alert_body,
                 keyword=display_kw,
                 deal_url=final_url,
+                dnd_suppressed=is_dnd_suppressed,
             )
 
-            # ② 공통 DND/야간 차단 판별
-            suppressed, reason = should_suppress_push(device, now)
             if suppressed:
                 stats["dropped_dnd"] += 1
                 logger.info(f"[{reason} drop_with_history] device={device.device_uuid}, keyword={display_kw}")
                 continue
 
-            global _push_rate_limit
-            rate_info = _push_rate_limit.get(device.id, {"count": 0, "date": current_date_str})
-            if rate_info["date"] != current_date_str:
-                rate_info = {"count": 0, "date": current_date_str}
-
-            if rate_info["count"] >= 3:
+            if _is_push_rate_limited(device.id, current_date_str):
                 continue
 
             dispatched_channel = False
@@ -336,11 +369,10 @@ def background_trigger_keyword_alarms(
                 )
                 if sent_web:
                     stats["web_push_sent"] += 1
-                dispatched_channel = True
+                    dispatched_channel = True
 
             if dispatched_channel:
-                rate_info["count"] += 1
-                _push_rate_limit[device.id] = rate_info
+                _consume_push_rate_limit(device.id, current_date_str)
 
         # 2. 목표가 알림 (Wishlist) 매칭
         if deal_price_int > 0:
@@ -369,29 +401,39 @@ def background_trigger_keyword_alarms(
 
                 stats["matched_wishlists"] += 1
                 wl_alert_title = f"[목표가 {wl.target_price:,}원 이하] {deal.title} · 현재 {deal_price_int:,}원"
-                # ① DND 판별 전 인앱 알림함 선적재 (drop_with_history)
+
+                device = db.query(DeviceToken).filter(
+                    DeviceToken.device_uuid == wl.user_id,
+                    DeviceToken.is_active == True,
+                ).first()
+
+                suppressed, reason = should_suppress_push(device, now) if device else (False, "ok")
+                is_dnd_suppressed = bool(device and suppressed and reason == "dnd_active")
+
+                # ① DND 판별 반영 후 인앱 알림함 선적재 (레이트리밋 시에도 인앱 기록 보존)
                 _record_notification_alert(
                     db=db,
                     user_id=wl.user_id,
                     title=wl_alert_title,
                     keyword=wl.keyword,
                     deal_url=final_url,
+                    dnd_suppressed=is_dnd_suppressed,
                 )
 
-                device = db.query(DeviceToken).filter(
-                    DeviceToken.device_uuid == wl.user_id,
-                    DeviceToken.is_active == True,
-                ).first()
                 if not device:
                     continue
 
-                # ② 공통 DND/야간 차단 판별
-                suppressed, reason = should_suppress_push(device, now)
+                # ② 공통 DND/야간 차단 판별 (DND 억제 시 일일 한도 미소모)
                 if suppressed:
                     stats["dropped_dnd"] += 1
                     logger.info(f"[Wishlist {reason} drop_with_history] device={device.device_uuid}, keyword={wl.keyword}")
                     continue
 
+                # ③ 키워드/위시리스트 공통 일일 푸시 한도(3건) 검사
+                if _is_push_rate_limited(device.id, current_date_str):
+                    continue
+
+                dispatched_wl_channel = False
                 if device.fcm_token:
                     try:
                         msg = messaging.Message(
@@ -409,6 +451,7 @@ def background_trigger_keyword_alarms(
                         )
                         messages.append(msg)
                         stats["fcm_queued"] += 1
+                        dispatched_wl_channel = True
                     except Exception as wl_err:
                         logger.error(f"목표가 FCM 메시지 생성 실패: {wl_err}")
 
@@ -429,6 +472,10 @@ def background_trigger_keyword_alarms(
                     )
                     if sent_web:
                         stats["web_push_sent"] += 1
+                        dispatched_wl_channel = True
+
+                if dispatched_wl_channel:
+                    _consume_push_rate_limit(device.id, current_date_str)
 
         # 3. FCM 500개씩 청크로 나누어 일괄 전송
         if messages:
@@ -449,6 +496,173 @@ def background_trigger_keyword_alarms(
 
     except Exception as e:
         logger.error(f"푸시알림 매치 에러: {e}")
+    finally:
+        db.close()
+
+    return stats
+
+
+def dnd_morning_digest_job(
+    session_factory=None,
+    now_kst: Optional[datetime.datetime] = None,
+) -> dict:
+    """
+    [P1-04] DND 해제 시각 도래 시 밤사이 억제 적재된 알림을 기기당 1건 요약 푸시로 일괄 발송합니다.
+    - digest_sent_at 기록으로 재실행 멱등성 보장 (중복 발송 0건)
+    - 동일 FCM 토큰 중복 발송 방지
+    """
+    factory = session_factory or SessionLocal
+    db = factory()
+    stats = {
+        "pending_alerts": 0,
+        "digests_sent": 0,
+        "fcm_sent": 0,
+        "web_push_sent": 0,
+    }
+    try:
+        kst = datetime.timezone(datetime.timedelta(hours=9))
+        if now_kst is None:
+            now = datetime.datetime.now(kst)
+        elif now_kst.tzinfo is None:
+            now = now_kst.replace(tzinfo=kst)
+        else:
+            now = now_kst.astimezone(kst)
+
+        pending_alerts = (
+            db.query(NotificationAlert)
+            .filter(
+                NotificationAlert.dnd_suppressed == True,
+                NotificationAlert.digest_sent_at.is_(None),
+            )
+            .all()
+        )
+        stats["pending_alerts"] = len(pending_alerts)
+        if not pending_alerts:
+            return stats
+
+        alerts_by_user: dict[str, list[NotificationAlert]] = {}
+        for al in pending_alerts:
+            if al.user_id:
+                alerts_by_user.setdefault(al.user_id, []).append(al)
+
+        from backend.services.notification_service import NotificationService
+
+        fcm_entries: list[tuple[Any, list[tuple[str, list[NotificationAlert]]]]] = []
+        fcm_token_groups: dict[str, list[tuple[str, list[NotificationAlert]]]] = {}
+        counted_users: set[str] = set()
+        alerts_to_mark: list[NotificationAlert] = []
+        marked_alert_ids: set[int] = set()
+
+        for user_id, user_alerts in alerts_by_user.items():
+            device = db.query(DeviceToken).filter(
+                DeviceToken.device_uuid == user_id,
+                DeviceToken.is_active == True,
+            ).first()
+            if not device or not device.dnd_enabled:
+                continue
+
+            suppressed, _ = should_suppress_push(device, now)
+            if suppressed:
+                continue
+
+            count_n = len(user_alerts)
+            digest_title = f"밤사이 놓친 핫딜 {count_n}건"
+            digest_body = f"방해금지 시간 동안 도착한 핫딜 {count_n}건을 지금 확인해 보세요."
+
+            if device.fcm_token:
+                if device.fcm_token not in fcm_token_groups:
+                    try:
+                        msg = messaging.Message(
+                            notification=messaging.Notification(
+                                title=digest_title,
+                                body=digest_body,
+                            ),
+                            data={
+                                "navigate_to": "notifications",
+                                "count": str(count_n),
+                            },
+                            token=device.fcm_token,
+                        )
+                        groups_list: list[tuple[str, list[NotificationAlert]]] = [(user_id, user_alerts)]
+                        fcm_token_groups[device.fcm_token] = groups_list
+                        fcm_entries.append((msg, groups_list))
+                    except Exception as fcm_err:
+                        logger.error(f"아침 요약 FCM 메시지 생성 실패: {fcm_err}")
+                else:
+                    fcm_token_groups[device.fcm_token].append((user_id, user_alerts))
+
+            if device.web_push_subscription:
+                sent_web = NotificationService.send_web_push_notification(
+                    subscription_json=device.web_push_subscription,
+                    keyword="밤사이 요약",
+                    title=digest_title,
+                    price=0,
+                    site_name="얼만데",
+                    deal_id=0,
+                    deal_url="",
+                    is_night_time=False,
+                    db=db,
+                    device=device,
+                    custom_title=digest_title,
+                    custom_body=digest_body,
+                )
+                if sent_web:
+                    stats["web_push_sent"] += 1
+                    if user_id not in counted_users:
+                        counted_users.add(user_id)
+                        stats["digests_sent"] += 1
+                    for al in user_alerts:
+                        if id(al) not in marked_alert_ids:
+                            marked_alert_ids.add(id(al))
+                            alerts_to_mark.append(al)
+
+        if fcm_entries:
+            chunk_size = 500
+            total_fcm = 0
+            for i in range(0, len(fcm_entries), chunk_size):
+                chunk_entries = fcm_entries[i:i + chunk_size]
+                chunk = [entry[0] for entry in chunk_entries]
+                try:
+                    response = messaging.send_each(chunk)
+                    succ_cnt = int(getattr(response, "success_count", 0) or 0)
+                    total_fcm += succ_cnt
+                    per_responses = getattr(response, "responses", None)
+                    if isinstance(per_responses, (list, tuple)) and len(per_responses) == len(chunk_entries):
+                        for (_, tok_user_groups), resp_item in zip(chunk_entries, per_responses):
+                            if getattr(resp_item, "success", False):
+                                for uid, u_alerts in tok_user_groups:
+                                    if uid not in counted_users:
+                                        counted_users.add(uid)
+                                        stats["digests_sent"] += 1
+                                    for al in u_alerts:
+                                        if id(al) not in marked_alert_ids:
+                                            marked_alert_ids.add(id(al))
+                                            alerts_to_mark.append(al)
+                    elif succ_cnt > 0:
+                        for _, tok_user_groups in chunk_entries:
+                            for uid, u_alerts in tok_user_groups:
+                                if uid not in counted_users:
+                                    counted_users.add(uid)
+                                    stats["digests_sent"] += 1
+                                for al in u_alerts:
+                                    if id(al) not in marked_alert_ids:
+                                        marked_alert_ids.add(id(al))
+                                        alerts_to_mark.append(al)
+                except FirebaseError as fcm_err:
+                    logger.error(f"아침 요약 FCM Batch 발송 오류: {fcm_err}")
+                except Exception as fcm_unexpected_err:
+                    logger.warning(f"아침 요약 FCM Batch 발송 건너뜀: {fcm_unexpected_err}")
+            stats["fcm_sent"] = total_fcm
+
+        if alerts_to_mark:
+            sent_utc = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+            for al in alerts_to_mark:
+                al.digest_sent_at = sent_utc
+            db.commit()
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"DND 아침 요약 배치 오류: {e}")
     finally:
         db.close()
 

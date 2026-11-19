@@ -121,6 +121,26 @@ fun formatPrice(price: Long?, currency: String? = "KRW", titleHint: String? = nu
     return "가격 확인"
 }
 
+/**
+ * 상세·홈 펼침 옵션 공용 가격 표시 헬퍼
+ * - 기존 formatPrice(0L) == "가격 확인" 호환성을 유지하면서 0원/무료 딜을 "0원" 또는 "0원 (무료)"로 일관 표시합니다.
+ */
+fun formatDetailPriceText(
+    price: Long,
+    currency: String? = "KRW",
+    titleHint: String? = null,
+    isFree: Boolean = false
+): String {
+    if (price > 0L) {
+        return formatPrice(price, currency, titleHint)
+    }
+    val base = formatPrice(0L, currency, titleHint)
+    return when {
+        isFree || base == "무료" -> "0원 (무료)"
+        else -> "0원"
+    }
+}
+
 private fun formatSubunitPrice(symbol: String, minorUnits: Long): String {
     val major = minorUnits / 100.0
     return if (minorUnits % 100L == 0L) {

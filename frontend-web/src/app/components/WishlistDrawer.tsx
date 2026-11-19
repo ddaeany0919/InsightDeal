@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useId, useRef } from "react";
+import React, { useId, useRef, useState } from "react";
 import { Heart, Trash2 } from "lucide-react";
-import type { Deal } from "../lib/types";
+import type { Deal, WishlistApiItem } from "../lib/types";
 import {
   formatPrice,
   decodeHtmlEntities,
@@ -10,13 +10,17 @@ import {
   getFallbackProxyImageUrl,
 } from "../lib/utils";
 import { useDialogA11y } from "../lib/useDialogA11y";
+import BrandImagePlaceholder from "./BrandImagePlaceholder";
 
 interface WishlistDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   wishlistDeals: Deal[];
+  serverWishlists?: WishlistApiItem[];
   onRemoveDeal: (e: React.MouseEvent, id: number) => void;
+  onRemoveServerWishlist?: (wishlistId: number) => void;
   onSelectDeal?: (deal: Deal) => void;
+  onSearchKeyword?: (keyword: string) => void;
   isLoggedIn: boolean;
   onLoginSimulate: () => void;
 }
@@ -25,17 +29,37 @@ export default function WishlistDrawer({
   isOpen,
   onClose,
   wishlistDeals,
+  serverWishlists = [],
   onRemoveDeal,
+  onRemoveServerWishlist,
   onSelectDeal,
+  onSearchKeyword,
   isLoggedIn,
   onLoginSimulate,
 }: WishlistDrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   useDialogA11y({ isOpen, onClose, containerRef: panelRef });
 
   if (!isOpen) return null;
+
+  const localTitlesLower = new Set(
+    wishlistDeals.map((d) => decodeHtmlEntities(d.title).toLowerCase())
+  );
+  const syncedOnlyWishlists = serverWishlists.filter((item) => {
+    const kw = decodeHtmlEntities(item.keyword || "").trim().toLowerCase();
+    if (!kw) return false;
+    for (const titleLower of localTitlesLower) {
+      if (titleLower.includes(kw) || kw.includes(titleLower)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const totalCount = wishlistDeals.length + syncedOnlyWishlists.length;
 
   return (
     <div
@@ -77,7 +101,12 @@ export default function WishlistDrawer({
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Heart size={20} color="#EF4444" fill="#EF4444" aria-hidden="true" />
+            <Heart
+              size={20}
+              color="var(--danger-text)"
+              fill="var(--danger-text)"
+              aria-hidden="true"
+            />
             <h3 id={titleId} style={{ fontSize: "1.25rem", fontWeight: 900 }}>
               내 찜 목록
             </h3>
@@ -136,7 +165,7 @@ export default function WishlistDrawer({
               이 기기에서 바로 사용하기
             </button>
           </div>
-        ) : wishlistDeals.length === 0 ? (
+        ) : totalCount === 0 ? (
           <div
             style={{
               display: "flex",
@@ -157,9 +186,180 @@ export default function WishlistDrawer({
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {wishlistDeals.map((deal) => (
+            {wishlistDeals.map((deal) => {
+              const imgKey = `${deal.id}_${deal.image_url || ""}`;
+              const isImgFailed = !deal.image_url || Boolean(failedImages[imgKey]);
+              return (
+                <div
+                  key={deal.id}
+                  style={{
+                    background: "var(--surface-subtle)",
+                    border: "1px solid var(--card-border)",
+                    borderRadius: "16px",
+                    padding: "10px 12px",
+                    display: "flex",
+                    gap: "8px",
+                    alignItems: "center",
+                  }}
+                >
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onSelectDeal?.(deal)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelectDeal?.(deal);
+                      }
+                    }}
+                    title="클릭하여 상세 정보 및 가격 추이 보기"
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      display: "flex",
+                      gap: "12px",
+                      alignItems: "center",
+                      cursor: "pointer",
+                      borderRadius: "10px",
+                      minHeight: "44px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "50px",
+                        height: "50px",
+                        borderRadius: "8px",
+                        overflow: "hidden",
+                        flexShrink: 0,
+                        background: "var(--badge-bg)",
+                        border: "1px solid var(--card-border)",
+                      }}
+                    >
+                      {!isImgFailed && deal.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={getProxyImageUrl(deal.image_url, { width: 120 })}
+                          alt={deal.title}
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            const img = e.currentTarget;
+                            const primarySrc = getProxyImageUrl(deal.image_url, { width: 120 });
+                            const fallback = getFallbackProxyImageUrl(deal.image_url);
+                            if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
+                              img.dataset.fallbackTried = "1";
+                              img.src = fallback;
+                              return;
+                            }
+                            img.dataset.fallbackTried = "1";
+                            setFailedImages((prev) => ({ ...prev, [imgKey]: true }));
+                          }}
+                        />
+                      ) : (
+                        <BrandImagePlaceholder compact />
+                      )}
+                    </div>
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+                      <span
+                        style={{
+                          fontSize: "0.82rem",
+                          fontWeight: 700,
+                          color: "var(--text-main)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {decodeHtmlEntities(deal.title)}
+                      </span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          marginTop: "2px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "0.8rem",
+                            color: "var(--deal-orange)",
+                            fontWeight: 800,
+                          }}
+                        >
+                          {deal.isFree ? "0원 (무료)" : formatPrice(deal.price, deal.currency, deal.title)}
+                        </span>
+                        {(() => {
+                          try {
+                            const mapStr =
+                              typeof window !== "undefined"
+                                ? localStorage.getItem("insightdeal_target_prices")
+                                : null;
+                            const targetMap = mapStr ? JSON.parse(mapStr) : {};
+                            const targetVal = targetMap?.[deal.id] ?? targetMap?.[`${deal.id}_0`];
+                            const numericTarget = Number(targetVal);
+                            if (Number.isFinite(numericTarget) && numericTarget > 0) {
+                              const normCurr = (deal.currency || "KRW").trim().toUpperCase();
+                              const formattedTarget =
+                                normCurr === "USD"
+                                  ? `$${numericTarget.toLocaleString("en-US")}`
+                                  : normCurr === "EUR"
+                                    ? `€${numericTarget.toLocaleString("en-US")}`
+                                    : normCurr === "CNY" || normCurr === "JPY"
+                                      ? `¥${numericTarget.toLocaleString("en-US")}`
+                                      : `${Math.round(numericTarget).toLocaleString()}원`;
+                              return (
+                                <span
+                                  style={{
+                                    fontSize: "0.68rem",
+                                    fontWeight: 800,
+                                    color: "var(--success-text)",
+                                    background: "var(--success-bg)",
+                                    border: "1px solid var(--success-border)",
+                                    padding: "1px 6px",
+                                    borderRadius: "999px",
+                                  }}
+                                >
+                                  목표가 {formattedTarget}
+                                </span>
+                              );
+                            }
+                          } catch {}
+                          return null;
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`${deal.title} 찜 해제`}
+                    onClick={(e) => onRemoveDeal(e, deal.id)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      width: 44,
+                      height: 44,
+                      minWidth: 44,
+                      minHeight: 44,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--text-sub)",
+                      flexShrink: 0,
+                    }}
+                    title="찜 해제"
+                  >
+                    <Trash2 size={16} aria-hidden="true" />
+                  </button>
+                </div>
+              );
+            })}
+
+            {syncedOnlyWishlists.map((item) => (
               <div
-                key={deal.id}
+                key={`srv-${item.id}`}
                 style={{
                   background: "var(--surface-subtle)",
                   border: "1px solid var(--card-border)",
@@ -170,25 +370,20 @@ export default function WishlistDrawer({
                   alignItems: "center",
                 }}
               >
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onSelectDeal?.(deal)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onSelectDeal?.(deal);
-                    }
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onSearchKeyword?.(item.keyword);
                   }}
-                  title="클릭하여 상세 정보 및 가격 추이 보기"
                   style={{
                     flex: 1,
                     minWidth: 0,
+                    minHeight: "44px",
                     display: "flex",
-                    gap: "12px",
                     alignItems: "center",
-                    cursor: "pointer",
-                    borderRadius: "10px",
+                    gap: "12px",
+                    textAlign: "left",
                   }}
                 >
                   <div
@@ -198,42 +393,15 @@ export default function WishlistDrawer({
                       borderRadius: "8px",
                       overflow: "hidden",
                       flexShrink: 0,
-                      background: "var(--badge-bg)",
                       border: "1px solid var(--card-border)",
                     }}
                   >
-                    {deal.image_url ? (
-                      <img
-                        src={getProxyImageUrl(deal.image_url, { width: 120 })}
-                        alt={deal.title}
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        referrerPolicy="no-referrer"
-                        onError={(e) => {
-                          const fallback = getFallbackProxyImageUrl(deal.image_url);
-                          if (fallback && e.currentTarget.src !== fallback) {
-                            e.currentTarget.src = fallback;
-                          }
-                        }}
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: "0.65rem",
-                        }}
-                      >
-                        No Img
-                      </div>
-                    )}
+                    <BrandImagePlaceholder compact />
                   </div>
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+                  <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "3px" }}>
                     <span
                       style={{
-                        fontSize: "0.82rem",
+                        fontSize: "0.84rem",
                         fontWeight: 700,
                         color: "var(--text-main)",
                         overflow: "hidden",
@@ -241,89 +409,48 @@ export default function WishlistDrawer({
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {decodeHtmlEntities(deal.title)}
+                      {decodeHtmlEntities(item.keyword)}
                     </span>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        marginTop: "2px",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "0.8rem",
-                          color: "var(--deal-orange)",
-                          fontWeight: 800,
-                        }}
-                      >
-                        {deal.isFree ? "0원 (무료)" : formatPrice(deal.price, deal.currency, deal.title)}
-                      </span>
-                      {(() => {
-                        try {
-                          const mapStr =
-                            typeof window !== "undefined"
-                              ? localStorage.getItem("insightdeal_target_prices")
-                              : null;
-                          const targetMap = mapStr ? JSON.parse(mapStr) : {};
-                          const targetVal = targetMap?.[deal.id] ?? targetMap?.[`${deal.id}_0`];
-                          const numericTarget = Number(targetVal);
-                          if (Number.isFinite(numericTarget) && numericTarget > 0) {
-                            const normCurr = (deal.currency || "KRW").trim().toUpperCase();
-                            const formattedTarget =
-                              normCurr === "USD"
-                                ? `$${numericTarget.toLocaleString("en-US")}`
-                                : normCurr === "EUR"
-                                  ? `€${numericTarget.toLocaleString("en-US")}`
-                                  : normCurr === "CNY" || normCurr === "JPY"
-                                    ? `¥${numericTarget.toLocaleString("en-US")}`
-                                    : `${Math.round(numericTarget).toLocaleString()}원`;
-                            return (
-                              <span
-                                style={{
-                                  fontSize: "0.68rem",
-                                  fontWeight: 800,
-                                  color: "#10b981",
-                                  background: "rgba(16,185,129,0.12)",
-                                  border: "1px solid rgba(16,185,129,0.25)",
-                                  padding: "1px 6px",
-                                  borderRadius: "999px",
-                                }}
-                              >
-                                목표가 {formattedTarget}
-                              </span>
-                            );
-                          }
-                        } catch {}
-                        return null;
-                      })()}
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                      <span className="badge badge-mint">동기화된 찜</span>
+                      {Number(item.target_price) > 0 && (
+                        <span
+                          style={{
+                            fontSize: "0.68rem",
+                            fontWeight: 800,
+                            color: "var(--success-text)",
+                            background: "var(--success-bg)",
+                            border: "1px solid var(--success-border)",
+                            padding: "1px 6px",
+                            borderRadius: "999px",
+                          }}
+                        >
+                          목표가 {Number(item.target_price).toLocaleString()}원
+                        </span>
+                      )}
                     </div>
                   </div>
-                </div>
-                <button
-                  type="button"
-                  aria-label={`${deal.title} 찜 해제`}
-                  onClick={(e) => onRemoveDeal(e, deal.id)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    width: 44,
-                    height: 44,
-                    minWidth: 44,
-                    minHeight: 44,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "var(--text-sub)",
-                    flexShrink: 0,
-                  }}
-                  title="찜 해제"
-                >
-                  <Trash2 size={16} aria-hidden="true" />
                 </button>
+                {onRemoveServerWishlist && (
+                  <button
+                    type="button"
+                    aria-label={`${item.keyword} 서버 찜 해제`}
+                    onClick={() => onRemoveServerWishlist(item.id)}
+                    style={{
+                      width: 44,
+                      height: 44,
+                      minWidth: 44,
+                      minHeight: 44,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--text-sub)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Trash2 size={16} aria-hidden="true" />
+                  </button>
+                )}
               </div>
             ))}
           </div>

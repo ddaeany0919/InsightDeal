@@ -486,7 +486,7 @@ class InsightDealM4P0UnitTest {
                 {"key":"핫딜모음","label":"핫딜모음"},
                 {"key":"기타","label":"기타"}
               ],
-              "sources": ["전체","펨코","뽐뿌","루리웹","퀘이사존","클리앙","알리뽐뿌","빠삭국내","빠삭해외","빠삭육아"]
+              "sources": ["전체","펨코","뽐뿌","뽐뿌해외","루리웹","퀘이사존","클리앙","알리뽐뿌","빠삭국내","빠삭해외","빠삭육아"]
             }
         """.trimIndent()
 
@@ -507,7 +507,7 @@ class InsightDealM4P0UnitTest {
         failMode = true
         CategoryCatalog.syncWithServer(apiService)
         assertEquals(15, CategoryCatalog.categoriesState.value.size)
-        assertEquals(10, CategoryCatalog.sourcesState.value.size)
+        assertEquals(11, CategoryCatalog.sourcesState.value.size)
     }
 
     // -----------------------------------------------------------------------

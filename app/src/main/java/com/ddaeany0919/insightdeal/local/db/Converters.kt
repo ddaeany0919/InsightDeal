@@ -37,7 +37,11 @@ class Converters {
     fun toStringList(value: String?): List<String>? {
         if (value.isNullOrEmpty()) return emptyList()
         val listType = object : TypeToken<List<String>>() {}.type
-        return gson.fromJson(value, listType)
+        return try {
+            gson.fromJson(value, listType) ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     // List<DealSource> JSON 변환기
@@ -50,7 +54,11 @@ class Converters {
     fun toSourceList(value: String?): List<DealSource>? {
         if (value.isNullOrEmpty()) return emptyList()
         val listType = object : TypeToken<List<DealSource>>() {}.type
-        return gson.fromJson(value, listType)
+        return try {
+            gson.fromJson(value, listType) ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     // List<DealOptionItem> JSON 변환기

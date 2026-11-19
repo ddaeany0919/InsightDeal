@@ -140,6 +140,7 @@ fun SettingsScreen(
                             icon = Icons.Outlined.NotificationsActive,
                             iconTint = MaterialTheme.colorScheme.secondary,
                             title = "알림 키워드 관리",
+                            value = "방해금지·08:00 요약",
                             onClick = onNavigateToKeywordManager
                         )
 
@@ -491,6 +492,7 @@ fun SettingsScreen(
                         ) {
                             val dotColorMap = mapOf(
                                 "뽐뿌" to Color(0xFF1565C0),
+                                "뽐뿌해외" to Color(0xFF00796B),
                                 "퀘이사존" to Color(0xFFE65100),
                                 "펨코" to Color(0xFF026AA7),
                                 "루리웹" to Color(0xFF0D47A1),
@@ -747,7 +749,7 @@ fun SettingsScreen(
                 "얼만데 © 2026",
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
             Spacer(modifier = Modifier.height(16.dp))

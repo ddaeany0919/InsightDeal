@@ -1,0 +1,1063 @@
+# -*- coding: utf-8 -*-
+"""
+backend/tests/unit/test_v1_1b_features.py
+
+InsightDeal(얼만데) v1.1b (P1-01 ~ P1-06, P1-12) 백엔드 단위·보안 테스트:
+1. P1-01: PBKDF2-HMAC-SHA256 해싱, 레거시 SHA-256 투명 업그레이드, auth_v1 HMAC 토큰 발급/변조/탈퇴 무효화,
+          6자리 페어링 코드 발급·소비·만료·자기병합·중복사용·5회 오답 잠금·IP 429·무손실 병합(fcm_token 비복제)
+2. P1-02: proxy_image 이벤트 루프별 WeakKeyDictionary 격리, 404/200 Single-flight Coalescing, 원자적 .tmp -> os.replace
+3. P1-03: _extract_body_images 다중 마커/엔티티/스킴 정규화 및 18종 XSS/SSRF/플레이스홀더 차단
+4. P1-04: is_in_dnd_range 반개구간 [start, end), dnd_morning_digest_job 멱등성·토큰 중복방지·야간 미해제 보류,
+          ensure_schema_migrations 구형 SQLite ALTER TABLE 및 users.notifications DTO 신규 필드 노출
+5. P1-05: 11종 출처('뽐뿌해외'), 마이크로초 커서 정밀도 보존(_format_cursor_iso), 비정상 커서 400(500 차단),
+          include_closed/only_hot/hide_closed 우선순위 및 캐시 격리
+6. P1-06: report-closed 401/404/409/429, 3명 임계치 is_closed=True + 캐시 무효화
+7. P1-12: is_search_or_community_url() 폴백 URL 탐지(amazon/29cm/ohou/temu 등) 및 push_worker Wishlist 일일 한도 공유
+"""
+
+import asyncio
+from datetime import datetime, timedelta, timezone
+import hashlib
+import os
+import socket
+import sys
+from types import SimpleNamespace
+
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+_BACKEND_DIR = os.path.dirname(os.path.dirname(_TEST_DIR))
+_PROJECT_ROOT = os.path.dirname(_BACKEND_DIR)
+for _p in (_PROJECT_ROOT, _BACKEND_DIR):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from backend import main as main_mod
+from backend.core.categories import STANDARD_SOURCES
+from backend.core.device_auth import create_device_token
+from backend.core.url_utils import is_safe_external_url, is_search_or_community_url
+from backend.database import models
+from backend.database import session as db_session_mod
+from backend.database.models import Base as CommunityBase
+from backend.database.session import get_db, get_db_session
+from backend.models.wishlist_models import Base as WishlistBase, Wishlist
+from backend.routers import auth as auth_router
+from backend.routers import community as community_router
+from backend.services import push_worker
+
+KST = timezone(timedelta(hours=9))
+VALID_PNG = b"\x89PNG\r\n\x1a\n" + (b"\x21" * 100)
+
+
+@pytest.fixture()
+def unit_v11b_env(monkeypatch, tmp_path):
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    CommunityBase.metadata.create_all(bind=engine)
+    WishlistBase.metadata.create_all(bind=engine)
+    SessionCls = sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=engine)
+
+    seed = SessionCls()
+    try:
+        seed.add_all([
+            models.Community(id=1, name="ppomppu", display_name="뽐뿌", base_url="https://www.ppomppu.co.kr"),
+            models.Community(id=2, name="ppomppu_overseas", display_name="뽐뿌해외", base_url="https://www.ppomppu.co.kr"),
+            models.Community(id=3, name="ruliweb", display_name="루리웹", base_url="https://bbs.ruliweb.com"),
+        ])
+        seed.commit()
+    finally:
+        seed.close()
+
+    def _override_db():
+        db = SessionCls()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    main_mod.app.dependency_overrides[get_db] = _override_db
+    main_mod.app.dependency_overrides[get_db_session] = _override_db
+    monkeypatch.setattr(db_session_mod, "SessionLocal", SessionCls)
+    monkeypatch.setenv("ENV", "development")
+    monkeypatch.setenv("SERVER_DEVICE_SECRET", "unit-v11b-secret-key")
+    monkeypatch.setattr(main_mod, "IMAGE_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(main_mod, "_get_deal_backup_candidates_sync", lambda *a, **kw: (None, []))
+
+    auth_router.reset_rate_limits()
+    community_router.reset_rate_limits()
+    community_router.invalidate_feed_api_cache()
+    community_router._COMMUNITY_ID_CACHE.clear()
+    push_worker.reset_rate_limits()
+
+    try:
+        with TestClient(main_mod.app) as client:
+            yield SimpleNamespace(client=client, SessionCls=SessionCls, engine=engine, tmp_path=tmp_path)
+    finally:
+        auth_router.reset_rate_limits()
+        community_router.reset_rate_limits()
+        community_router.invalidate_feed_api_cache()
+        push_worker.reset_rate_limits()
+        main_mod.app.dependency_overrides.clear()
+        engine.dispose()
+
+
+def test_p1_01_pbkdf2_hash_verify_upgrade_and_token_revocation(unit_v11b_env):
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+
+    # 1. PBKDF2 해시 생성·검증 단위 검증
+    hashed = auth_router.hash_password("UltraSafePass!2026")
+    assert hashed.startswith("pbkdf2_sha256$200000$")
+    ok, upgrade = auth_router.verify_password("UltraSafePass!2026", hashed)
+    assert ok is True and upgrade is False
+    bad, _ = auth_router.verify_password("WrongPass", hashed)
+    assert bad is False
+
+    # 2. 레거시 SHA-256 해시 검증 및 로그인 시 PBKDF2 투명 업그레이드
+    legacy_pw = "LegacyPw!99"
+    legacy_hex = hashlib.sha256(legacy_pw.encode("utf-8")).hexdigest()
+    ok_leg, upg_leg = auth_router.verify_password(legacy_pw, legacy_hex)
+    assert ok_leg is True and upg_leg is True
+
+    db = SessionCls()
+    try:
+        db.add(models.User(username="leg_u1", password_hash=legacy_hex, nickname="레거시유저1"))
+        db.commit()
+    finally:
+        db.close()
+
+    res_login = client.post("/api/auth/login", json={"username": "leg_u1", "password": legacy_pw})
+    assert res_login.status_code == 200
+    token = res_login.json()["access_token"]
+    assert token.startswith("auth_v1.")
+    assert res_login.json()["token_type"] == "bearer"
+
+    # DB에 PBKDF2로 업그레이드 확인
+    db = SessionCls()
+    try:
+        u = db.query(models.User).filter(models.User.username == "leg_u1").first()
+        assert u.password_hash.startswith("pbkdf2_sha256$200000$")
+    finally:
+        db.close()
+
+    # 3. link-device 후 회원 탈퇴(/withdraw) -> 기존 Bearer 즉시 401
+    dev_tok = create_device_token("unit-dev-1")
+    assert client.post(
+        "/api/auth/link-device",
+        headers={"Authorization": f"Bearer {token}", "X-Device-Token": dev_tok},
+    ).status_code == 200
+
+    w_res = client.post("/api/auth/withdraw", json={"username": "leg_u1", "password": legacy_pw})
+    assert w_res.status_code == 200
+
+    dev_tok2 = create_device_token("unit-dev-2")
+    assert client.post(
+        "/api/auth/link-device",
+        headers={"Authorization": f"Bearer {token}", "X-Device-Token": dev_tok2},
+    ).status_code == 401
+
+
+def test_p1_01_pairing_merge_preserves_channel_tokens_and_handles_conflicts(unit_v11b_env):
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+
+    r_a = client.post("/api/push/device", json={"fcm_token": "secret-fcm-a", "dnd_enabled": True, "dnd_start_time": "22:00", "dnd_end_time": "08:00"}).json()
+    r_b = client.post("/api/push/device", json={"fcm_token": "secret-fcm-b"}).json()
+    h_a = {"X-Device-Token": r_a["device_token"]}
+    h_b = {"X-Device-Token": r_b["device_token"]}
+
+    client.post("/api/push/keywords", json={"keyword": "공통키워드"}, headers=h_a)
+    client.post("/api/push/keywords", json={"keyword": "비활성키워드"}, headers=h_a)
+    client.post("/api/push/keywords/toggle", json={"keyword": "비활성키워드"}, headers=h_a)
+    client.post("/api/push/keywords", json={"keyword": "공통키워드"}, headers=h_b)
+
+    client.post("/api/wishlist/item-alert", json={"keyword": "노트북", "target_price": 1200000}, headers=h_a)
+    client.post("/api/wishlist/item-alert", json={"keyword": "노트북", "target_price": 1300000}, headers=h_b)
+
+    code = client.post("/api/auth/pairing-code", headers=h_a).json()["code"]
+    claim = client.post("/api/auth/merge-device", json={"code": code}, headers=h_b)
+    assert claim.status_code == 200
+    body = claim.json()
+    assert body["success"] is True and body["dnd_synced"] is True
+
+    # 채널 토큰(fcm_token)은 복제되지 않고 각 기기 고유 토큰 유지
+    db = SessionCls()
+    try:
+        dev_b = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == r_b["device_uuid"]).first()
+        assert dev_b.fcm_token == "secret-fcm-b"
+        assert dev_b.dnd_enabled is True and dev_b.dnd_start_time == "22:00"
+        wls = db.query(Wishlist).filter(Wishlist.user_id == r_b["device_uuid"], Wishlist.keyword == "노트북").all()
+        assert len(wls) == 1
+        assert wls[0].target_price == 1200000
+    finally:
+        db.close()
+
+    b_kws = client.get("/api/push/keywords", headers=h_b).json()["keywords"]
+    assert b_kws.count("공통키워드") == 1
+    assert "비활성키워드" not in b_kws
+
+
+def test_p1_02_proxy_image_multi_loop_weakref_and_atomic_write(unit_v11b_env, monkeypatch):
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))])
+
+    async def _ok_get(url, **kwargs):
+        return httpx.Response(200, content=VALID_PNG, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(main_mod.proxy_client, "get", _ok_get)
+
+    # 별도 이벤트 루프 2회 연속 실행 시 RuntimeError(different event loop)가 발생하지 않아야 함
+    async def _run_once(u: str):
+        async with httpx.AsyncClient(app=main_mod.app, base_url="http://testserver") as ac:
+            return await ac.get("/api/proxy-image", params={"url": u})
+
+    r1 = asyncio.run(_run_once("https://cdn.example.com/loop-1.png"))
+    r2 = asyncio.run(_run_once("https://cdn.example.com/loop-2.png"))
+    assert r1.status_code == 200 and r2.status_code == 200
+    assert list(unit_v11b_env.tmp_path.glob("*.tmp")) == []
+    assert len(list(unit_v11b_env.tmp_path.glob("*.cache"))) == 2
+
+
+def test_p1_03_extract_body_images_security_and_normalization():
+    raw_html = (
+        '<img data-original="//cdn.example.com/p1.jpg?a=1&amp;b=2">'
+        '<img src="https://cdn.example.com/p1.jpg?a=1&b=2">'
+        '[상품이미지: https://cdn.example.com/p2.png]'
+        '<img src="javascript:alert(1)">'
+        '<img src="vbscript:msgbox(1)">'
+        '<img src="data:image/svg+xml,<svg onload=alert(1)>">'
+        '<img src="http://[::ffff:127.0.0.1]/admin.png">'
+        '<img src="http://169.254.169.254/latest/meta-data/">'
+        '<img src="https://cdn.example.com/x.jpg?q=onerror%3Dalert(1)">'
+        '<img src="https://user:pass@cdn.example.com/secret.png">'
+        '<img src="https://cdn.example.com/no_image.svg">'
+        '<p>[첨부된 이미지 링크들]: https://cdn.example.com/p3.webp, https://cdn.example.com/dot03.gif</p>'
+    )
+    imgs = community_router._extract_body_images(raw_html)
+    assert imgs == [
+        "https://cdn.example.com/p1.jpg?a=1&b=2",
+        "https://cdn.example.com/p2.png",
+        "https://cdn.example.com/p3.webp",
+    ]
+    assert is_safe_external_url("https://cdn.example.com/ok.png") is True
+    assert is_safe_external_url("http://[::1]/bad.png") is False
+
+
+def test_p1_04_dnd_half_open_digest_idempotency_and_legacy_alter(unit_v11b_env, monkeypatch):
+    # 1. DND 반개구간 [start, end) 경계 검증
+    assert push_worker.is_in_dnd_range(datetime(2026, 11, 20, 22, 0, 0).time(), "22:00", "08:00") is True
+    assert push_worker.is_in_dnd_range(datetime(2026, 11, 20, 7, 59, 59).time(), "22:00", "08:00") is True
+    assert push_worker.is_in_dnd_range(datetime(2026, 11, 20, 8, 0, 0).time(), "22:00", "08:00") is False
+    assert push_worker.is_in_dnd_range(datetime(2026, 11, 20, 15, 0, 0).time(), "13:00", "15:00") is False
+
+    # 2. 구형 SQLite 테이블 ensure_schema_migrations 검증 + NotificationAlertDto 노출 검증
+    legacy_path = unit_v11b_env.tmp_path / "legacy_unit.db"
+    leg_engine = create_engine(f"sqlite:///{legacy_path}", connect_args={"check_same_thread": False})
+    try:
+        with leg_engine.begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE notification_alerts ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id VARCHAR(100), title TEXT NOT NULL, "
+                "keyword VARCHAR(100) NOT NULL, received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, deal_url VARCHAR(2048))"
+            ))
+            conn.execute(text(
+                "INSERT INTO notification_alerts (user_id, title, keyword, deal_url) VALUES ('d1', '구형알림', '노트북', 'https://example.com')"
+            ))
+        mgr = db_session_mod.DatabaseManager.__new__(db_session_mod.DatabaseManager)
+        mgr.engine = leg_engine
+        mgr.ensure_schema_migrations()
+        with leg_engine.connect() as conn:
+            cols = {r[1] for r in conn.execute(text("PRAGMA table_info(notification_alerts)")).fetchall()}
+        assert {"is_read", "dnd_suppressed", "digest_sent_at"}.issubset(cols)
+    finally:
+        leg_engine.dispose()
+
+    # 3. GET /api/users/notifications 신규 필드 포함 및 dnd_suppressed=True 유지 반환
+    reg = unit_v11b_env.client.post("/api/push/device", json={"dnd_enabled": True}).json()
+    headers = {"X-Device-Token": reg["device_token"]}
+    db = unit_v11b_env.SessionCls()
+    try:
+        db.add(models.NotificationAlert(
+            user_id=reg["device_uuid"],
+            title="야간 억제 테스트 딜",
+            keyword="테스트",
+            deal_url="https://example.com/1",
+            dnd_suppressed=True,
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+    notifs = unit_v11b_env.client.get("/api/users/notifications", headers=headers).json()
+    assert len(notifs) == 1
+    assert notifs[0]["dnd_suppressed"] is True
+    assert notifs[0]["is_read"] is False
+    assert notifs[0]["digest_sent_at"] is None
+
+
+def test_p1_05_microsecond_cursor_precision_invalid_cursor_and_11_sources(unit_v11b_env):
+    assert len(STANDARD_SOURCES) == 11
+    assert STANDARD_SOURCES[3] == "뽐뿌해외"
+
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+    base_dt = datetime(2026, 11, 19, 10, 0, 0)
+
+    # 마이크로초 차이가 있는 3건 시드 -> page_size=2로 누락/중복 없이 커서 순회 검증
+    distinct_names = ["마이크로초모니터알파", "마이크로초키보드베타", "마이크로초헤드셋감마"]
+    db = SessionCls()
+    try:
+        deals = [
+            models.Deal(
+                source_community_id=2,
+                title=f"[아마존] {distinct_names[i]} ({10000 + i * 100}원)",
+                post_link=f"https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&no={1000 + i}",
+                ecommerce_link=f"https://www.amazon.com/dp/TESTMICRO{i}",
+                price=str(10000 + i * 100),
+                base_product_name=distinct_names[i],
+                model_code=f"MC{i:03d}X",
+                indexed_at=base_dt + timedelta(microseconds=500000 - i * 100000),
+            )
+            for i in range(3)
+        ]
+        db.add_all(deals)
+        db.commit()
+        expected_ids = [d.id for d in deals]
+    finally:
+        db.close()
+
+    p1 = client.get("/api/community/hot-deals", params={"limit": 2, "source": "뽐뿌해외"}).json()
+    assert [d["id"] for d in p1["deals"]] == expected_ids[:2]
+    assert p1["has_more"] is True
+    assert "." in p1["next_cursor"]["indexed_at"]  # 마이크로초 정밀도 보존
+
+    p2 = client.get(
+        "/api/community/hot-deals",
+        params={
+            "limit": 2,
+            "source": "뽐뿌해외",
+            "cursor_indexed_at": p1["next_cursor"]["indexed_at"],
+            "cursor_id": p1["next_cursor"]["id"],
+        },
+    ).json()
+    assert [d["id"] for d in p2["deals"]] == expected_ids[2:]
+    assert p2["has_more"] is False
+    assert p2["next_cursor"] is None
+
+    # 잘못된/부분 커서는 400 반환 (500 금지)
+    assert client.get("/api/community/hot-deals", params={"cursor_id": 1}).status_code == 400
+    assert client.get("/api/community/hot-deals", params={"cursor_indexed_at": "bad-date", "cursor_id": 1}).status_code == 400
+
+
+def test_p1_06_and_p1_12_report_closed_fallback_detection_and_wishlist_quota(unit_v11b_env, monkeypatch):
+    # 1. P1-12 검색 폴백 URL 탐지 확장 검증
+    assert is_search_or_community_url("https://www.amazon.com/s?k=ssd") is True
+    assert is_search_or_community_url("https://search.29cm.co.kr/?keyword=nike") is True
+    assert is_search_or_community_url("https://ohou.se/productions/feed?query=chair") is True
+    assert is_search_or_community_url("https://www.temu.com/search_result.html?search_key=usb") is True
+    assert is_search_or_community_url("https://www.amazon.com/dp/B09XS7JWHH") is False
+
+    # 2. P1-06 report-closed 3회 임계치 검증
+    db = unit_v11b_env.SessionCls()
+    try:
+        d = models.Deal(
+            source_community_id=1,
+            title="[아마존] 폴백 테스트 상품 (15,000원)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=55555",
+            ecommerce_link="https://www.amazon.com/s?k=test",
+            price="15000",
+        )
+        db.add(d)
+        db.commit()
+        db.refresh(d)
+        did = d.id
+    finally:
+        db.close()
+
+    det = unit_v11b_env.client.get(f"/api/community/deals/{did}").json()
+    assert det["is_search_fallback"] is True and det["isSearchFallback"] is True
+    assert det["report_count"] == 0 and det["reportCount"] == 0
+
+    toks = [create_device_token(f"rep-dev-{i}") for i in range(3)]
+    for idx, tok in enumerate(toks, start=1):
+        res = unit_v11b_env.client.post(f"/api/community/deals/{did}/report-closed", headers={"X-Device-Token": tok})
+        assert res.status_code == 200
+        assert res.json()["report_count"] == idx
+        assert res.json()["is_closed"] is (idx >= 3)
+
+    assert unit_v11b_env.client.post(f"/api/community/deals/{did}/report-closed", headers={"X-Device-Token": toks[0]}).status_code == 409
+
+    # 3. P1-12 Wishlist 레이트리밋 일일 3회 공유 검증
+    fcm_sent = []
+    monkeypatch.setattr(
+        push_worker.messaging,
+        "send_each",
+        lambda chunk: fcm_sent.extend(chunk) or SimpleNamespace(success_count=len(chunk), failure_count=0),
+    )
+    db = unit_v11b_env.SessionCls()
+    try:
+        dev = models.DeviceToken(device_uuid="wl-limit-dev", fcm_token="fcm-wl-limit", is_active=True)
+        db.add(dev)
+        db.add(Wishlist(user_id="wl-limit-dev", keyword="무선마우스", target_price=100000, is_active=True, alert_enabled=True))
+        deal_ids = []
+        for i in range(4):
+            item = models.Deal(
+                source_community_id=1,
+                title=f"[쿠팡] 무선마우스 {i}호 (30,000원)",
+                post_link=f"https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=81{i}",
+                ecommerce_link=f"https://www.coupang.com/vp/products/81{i}",
+                price="30000",
+            )
+            db.add(item)
+            db.flush()
+            deal_ids.append(item.id)
+        db.commit()
+    finally:
+        db.close()
+
+    day_kst = datetime(2026, 11, 19, 14, 0, 0, tzinfo=KST)
+    for target_did in deal_ids:
+        push_worker.background_trigger_keyword_alarms(target_did, session_factory=unit_v11b_env.SessionCls, now_kst=day_kst)
+    assert len(fcm_sent) == 3
+
+
+def test_iter2_security_nonstandard_ipv4_port_double_encode_event_handler_and_img_priority(unit_v11b_env, monkeypatch):
+    """[Iter2 보안] 비표준 IPv4·비HTTP 포트 SSRF, 이중 URL 인코딩·임의 이벤트 핸들러 차단 및 data-original 우선순위 추출"""
+    client = unit_v11b_env.client
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))])
+
+    async def _fail_if_called(url, **kwargs):
+        raise AssertionError(f"차단 대상 URL에 업스트림 요청이 발생함: {url}")
+
+    monkeypatch.setattr(main_mod.proxy_client, "get", _fail_if_called)
+
+    blocked_urls = [
+        "http://0177.0.0.1/a.png",
+        "http://2130706433/a.png",
+        "http://0x7f000001/a.png",
+        "http://127.1/a.png",
+        "http://0/a.png",
+        "http://8.8.8.8:6379/a.png",
+        "https://cdn.example.com:8443/a.png",
+    ]
+    for bad_u in blocked_urls:
+        assert is_safe_external_url(bad_u) is False, f"is_safe_external_url 미차단: {bad_u}"
+        res = client.get("/api/proxy-image", params={"url": bad_u})
+        assert res.status_code == 404, f"proxy_image 미차단: {bad_u}"
+        assert res.headers.get("cache-control") == "no-store"
+
+    # 80/443 표준 포트는 허용
+    assert is_safe_external_url("http://cdn.example.com:80/a.png") is True
+    assert is_safe_external_url("https://cdn.example.com:443/a.png") is True
+
+    # 이중 URL 인코딩, 임의 이벤트 핸들러, 비표준 IP, 지연로딩 data-original 우선순위 추출
+    html_payload = (
+        '<img src="http://0177.0.0.1/a.png">'
+        '<img src="http://2130706433/a.png">'
+        '<img src="http://0x7f000001/a.png">'
+        '<img src="http://127.1/a.png">'
+        '<img src="http://0/a.png">'
+        '<img src="http://8.8.8.8:6379/a.png">'
+        '<img src="https://cdn.example.com/a.jpg?q=%253Cscript%253Ealert(1)%253C/script%253E">'
+        '<img src="https://cdn.example.com/a.png?onerror%253Dalert(1)">'
+        '<img src="https://cdn.example.com/a.png?onpointerover=alert(1)">'
+        '<img src="https://cdn.example.com/a.png?onanimationstart=alert(1)">'
+        '<img src="https://cdn.example.com/lazyloading.gif" data-original="https://cdn.example.com/real.jpg">'
+    )
+    extracted = community_router._extract_body_images(html_payload)
+    assert extracted == ["https://cdn.example.com/real.jpg"]
+
+
+def test_iter2_security_xff_spoofing_and_withdraw_id_reuse_revocation(unit_v11b_env):
+    """[Iter2 보안] 비신뢰 직접 접속 X-Forwarded-For 스푸핑 차단, 기기 발급 한도 및 탈퇴 후 ID 재사용 토큰 부활 차단"""
+    def _client_with_ip(ip: str, port: int = 51234) -> TestClient:
+        async def _wrapped(scope, receive, send):
+            if scope["type"] in ("http", "websocket"):
+                scope = dict(scope)
+                scope["client"] = (ip, port)
+            await main_mod.app(scope, receive, send)
+        return TestClient(_wrapped)
+
+    ext_client = _client_with_ip("198.51.100.5")
+
+    # 1. 외부 직접 접속 IP가 매 요청 X-Forwarded-For 및 기기 토큰을 회전해도 11회째 claim 429 차단
+    statuses = []
+    for i in range(12):
+        reg = ext_client.post(
+            "/api/push/device",
+            json={},
+            headers={"X-Forwarded-For": f"203.0.113.{10 + i}"},
+        )
+        assert reg.status_code == 200
+        tok = reg.json()["device_token"]
+        claim = ext_client.post(
+            "/api/auth/claim-pairing-code",
+            json={"code": "999999"},
+            headers={"X-Device-Token": tok, "X-Forwarded-For": f"203.0.113.{50 + i}, 127.0.0.1"},
+        )
+        statuses.append(claim.status_code)
+    assert 429 in statuses, f"비신뢰 직접 접속 XFF 스푸핑이 레이트리밋을 우회함: {statuses}"
+
+    # 2. 신뢰 프록시(127.0.0.1) 경유 시 우측 비신뢰 유효 IP 선택 확인
+    proxy_client = _client_with_ip("127.0.0.1")
+    fake_req = SimpleNamespace(
+        client=SimpleNamespace(host="127.0.0.1"),
+        headers={"x-forwarded-for": "192.0.2.1, 203.0.113.77, 127.0.0.1"},
+    )
+    assert auth_router._extract_client_ip(fake_req) == "203.0.113.77"
+    direct_req = SimpleNamespace(
+        client=SimpleNamespace(host="198.51.100.5"),
+        headers={"x-forwarded-for": "203.0.113.77"},
+    )
+    assert auth_router._extract_client_ip(direct_req) == "198.51.100.5"
+
+    # 3. /withdraw 후 동일 username 재가입 시 SQLite ID 재사용 여부와 무관하게 구 auth_v1 토큰 401 거부
+    uname = "reuse_victim_user"
+    s1 = proxy_client.post("/api/auth/signup", json={"username": uname, "password": "OldPassword!1", "nickname": "원조유저"})
+    assert s1.status_code == 200
+    old_bearer = s1.json()["access_token"]
+
+    w_res = proxy_client.post("/api/auth/withdraw", json={"username": uname, "password": "OldPassword!1"})
+    assert w_res.status_code == 200
+
+    s2 = proxy_client.post("/api/auth/signup", json={"username": uname, "password": "NewPassword!2", "nickname": "재가입유저"})
+    assert s2.status_code == 200
+    new_bearer = s2.json()["access_token"]
+
+    dev_reg = proxy_client.post("/api/push/device", json={}).json()
+    dev_tok = dev_reg["device_token"]
+    assert proxy_client.post(
+        "/api/auth/link-device",
+        headers={"Authorization": f"Bearer {old_bearer}", "X-Device-Token": dev_tok},
+    ).status_code == 401
+    assert proxy_client.post(
+        "/api/auth/link-device",
+        headers={"Authorization": f"Bearer {new_bearer}", "X-Device-Token": dev_tok},
+    ).status_code == 200
+
+    # 4. POST /api/push/device IP당 분당 발급 레이트리밋(120/60s) 확인 및 reset_rate_limits 복구
+    rate_client = _client_with_ip("198.51.100.99")
+    dev_statuses = [rate_client.post("/api/push/device", json={}).status_code for _ in range(122)]
+    assert dev_statuses[:120] == [200] * 120
+    assert dev_statuses[120:] == [429, 429]
+    auth_router.reset_rate_limits()
+    assert rate_client.post("/api/push/device", json={}).status_code == 200
+
+
+def test_iter2_sqlite_current_timestamp_cursor_and_dsu_cross_page_and_limits(unit_v11b_env):
+    """[Iter2 경계/로직] SQLite 19자 CURRENT_TIMESTAMP 커서 무한루프 차단, DSU 페이지 경계(119건) 중복 차단, limit/offset 하한 및 커버낫 폴백"""
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+
+    # 1. limit <= 0 / offset < 0 거부
+    for bad_params in ({"limit": 0}, {"limit": -1}, {"limit": -5}, {"offset": -1}, {"limit": 5, "offset": -5}):
+        r_bad = client.get("/api/community/hot-deals", params=bad_params)
+        assert r_bad.status_code in (400, 422), f"음수/0 파라미터 미차단 ({bad_params}): {r_bad.status_code}"
+
+    # 2. 커버낫 포함 42개 쇼핑몰 검색 폴백 URL 전수 탐지
+    from backend.routers.community import _build_direct_mall_search_url
+    assert is_search_or_community_url("https://covernat.net/product/search.html?keyword=%ED%85%8C%EC%8A%A4%ED%8A%B8") is True
+    for shop_name in community_router._DIRECT_MALL_SEARCH_BUILDERS if hasattr(community_router, "_DIRECT_MALL_SEARCH_BUILDERS") else [
+        "쿠팡", "네이버", "지마켓", "옥션", "11번가", "롯데온", "SSG", "이마트몰", "신세계몰",
+        "하이마트", "교보문고", "예스24", "알라딘", "무신사", "29CM", "W컨셉", "올리브영",
+        "오늘의집", "GS샵", "CJ온스타일", "현대Hmall", "NS홈쇼핑", "홈앤쇼핑", "SK스토아",
+        "아마존", "알리익스프레스", "테무", "큐텐", "아이허브", "다이소몰", "컬리",
+        "배달의민족", "요기요", "야놀자", "여기어때", "카카오", "스팀", "다이렉트게임즈",
+        "에픽게임즈", "스타벅스", "투썸플레이스", "커버낫",
+    ]:
+        built = _build_direct_mall_search_url(shop_name, "테스트 상품 128GB", "https://ppomppu.co.kr/1", "뽐뿌")
+        assert is_search_or_community_url(built) is True, f"폴백 URL 미탐지: {shop_name} -> {built}"
+
+    # 3. SQLite 19자 CURRENT_TIMESTAMP 문자열과 26자 마이크로초 문자열 혼재 시 limit=1 커서 무한루프 방지
+    db = SessionCls()
+    try:
+        distinct_items = ["모니터알파", "키보드베타", "헤드셋감마"]
+        for i, item_name in enumerate(distinct_items, start=1):
+            db.execute(
+                text(
+                    "INSERT INTO deals (source_community_id, title, post_link, ecommerce_link, price, category, indexed_at, is_closed, deal_type, has_options, is_super_hotdeal) "
+                    "VALUES (1, :title, :plink, :elink, '10000', '가전제품', '2026-11-19 18:14:02', 0, '일반', 0, 0)"
+                ),
+                {
+                    "title": f"[커서19] {item_name}",
+                    "plink": f"https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=910{i}",
+                    "elink": f"https://www.coupang.com/vp/products/910{i}",
+                },
+            )
+        db.execute(
+            text(
+                "INSERT INTO deals (source_community_id, title, post_link, ecommerce_link, price, category, indexed_at, is_closed, deal_type, has_options, is_super_hotdeal) "
+                "VALUES (1, '[커서26] 마우스델타', 'https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=9104', 'https://www.coupang.com/vp/products/9104', '10000', '가전제품', '2026-11-19 18:14:02.500000', 0, '일반', 0, 0)"
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    seen_ts_ids = []
+    cur_ts, cur_id = None, None
+    for step in range(10):
+        params = {"limit": 1}
+        if cur_ts is not None:
+            params["cursor_indexed_at"] = cur_ts
+            params["cursor_id"] = cur_id
+        page = client.get("/api/community/hot-deals", params=params).json()
+        assert len(page["deals"]) == 1
+        seen_ts_ids.append(page["deals"][0]["id"])
+        if not page["has_more"]:
+            break
+        cur_ts = page["next_cursor"]["indexed_at"]
+        cur_id = page["next_cursor"]["id"]
+    assert len(seen_ts_ids) == 4 and len(set(seen_ts_ids)) == 4
+
+    # 4. DSU 페이지 경계 가로지름 중복 차단 (120건 중 idx 5 & 55 동일 클러스터 -> limit=49 완주시 119건)
+    db = SessionCls()
+    try:
+        db.query(models.Deal).delete()
+        db.commit()
+        base_dt = datetime(2026, 11, 19, 12, 0, 0)
+        bulk = []
+        for idx in range(120):
+            ts = base_dt - timedelta(minutes=idx)
+            if idx in (5, 55):
+                bulk.append(
+                    models.Deal(
+                        source_community_id=1 if idx == 5 else 3,
+                        title="[쿠팡] 경계클러스터 노트북 CLUSC (990,000원)",
+                        post_link=f"https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=555{idx}",
+                        ecommerce_link="https://www.coupang.com/vp/products/99999955",
+                        price="990000",
+                        base_product_name="경계클러스터노트북",
+                        model_code="CLUSC",
+                        indexed_at=ts,
+                    )
+                )
+            else:
+                bulk.append(
+                    models.Deal(
+                        source_community_id=1,
+                        title=f"[몰{idx}] 고유경계상품_{idx:03d} ({10000 + idx}원)",
+                        post_link=f"https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=777{idx}",
+                        ecommerce_link=f"https://www.coupang.com/vp/products/777{idx}",
+                        price=str(10000 + idx),
+                        base_product_name=f"고유경계상품_{idx:03d}",
+                        model_code=f"UNQ{idx:03d}",
+                        indexed_at=ts,
+                    )
+                )
+        db.add_all(bulk)
+        db.commit()
+        cluster_pair = {bulk[5].id, bulk[55].id}
+    finally:
+        db.close()
+
+    community_router.invalidate_feed_api_cache()
+    all_ids = []
+    cur_ts, cur_id = None, None
+    for _ in range(10):
+        params = {"limit": 49}
+        if cur_ts is not None:
+            params["cursor_indexed_at"] = cur_ts
+            params["cursor_id"] = cur_id
+        page = client.get("/api/community/hot-deals", params=params).json()
+        all_ids.extend(d["id"] for d in page["deals"])
+        if not page["has_more"]:
+            break
+        cur_ts = page["next_cursor"]["indexed_at"]
+        cur_id = page["next_cursor"]["id"]
+
+    assert len(all_ids) == 119 and len(set(all_ids)) == 119
+    assert len(set(all_ids) & cluster_pair) == 1
+
+
+def test_iter2_minor_dsu_transitive_model_code_and_digest_failure_and_dnd_merge(unit_v11b_env, monkeypatch):
+    """[Iter2 Minor] build_dsu 전이 model_code 차단, 아침 요약 send_each 예외 시 재시도 보존, 비활성 기기 DND 덮어쓰기 방지"""
+    SessionCls = unit_v11b_env.SessionCls
+    base_dt = datetime(2026, 11, 19, 12, 0, 0)
+
+    # 1. build_dsu 전이 병합 차단: None -> AAA111 -> BBB222
+    d1 = models.Deal(id=11, source_community_id=1, title="[쿠팡] 갤럭시북 프로 16인치", price="1500000", model_code=None, indexed_at=base_dt, ecommerce_link="https://www.coupang.com/vp/products/1111")
+    d2 = models.Deal(id=12, source_community_id=2, title="[쿠팡] 갤럭시북 프로 16인치", price="1500000", model_code="AAA111", indexed_at=base_dt, ecommerce_link="https://www.coupang.com/vp/products/2222")
+    d3 = models.Deal(id=13, source_community_id=3, title="[쿠팡] 갤럭시북 프로 16인치", price="1500000", model_code="BBB222", indexed_at=base_dt, ecommerce_link="https://www.coupang.com/vp/products/3333")
+    dsu = community_router.build_dsu([d1, d2, d3])
+    assert dsu.find(11) == dsu.find(12)
+    assert dsu.find(13) != dsu.find(11)
+
+    # 2. _merge_device_data: 비활성 기기(dnd_enabled=False)가 활성 기기(dnd_enabled=True)의 시간대 덮어쓰지 않음
+    db = SessionCls()
+    try:
+        tgt = models.DeviceToken(device_uuid="tgt-active-dnd", dnd_enabled=True, dnd_start_time="22:00", dnd_end_time="08:00")
+        src = models.DeviceToken(device_uuid="src-inactive-dnd", dnd_enabled=False, dnd_start_time="23:30", dnd_end_time="06:30")
+        db.add_all([tgt, src])
+        db.commit()
+        auth_router._merge_device_data(db, "src-inactive-dnd", "tgt-active-dnd")
+        db.commit()
+        db.refresh(tgt)
+        assert tgt.dnd_enabled is True
+        assert tgt.dnd_start_time == "22:00" and tgt.dnd_end_time == "08:00"
+    finally:
+        db.close()
+
+    # 3. dnd_morning_digest_job: send_each 예외 시 digest_sent_at 미기록 -> 다음 실행에서 정상 재발송
+    db = SessionCls()
+    try:
+        db.add(models.DeviceToken(device_uuid="digest-retry-dev", fcm_token="fcm-retry-1", is_active=True, dnd_enabled=True, dnd_start_time="22:00", dnd_end_time="08:00"))
+        db.add(models.NotificationAlert(user_id="digest-retry-dev", title="재시도알림", keyword="모니터", deal_url="https://example.com", dnd_suppressed=True))
+        db.commit()
+    finally:
+        db.close()
+
+    def _failing_send_each(chunk):
+        raise RuntimeError("transient FCM error")
+
+    monkeypatch.setattr(push_worker.messaging, "send_each", _failing_send_each)
+    morning_kst = datetime(2026, 11, 20, 8, 0, 0, tzinfo=KST)
+    s_fail = push_worker.dnd_morning_digest_job(session_factory=SessionCls, now_kst=morning_kst)
+    assert s_fail["fcm_sent"] == 0 and s_fail["digests_sent"] == 0
+
+    db = SessionCls()
+    try:
+        al = db.query(models.NotificationAlert).filter(models.NotificationAlert.user_id == "digest-retry-dev").first()
+        assert al.digest_sent_at is None
+    finally:
+        db.close()
+
+    monkeypatch.setattr(
+        push_worker.messaging,
+        "send_each",
+        lambda chunk: SimpleNamespace(success_count=len(chunk), failure_count=0),
+    )
+    s_ok = push_worker.dnd_morning_digest_job(session_factory=SessionCls, now_kst=morning_kst + timedelta(minutes=5))
+    assert s_ok["fcm_sent"] == 1 and s_ok["digests_sent"] == 1
+    db = SessionCls()
+    try:
+        al = db.query(models.NotificationAlert).filter(models.NotificationAlert.user_id == "digest-retry-dev").first()
+        assert al.digest_sent_at is not None
+    finally:
+        db.close()
+
+    # 4. WebPush 단독 실패(False) 시 digest_sent_at 미기록 및 일일 레이트리밋 미소모
+    from backend.services.notification_service import NotificationService
+    monkeypatch.setattr(NotificationService, "send_web_push_notification", lambda *a, **kw: False)
+    db = SessionCls()
+    try:
+        wp_dev = models.DeviceToken(
+            device_uuid="wp-fail-dev",
+            web_push_subscription='{"endpoint":"https://push.example/fail","keys":{"p256dh":"a","auth":"b"}}',
+            is_active=True,
+            dnd_enabled=True,
+            dnd_start_time="22:00",
+            dnd_end_time="08:00",
+        )
+        db.add(wp_dev)
+        db.flush()
+        wp_dev_id = wp_dev.id
+        db.add(models.PushKeyword(device_token_id=wp_dev_id, keyword="웹푸시실패", is_active=True))
+        db.add(models.NotificationAlert(user_id="wp-fail-dev", title="웹푸시다이제스트", keyword="테스트", deal_url="https://example.com", dnd_suppressed=True))
+        wp_deal = models.Deal(
+            source_community_id=1,
+            title="[쿠팡] 웹푸시실패 테스트상품 (10,000원)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=989898",
+            ecommerce_link="https://www.coupang.com/vp/products/989898",
+            price="10000",
+        )
+        db.add(wp_deal)
+        db.commit()
+        wp_deal_id = wp_deal.id
+    finally:
+        db.close()
+
+    wp_dig = push_worker.dnd_morning_digest_job(session_factory=SessionCls, now_kst=morning_kst)
+    assert wp_dig["web_push_sent"] == 0 and wp_dig["digests_sent"] == 0
+    push_worker.background_trigger_keyword_alarms(wp_deal_id, session_factory=SessionCls, now_kst=datetime(2026, 11, 19, 14, 0, 0, tzinfo=KST))
+    assert push_worker._is_push_rate_limited(wp_dev_id, "2026-11-19") is False
+    assert push_worker._push_rate_limit.get(wp_dev_id) is None
+
+
+def test_iter3_security_octal_int_cgnat_ssrf_and_mixed_xss(unit_v11b_env, monkeypatch):
+    """[Iter3 보안] 선행 0 단일 8진수 정수 IPv4, RFC 6598 CGNAT(100.64.0.0/10) SSRF 및 URL↔HTML 교차 인코딩 XSS 차단 회귀"""
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda host, port, *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))],
+    )
+
+    called_urls: list[str] = []
+
+    async def _spy_proxy_get(url, **kwargs):
+        called_urls.append(url)
+        return httpx.Response(200, content=VALID_PNG, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(main_mod.proxy_client, "get", _spy_proxy_get)
+
+    # 1. 선행 0 단일 8진수 정수 IPv4 및 CGNAT 대역(100.64.0.0/10) 차단 검증
+    ssrf_urls = [
+        "http://01200000001/a.png",
+        "http://01200000002/a.png",
+        "http://01237777777/a.png",
+        "http://100.64.0.1/a.png",
+        "http://[::ffff:100.64.0.1]/a.png",
+    ]
+    for bad_u in ssrf_urls:
+        assert is_safe_external_url(bad_u) is False, f"is_safe_external_url 미차단: {bad_u}"
+        res = client.get("/api/proxy-image", params={"url": bad_u})
+        assert res.status_code == 404, f"proxy_image 미차단: {bad_u}"
+        assert res.headers.get("cache-control") == "no-store"
+
+    # 차단 대상 URL들에 대해 proxy_client.get 호출이 0건이어야 함
+    assert called_urls == []
+
+    # 2. 정상 공인 IPv4/IPv6 및 도메인 URL은 오탐 차단 없이 통과
+    safe_urls = [
+        "https://8.8.8.8/a.png",
+        "https://1.1.1.1/a.png",
+        "https://93.184.216.34/a.png",
+        "https://[2606:4700:4700::1111]/a.png",
+        "https://cdn.example.com/a.jpg",
+    ]
+    for ok_u in safe_urls:
+        assert is_safe_external_url(ok_u) is True, f"정상 공인 URL 오탐 차단: {ok_u}"
+
+    ok_proxy = client.get("/api/proxy-image", params={"url": "https://cdn.example.com/a.jpg"})
+    assert ok_proxy.status_code == 200
+    assert called_urls == ["https://cdn.example.com/a.jpg"]
+
+    # 3. URL 인코딩 + HTML 엔티티 복합 인코딩 및 5중 URL 인코딩 XSS 차단 + 상세 API body_images 검증
+    mixed_xss_payload = (
+        '<img src="http://01200000001/a.png">'
+        '<img src="http://01200000002/a.png">'
+        '<img src="http://01237777777/a.png">'
+        '<img src="http://100.64.0.1/a.png">'
+        '<img src="https://cdn.example.com/a.jpg?q=%26%23x3c%3Bscript%26%23x3e%3B">'
+        '<img src="https://cdn.example.com/a.jpg?q=%252525253Cscript%252525253E">'
+        '<img src="https://cdn.example.com/a.jpg?q=%26%23x25%3B3Cscript%26%23x25%3B3E">'
+        '<img src="https://8.8.8.8/safe.png">'
+        '<img src="https://[2606:4700:4700::1111]/safe6.png">'
+        '<img src="https://cdn.example.com/a.jpg">'
+    )
+    expected_safe_imgs = [
+        "https://8.8.8.8/safe.png",
+        "https://[2606:4700:4700::1111]/safe6.png",
+        "https://cdn.example.com/a.jpg",
+    ]
+    assert community_router._extract_body_images(mixed_xss_payload) == expected_safe_imgs
+
+    db = SessionCls()
+    try:
+        deal = models.Deal(
+            source_community_id=1,
+            title="[쿠팡] Iter3 SSRF/XSS 회귀 테스트 상품 (19,900원)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=777333",
+            ecommerce_link="https://www.coupang.com/vp/products/777333",
+            price="19900",
+            content_html=mixed_xss_payload,
+        )
+        db.add(deal)
+        db.commit()
+        db.refresh(deal)
+        deal_id = deal.id
+    finally:
+        db.close()
+
+    det_res = client.get(f"/api/community/deals/{deal_id}")
+    assert det_res.status_code == 200
+    assert det_res.json()["body_images"] == expected_safe_imgs
+    assert det_res.json()["bodyImages"] == expected_safe_imgs
+
+
+def test_iter4_security_ipv6_idna_and_body_image_false_positives(unit_v11b_env, monkeypatch):
+    """[Iter4 보안·정확도] IPv6 6to4/Teredo/Site-Local/zone/전각 IPv4 차단 + 정상 IDN·%20·레거시엔티티·on* 쿼리 오탐 해소 + 7~15중 XSS 차단"""
+    from backend.core.url_utils import is_public_ip
+    import ipaddress
+
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda host, port, *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))],
+    )
+
+    called_urls: list[str] = []
+
+    async def _spy_proxy_get(url, **kwargs):
+        called_urls.append(url)
+        return httpx.Response(200, content=VALID_PNG, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(main_mod.proxy_client, "get", _spy_proxy_get)
+
+    # 1. is_public_ip IPv6 6to4 / Teredo / Site-Local 차단 및 정상 공인 IPv6 통과
+    for bad_ip in ("2002:7f00:0001::", "2002:a9fe:a9fe::", "2002:6440:0001::", "2001::1", "fec0::1"):
+        assert is_public_ip(ipaddress.ip_address(bad_ip)) is False, f"is_public_ip 미차단: {bad_ip}"
+    for ok_ip in ("2606:4700:4700::1111", "2001:4860:4860::8888", "8.8.8.8"):
+        assert is_public_ip(ipaddress.ip_address(ok_ip)) is True, f"is_public_ip 오탐: {ok_ip}"
+
+    # 2. IPv6 터널/Site-Local/zone ID 및 전각·아랍숫자 IPv4 호스트 차단 (proxy_image 포함)
+    ssrf_urls = [
+        "http://[2002:7f00:0001::]/a.png",
+        "http://[2002:a9fe:a9fe::]/a.png",
+        "http://[2002:6440:0001::]/a.png",
+        "http://[2001::1]/a.png",
+        "http://[fec0::1]/a.png",
+        "https://[2606:4700:4700::1111%eth0]/a.png",
+        "https://[2606:4700:4700::1111%25eth0]/a.png",
+        "http://[::1%eth0]/a.png",
+        "http://127.0.0.1%00/a.png",
+        "http://+2130706433/a.png",
+        "http://١٢٧.٠.٠.١/a.png",
+        "http://１２７.０.０.１/a.png",
+        "http://１６９.２５４.１６９.２５４/a.png",
+        "http://１２７。０。０。１/a.png",
+        "http://０１７７.０.０.１/a.png",
+    ]
+    for bad_u in ssrf_urls:
+        assert is_safe_external_url(bad_u) is False, f"is_safe_external_url 미차단: {bad_u}"
+        res = client.get("/api/proxy-image", params={"url": bad_u})
+        assert res.status_code == 404, f"proxy_image 미차단: {bad_u}"
+        assert res.headers.get("cache-control") == "no-store"
+
+    assert called_urls == []
+
+    # 3. 정상 IDN 도메인 오탐 없이 통과
+    assert is_safe_external_url("https://한국어.kr/a.jpg") is True
+    assert community_router._normalize_and_validate_body_image("https://한국어.kr/a.jpg") == "https://한국어.kr/a.jpg"
+
+    # 4. _normalize_and_validate_body_image 정상 URL 오탐·변조 해소 검증
+    preserved_cases = [
+        (
+            "https://shop-phinf.pstatic.net/20261119_123/product%20image.jpg?type=w860",
+            "https://shop-phinf.pstatic.net/20261119_123/product%20image.jpg?type=w860",
+        ),
+        (
+            "https://cdn.example.com/my%20product.jpg",
+            "https://cdn.example.com/my%20product.jpg",
+        ),
+        (
+            "https://cdn.example.com/p.jpg?q=a%20b",
+            "https://cdn.example.com/p.jpg?q=a%20b",
+        ),
+        (
+            "https://cdn.example.com/p.jpg?q=a%2520b",
+            "https://cdn.example.com/p.jpg?q=a%2520b",
+        ),
+        (
+            "https://gdimg.gmarket.co.kr/123456789/still/600?ver=1&reg=kr",
+            "https://gdimg.gmarket.co.kr/123456789/still/600?ver=1&reg=kr",
+        ),
+        (
+            "https://cdn.example.com/p.jpg?a=1&copy=1",
+            "https://cdn.example.com/p.jpg?a=1&copy=1",
+        ),
+        (
+            "https://cdn.example.com/p.jpg?a=1&para=1",
+            "https://cdn.example.com/p.jpg?a=1&para=1",
+        ),
+        (
+            "https://cdn.example.com/p.jpg?a=1&not=1",
+            "https://cdn.example.com/p.jpg?a=1&not=1",
+        ),
+        (
+            "https://cdn.example.com/p.jpg?a=1&lt=2",
+            "https://cdn.example.com/p.jpg?a=1&lt=2",
+        ),
+        (
+            "https://cdn.example.com/p.jpg?a=1&gt=2",
+            "https://cdn.example.com/p.jpg?a=1&gt=2",
+        ),
+        (
+            "https://cdn.example.com/p.jpg?a=1&quot=1",
+            "https://cdn.example.com/p.jpg?a=1&quot=1",
+        ),
+        (
+            "https://cdn.example.com/p.jpg?w=800&amp;copy=1",
+            "https://cdn.example.com/p.jpg?w=800&copy=1",
+        ),
+        (
+            "https://cdn.example.com/p.jpg?a=1&amp;lt=2",
+            "https://cdn.example.com/p.jpg?a=1&lt=2",
+        ),
+        (
+            "https://cdn.example.com/img.png?a=1&online=1",
+            "https://cdn.example.com/img.png?a=1&online=1",
+        ),
+        (
+            "https://cdn.example.com/p.jpg?only=1",
+            "https://cdn.example.com/p.jpg?only=1",
+        ),
+        (
+            "https://cdn.example.com/p.jpg?once=1&ongoing=1",
+            "https://cdn.example.com/p.jpg?once=1&ongoing=1",
+        ),
+    ]
+    for raw_u, expected_u in preserved_cases:
+        assert community_router._normalize_and_validate_body_image(raw_u) == expected_u, f"정상 URL 오탐/변조: {raw_u}"
+
+    # 5. 7중~15중 URL 인코딩, 제어문자, 혼합 XSS 및 이벤트 핸들러 차단 유지 검증
+    url_15x = "https://cdn.example.com/a.jpg?q=" + ("%25" * 14) + "3Cscript"
+    blocked_cases = [
+        "https://cdn.example.com/a.jpg?q=%2525252525253Cscript%2525252525253E",
+        url_15x,
+        "https://cdn.example.com/a.jpg?q=%26%23x3c%3Bscript%26%23x3e%3B",
+        "https://cdn.example.com/a.jpg?q=&#x3cscript",
+        "https://cdn.example.com/a.jpg?q=&lt;script&gt;",
+        "https://cdn.example.com/a.jpg?q=a%0Ab",
+        "https://cdn.example.com/a.jpg?q=a%0Db",
+        "https://cdn.example.com/a.jpg?q=a%00b",
+        "https://cdn.example.com/a.jpg?q=javascript%3Aalert(1)",
+        "http://%31%32%37.0.0.1/a.png",
+        "https://cdn.example.com/a.jpg?onerror=alert(1)",
+        "https://cdn.example.com/a.jpg?onpointerover=alert(1)",
+        "https://cdn.example.com/a.jpg?onanimationstart=alert(1)",
+        "https://cdn.example.com/a.jpg?onwheel=alert(1)",
+        "https://cdn.example.com/a.jpg?q=1%20oncustom=alert(1)",
+        "https://cdn.example.com/raw space.jpg",
+    ] + ssrf_urls
+    for bad_img in blocked_cases:
+        assert community_router._normalize_and_validate_body_image(bad_img) is None, f"위험 URL 미차단: {bad_img}"
+
+    # 6. _extract_body_images 및 상세 API 종단 검증
+    html_mix = (
+        '<img src="https://gdimg.gmarket.co.kr/123456789/still/600?ver=1&reg=kr">'
+        '<img src="https://shop-phinf.pstatic.net/20261119_123/product%20image.jpg?type=w860">'
+        '<img src="https://cdn.example.com/img.png?a=1&online=1&amp;lt=2">'
+        '<img src="http://[2002:7f00:0001::]/a.png">'
+        '<img src="http://１２７.０.０.１/a.png">'
+        '<img src="https://cdn.example.com/a.jpg?q=%2525252525253Cscript%2525252525253E">'
+        '<img src="https://cdn.example.com/a.jpg?onwheel=alert(1)">'
+    )
+    expected_extracted = [
+        "https://gdimg.gmarket.co.kr/123456789/still/600?ver=1&reg=kr",
+        "https://shop-phinf.pstatic.net/20261119_123/product%20image.jpg?type=w860",
+        "https://cdn.example.com/img.png?a=1&online=1&lt=2",
+    ]
+    assert community_router._extract_body_images(html_mix) == expected_extracted
+
+    db = SessionCls()
+    try:
+        deal = models.Deal(
+            source_community_id=1,
+            title="[지마켓] Iter4 정상쿼리 및 보안 회귀 테스트 상품 (29,900원)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=888444",
+            ecommerce_link="https://www.gmarket.co.kr/n/sale?goodscode=123456789",
+            price="29900",
+            content_html=html_mix,
+        )
+        db.add(deal)
+        db.commit()
+        db.refresh(deal)
+        deal_id = deal.id
+    finally:
+        db.close()
+
+    det = client.get(f"/api/community/deals/{deal_id}")
+    assert det.status_code == 200
+    assert det.json()["body_images"] == expected_extracted

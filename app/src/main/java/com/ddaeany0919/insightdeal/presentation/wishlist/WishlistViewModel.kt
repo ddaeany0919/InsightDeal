@@ -7,6 +7,7 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import com.ddaeany0919.insightdeal.data.LocalDataProvider
 import com.ddaeany0919.insightdeal.presentation.wishlist.model.Period
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -86,6 +87,22 @@ class WishlistViewModel(
         // init 블록에서 Flow를 collect 중
     }
 
+    fun syncFromServer() {
+        viewModelScope.launch {
+            try {
+                val userId = runCatching { userIdProvider() }
+                    .getOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: LocalDataProvider.getDeviceUuid()
+                wishlistRepository.syncFromServer(userId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("WishlistViewModel", "위시리스트 서버 하이드레이션 실패", e)
+            }
+        }
+    }
+
     fun checkPrice(item: WishlistItem) {
         viewModelScope.launch {
             try {
@@ -106,6 +123,8 @@ class WishlistViewModel(
                 
                 wishlistRepository.updateWishlist(updatedItem, userId)
                 
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "가격 확인 실패", e)
             }
@@ -120,6 +139,8 @@ class WishlistViewModel(
                     ?.takeIf { it.isNotBlank() }
                     ?: LocalDataProvider.getDeviceUuid()
                 wishlistRepository.createWishlist(keyword, productUrl, targetPrice, currentLowestPrice, currentLowestPlatform, userId)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "아이템 추가 실패", e)
             }
@@ -134,6 +155,8 @@ class WishlistViewModel(
                     ?.takeIf { it.isNotBlank() }
                     ?: LocalDataProvider.getDeviceUuid()
                 wishlistRepository.deleteWishlist(item.id, userId)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "아이템 삭제 실패", e)
             }
@@ -155,6 +178,8 @@ class WishlistViewModel(
                     WishlistUiState.Success(items)
                 }
                 loadPriceHistory()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "위시리스트 재시도 실패", e)
                 _uiState.value = WishlistUiState.Error(e.message ?: "목록을 다시 불러오지 못했습니다.")
@@ -168,6 +193,8 @@ class WishlistViewModel(
                 val userId = userIdProvider()
                 val items = wishlistRepository.getPriceHistory(userId)
                 _priceHistory.value = items
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "가격 이력 불러오기 오류", e)
             }
@@ -179,6 +206,8 @@ class WishlistViewModel(
             try {
                 val userId = userIdProvider()
                 wishlistRepository.updateAlarmState(on, userId)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "알림 동기화 오류", e)
             }
@@ -194,6 +223,8 @@ class WishlistViewModel(
                 if (history != null) {
                     _itemPriceHistories.value = _itemPriceHistories.value + (item.id to history)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("WishlistViewModel", "개별 상품 히스토리 로드 실패", e)
             }

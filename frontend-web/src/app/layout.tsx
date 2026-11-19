@@ -1,10 +1,28 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+const isTossMiniApp = process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true";
+
+const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('insightdeal_theme');var r=document.documentElement;if(t==='light'||t==='dark'){r.dataset.theme=t;r.style.colorScheme=t;}else{delete r.dataset.theme;r.style.colorScheme=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}}catch(e){}})();`;
+
 export const metadata: Metadata = {
   title: "얼만데 - 실시간 핫딜 모아보기",
-  description: "10개 주요 커뮤니티 실시간 핫딜 및 다중 옵션 실구매가 판독 — 얼만데",
-  keywords: ["얼만데", "핫딜", "스마트쇼핑", "할인", "이벤트", "뽐뿌", "펨코", "루리웹", "퀘이사존", "클리앙", "빠삭"],
+  description: "11개 주요 커뮤니티 실시간 핫딜 및 다중 옵션 실구매가 판독 — 얼만데",
+  keywords: [
+    "얼만데",
+    "핫딜",
+    "스마트쇼핑",
+    "할인",
+    "이벤트",
+    "뽐뿌",
+    "뽐뿌해외",
+    "알리뽐뿌",
+    "펨코",
+    "루리웹",
+    "퀘이사존",
+    "클리앙",
+    "빠삭",
+  ],
   icons: {
     icon: [
       { url: "/favicon.ico" },
@@ -19,7 +37,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "얼만데 - 실시간 핫딜 모아보기",
-    description: "10개 주요 커뮤니티 실시간 핫딜 및 다중 옵션 실구매가 판독 — 얼만데",
+    description: "11개 주요 커뮤니티 실시간 핫딜 및 다중 옵션 실구매가 판독 — 얼만데",
     type: "website",
     locale: "ko_KR",
   },
@@ -28,6 +46,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  ...(isTossMiniApp ? { maximumScale: 1, userScalable: false } : {}),
   viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#F2F4F6" },
@@ -41,7 +60,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko">
+    <html lang="ko" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

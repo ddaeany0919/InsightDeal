@@ -230,8 +230,19 @@ interface ApiService {
         @Query("category") category: String? = null,
         @Query("keyword") keyword: String? = null,
         @Query("platform") platform: String? = null,
-        @Query("sort") sort: String = "latest"
+        @Query("sort") sort: String = "latest",
+        @Query("cursor_indexed_at") cursorIndexedAt: String? = null,
+        @Query("cursor_id") cursorId: Int? = null,
+        @Query("include_closed") includeClosed: Boolean? = null,
+        @Query("only_hot") onlyHot: Boolean? = null,
+        @Query("hide_closed") hideClosed: Boolean? = null
     ): Response<HotDealsResponse>
+
+    // 원클릭 품절/종료 제보 API (P1-06)
+    @POST("api/community/deals/{dealId}/report-closed")
+    suspend fun reportDealClosed(
+        @Path("dealId") dealId: Int
+    ): Response<ReportClosedResponse>
 
     @GET("api/community/top-hot-deals")
     suspend fun getTopHotDeals(): Response<HotDealsResponse>
@@ -362,6 +373,15 @@ interface ApiService {
     suspend fun withdrawUser(
         @Body request: UserWithdrawRequest
     ): Response<ApiResponse>
+
+    // 다기기 6자리 동기화 코드 발급/병합 API (P1-01)
+    @POST("api/auth/pairing-code")
+    suspend fun issuePairingCode(): Response<com.ddaeany0919.insightdeal.data.network.PairingCodeResponse>
+
+    @POST("api/auth/claim-pairing-code")
+    suspend fun claimPairingCode(
+        @Body request: com.ddaeany0919.insightdeal.data.network.ClaimPairingCodeRequest
+    ): Response<com.ddaeany0919.insightdeal.data.network.ClaimPairingCodeResponse>
 }
 
 /**
@@ -601,4 +621,15 @@ data class AddNotificationRequest(
     @SerializedName("title") val title: String,
     @SerializedName("keyword") val keyword: String,
     @SerializedName("deal_url") val deal_url: String
+)
+
+/**
+ * 원클릭 품절 제보 응답 DTO (POST /api/community/deals/{deal_id}/report-closed)
+ */
+data class ReportClosedResponse(
+    @SerializedName("status") val status: String = "ok",
+    @SerializedName(value = "deal_id", alternate = ["dealId"]) val dealId: Int = 0,
+    @SerializedName(value = "report_count", alternate = ["reportCount"]) val reportCount: Int = 0,
+    @SerializedName(value = "is_closed", alternate = ["isClosed"]) val isClosed: Boolean = false,
+    @SerializedName("threshold") val threshold: Int = 3
 )

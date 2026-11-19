@@ -24,6 +24,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -72,11 +73,16 @@ fun PriceChart(
     val chartMax = maxPrice + padding
     val chartMin = max(0f, minPrice - padding)
 
+    val semantic = LocalInsightDealColors.current
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val lowBadgeColor = Color(0xFF10B981) // 최저가 에메랄드 포인트
-    val highBadgeColor = Color(0xFFF59E0B) // 최고가 앰버 포인트
+    val lowBadgeColor = semantic.success
+    val lowPillBgColor = semantic.successContainer
+    val lowPillFgColor = semantic.onSuccessContainer
+    val highBadgeColor = semantic.warning
+    val highPillBgColor = semantic.warningContainer
+    val highPillFgColor = semantic.onWarningContainer
 
     val gradientBrush = remember(primaryColor) {
         Brush.verticalGradient(
@@ -297,7 +303,7 @@ fun PriceChart(
                 val minX = minPt.x.coerceIn(minTextW / 2f + 8.dp.toPx(), width - minTextW / 2f - 8.dp.toPx())
                 val minY = min(height - 10.dp.toPx(), minPt.y + 20.dp.toPx())
 
-                pillBgPaint.color = lowBadgeColor.copy(alpha = 0.16f).toArgb()
+                pillBgPaint.color = lowPillBgColor.toArgb()
                 pillRect.set(
                     minX - minTextW / 2f - 6.dp.toPx(),
                     minY - 12.dp.toPx(),
@@ -305,7 +311,7 @@ fun PriceChart(
                     minY + 4.dp.toPx()
                 )
                 drawContext.canvas.nativeCanvas.drawRoundRect(pillRect, 6.dp.toPx(), 6.dp.toPx(), pillBgPaint)
-                badgePaint.color = lowBadgeColor.toArgb()
+                badgePaint.color = lowPillFgColor.toArgb()
                 drawContext.canvas.nativeCanvas.drawText(minLabel, minX, minY, badgePaint)
 
                 // 최고가 배지 (최저가와 다른 가격일 때만 표시)
@@ -316,7 +322,7 @@ fun PriceChart(
                     val maxX = maxPt.x.coerceIn(maxTextW / 2f + 8.dp.toPx(), width - maxTextW / 2f - 8.dp.toPx())
                     val maxY = max(16.dp.toPx(), maxPt.y - 12.dp.toPx())
 
-                    pillBgPaint.color = highBadgeColor.copy(alpha = 0.16f).toArgb()
+                    pillBgPaint.color = highPillBgColor.toArgb()
                     pillRect.set(
                         maxX - maxTextW / 2f - 6.dp.toPx(),
                         maxY - 12.dp.toPx(),
@@ -324,7 +330,7 @@ fun PriceChart(
                         maxY + 4.dp.toPx()
                     )
                     drawContext.canvas.nativeCanvas.drawRoundRect(pillRect, 6.dp.toPx(), 6.dp.toPx(), pillBgPaint)
-                    badgePaint.color = highBadgeColor.toArgb()
+                    badgePaint.color = highPillFgColor.toArgb()
                     drawContext.canvas.nativeCanvas.drawText(maxLabel, maxX, maxY, badgePaint)
                 }
             }

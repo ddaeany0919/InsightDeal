@@ -18,7 +18,13 @@ data class PopularKeywordsResponse(
     @SerializedName("updated_at") val updatedAt: String = ""
 )
 
+data class NextCursorDto(
+    @SerializedName(value = "indexed_at", alternate = ["indexedAt"]) val indexedAt: String = "",
+    @SerializedName("id") val id: Int = 0
+)
+
 data class HotDealsResponse(
     @SerializedName("deals") val deals: List<com.ddaeany0919.insightdeal.models.DealItem> = emptyList(),
-    @SerializedName(value = "has_more", alternate = ["hasMore"]) val hasMore: Boolean = false
+    @SerializedName(value = "has_more", alternate = ["hasMore"]) val hasMore: Boolean = false,
+    @SerializedName(value = "next_cursor", alternate = ["nextCursor"]) val nextCursor: NextCursorDto? = null
 )

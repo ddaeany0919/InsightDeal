@@ -138,13 +138,18 @@ class NotificationService:
 
         logger.info(f"Deal {deal_id} matched {len(matched_targets)} push notification targets")
 
+        kst = datetime.timezone(datetime.timedelta(hours=9))
+        now = datetime.datetime.now(kst)
+
         for keyword, dev in matched_targets:
+            suppressed, reason = should_suppress_push(dev, now)
             try:
                 alert_record = models.NotificationAlert(
                     user_id=dev.get("device_uuid") or dev.get("fcm_token") or "default",
                     title=f"[{site_name}] {title} ({price:,}원)" if price > 0 else f"[{site_name}] {title}",
                     keyword=keyword,
                     deal_url=deal_url,
+                    dnd_suppressed=bool(suppressed and reason == "dnd_active"),
                 )
                 db.add(alert_record)
                 db.commit()
@@ -161,6 +166,7 @@ class NotificationService:
                 deal_url=deal_url,
                 device=dev,
                 db=db,
+                now_kst=now,
             )
 
     @staticmethod

@@ -17,96 +17,108 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-// 🎨 InsightDeal Toss × Karrot SEED Design Hybrid Palette (DESIGN.md v2.0)
-val White = Color(0xFFFFFFFF)
-val Black = Color(0xFF000000)
+// 🎨 얼만데(InsightDeal) 한국형 플랫 미니멀 팔레트 (WCAG AA 4.5:1 준수)
+val PrimaryDark = EmeraldPrimaryLight
+val PrimaryLight = White
+val AccentOrange = Color(0xFFC2410C)
+val AccentRed = Color(0xFFC81E1E)
+val AccentBlue = TossBlueLight
+val AccentGreen = BrandEmeraldPoint
 
-val PrimaryDark = Color(0xFF3182F6) // Toss Primary Blue (#3182F6)
-val PrimaryLight = Color(0xFFFFFFFF)
-val AccentOrange = Color(0xFFFF6F0F) // Karrot SEED Design Warm Orange (#FF6F0F)
-val AccentRed = Color(0xFFF04452) // Toss Urgent Red (#F04452)
-val AccentBlue = Color(0xFF3182F6) // Toss Info/Brand Blue (#3182F6)
-val AccentGreen = Color(0xFF00C471) // Toss Positive Green (#00C471)
+val BackgroundLight = CanvasLight
+val SurfaceLight = CardLight
+val BackgroundDark = CanvasDark
+val SurfaceDark = CardDark
 
-val BackgroundLight = Color(0xFFF2F4F6) // Toss Cool Gray Canvas (#F2F4F6)
-val SurfaceLight = Color(0xFFFFFFFF) // Pure White Card Surface (#FFFFFF)
-val BackgroundDark = Color(0xFF101318) // Toss Dark Slate Canvas (#101318)
-val SurfaceDark = Color(0xFF191F28) // Toss Charcoal Elevated Surface (#191F28)
-
-val TextPrimaryLight = Color(0xFF191F28) // Toss Charcoal Primary Ink (#191F28)
-val TextSecondaryLight = Color(0xFF4E5968) // Toss Slate Secondary Ink (#4E5968)
-val TextPrimaryDark = Color(0xFFF9FAFB)
-val TextSecondaryDark = Color(0xFFB0B8C1)
+val TextPrimaryLight = InkPrimaryLight
+val TextSecondaryLight = InkSecondaryLight
+val TextPrimaryDark = InkPrimaryDark
+val TextSecondaryDark = InkSecondaryDark
 
 val PriceIncrease = AccentRed
 val PriceDecrease = AccentBlue
-val PriceTarget = AccentGreen
+val PriceTarget = EmeraldPrimaryLight
 val PriceBest = AccentOrange
 
 internal val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF1B64DA),
+    primary = EmeraldPrimaryLight,
     onPrimary = White,
-    primaryContainer = Color(0xFFE8F3FF),
-    onPrimaryContainer = Color(0xFF1B64DA),
-    secondary = Color(0xFFB84500),
+    primaryContainer = EmeraldContainerLight,
+    onPrimaryContainer = OnEmeraldContainerLight,
+    secondary = TossBlueLight,
     onSecondary = White,
-    secondaryContainer = Color(0xFFFFF3E8),
-    onSecondaryContainer = Color(0xFFB54200),
-    tertiary = Color(0xFF1B64DA),
+    secondaryContainer = TossBlueContainerLight,
+    onSecondaryContainer = OnTossBlueContainerLight,
+    tertiary = Color(0xFFC2410C),
     onTertiary = White,
-    error = Color(0xFFC92A37),
+    tertiaryContainer = Color(0xFFFFF7ED),
+    onTertiaryContainer = Color(0xFF9A3412),
+    error = Color(0xFFC81E1E),
     onError = White,
-    background = BackgroundLight,
-    onBackground = TextPrimaryLight,
-    surface = SurfaceLight,
-    onSurface = TextPrimaryLight,
-    surfaceVariant = Color(0xFFF9FAFB),
-    onSurfaceVariant = TextSecondaryLight,
-    outline = Color(0xFFE5E8EB)
+    errorContainer = Color(0xFFFEE2E2),
+    onErrorContainer = Color(0xFF991B1B),
+    background = CanvasLight,
+    onBackground = InkPrimaryLight,
+    surface = CardLight,
+    onSurface = InkPrimaryLight,
+    surfaceVariant = SurfaceVariantLight,
+    onSurfaceVariant = InkSecondaryLight,
+    outline = BorderLight,
+    outlineVariant = BorderLight
 )
 
 internal val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF5BA4FC),
-    onPrimary = Color(0xFF081B33),
-    primaryContainer = Color(0xFF1E3A5F),
-    onPrimaryContainer = Color(0xFFD1E5FF),
-    secondary = Color(0xFFFF8433),
-    onSecondary = Color(0xFF3B1800),
-    secondaryContainer = Color(0xFF3D2210),
-    onSecondaryContainer = Color(0xFFFFD8BE),
-    tertiary = Color(0xFF5BA4FC),
-    onTertiary = Color(0xFF081B33),
-    error = Color(0xFFFF6B77),
-    onError = Color(0xFF3D070C),
-    background = BackgroundDark,
-    onBackground = TextPrimaryDark,
-    surface = SurfaceDark,
-    onSurface = TextPrimaryDark,
-    surfaceVariant = Color(0xFF222934),
-    onSurfaceVariant = TextSecondaryDark,
-    outline = Color(0xFF2B333E)
+    primary = EmeraldPrimaryDark,
+    onPrimary = OnEmeraldDark,
+    primaryContainer = EmeraldContainerDark,
+    onPrimaryContainer = OnEmeraldContainerDark,
+    secondary = TossBlueDark,
+    onSecondary = OnTossBlueDark,
+    secondaryContainer = TossBlueContainerDark,
+    onSecondaryContainer = OnTossBlueContainerDark,
+    tertiary = Color(0xFFFB923C),
+    onTertiary = Color(0xFF2B1200),
+    tertiaryContainer = Color(0xFF3D2210),
+    onTertiaryContainer = Color(0xFFFDBA74),
+    error = Color(0xFFF87171),
+    onError = Color(0xFF3B0808),
+    errorContainer = Color(0xFF450A0A),
+    onErrorContainer = Color(0xFFFECACA),
+    background = CanvasDark,
+    onBackground = InkPrimaryDark,
+    surface = CardDark,
+    onSurface = InkPrimaryDark,
+    surfaceVariant = SurfaceVariantDark,
+    onSurfaceVariant = InkSecondaryDark,
+    outline = BorderDark,
+    outlineVariant = BorderDark
 )
 
 internal val AmoledColorScheme = darkColorScheme(
-    primary = Color(0xFF60A5FA),
-    onPrimary = Color(0xFF08203E),
-    primaryContainer = Color(0xFF1E3A5F),
-    onPrimaryContainer = Color(0xFFD1E5FF),
-    secondary = Color(0xFFFF8C3B),
-    onSecondary = Color(0xFF3B1800),
-    secondaryContainer = Color(0xFF3E2723),
-    onSecondaryContainer = Color(0xFFFFCCBC),
-    tertiary = Color(0xFF60A5FA),
-    onTertiary = Color(0xFF08203E),
-    error = Color(0xFFFF6B77),
-    onError = Color(0xFF3D070C),
+    primary = EmeraldPrimaryDark,
+    onPrimary = OnEmeraldDark,
+    primaryContainer = EmeraldContainerDark,
+    onPrimaryContainer = OnEmeraldContainerDark,
+    secondary = TossBlueDark,
+    onSecondary = OnTossBlueDark,
+    secondaryContainer = TossBlueContainerDark,
+    onSecondaryContainer = OnTossBlueContainerDark,
+    tertiary = Color(0xFFFB923C),
+    onTertiary = Color(0xFF2B1200),
+    tertiaryContainer = Color(0xFF3D2210),
+    onTertiaryContainer = Color(0xFFFDBA74),
+    error = Color(0xFFF87171),
+    onError = Color(0xFF3B0808),
+    errorContainer = Color(0xFF450A0A),
+    onErrorContainer = Color(0xFFFECACA),
     background = Black,
     onBackground = White,
     surface = Black,
     onSurface = White,
-    surfaceVariant = Color(0xFF1A1A1A),
-    onSurfaceVariant = TextSecondaryDark,
-    outline = Color(0xFF333333)
+    surfaceVariant = Color(0xFF16191F),
+    onSurfaceVariant = InkSecondaryDark,
+    outline = BorderAmoled,
+    outlineVariant = BorderAmoled
 )
 
 val LocalIsDarkTheme = staticCompositionLocalOf { false }
@@ -150,7 +162,18 @@ fun InsightDealTheme(
         }
     }
 
-    CompositionLocalProvider(LocalIsDarkTheme provides useDarkTheme) {
+    val semanticColors = remember(useDarkTheme, isAmoled) {
+        if (useDarkTheme) {
+            if (isAmoled) DarkInsightDealColors.copy(cardBorder = BorderAmoled) else DarkInsightDealColors
+        } else {
+            LightInsightDealColors
+        }
+    }
+
+    CompositionLocalProvider(
+        LocalIsDarkTheme provides useDarkTheme,
+        LocalInsightDealColors provides semanticColors
+    ) {
         MaterialTheme(
             colorScheme = finalColorScheme,
             typography = Typography,
@@ -160,8 +183,13 @@ fun InsightDealTheme(
 }
 
 @Composable
-fun getPriceColor(isIncrease: Boolean): Color = if (isIncrease) PriceIncrease else PriceDecrease
+fun getPriceColor(isIncrease: Boolean): Color {
+    val semantic = LocalInsightDealColors.current
+    return if (isIncrease) semantic.danger else semantic.info
+}
+
 @Composable
-fun getTargetAchievedColor(): Color = PriceTarget
+fun getTargetAchievedColor(): Color = LocalInsightDealColors.current.success
+
 @Composable
-fun getBestPriceColor(): Color = PriceBest
+fun getBestPriceColor(): Color = LocalInsightDealColors.current.priceAccent

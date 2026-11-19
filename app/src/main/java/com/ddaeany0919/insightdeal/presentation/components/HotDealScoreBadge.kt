@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import com.ddaeany0919.insightdeal.domain.HotDealScore
 import com.ddaeany0919.insightdeal.domain.DealBadge
 import com.ddaeany0919.insightdeal.domain.ScoreBreakdown
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 
 /**
  * 🏅 꿀딜 지수 배지 UI 컴포넌트
@@ -155,6 +156,7 @@ fun DetailedScoreCard(
  */
 @Composable
 private fun ScoreBreakdownChart(breakdown: ScoreBreakdown) {
+    val semantic = LocalInsightDealColors.current
     Column {
         Text(
             text = "세부 분석",
@@ -163,16 +165,16 @@ private fun ScoreBreakdownChart(breakdown: ScoreBreakdown) {
             modifier = Modifier.padding(bottom = 12.dp)
         )
         
-        ScoreBarItem("댓글 반응", breakdown.sentiment, Color(0xFF4CAF50))
+        ScoreBarItem("댓글 반응", breakdown.sentiment, semantic.success)
         Spacer(modifier = Modifier.height(8.dp))
         
-        ScoreBarItem("커뮤니티 추천", breakdown.community, Color(0xFF2196F3))
+        ScoreBarItem("커뮤니티 추천", breakdown.community, semantic.info)
         Spacer(modifier = Modifier.height(8.dp))
         
-        ScoreBarItem("출처 신뢰도", breakdown.site, Color(0xFFFF9800))
+        ScoreBarItem("출처 신뢰도", breakdown.site, semantic.warning)
         Spacer(modifier = Modifier.height(8.dp))
         
-        ScoreBarItem("정보 신선도", breakdown.freshness, Color(0xFF0EA5E9))
+        ScoreBarItem("정보 신선도", breakdown.freshness, semantic.priceAccent)
     }
 }
 

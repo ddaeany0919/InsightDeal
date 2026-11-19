@@ -42,6 +42,7 @@ import com.ddaeany0919.insightdeal.data.network.CommunityPostCreateReq
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.presentation.A11yIconButton
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -228,8 +229,6 @@ class WritePostViewModel : ViewModel() {
     }
 }
 
-private val AccentOrange = Color(0xFFFF6B35)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WritePostScreen(
@@ -297,7 +296,7 @@ fun WritePostScreen(
                             )
                         },
                         enabled = title.isNotBlank() && content.isNotBlank() && !isSubmitting && !isLoading,
-                        colors = ButtonDefaults.textButtonColors(contentColor = AccentOrange)
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
                     ) {
                         Text(if (postId == null) "등록" else "수정", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                     }
@@ -313,7 +312,7 @@ fun WritePostScreen(
     ) { paddingValues ->
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = AccentOrange)
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
             return@Scaffold
         }
@@ -477,15 +476,16 @@ fun WritePostScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
+                                    val semanticColors = LocalInsightDealColors.current
                                     Surface(
-                                        color = AccentOrange.copy(alpha = 0.14f),
+                                        color = semanticColors.priceContainer,
                                         shape = RoundedCornerShape(4.dp)
                                     ) {
                                         Text(
                                             text = deal.siteName,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = AccentOrange,
+                                            color = semanticColors.onPriceContainer,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                         )
                                     }
@@ -494,7 +494,7 @@ fun WritePostScreen(
                                             text = "${deal.discountRate}% 할인",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Black,
-                                            color = AccentOrange
+                                            color = semanticColors.priceAccent
                                         )
                                     }
                                 }
@@ -528,8 +528,8 @@ fun WritePostScreen(
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = AccentOrange,
-                    focusedLabelColor = AccentOrange
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    focusedLabelColor = MaterialTheme.colorScheme.primary
                 )
             )
 
@@ -544,8 +544,8 @@ fun WritePostScreen(
                     shape = RoundedCornerShape(12.dp),
                     prefix = { Text("₩ ") },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentOrange,
-                        focusedLabelColor = AccentOrange
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        focusedLabelColor = MaterialTheme.colorScheme.primary
                     )
                 )
             }
@@ -559,8 +559,8 @@ fun WritePostScreen(
                     .heightIn(min = 240.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = AccentOrange,
-                    focusedLabelColor = AccentOrange
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    focusedLabelColor = MaterialTheme.colorScheme.primary
                 )
             )
         }
@@ -631,8 +631,8 @@ fun WritePostScreen(
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentOrange,
-                        focusedLabelColor = AccentOrange
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        focusedLabelColor = MaterialTheme.colorScheme.primary
                     )
                 )
 
@@ -646,7 +646,7 @@ fun WritePostScreen(
                             .weight(1f),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = AccentOrange)
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     }
                 } else if (deals.isEmpty()) {
                     Box(
@@ -757,7 +757,7 @@ fun WritePostScreen(
                                                 text = "${deal.discountRate}%",
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Black,
-                                                color = AccentOrange
+                                                color = LocalInsightDealColors.current.priceAccent
                                             )
                                         }
                                     }

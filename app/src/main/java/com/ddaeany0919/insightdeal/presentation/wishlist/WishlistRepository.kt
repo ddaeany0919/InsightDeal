@@ -12,6 +12,7 @@ import com.ddaeany0919.insightdeal.data.network.WishlistUpdateRequest
 import com.ddaeany0919.insightdeal.local.db.AppDatabase
 import com.ddaeany0919.insightdeal.local.db.WishlistEntity
 import com.ddaeany0919.insightdeal.network.ApiService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -117,6 +118,7 @@ class WishlistRepository(
                 Log.d(TAG, "서버 위시리스트 ID 매핑 저장: localId=$localId -> serverId=${created.id}")
             }
         }.onFailure { e ->
+            if (e is CancellationException) throw e
             Log.w(TAG, "서버 목표가 알림 동기화 생략 (로컬 Room 저장 완료): ${e.message}")
         }
     }
@@ -150,6 +152,8 @@ class WishlistRepository(
 
         val targetServerId = resolvedServerId ?: runCatching {
             service().getWishlist(resolvedUserId).firstOrNull { it.keyword == item.keyword }?.id
+        }.onFailure { e ->
+            if (e is CancellationException) throw e
         }.getOrNull()?.also { foundId ->
             dao.updateServerWishlistId(item.id, foundId)
         }
@@ -166,6 +170,7 @@ class WishlistRepository(
                     userId = resolvedUserId
                 )
             }.onFailure { e ->
+                if (e is CancellationException) throw e
                 Log.w(TAG, "서버 위시리스트 PATCH 동기화 실패 (로컬 반영 완료): ${e.message}")
             }
         }
@@ -182,12 +187,15 @@ class WishlistRepository(
 
         val serverId = target?.serverWishlistId ?: runCatching {
             service().getWishlist(resolvedUserId).firstOrNull { it.keyword == target?.keyword }?.id
+        }.onFailure { e ->
+            if (e is CancellationException) throw e
         }.getOrNull()
 
         if (serverId != null) {
             runCatching {
                 service().deleteWithQuery(serverId, resolvedUserId)
             }.onFailure { e ->
+                if (e is CancellationException) throw e
                 Log.w(TAG, "서버 위시리스트 DELETE 동기화 실패: ${e.message}")
             }
         }
@@ -206,6 +214,8 @@ class WishlistRepository(
                     service().getWishlist(resolvedUserId)
                         .firstOrNull { it.keyword == keyword }
                         ?.id
+                }.onFailure { e ->
+                    if (e is CancellationException) throw e
                 }.getOrNull()?.also { foundId ->
                     dao.updateServerWishlistId(wishlistId, foundId)
                 }
@@ -230,6 +240,8 @@ class WishlistRepository(
                 } else {
                     emptyList()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 emptyList()
             }
@@ -240,10 +252,70 @@ class WishlistRepository(
         executeWithRetry("updateAlarmState") {
             try {
                 service().updateAlarmState(UpdateAlarmRequest(userId = userId, isEnabled = isEnabled)).isSuccessful
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 false
             }
         }
+    }
+
+    /**
+     * 서버 관심 상품 목록(/api/wishlist/)을 조회하여 로컬 Room 테이블에 병합(하이드레이션)합니다.
+     */
+    suspend fun syncFromServer(userId: String = LocalDataProvider.getDeviceUuid()): Int = withContext(Dispatchers.IO) {
+        val resolvedUserId = userId.ifBlank { LocalDataProvider.getDeviceUuid() }
+        if (resolvedUserId.isBlank()) return@withContext 0
+
+        val remoteItems = service().getWishlist(resolvedUserId)
+        val localItems = dao.getAllWishlistsOnce()
+        var mergedCount = 0
+
+        for (remote in remoteItems) {
+            val mapped = remote.toWishlistItem()
+            val existing = localItems.firstOrNull { it.serverWishlistId == remote.id }
+                ?: localItems.firstOrNull { it.keyword.trim().equals(remote.keyword.trim(), ignoreCase = true) }
+
+            if (existing == null) {
+                dao.insertWishlist(
+                    WishlistEntity(
+                        serverWishlistId = remote.id,
+                        keyword = mapped.keyword,
+                        productUrl = mapped.productUrl,
+                        targetPrice = mapped.targetPrice,
+                        currentLowestPrice = mapped.currentLowestPrice,
+                        currentLowestPlatform = mapped.currentLowestPlatform,
+                        currentLowestProductTitle = mapped.currentLowestProductTitle,
+                        priceDropPercentage = mapped.priceDropPercentage,
+                        isTargetReached = mapped.isTargetReached,
+                        isActive = mapped.isActive,
+                        alertEnabled = mapped.alertEnabled,
+                        createdAt = mapped.createdAt,
+                        updatedAt = mapped.updatedAt,
+                        lastChecked = mapped.lastChecked
+                    )
+                )
+                mergedCount++
+            } else {
+                dao.updateWishlist(
+                    existing.copy(
+                        serverWishlistId = remote.id,
+                        productUrl = existing.productUrl.ifBlank { mapped.productUrl },
+                        targetPrice = mapped.targetPrice,
+                        currentLowestPrice = mapped.currentLowestPrice ?: existing.currentLowestPrice,
+                        currentLowestPlatform = mapped.currentLowestPlatform ?: existing.currentLowestPlatform,
+                        currentLowestProductTitle = mapped.currentLowestProductTitle ?: existing.currentLowestProductTitle,
+                        priceDropPercentage = mapped.priceDropPercentage,
+                        isTargetReached = mapped.isTargetReached,
+                        isActive = mapped.isActive,
+                        alertEnabled = mapped.alertEnabled,
+                        updatedAt = mapped.updatedAt,
+                        lastChecked = mapped.lastChecked ?: existing.lastChecked
+                    )
+                )
+            }
+        }
+        mergedCount
     }
 
     private suspend fun <T> executeWithRetry(name: String, op: suspend () -> T): T {

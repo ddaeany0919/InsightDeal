@@ -401,7 +401,8 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                     onNavigateToMyPosts = { navController.navigate("my_posts") },
                     onNavigateToMyComments = { navController.navigate("my_comments") },
                     onNavigateToRecentDeals = { navController.navigate("recent_deals") },
-                    navController = navController
+                    navController = navController,
+                    wishlistViewModel = wishlistViewModel
                 ) 
             }
             composable("my_posts") {
@@ -516,9 +517,9 @@ fun BottomNavigationBar(navController: androidx.navigation.NavController, homeVi
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                     ),
                     onClick = {
                         if (item.route == "home") {

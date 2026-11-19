@@ -338,7 +338,7 @@ export default function PriceTrendChart({
           justifyContent: "center",
           padding: "24px 16px",
           background: "var(--card-bg)",
-          border: "1px solid rgba(239, 68, 68, 0.25)",
+          border: "1px solid var(--danger-border)",
           borderRadius: "16px",
           textAlign: "center",
           minHeight: "160px",
@@ -348,13 +348,13 @@ export default function PriceTrendChart({
             width: "36px",
             height: "36px",
             borderRadius: "50%",
-            background: "rgba(239, 68, 68, 0.1)",
+            background: "var(--danger-bg)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "#EF4444",
+            color: "var(--error-text)",
           }}>
-            <AlertCircle size={18} />
+            <AlertCircle size={18} aria-hidden="true" />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             <span style={{ fontSize: "0.92rem", fontWeight: 900, color: "var(--text-main)" }}>
@@ -368,7 +368,7 @@ export default function PriceTrendChart({
             type="button"
             onClick={handleRetry}
             className="btn-primary"
-            style={{ minHeight: "40px", padding: "8px 16px", fontSize: "0.82rem", borderRadius: "10px" }}
+            style={{ minHeight: "44px", minWidth: "44px", padding: "8px 16px", fontSize: "0.82rem", borderRadius: "10px" }}
           >
             <RefreshCw size={14} aria-hidden="true" />
             <span>다시 시도</span>
@@ -391,13 +391,15 @@ export default function PriceTrendChart({
                 <button
                   key={opt.key}
                   type="button"
+                  aria-pressed={isActive}
                   onClick={() => setPeriod(opt.key)}
                   style={{
                     background: isActive ? "var(--accent)" : "transparent",
-                    color: isActive ? "#fff" : "var(--text-sub)",
+                    color: isActive ? "var(--on-accent)" : "var(--text-sub)",
                     border: "none",
                     borderRadius: "8px",
-                    minHeight: "38px",
+                    minHeight: "44px",
+                    minWidth: "44px",
                     padding: "6px 11px",
                     fontSize: "0.75rem",
                     fontWeight: 800,
@@ -541,8 +543,8 @@ export default function PriceTrendChart({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span style={{ fontSize: "0.9rem", fontWeight: 800, color: "var(--accent)" }}>가격 변동 내역</span>
-          <span style={{ fontSize: "0.72rem", color: "#10b981", background: "rgba(16, 185, 129, 0.1)", padding: "2px 8px", borderRadius: "10px", fontWeight: 800, border: "1px solid rgba(16, 185, 129, 0.2)", display: "flex", alignItems: "center", gap: "4px" }}>
-            <span style={{ width: "5px", height: "5px", borderRadius: "50%", backgroundColor: "#10b981", display: "inline-block" }}></span>
+          <span style={{ fontSize: "0.72rem", color: "var(--success-text)", background: "var(--success-bg)", padding: "2px 8px", borderRadius: "10px", fontWeight: 800, border: "1px solid var(--success-border)", display: "flex", alignItems: "center", gap: "4px" }}>
+            <span style={{ width: "5px", height: "5px", borderRadius: "50%", backgroundColor: "var(--success-text)", display: "inline-block" }}></span>
             실거래 {chartData.length}건
           </span>
         </div>
@@ -553,13 +555,15 @@ export default function PriceTrendChart({
               <button
                 key={opt.key}
                 type="button"
+                aria-pressed={isActive}
                 onClick={() => setPeriod(opt.key)}
                 style={{
                   background: isActive ? "var(--accent)" : "transparent",
-                  color: isActive ? "#fff" : "var(--text-sub)",
+                  color: isActive ? "var(--on-accent)" : "var(--text-sub)",
                   border: "none",
                   borderRadius: "8px",
-                  minHeight: "38px",
+                  minHeight: "44px",
+                  minWidth: "44px",
                   padding: "6px 11px",
                   fontSize: "0.75rem",
                   fontWeight: 700,
@@ -587,7 +591,7 @@ export default function PriceTrendChart({
       }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: "0.72rem", color: "var(--text-sub)", fontWeight: 700 }}>역대 최저가</div>
-          <div style={{ fontSize: "0.88rem", color: "#10b981", fontWeight: 900, marginTop: "2px", fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{formatPriceNum(minPrice)}</div>
+          <div style={{ fontSize: "0.88rem", color: "var(--success-text)", fontWeight: 900, marginTop: "2px", fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{formatPriceNum(minPrice)}</div>
         </div>
         <div style={{ minWidth: 0, borderLeft: "1px solid var(--card-border)", borderRight: "1px solid var(--card-border)", padding: "0 4px" }}>
           <div style={{ fontSize: "0.72rem", color: "var(--text-sub)", fontWeight: 700 }}>평균 핫딜가</div>
@@ -595,7 +599,7 @@ export default function PriceTrendChart({
         </div>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: "0.72rem", color: "var(--text-sub)", fontWeight: 700 }}>기간 최고가</div>
-          <div style={{ fontSize: "0.88rem", color: "#f59e0b", fontWeight: 800, marginTop: "2px", fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{formatPriceNum(maxPrice)}</div>
+          <div style={{ fontSize: "0.88rem", color: "var(--warning-text)", fontWeight: 800, marginTop: "2px", fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{formatPriceNum(maxPrice)}</div>
         </div>
       </div>
 
@@ -603,7 +607,7 @@ export default function PriceTrendChart({
       {maxPrice > minPrice && (() => {
         const posPct = Math.min(100, Math.max(0, Math.round(((latestPrice - minPrice) / (maxPrice - minPrice)) * 100)));
         const avgPct = Math.min(100, Math.max(0, Math.round(((avgPrice - minPrice) / (maxPrice - minPrice)) * 100)));
-        const pinColor = posPct <= 25 ? "#10b981" : posPct <= 60 ? "#3b82f6" : "#f59e0b";
+        const pinColor = posPct <= 25 ? "var(--success-text)" : posPct <= 60 ? "var(--chart-line)" : "var(--warning-text)";
         return (
           <div style={{
             display: "flex",
@@ -615,11 +619,11 @@ export default function PriceTrendChart({
             borderRadius: "12px"
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", fontSize: "0.72rem", fontWeight: 700 }}>
-              <span style={{ color: "#10b981", flexShrink: 0 }}>최저가 구간</span>
+              <span style={{ color: "var(--success-text)", flexShrink: 0 }}>최저가 구간</span>
               <span style={{ color: pinColor, fontWeight: 800, textAlign: "center" }}>
                 {posPct === 0 ? "현재 역대 최저가 (0%)" : `하위 ${posPct}% 구간`}
               </span>
-              <span style={{ color: "#f59e0b", flexShrink: 0 }}>최고가 구간</span>
+              <span style={{ color: "var(--warning-text)", flexShrink: 0 }}>최고가 구간</span>
             </div>
             <div style={{ position: "relative", height: "8px", borderRadius: "999px", background: "linear-gradient(90deg, rgba(16,185,129,0.85) 0%, rgba(59,130,246,0.85) 50%, rgba(245,158,11,0.85) 100%)", margin: "4px 0" }}>
               {/* 평균 위치 눈금 */}
@@ -683,7 +687,7 @@ export default function PriceTrendChart({
             {activeDiffPct !== 0 && (
               <span
                 style={{
-                  color: activeDiffPct < 0 ? "#10b981" : "#f59e0b",
+                  color: activeDiffPct < 0 ? "var(--success-text)" : "var(--warning-text)",
                   fontWeight: 800,
                   fontSize: "0.74rem",
                 }}
@@ -704,19 +708,24 @@ export default function PriceTrendChart({
               fontSize: "0.72rem",
               fontWeight: 700,
               cursor: "pointer",
-              padding: "2px 4px",
+              minHeight: "44px",
+              minWidth: "44px",
+              padding: "0 12px",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
             닫기
           </button>
         </div>
       ) : (
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.78rem", fontWeight: 800, color: latestPrice <= minPrice || vsAvgPercent < 0 ? "#10b981" : "var(--accent)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.78rem", fontWeight: 800, color: latestPrice <= minPrice || vsAvgPercent < 0 ? "var(--success-text)" : "var(--accent)" }}>
           <span style={{
             width: "6px",
             height: "6px",
             borderRadius: "50%",
-            backgroundColor: latestPrice <= minPrice || vsAvgPercent < 0 ? "#10b981" : "var(--accent)",
+            backgroundColor: latestPrice <= minPrice || vsAvgPercent < 0 ? "var(--success-text)" : "var(--accent)",
             display: "inline-block",
             flexShrink: 0
           }} />
@@ -752,8 +761,8 @@ export default function PriceTrendChart({
         >
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.28" />
-              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
+              <stop offset="0%" stopColor="var(--chart-line)" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="var(--chart-line)" stopOpacity="0.0" />
             </linearGradient>
           </defs>
 
@@ -769,7 +778,7 @@ export default function PriceTrendChart({
 
           <path d={areaPath} fill={`url(#${gradientId})`} />
 
-          <polyline fill="none" stroke="#3b82f6" strokeWidth="2.5" points={polylinePoints} strokeLinecap="round" strokeLinejoin="round" />
+          <polyline fill="none" stroke="var(--chart-line)" strokeWidth="2.5" points={polylinePoints} strokeLinecap="round" strokeLinejoin="round" />
 
           {/* 터치/호버 활성 수직 가이드선 */}
           {activePoint && (
@@ -789,7 +798,7 @@ export default function PriceTrendChart({
             const isMin = i === minIdx;
             const isMax = i === maxIdx && maxPrice > minPrice;
             const isActive = i === activePointIdx;
-            const dotColor = isMin ? "#10b981" : isMax ? "#f59e0b" : "#3b82f6";
+            const dotColor = isMin ? "var(--success-text)" : isMax ? "var(--warning-text)" : "var(--chart-line)";
             return (
               <g key={i}>
                 {isActive && (
@@ -818,7 +827,7 @@ export default function PriceTrendChart({
             <text
               x={points[minIdx].x}
               y={Math.min(height - paddingY - 4, points[minIdx].y + 15)}
-              fill="#10b981"
+              fill="var(--success-text)"
               fontSize="9.5"
               fontWeight="800"
               textAnchor={getCalloutAnchor(points[minIdx].x)}
@@ -830,7 +839,7 @@ export default function PriceTrendChart({
             <text
               x={points[maxIdx].x}
               y={Math.max(14, points[maxIdx].y - 9)}
-              fill="#f59e0b"
+              fill="var(--warning-text)"
               fontSize="9.5"
               fontWeight="800"
               textAnchor={getCalloutAnchor(points[maxIdx].x)}

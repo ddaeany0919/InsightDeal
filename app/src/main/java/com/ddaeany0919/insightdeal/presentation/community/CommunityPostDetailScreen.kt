@@ -51,6 +51,7 @@ import com.ddaeany0919.insightdeal.data.network.CommunityPostDto
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.presentation.A11yIconButton
+import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -643,6 +644,7 @@ fun CommunityPostDetailScreen(
                 } else {
                     items(items = commentList, key = { it.id }, contentType = { "community_comment_item" }) { comment ->
                         val isReply = comment.parentId != null
+                        val semanticColors = LocalInsightDealColors.current
                         Row(modifier = Modifier.fillMaxWidth()) {
                             if (isReply) {
                                 Spacer(modifier = Modifier.width(32.dp))
@@ -650,13 +652,13 @@ fun CommunityPostDetailScreen(
                             Card(
                                 colors = CardDefaults.cardColors(
                                     containerColor = when {
-                                        comment.isAccepted -> Color(0xFFF59F00).copy(alpha = 0.12f)
+                                        comment.isAccepted -> semanticColors.warningContainer.copy(alpha = 0.35f)
                                         isReply -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                                         else -> MaterialTheme.colorScheme.surface
                                     }
                                 ),
                                 border = if (comment.isAccepted) {
-                                    BorderStroke(1.5.dp, Color(0xFFF59F00))
+                                    BorderStroke(1.5.dp, semanticColors.warning)
                                 } else {
                                     BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                 },
@@ -676,21 +678,16 @@ fun CommunityPostDetailScreen(
                                                 .clip(CircleShape)
                                                 .background(
                                                     if (comment.isAccepted) {
-                                                        Brush.linearGradient(listOf(Color(0xFFFFE066), Color(0xFFF59F00)))
+                                                        semanticColors.warningContainer
                                                     } else {
-                                                        Brush.linearGradient(
-                                                            listOf(
-                                                                MaterialTheme.colorScheme.surfaceVariant,
-                                                                MaterialTheme.colorScheme.outlineVariant
-                                                            )
-                                                        )
+                                                        MaterialTheme.colorScheme.surfaceVariant
                                                     }
                                                 ),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
                                                 text = comment.nickname.take(1).uppercase(),
-                                                color = if (comment.isAccepted) Color(0xFF3D2210) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                color = if (comment.isAccepted) semanticColors.onWarningContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -706,12 +703,12 @@ fun CommunityPostDetailScreen(
                                         if (comment.isAccepted) {
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Surface(
-                                                color = Color(0xFFF59F00).copy(alpha = 0.2f),
+                                                color = semanticColors.warningContainer,
                                                 shape = RoundedCornerShape(4.dp)
                                             ) {
                                                 Text(
                                                     text = "채택됨",
-                                                    color = Color(0xFFF59F00),
+                                                    color = semanticColors.onWarningContainer,
                                                     fontSize = 9.sp,
                                                     fontWeight = FontWeight.ExtraBold,
                                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
@@ -839,7 +836,7 @@ fun CommunityPostDetailScreen(
                                                     userId = currentUserId ?: "guest"
                                                 )
                                             },
-                                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFF59F00))
+                                            colors = ButtonDefaults.textButtonColors(contentColor = semanticColors.warning)
                                         ) {
                                             Text("답변 채택하기", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                         }
