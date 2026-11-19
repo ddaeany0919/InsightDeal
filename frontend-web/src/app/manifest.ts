@@ -4,13 +4,13 @@ export const dynamic = 'force-static'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'InsightDeal - 실시간 핫딜 모아보기',
-    short_name: 'InsightDeal',
-    description: '9개 커뮤니티 실시간 핫딜 & 다중 옵션 최저가 비교',
+    name: '얼만데 - 실시간 핫딜 모아보기',
+    short_name: '얼만데',
+    description: '10개 커뮤니티 실시간 핫딜 & 다중 옵션 최저가 비교',
     start_url: '/',
     display: 'standalone',
     background_color: '#F2F4F6',
-    theme_color: '#FF5A26',
+    theme_color: '#00B87A',
     icons: [
       {
         src: '/icon-192x192.png',
@@ -20,6 +20,12 @@ export default function manifest(): MetadataRoute.Manifest {
       },
       {
         src: '/icon-512x512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any',
+      },
+      {
+        src: '/icon-maskable-512x512.png',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'maskable',

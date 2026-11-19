@@ -109,7 +109,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
             // 데이터 수신 즉시 로컬 보관함에 적재 연동
             val title = remoteMessage.notification?.title
                 ?: remoteMessage.data["title"]
-                ?: "InsightDeal 알림"
+                ?: "얼만데 알림"
             val keyword = remoteMessage.data["keyword"]
                 ?: remoteMessage.data["category"]
                 ?: "핫딜"
@@ -138,7 +138,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
                 remoteMessage.notification?.let { notification ->
                     Log.d(TAG, "🔔 알림 페이로드 단일 표시: ${notification.title}")
                     showSmartNotification(
-                        title = notification.title ?: "InsightDeal",
+                        title = notification.title ?: "얼만데",
                         body = notification.body ?: "새로운 알림이 있습니다",
                         data = remoteMessage.data
                     )

@@ -84,7 +84,7 @@ fun PriceGraphScreen(
                 actions = {
                     A11yIconButton(
                         onClick = {
-                            val title = product?.title ?: "InsightDeal 가격 변동 그래프"
+                            val title = product?.title ?: "얼만데 가격 변동 그래프"
                             val priceText = product?.let {
                                 "${NumberFormat.getNumberInstance().format(it.currentPrice)}원"
                             }.orEmpty()

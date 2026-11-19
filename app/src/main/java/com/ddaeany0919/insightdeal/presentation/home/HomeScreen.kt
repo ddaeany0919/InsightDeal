@@ -46,8 +46,11 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
+import com.ddaeany0919.insightdeal.R
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.utils.CustomTabLauncher
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 
 import com.ddaeany0919.insightdeal.presentation.components.shimmerEffect
 import com.ddaeany0919.insightdeal.presentation.rememberRelativeTime
@@ -458,27 +461,14 @@ fun HomeScreen(
                             }
                         }
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    brush = Brush.linearGradient(
-                                        colors = listOf(Color(0xFFB84500), Color(0xFFC92A37))
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.LocalOffer,
-                                contentDescription = "InsightDeal 로고",
-                                tint = Color(0xFFF9FAFB),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_brand_mark),
+                            contentDescription = "얼만데 로고",
+                            modifier = Modifier.size(30.dp)
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "InsightDeal",
+                            text = "얼만데",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = (-0.5).sp,

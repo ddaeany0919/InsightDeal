@@ -15,7 +15,7 @@ self.addEventListener('push', function (event) {
     try {
       data = JSON.parse(rawText);
     } catch {
-      data = { title: 'InsightDeal 핫딜 알림', body: rawText };
+      data = { title: '얼만데 핫딜 알림', body: rawText };
     }
   }
 
@@ -26,7 +26,7 @@ self.addEventListener('push', function (event) {
     ? `${origin}/?dealId=${encodeURIComponent(String(dealId))}`
     : `${origin}${fallbackPath}`;
 
-  const title = data.title || 'InsightDeal 핫딜 알림';
+  const title = data.title || '얼만데 핫딜 알림';
   const options = {
     body: data.body || '새로운 특가 정보가 도착했습니다.',
     icon: data.icon || '/icon-192x192.png',

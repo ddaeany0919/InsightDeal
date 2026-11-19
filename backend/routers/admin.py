@@ -44,7 +44,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>InsightDeal 관리자</title>
+    <title>얼만데 관리자</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { background-color: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 800px; }
@@ -75,7 +75,7 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-            <h1 style="margin-bottom:0;">InsightDeal 관리자</h1>
+            <h1 style="margin-bottom:0;">얼만데 관리자</h1>
             <input type="password" id="admin-key-input" class="key-input" placeholder="Admin API Key (선택)" onchange="saveAdminKey(this.value)" />
         </div>
         <p>전체 스크래퍼 실행 및 진행 상태를 확인합니다.</p>

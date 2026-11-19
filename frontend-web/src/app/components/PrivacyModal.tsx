@@ -93,7 +93,7 @@ export default function PrivacyModal({ isOpen, onClose }: PrivacyModalProps) {
               1. 생체 인식 정보 처리
             </strong>
             <br />
-            인사이트딜은 사용자의 지문 등 생체 정보를 별도로 수집하거나 서버로
+            얼만데는 사용자의 지문 등 생체 정보를 별도로 수집하거나 서버로
             전송하지 않습니다. 인증은 기기 내 보안 영역(Android KeyStore / iOS
             Secure Enclave)에서만 처리됩니다.
           </p>

@@ -1,16 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="288dp"
     android:height="288dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
 
-    <!-- Unified Karrot SEED Warm Orange Rounded Square Badge (#FF6F0F) -->
+    <!-- Transparent Background Eolmande Emerald-Mint Check Price-Tag (#00B87A) -->
     <path
-        android:fillColor="#FF6F0F"
-        android:pathData="M7,2h10c2.76,0 5,2.24 5,5v10c0,2.76 -2.24,5 -5,5H7c-2.76,0 -5,-2.24 -5,-5V7c0,-2.76 2.24,-5 5,-5z" />
+        android:fillColor="#00B87A"
+        android:pathData="M6.8,3.6 Q8.0,2.2 9.8,2.9 L15.6,5.3 Q17.1,6.0 17.8,7.5 L20.2,13.5 Q20.9,15.3 19.5,16.5 L12.6,21.4 Q11.1,22.5 9.8,21.0 L4.5,13.0 Q3.7,11.7 4.2,10.1 L6.0,4.6 Q6.3,4.0 6.8,3.6 Z" />
 
-    <!-- White Price Tag (Material LocalOffer Silhouette, Centered & Scaled) -->
+    <!-- Deep Charcoal Navy Eyelet Ring (#182230) with Hollow Hole -->
+    <path
+        android:fillColor="#182230"
+        android:fillType="evenOdd"
+        android:pathData="M8.6,4.45 A1.65,1.65 0 1,1 8.59,4.45 Z M8.6,5.32 A0.78,0.78 0 1,1 8.59,5.32 Z" />
+
+    <!-- Bold Rounded Pure White Checkmark (#FFFFFF) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M17.65,12.82l-5.47,-5.47C11.96,7.13 11.66,7 11.33,7H7.2C6.54,7 6,7.54 6,8.2v4.13c0,0.33 0.13,0.63 0.35,0.85l5.47,5.47c0.47,0.47 1.23,0.47 1.7,0l4.13,-4.13c0.47,-0.47 0.47,-1.23 0,-1.7zM8.7,10.6c-0.66,0 -1.2,-0.54 -1.2,-1.2s0.54,-1.2 1.2,-1.2 1.2,0.54 1.2,1.2 -0.54,1.2 -1.2,1.2z" />
+        android:pathData="M8.5,12.7 Q8.0,12.2 8.5,11.7 Q9.0,11.2 9.5,11.7 L11.5,13.6 L14.5,9.3 Q15.0,8.7 15.6,9.1 Q16.2,9.5 15.8,10.2 L12.2,15.6 Q11.6,16.4 10.8,15.6 Z" />
 </vector>

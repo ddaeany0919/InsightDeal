@@ -1689,24 +1689,20 @@ export default function Home() {
             fetchLiveDeals(true, 0, "전체", "전체", "", "latest");
           }}
         >
-          <svg
-            width="28"
-            height="28"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <rect width="24" height="24" rx="7" fill="var(--deal-orange)" />
-            <path
-              d="M17.65 12.82L12.18 7.35C11.96 7.13 11.66 7 11.33 7H7.2C6.54 7 6 7.54 6 8.2V12.33C6 12.66 6.13 12.96 6.35 13.18L11.82 18.65C12.29 19.12 13.05 19.12 13.52 18.65L17.65 14.52C18.12 14.05 18.12 13.29 17.65 12.82ZM8.7 10.6C8.04 10.6 7.5 10.06 7.5 9.4C7.5 8.74 8.04 8.2 8.7 8.2C9.36 8.2 9.9 8.74 9.9 9.4C9.9 10.06 9.36 10.6 8.7 10.6Z"
-              fill="#FFFFFF"
-            />
-          </svg>
-          <span>InsightDeal</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand-logo.png"
+            alt=""
+            aria-hidden="true"
+            width={30}
+            height={30}
+            style={{ width: 30, height: 30, objectFit: "contain", display: "block" }}
+          />
+          <span>얼만데</span>
           <span
             style={{
-              background: "var(--deal-orange-bg)",
-              color: "var(--deal-orange)",
+              background: "rgba(0, 184, 122, 0.14)",
+              color: "#009965",
               fontSize: "0.68rem",
               fontWeight: 800,
               padding: "2px 6px",
@@ -3028,9 +3024,9 @@ export default function Home() {
               alignItems: "center",
             }}
           >
-            <span>© 2026 InsightDeal. All rights reserved.</span>
+            <span>© 2026 얼만데. All rights reserved.</span>
             <span style={{ fontSize: "0.8rem", color: "var(--text-sub)" }}>
-              실시간 커뮤니티 특가 및 키워드 알림 서비스, 인사이트딜
+              실시간 커뮤니티 특가 및 키워드 알림 서비스, 얼만데
             </span>
             <span
               style={{

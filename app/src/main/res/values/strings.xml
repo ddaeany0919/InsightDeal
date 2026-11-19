@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">InsightDeal</string>
+    <string name="app_name">얼만데</string>
     
     <!-- 테마 관련 -->
     <string name="theme_auto">자동 전환</string>
@@ -14,7 +14,7 @@
     
     <!-- 알림 관련 -->
     <string name="default_notification_channel_id">insightdeal_notifications</string>
-    <string name="default_notification_channel_name">InsightDeal 알림</string>
+    <string name="default_notification_channel_name">얼만데 알림</string>
     
     <!-- 검색 관련 -->
     <string name="search_hint">핫딜 검색 (갤럭시, 아이폰, 노트북...)"</string>

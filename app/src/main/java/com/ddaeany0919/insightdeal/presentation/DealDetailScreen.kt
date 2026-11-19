@@ -530,7 +530,7 @@ fun DealDetailRoute(
                 isFree = uiState.isFree || deal.isFree
             )
             val shareText = buildString {
-                append("[인사이트딜 핫딜 공유]\n")
+                append("[얼만데 핫딜 공유]\n")
                 append("$effectiveTitle\n")
                 append("현재 핫딜가: $formattedSharePrice\n")
                 if (effectiveTargetUrl.isNotBlank()) append(effectiveTargetUrl)

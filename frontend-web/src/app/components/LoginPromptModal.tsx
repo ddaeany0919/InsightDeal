@@ -74,7 +74,7 @@ export default function LoginPromptModal({
               기기 연동이 필요해요
             </h3>
             <span style={{ fontSize: "0.85rem", color: "var(--accent)", fontWeight: 800 }}>
-              InsightDeal 맞춤 기능 안내
+              얼만데 맞춤 기능 안내
             </span>
           </div>
           <button

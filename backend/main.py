@@ -163,7 +163,7 @@ FALLBACK_SVG_IMAGE = """<svg xmlns="http://www.w3.org/2000/svg" width="400" heig
   <rect width="400" height="300" fill="#1E293B"/>
   <circle cx="200" cy="130" r="45" fill="#334155"/>
   <path d="M200 105 L215 125 L185 125 Z" fill="#F59E0B"/>
-  <text x="200" y="210" font-family="sans-serif" font-size="15" font-weight="bold" fill="#94A3B8" text-anchor="middle">InsightDeal 이미지</text>
+  <text x="200" y="210" font-family="sans-serif" font-size="15" font-weight="bold" fill="#94A3B8" text-anchor="middle">얼만데 이미지</text>
   <text x="200" y="235" font-family="sans-serif" font-size="12" fill="#64748B" text-anchor="middle">원본 이미지 만료 또는 준비 중</text>
 </svg>""".encode('utf-8')
 

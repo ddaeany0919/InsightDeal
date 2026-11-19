@@ -600,7 +600,7 @@ fun SettingsScreen(
                             title = "의견 남기기",
                             onClick = {
                                 val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:support@insightdeal.com"))
-                                intent.putExtra(android.content.Intent.EXTRA_SUBJECT, "[InsightDeal] 소중한 의견 남기기")
+                                intent.putExtra(android.content.Intent.EXTRA_SUBJECT, "[얼만데] 소중한 의견 남기기")
                                 intent.putExtra(android.content.Intent.EXTRA_TEXT, "앱 이용에 관한 소중한 의견이나 버그 제보를 작성해 주세요.\n\n기기 ID: ${deviceUuid.ifBlank { "unknown" }}\n앱 버전: 1.0.0\n의견 내용:")
                                 try {
                                     ctx.startActivity(intent)
@@ -681,7 +681,7 @@ fun SettingsScreen(
                                             text = when(selectedPolicyTab) {
                                                 0 -> """
                                                     제 1 조 (목적)
-                                                    본 약관은 인사이트딜(이하 "서비스")의 이용과 관련하여 서비스와 이용자 간의 권리, 의무 및 책임 사항을 규정함을 목적으로 합니다.
+                                                    본 약관은 얼만데(이하 "서비스")의 이용과 관련하여 서비스와 이용자 간의 권리, 의무 및 책임 사항을 규정함을 목적으로 합니다.
 
                                                     제 2 조 (용어의 정의)
                                                     1. "서비스"란 국내 주요 커뮤니티의 할인 정보 및 시세 추이를 모아 제공하는 모바일 애플리케이션 및 관련 서비스를 의미합니다.
@@ -713,7 +713,7 @@ fun SettingsScreen(
                                                 else -> """
                                                     [개인정보 처리방침]
 
-                                                    인사이트딜은 개인정보보호법 등 관련 법령을 준수하며 이용자의 개인정보를 안전하게 관리합니다.
+                                                    얼만데는 개인정보보호법 등 관련 법령을 준수하며 이용자의 개인정보를 안전하게 관리합니다.
 
                                                     1. 수집하는 개인정보 항목 및 목적
                                                     - 수집 항목: 아이디, 비밀번호, 닉네임, 기기 알림 토큰(선택)
@@ -744,7 +744,7 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                "InsightDeal © 2026",
+                "얼만데 © 2026",
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),

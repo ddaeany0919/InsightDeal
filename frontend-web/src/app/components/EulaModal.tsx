@@ -93,7 +93,7 @@ export default function EulaModal({ isOpen, onClose }: EulaModalProps) {
               1. 가격 및 재고 안내
             </strong>
             <br />
-            인사이트딜은 주요 커뮤니티에 등록된 특가 정보를 모아 제공합니다. 판매처
+            얼만데는 주요 커뮤니티에 등록된 특가 정보를 모아 제공합니다. 판매처
             사정에 따라 품절이나 쿠폰 종료로 실제 결제 금액이 달라질 수 있으니 구매
             전 최종 가격을 확인해 주세요.
           </p>
