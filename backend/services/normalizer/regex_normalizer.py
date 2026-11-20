@@ -43,6 +43,7 @@ class RegexNormalizer(ProductNormalizer):
             "노트북", "랩탑", "맥북", "태블릿", "아이패드", "스마트폰", "휴대폰", "자급제", "아이폰", "갤럭시",
             "모니터", "보조모니터", "포터블모니터", "그래픽카드", "ssd", "외장ssd", "ram", "아이맥", "맥미니", "미니pc",
             "키보드", "마우스", "이어폰", "이어버드", "헤드폰", "헤드셋", "에어팟", "버즈", "워치", "스마트워치", "애플워치", "갤럭시워치",
+            "블루투스", "오디오", "스마트글래스", "스마트 글래스", "오픈이어",
             "일체형pc", "올인원pc", "보조배터리", "충전기", "충전케이블", "케이블", "어댑터", "맥세이프", "액정필름",
             "스피커", "사운드바", "서브우퍼", "공유기", "랜카드", "스위치허브", "외장하드", "hdd", "nvme", "sd카드", "마이크로sd", "메모리카드",
             "파워서플라이", "파워", "메인보드", "라이젠", "인텔", "쿨러", "웹캠", "마이크", "모니터암", "도킹스테이션",
@@ -348,10 +349,14 @@ class RegexNormalizer(ProductNormalizer):
             if any(sk in text_lower for sk in smart_keywords) or "워치" in text_lower:
                 return "PC제품" # 모바일 기기/웨어러블은 PC제품 카테고리에 편입
 
-        # 5. 일반 키워드 매칭 루프
+        # 5. 일반 키워드 매칭 루프 (1글자 키워드: 차/배/김/굴/밤/쌀/죽 등 부분문자열 오탐 방지를 위해 단어 경계 검증)
         for category, keywords in self.CATEGORIES.items():
-            if any(keyword in text_lower for keyword in keywords):
-                return category
+            for keyword in keywords:
+                if len(keyword) == 1:
+                    if re.search(rf"(?:^|[\s,/·(+]){re.escape(keyword)}(?=$|[\s,/·)+0-9])", text_lower):
+                        return category
+                elif keyword in text_lower:
+                    return category
         return "기타"
 
     async def normalize(self, title: str, scraped_category: Optional[str] = None) -> NormalizedProduct:

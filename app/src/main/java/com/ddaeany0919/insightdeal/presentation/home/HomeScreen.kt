@@ -1,5 +1,6 @@
 package com.ddaeany0919.insightdeal.presentation.home
 
+import com.ddaeany0919.insightdeal.presentation.computeUnitPriceBadge
 import com.ddaeany0919.insightdeal.presentation.decodeHtmlEntities
 import com.ddaeany0919.insightdeal.presentation.formatDetailPriceText
 import com.ddaeany0919.insightdeal.presentation.formatPrice
@@ -2611,6 +2612,29 @@ fun DealCardComposable(
         deal.resolvedOptionCount
     }
 
+    val isMultiDeal = deal.hasOptions || optionCount >= 2
+    val unitPriceBadge = remember(
+        deal.id,
+        resolvedShopTitle.cleanTitle,
+        deal.price,
+        deal.currency,
+        deal.category,
+        deal.isClosed,
+        deal.isFree,
+        isMultiDeal
+    ) {
+        if (!deal.isClosed && !deal.isFree && !isMultiDeal) {
+            computeUnitPriceBadge(
+                title = resolvedShopTitle.cleanTitle,
+                price = deal.price,
+                currency = deal.currency,
+                category = deal.category
+            )
+        } else {
+            null
+        }
+    }
+
     val multiOptions = remember(deal.id, deal.optionsData, deal.sources, deal.currency, deal.ecommerceUrl, deal.postUrl) {
         if (deal.optionsData.size > 1) {
             deal.optionsData.map { opt ->
@@ -2713,7 +2737,10 @@ fun DealCardComposable(
                                 colorFilter = if (deal.isClosed) CLOSED_DEAL_COLOR_FILTER else null,
                                 contentScale = ContentScale.Crop,
                                 onError = {
-                                    if (fallbackProxyUrl != null && activeImageUrl != fallbackProxyUrl) {
+                                    if (!activeImageUrl.orEmpty().contains("/api/proxy-image", ignoreCase = true) &&
+                                        fallbackProxyUrl != null &&
+                                        activeImageUrl != fallbackProxyUrl
+                                    ) {
                                         activeImageUrl = fallbackProxyUrl
                                     }
                                 },
@@ -2935,6 +2962,31 @@ fun DealCardComposable(
                                             fontSize = 10.5.sp,
                                             color = if (isDark) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                if (unitPriceBadge != null) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = semantic.infoContainer,
+                                        border = BorderStroke(0.8.dp, semantic.info.copy(alpha = if (isDark) 0.35f else 0.25f)),
+                                        modifier = Modifier
+                                            .align(Alignment.CenterVertically)
+                                            .semantics {
+                                                contentDescription = "${unitPriceBadge.label}, ${unitPriceBadge.detail}"
+                                            }
+                                    ) {
+                                        Text(
+                                            text = unitPriceBadge.label,
+                                            style = PriceTextStyle.copy(
+                                                fontSize = 10.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                letterSpacing = (-0.2).sp
+                                            ),
+                                            color = semantic.onInfoContainer,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            maxLines = 1
                                         )
                                     }
                                 }

@@ -20,6 +20,7 @@ import com.ddaeany0919.insightdeal.models.CategoryCatalog
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.presentation.DealDetailViewModel
+import com.ddaeany0919.insightdeal.presentation.computeUnitPriceBadge
 import com.ddaeany0919.insightdeal.presentation.formatDetailPriceText
 import com.ddaeany0919.insightdeal.presentation.formatPrice
 import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
@@ -1236,5 +1237,33 @@ class InsightDealV11bUnitTest {
         withTimeout(3000) { while (vm3.uiState.value.deal?.id != 303 || vm3.uiState.value.isLoading) delay(10) }
         assertEquals(1, server.recordedRequests.count { it.path.startsWith("/api/community/deals/303/history") })
         assertEquals(listOf(45000, 42000), vm3.uiState.value.priceHistory.map { it.price })
+    }
+
+    @Test
+    fun unitPriceFormatter_matchesWebParityAndBlocksTechOrUsd() {
+        val guk = computeUnitPriceBadge("[쿠팡] 비비고 육개장 500g x 6개", 17900L, "KRW", "음식")
+        assertNotNull(guk)
+        assertEquals("100g당 597원", guk?.label)
+        assertEquals("총 3,000g · 개당 2,983원", guk?.detail)
+
+        val coke = computeUnitPriceBadge("[지마켓] 코카콜라 제로 당류 0g 355ml x 24캔", 16900L, "KRW", "음식")
+        assertNotNull(coke)
+        assertEquals("100ml당 198원", coke?.label)
+        assertEquals("총 8,520ml · 개당 704원", coke?.detail)
+
+        val wipes = computeUnitPriceBadge("[티몬] 베베숲 물티슈 70매 x 10팩", 15900L, "KRW", "육아/유아용품")
+        assertNotNull(wipes)
+        assertEquals("1팩당 1,590원", wipes?.label)
+        assertEquals("70매 × 10팩 기준", wipes?.detail)
+
+        val rolls = computeUnitPriceBadge("[쿠팡] 두루마리 휴지 30롤", 18000L, "KRW", "생활용품")
+        assertNotNull(rolls)
+        assertEquals("1롤당 600원", rolls?.label)
+        assertEquals("총 30롤 기준", rolls?.detail)
+
+        assertNull(computeUnitPriceBadge("[알리] Netac NVMe SSD 1TB", 69000L, "KRW", "PC용품"))
+        assertNull(computeUnitPriceBadge("[쿠팡] 27인치 게이밍 모니터 165Hz", 199000L, "KRW", "생활용품"))
+        assertNull(computeUnitPriceBadge("스카이 핏 스마트 글래스 S1 블루투스6.0 오디오 안경 2개", 36900L, "KRW", "기타"))
+        assertNull(computeUnitPriceBadge("[아마존] 비타민 500g", 2000L, "USD", "음식"))
     }
 }

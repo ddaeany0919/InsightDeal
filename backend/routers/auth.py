@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import update
+from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 
 from backend.core.device_auth import (
@@ -40,13 +40,43 @@ _ACCESS_TOKEN_TTL_SECONDS = 86400 * 7
 _pairing_device_fail_attempts: dict[str, list[float]] = {}
 _pairing_ip_rate_limit: dict[str, list[float]] = {}
 _pairing_issue_rate_limit: dict[str, list[float]] = {}
+_LAST_PAIRING_CLEANUP_TS: float = 0.0
+_PAIRING_CLEANUP_INTERVAL_SEC: float = 600.0
+_PAIRING_CLEANUP_GRACE_SEC: int = 600
+
+
+def cleanup_expired_pairing_codes(db: Session, *, force: bool = False) -> int:
+    """만료 유예(10분) 경과 및 사용 완료된 기기 동기화 코드를 정리한다. 활성 대기 코드는 보존한다."""
+    global _LAST_PAIRING_CLEANUP_TS
+    now_ts = time.time()
+    if not force and (now_ts - _LAST_PAIRING_CLEANUP_TS) < _PAIRING_CLEANUP_INTERVAL_SEC:
+        return 0
+    _LAST_PAIRING_CLEANUP_TS = now_ts
+    cutoff_naive = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+        seconds=_PAIRING_CLEANUP_GRACE_SEC
+    )
+    deleted = (
+        db.query(models.DevicePairingCode)
+        .filter(
+            or_(
+                models.DevicePairingCode.used_at.isnot(None),
+                models.DevicePairingCode.expires_at < cutoff_naive,
+            )
+        )
+        .delete(synchronize_session=False)
+    )
+    if deleted:
+        db.commit()
+    return int(deleted or 0)
 
 
 def reset_rate_limits() -> None:
     """테스트 및 런타임 격리를 위한 인증/페어링 레이트리밋 초기화 훅"""
+    global _LAST_PAIRING_CLEANUP_TS
     _pairing_device_fail_attempts.clear()
     _pairing_ip_rate_limit.clear()
     _pairing_issue_rate_limit.clear()
+    _LAST_PAIRING_CLEANUP_TS = 0.0
     try:
         from backend.routers import push as push_router
         push_router.reset_rate_limits()
@@ -529,6 +559,8 @@ def issue_pairing_code(
         raise HTTPException(status_code=429, detail="Too many pairing code requests")
     issue_entries.append(now_ts)
     _pairing_issue_rate_limit[source_uuid] = issue_entries
+
+    cleanup_expired_pairing_codes(db)
 
     now_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
     expires_naive = now_utc_naive + timedelta(seconds=_PAIRING_TTL_SECONDS)

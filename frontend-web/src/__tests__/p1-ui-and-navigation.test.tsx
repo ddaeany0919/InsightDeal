@@ -940,7 +940,7 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
         expect(screen.getByRole("heading", { level: 2, name: "실시간 핫딜 목록" })).toHaveClass("sr-only");
       });
       expect(
-        screen.getByPlaceholderText("핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)")
+        screen.getByPlaceholderText("핫딜 검색 (맥북 -파우치, :15000)")
       ).toBeInTheDocument();
 
       Object.defineProperty(window, "scrollY", { configurable: true, writable: true, value: 720 });

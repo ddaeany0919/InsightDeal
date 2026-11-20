@@ -2850,7 +2850,8 @@ class AggregatorService:
             from concurrent.futures import ThreadPoolExecutor
             from backend.services.push_worker import background_trigger_keyword_alarms
 
-            if not hasattr(self.__class__, "_push_executor"):
+            existing_exec = getattr(self.__class__, "_push_executor", None)
+            if existing_exec is None or getattr(existing_exec, "_shutdown", False):
                 self.__class__._push_executor = ThreadPoolExecutor(max_workers=5)
 
             session_factory = self._build_push_session_factory()

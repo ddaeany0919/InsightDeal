@@ -2066,3 +2066,58 @@ def test_get_hot_deals_latest_cursor_cache_hit_and_invalidation(unit_v11b_env):
         assert "무효화 검증 최신 상품" in p1_after["deals"][0]["title"]
     finally:
         event.remove(engine, "before_cursor_execute", _capture_sql)
+
+
+def test_regex_normalizer_single_char_boundary_and_pairing_cleanup(unit_v11b_env):
+    """1글자 음식 키워드('차','배' 등)의 부분문자열 오분류를 차단하고 만료/사용완료 페어링 코드를 안전 정리한다."""
+    from backend.services.normalizer.regex_normalizer import RegexNormalizer
+    from backend.routers.auth import cleanup_expired_pairing_codes, reset_rate_limits
+
+    norm = RegexNormalizer()
+    assert norm._map_category("스카이 핏 스마트 글래스 S1 블루투스6.0 오디오 안경 오픈이어 블루라이트 UV 차단 IPX4") == "PC제품"
+    assert norm._map_category("보성 녹차 500ml 20병") == "음식"
+    assert norm._map_category("전통 유자 차 1kg") == "음식"
+    assert norm._map_category("고당도 신고 배 5kg 1박스") == "음식"
+
+    SessionCls = unit_v11b_env.SessionCls
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    db = SessionCls()
+    try:
+        db.query(models.DevicePairingCode).delete()
+        db.add_all(
+            [
+                models.DevicePairingCode(
+                    code="111111",
+                    source_device_uuid="src-active",
+                    expires_at=now_naive + timedelta(minutes=8),
+                    used_at=None,
+                ),
+                models.DevicePairingCode(
+                    code="222222",
+                    source_device_uuid="src-used",
+                    expires_at=now_naive + timedelta(minutes=8),
+                    used_at=now_naive - timedelta(minutes=1),
+                ),
+                models.DevicePairingCode(
+                    code="333333",
+                    source_device_uuid="src-expired",
+                    expires_at=now_naive - timedelta(minutes=25),
+                    used_at=None,
+                ),
+                models.DevicePairingCode(
+                    code="444444",
+                    source_device_uuid="src-recent-expired",
+                    expires_at=now_naive - timedelta(minutes=3),
+                    used_at=None,
+                ),
+            ]
+        )
+        db.commit()
+
+        reset_rate_limits()
+        deleted = cleanup_expired_pairing_codes(db, force=False)
+        assert deleted == 2
+        remaining = {r.code for r in db.query(models.DevicePairingCode).all()}
+        assert remaining == {"111111", "444444"}
+    finally:
+        db.close()

@@ -2291,7 +2291,7 @@ const _UNIT_PRICE_EXCLUDED_CATEGORIES = new Set([
 ]);
 
 const _UNIT_PRICE_TECH_SPEC_RE =
-  /(?:^|[\s(/\[,])(?:\d+\s*(?:gb|tb|mb|ghz|mhz|hz|mah|wh|w|인치|inch)|rtx\s*\d+|gtx\s*\d+|ddr[45]|nvme|ssd|hdd|모니터|노트북|그래픽카드|메인보드|키보드|마우스|이어폰|헤드셋|충전기|케이블|보조배터리|스마트워치|태블릿|아이패드|갤럭시탭|맥북)(?=$|[\s)/\],])/i;
+  /(?:^|[\s(/\[,])(?:\d+\s*(?:gb|tb|mb|ghz|mhz|hz|mah|wh|w|인치|inch)|rtx\s*\d+|gtx\s*\d+|ddr[45]|nvme|ssd|hdd|모니터|노트북|그래픽카드|메인보드|키보드|마우스|이어폰|헤드셋|충전기|케이블|보조배터리|스마트워치|스마트글래스|스마트\s*글래스|오디오\s*안경|블루투스|스피커|태블릿|아이패드|갤럭시탭|맥북)(?=$|[\s)/\],])/i;
 
 export interface UnitPriceBadgeInfo {
   label: string;

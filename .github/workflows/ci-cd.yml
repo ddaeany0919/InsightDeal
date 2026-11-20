@@ -121,6 +121,10 @@ jobs:
             STASHED=1
           fi
           NEXT_PUBLIC_TOSS_MINIAPP=true npx next build --webpack
+          test -f out/index.html
+          test -f out/notifications.html
+          test -f out/settings/notifications.html
+          echo "Verified Toss static export artifacts in out/."
 
   gate-4-android:
     name: Gate 4 — Android UnitTest, LintRelease & AssembleRelease

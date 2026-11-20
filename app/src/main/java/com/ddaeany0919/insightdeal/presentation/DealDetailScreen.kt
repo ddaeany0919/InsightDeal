@@ -2811,7 +2811,10 @@ fun DealHeader(
                                 model = headerImageRequest,
                                 contentDescription = null,
                                 onError = {
-                                    if (fallbackHeaderUrl != null && activeHeaderUrl != fallbackHeaderUrl) {
+                                    if (!activeHeaderUrl.orEmpty().contains("/api/proxy-image", ignoreCase = true) &&
+                                        fallbackHeaderUrl != null &&
+                                        activeHeaderUrl != fallbackHeaderUrl
+                                    ) {
                                         activeHeaderUrl = fallbackHeaderUrl
                                     } else {
                                         imageLoadFailed = true

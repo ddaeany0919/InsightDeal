@@ -64,6 +64,10 @@ def isolated_app_and_db():
     test_app.dependency_overrides[get_db_session] = override_get_db
 
     yield test_app, TestingSessionLocal
+    push_exec = getattr(AggregatorService, "_push_executor", None)
+    if push_exec is not None:
+        push_exec.shutdown(wait=True)
+        delattr(AggregatorService, "_push_executor")
     engine.dispose()
 
 

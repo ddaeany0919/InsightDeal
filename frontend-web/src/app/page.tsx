@@ -2244,7 +2244,7 @@ export default function Home() {
                   aria-label="핫딜 검색어 입력"
                   placeholder={
                     isCompactViewport
-                      ? "핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
+                      ? "핫딜 검색 (맥북 -파우치, :15000)"
                       : "주요 커뮤니티 10곳 핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
                   }
                   value={searchQuery}

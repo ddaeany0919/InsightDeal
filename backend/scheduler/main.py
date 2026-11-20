@@ -676,7 +676,15 @@ def db_maintenance_job():
             cache_max_age_days=7,
             cache_max_mb=500
         )
-        logger.info(f"✅ [새벽 4시 통합 유지보수 성공] {summary}")
+        cleaned_pairing = 0
+        try:
+            from backend.database.session import SessionLocal
+            from backend.routers.auth import cleanup_expired_pairing_codes
+            with SessionLocal() as cleanup_db:
+                cleaned_pairing = cleanup_expired_pairing_codes(cleanup_db, force=True)
+        except Exception as pairing_err:
+            logger.warning(f"⚠️ 만료 기기 동기화 코드 정리 건너뜀: {pairing_err}")
+        logger.info(f"✅ [새벽 4시 통합 유지보수 성공] {summary} | pairing_cleaned={cleaned_pairing}")
     except Exception as e:
         logger.error(f"❌ DB 일일 안전 백업 및 최적화 작업 중 오류: {e}")
 
