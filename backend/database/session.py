@@ -168,27 +168,50 @@ class DatabaseManager:
                 except Exception as e:
                     logger.warning(f"자동 마이그레이션 컬럼 추가 스킵 ({table_name}.{col_name}): {e}")
 
-        if is_sqlite and "deals" in existing_tables:
-            try:
-                with self.engine.begin() as conn:
-                    conn.execute(
-                        text(
-                            "UPDATE deals SET indexed_at = indexed_at || '.000000' "
-                            "WHERE typeof(indexed_at) = 'text' AND length(indexed_at) = 19"
-                        )
-                    )
-                    conn.execute(
-                        text(
-                            "CREATE INDEX IF NOT EXISTS idx_deals_closed_indexed_id "
-                            "ON deals (is_closed, indexed_at DESC, id DESC)"
-                        )
-                    )
-            except Exception as e:
-                logger.warning(f"SQLite deals indexed_at 정규화/인덱스 보장 스킵: {e}")
+        self._ensure_sqlite_deals_normalization_and_triggers(existing_tables)
+
+        if "deals" in existing_tables:
+            for stmt in self._DEALS_COMPOSITE_INDEX_STATEMENTS:
+                try:
+                    with self.engine.begin() as conn:
+                        conn.execute(text(stmt))
+                except Exception as e:
+                    logger.warning(f"deals 복합 인덱스 보장 스킵 ({stmt}): {e}")
+
+    _DEALS_COMPOSITE_INDEX_STATEMENTS = (
+        "CREATE INDEX IF NOT EXISTS idx_deals_closed_indexed_id ON deals (is_closed, indexed_at DESC, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_deals_cat_closed_indexed_id ON deals (category, is_closed, indexed_at DESC, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_deals_comm_closed_indexed_id ON deals (source_community_id, is_closed, indexed_at DESC, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_deals_popular_sort ON deals (is_closed, honey_score DESC, like_count DESC, indexed_at DESC, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_deals_indexed_asc ON deals (indexed_at ASC, id ASC)",
+    )
+
+    def _ensure_sqlite_deals_normalization_and_triggers(self, existing_tables: set[str] | None = None) -> None:
+        """SQLite 전용: 비-26자 deals.indexed_at 일괄 정규화 + INSERT/UPDATE 정규화 트리거 2종 보장"""
+        if self.engine is None or self.engine.dialect.name != "sqlite":
+            return
+        if existing_tables is None:
+            from sqlalchemy import inspect
+            existing_tables = set(inspect(self.engine).get_table_names())
+        if "deals" not in existing_tables:
+            return
+        try:
+            from backend.database.models import (
+                ensure_sqlite_deals_indexed_at_triggers,
+                normalize_sqlite_deals_indexed_at,
+            )
+            with self.engine.begin() as conn:
+                normalize_sqlite_deals_indexed_at(conn)
+                ensure_sqlite_deals_indexed_at_triggers(conn)
+        except Exception as e:
+            logger.warning(f"SQLite deals indexed_at 정규화/트리거 보장 스킵: {e}")
 
     def ensure_performance_indexes(self):
         """6개월 시세 차트, DSU 클러스터링, 피드 필터링 고속화를 위한 복합 인덱스 자동 보장"""
+        self._ensure_sqlite_deals_normalization_and_triggers()
+
         index_statements = [
+            *self._DEALS_COMPOSITE_INDEX_STATEMENTS,
             "CREATE INDEX IF NOT EXISTS idx_deals_closed_indexed ON deals (is_closed, indexed_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_deals_community_closed_indexed ON deals (source_community_id, is_closed, indexed_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_deals_base_product_indexed ON deals (base_product_name, indexed_at DESC)",

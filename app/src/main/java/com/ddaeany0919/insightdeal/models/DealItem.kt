@@ -187,7 +187,10 @@ data class DealItem(
     val bodyImages: List<String>? = emptyList(),
 
     @SerializedName(value = "report_count", alternate = ["reportCount"])
-    val reportCount: Int = 0
+    val reportCount: Int = 0,
+
+    @SerializedName(value = "initial_history", alternate = ["initialHistory"])
+    val initialHistory: List<PriceHistoryPoint>? = null
 ) {
     /**
      * 할인된 가격 계산
@@ -310,7 +313,8 @@ data class DealItem(
         isSearchFallback = isSearchFallback,
         isFree = isFree,
         bodyImages = bodyImages ?: emptyList(),
-        reportCount = count
+        reportCount = count,
+        initialHistory = initialHistory
     )
 }
 

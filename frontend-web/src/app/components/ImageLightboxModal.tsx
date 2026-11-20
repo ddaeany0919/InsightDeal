@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useId, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Minus, Plus, RefreshCw, RotateCcw, X } from "lucide-react";
 import { useDialogA11y } from "../lib/useDialogA11y";
 import { getFallbackProxyImageUrl, getProxyImageUrl } from "../lib/utils";
 import BrandImagePlaceholder from "./BrandImagePlaceholder";
@@ -16,6 +16,15 @@ interface ImageLightboxModalProps {
 
 function clampScale(val: number): number {
   return Math.min(4, Math.max(1, Math.round(val * 100) / 100));
+}
+
+function buildLightboxImageSrc(rawUrl: string): string {
+  const proxied = getProxyImageUrl(rawUrl, { width: 1200 });
+  if (!proxied) return "";
+  if (proxied.includes("/api/proxy-image?") && !/[?&]w=\d+/i.test(proxied)) {
+    return `${proxied}&w=1200`;
+  }
+  return proxied;
 }
 
 function LightboxViewer({
@@ -33,9 +42,12 @@ function LightboxViewer({
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isInteracting, setIsInteracting] = useState<boolean>(false);
   const [failedMap, setFailedMap] = useState<Record<string, boolean>>({});
+  const [loadedMap, setLoadedMap] = useState<Record<string, boolean>>({});
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const mainImgRef = useRef<HTMLImageElement | null>(null);
+  const preloadedSrcSetRef = useRef<Set<string>>(new Set());
   const titleId = useId();
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragPanStartRef = useRef<{
@@ -103,6 +115,42 @@ function LightboxViewer({
 
   const activeUrl = images[currentIndex] || "";
   const isFailed = !activeUrl || Boolean(failedMap[activeUrl]);
+  const isImageLoaded = Boolean(activeUrl && loadedMap[activeUrl]);
+
+  // 인접 이미지(index - 1, index + 1) 고해상도 백그라운드 프리로드
+  useEffect(() => {
+    if (typeof window === "undefined" || images.length <= 1) return;
+    const prevIdx = (currentIndex - 1 + images.length) % images.length;
+    const nextIdx = (currentIndex + 1) % images.length;
+    const candidateIndices = Array.from(new Set([nextIdx, prevIdx])).filter(
+      (idx) => idx !== currentIndex
+    );
+    for (const idx of candidateIndices) {
+      const targetUrl = images[idx];
+      if (!targetUrl || failedMap[targetUrl]) continue;
+      const src = buildLightboxImageSrc(targetUrl);
+      if (!src || preloadedSrcSetRef.current.has(src)) continue;
+      preloadedSrcSetRef.current.add(src);
+      const img = new window.Image();
+      img.referrerPolicy = "no-referrer";
+      img.onload = () => {
+        setLoadedMap((prev) => (prev[targetUrl] ? prev : { ...prev, [targetUrl]: true }));
+      };
+      img.src = src;
+    }
+  }, [currentIndex, images, failedMap]);
+
+  // 프리로드/브라우저 캐시로 이미 완료된 이미지는 즉시 로드 완료 처리
+  useEffect(() => {
+    const img = mainImgRef.current;
+    if (!activeUrl || !img || !img.complete || img.naturalWidth <= 0) {
+      return;
+    }
+    const rafId = window.requestAnimationFrame(() => {
+      setLoadedMap((prev) => (prev[activeUrl] ? prev : { ...prev, [activeUrl]: true }));
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [activeUrl]);
 
   return (
     <div
@@ -382,33 +430,74 @@ function LightboxViewer({
               <BrandImagePlaceholder label="이미지를 불러올 수 없어요" />
             </div>
           ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={activeUrl}
-              src={getProxyImageUrl(activeUrl)}
-              alt={`${title || "상품"} 상세 이미지 ${currentIndex + 1}`}
-              referrerPolicy="no-referrer"
-              style={{
-                maxWidth: "100%",
-                maxHeight: "100%",
-                objectFit: "contain",
-                transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${scale})`,
-                transition: isInteracting ? "none" : "transform 0.16s ease",
-                cursor: scale > 1 ? "grab" : "zoom-in",
-              }}
-              onError={(e) => {
-                const img = e.currentTarget;
-                const primarySrc = getProxyImageUrl(activeUrl);
-                const fallback = getFallbackProxyImageUrl(activeUrl);
-                if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
-                  img.dataset.fallbackTried = "1";
-                  img.src = fallback;
-                  return;
+            <>
+              {!isImageLoaded && (
+                <div
+                  role="status"
+                  aria-label="고해상도 이미지 불러오는 중"
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    pointerEvents: "none",
+                    zIndex: 2,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "10px 16px",
+                      borderRadius: "999px",
+                      background: "rgba(15, 23, 42, 0.78)",
+                      border: "1px solid rgba(255, 255, 255, 0.16)",
+                      color: "#F9FAFB",
+                      fontSize: "0.82rem",
+                      fontWeight: 700,
+                    }}
+                  >
+                    <RefreshCw size={16} className="spin-animation" aria-hidden="true" />
+                    <span>이미지 불러오는 중...</span>
+                  </div>
+                </div>
+              )}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                ref={mainImgRef}
+                key={activeUrl}
+                src={buildLightboxImageSrc(activeUrl)}
+                alt={`${title || "상품"} 상세 이미지 ${currentIndex + 1}`}
+                decoding="async"
+                referrerPolicy="no-referrer"
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "100%",
+                  objectFit: "contain",
+                  opacity: isImageLoaded ? 1 : 0.15,
+                  transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${scale})`,
+                  transition: isInteracting ? "none" : "transform 0.16s ease, opacity 0.18s ease",
+                  cursor: scale > 1 ? "grab" : "zoom-in",
+                }}
+                onLoad={() =>
+                  setLoadedMap((prev) => (prev[activeUrl] ? prev : { ...prev, [activeUrl]: true }))
                 }
-                img.dataset.fallbackTried = "1";
-                setFailedMap((prev) => ({ ...prev, [activeUrl]: true }));
-              }}
-            />
+                onError={(e) => {
+                  const img = e.currentTarget;
+                  const primarySrc = buildLightboxImageSrc(activeUrl);
+                  const fallback = getFallbackProxyImageUrl(activeUrl);
+                  if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
+                    img.dataset.fallbackTried = "1";
+                    img.src = fallback;
+                    return;
+                  }
+                  img.dataset.fallbackTried = "1";
+                  setFailedMap((prev) => ({ ...prev, [activeUrl]: true }));
+                }}
+              />
+            </>
           )}
 
           {images.length > 1 && (

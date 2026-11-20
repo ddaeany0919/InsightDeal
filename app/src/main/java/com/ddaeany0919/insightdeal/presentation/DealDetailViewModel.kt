@@ -233,8 +233,16 @@ class DealDetailViewModel(
                     val firstOptQuery = firstOpt?.let { cleanOptionTitle(it.siteName) }?.takeIf { it.isNotBlank() }
                     val firstOptCurrency = firstOpt?.currency ?: deal.currency
 
-                    // 1-RTT 요약의 historyCount가 0건인 경우 불필요한 가격 추이 API 호출 생략
-                    val history = if (deal.historyCount > 0) {
+                    // 1-RTT 요약의 initialHistory가 존재하고 기본 옵션·기본 기간("7d")인 경우 추가 네트워크 왕복 생략
+                    val initialHistoryPoints = deal.initialHistory
+                    val history = if (
+                        firstOptQuery == null &&
+                        _selectedPeriod.value == "7d" &&
+                        !initialHistoryPoints.isNullOrEmpty()
+                    ) {
+                        initialHistoryPoints.filter { it.price > 0 }
+                    } else if (deal.historyCount > 0) {
+                        // 1-RTT 요약의 historyCount가 0건인 경우 불필요한 가격 추이 API 호출 생략
                         val historyResponse = try {
                             withContext(ioDispatcher) {
                                 apiService.getDealPriceHistory(

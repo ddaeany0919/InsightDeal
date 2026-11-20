@@ -22,6 +22,7 @@ import type {
   DealOptionItem,
   DealCommentItem,
   DealVoteApiResponse,
+  PriceHistoryItem,
   RawDealApiResponse,
   ReportClosedResponse,
   WishlistApiItem,
@@ -91,6 +92,12 @@ export default function DealDetailModal({
 }: DealDetailModalProps) {
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number>(0);
   const [chartStats, setChartStats] = useState<PriceTrendStats | null>(null);
+  const [detailInitialHistory, setDetailInitialHistory] = useState<
+    PriceHistoryItem[] | undefined
+  >(undefined);
+  const [detailInitialHistoryPeriod, setDetailInitialHistoryPeriod] = useState<
+    string | undefined
+  >(undefined);
   const [targetPriceInput, setTargetPriceInput] = useState<string>("");
   const [savedTargetPrice, setSavedTargetPrice] = useState<number | null>(null);
   const [savingTargetAlert, setSavingTargetAlert] = useState<boolean>(false);
@@ -184,6 +191,8 @@ export default function DealDetailModal({
     const currentDeal = latestDealRef.current;
     setSelectedOptionIndex(0);
     setChartStats(null);
+    setDetailInitialHistory(undefined);
+    setDetailInitialHistoryPeriod(undefined);
     setDetailHtml(currentDeal?.contentHtml || "");
     setDetailSources(currentDeal?.sources || []);
     setDetailOptionsData(currentDeal?.options_data || []);
@@ -312,6 +321,22 @@ export default function DealDetailModal({
 
         const nextHistoryCnt = d.history_count ?? d.historyCount;
         if (nextHistoryCnt !== undefined) setHistoryCount(Number(nextHistoryCnt) || 0);
+
+        const nextInitialHistory = d.initial_history ?? d.initialHistory;
+        if (Array.isArray(nextInitialHistory)) {
+          setDetailInitialHistory(nextInitialHistory);
+          if (nextHistoryCnt === undefined) {
+            setHistoryCount(nextInitialHistory.length);
+          }
+        }
+        const nextInitialHistoryPeriod =
+          d.initial_history_period ?? d.initialHistoryPeriod;
+        if (
+          typeof nextInitialHistoryPeriod === "string" &&
+          nextInitialHistoryPeriod.trim()
+        ) {
+          setDetailInitialHistoryPeriod(nextInitialHistoryPeriod.trim());
+        }
 
         const nextFallback = d.is_search_fallback ?? d.isSearchFallback;
         if (nextFallback !== undefined) setIsSearchFallback(Boolean(nextFallback));
@@ -640,17 +665,38 @@ export default function DealDetailModal({
   const formatUnit = (v: number) =>
     isForeignCurr ? `${currSymbol}${v.toLocaleString()}` : `${v.toLocaleString()}원`;
 
+  const validInitialPrices =
+    selectedOptionIndex === 0 && Array.isArray(detailInitialHistory)
+      ? detailInitialHistory
+          .map((item) => Number(item?.price))
+          .filter((p) => Number.isFinite(p) && p > 0)
+          .map((p) => Math.round(p))
+      : [];
+  const initialHistoryStats: PriceTrendStats | null =
+    validInitialPrices.length >= 2
+      ? {
+          minPrice: Math.min(...validInitialPrices),
+          avgPrice: Math.round(
+            validInitialPrices.reduce((a, b) => a + b, 0) / validInitialPrices.length
+          ),
+          maxPrice: Math.max(...validInitialPrices),
+          latestPrice: validInitialPrices[validInitialPrices.length - 1],
+        }
+      : null;
+  const activeSummaryStats: PriceTrendStats | null =
+    chartStats ?? (selectedOptionIndex === 0 ? initialHistoryStats : null);
+
   const presets: { label: string; value: number }[] = [];
   if (canShowTargetAlert) {
-    const statMin = chartStats
+    const statMin = activeSummaryStats
       ? isSubunitCurr
-        ? Math.round(chartStats.minPrice / 100)
-        : chartStats.minPrice
+        ? Math.round(activeSummaryStats.minPrice / 100)
+        : activeSummaryStats.minPrice
       : 0;
-    const statAvg = chartStats
+    const statAvg = activeSummaryStats
       ? isSubunitCurr
-        ? Math.round(chartStats.avgPrice / 100)
-        : chartStats.avgPrice
+        ? Math.round(activeSummaryStats.avgPrice / 100)
+        : activeSummaryStats.avgPrice
       : 0;
 
     if (statMin > 0 && statMin < cleanPriceNum) {
@@ -979,6 +1025,57 @@ export default function DealDetailModal({
     : selectedOption
       ? `선택 상품 구매 (${showZeroWonPrice ? "0원 (무료)" : formatPrice(activePrice, activeCurrency, activeOptionTitle || deal.title)})`
       : "쇼핑몰 바로가기";
+
+  const formatSummaryPrice = (v: number) =>
+    isForeignCurr
+      ? formatPrice(Math.round(v), activeCurrency)
+      : `${Math.round(v).toLocaleString()}원`;
+
+  const comparePriceForSummary = (() => {
+    if (isSubunitCurr && typeof activePrice === "string" && activePrice.includes(".")) {
+      const parsedFloat = parseFloat(activePrice.replace(/[^0-9.]/g, ""));
+      if (Number.isFinite(parsedFloat) && parsedFloat > 0) {
+        return Math.round(parsedFloat * 100);
+      }
+    }
+    if (rawPriceNum > 0) return rawPriceNum;
+    return activeSummaryStats?.latestPrice ?? 0;
+  })();
+
+  const summaryInsight = (() => {
+    if (!activeSummaryStats || showZeroWonPrice || comparePriceForSummary <= 0) {
+      return null;
+    }
+    const diffPct =
+      activeSummaryStats.avgPrice > 0
+        ? Math.round(
+            ((comparePriceForSummary - activeSummaryStats.avgPrice) /
+              activeSummaryStats.avgPrice) *
+              100
+          )
+        : 0;
+    const isHistoricLow =
+      comparePriceForSummary <= activeSummaryStats.minPrice &&
+      activeSummaryStats.maxPrice > activeSummaryStats.minPrice;
+    const headline = isHistoricLow
+      ? diffPct < 0
+        ? `역대 최저가 구간 · 평균 대비 ${-diffPct}% 저렴`
+        : "역대 최저가 구간"
+      : diffPct < 0
+        ? `평균 대비 ${-diffPct}% 저렴`
+        : diffPct > 0
+          ? `평균 대비 +${diffPct}%`
+          : "평균가 수준";
+
+    return {
+      headline,
+      isPositive: isHistoricLow || diffPct < 0,
+      isHigh: !isHistoricLow && diffPct > 0,
+      minText: formatSummaryPrice(activeSummaryStats.minPrice),
+      avgText: formatSummaryPrice(activeSummaryStats.avgPrice),
+      maxText: formatSummaryPrice(activeSummaryStats.maxPrice),
+    };
+  })();
 
   return (
     <div className="deal-modal-overlay" onClick={handleDismiss}>
@@ -1319,6 +1416,56 @@ export default function DealDetailModal({
             )}
           </div>
 
+          {summaryInsight && (
+            <div
+              className="deal-price-insight-bar"
+              aria-label="0클릭 시세 요약"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "6px 10px",
+                padding: "8px 11px",
+                borderRadius: "10px",
+                background: summaryInsight.isPositive
+                  ? "var(--success-bg)"
+                  : summaryInsight.isHigh
+                    ? "var(--warning-bg)"
+                    : "var(--card-bg)",
+                border: summaryInsight.isPositive
+                  ? "1px solid var(--success-border)"
+                  : summaryInsight.isHigh
+                    ? "1px solid var(--warning-border)"
+                    : "1px solid var(--card-border)",
+                fontSize: "0.78rem",
+              }}
+            >
+              <span
+                style={{
+                  fontWeight: 800,
+                  color: summaryInsight.isPositive
+                    ? "var(--success-text)"
+                    : summaryInsight.isHigh
+                      ? "var(--warning-text)"
+                      : "var(--accent)",
+                }}
+              >
+                {summaryInsight.headline}
+              </span>
+              <span
+                style={{
+                  color: "var(--text-sub)",
+                  fontWeight: 600,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                최저 {summaryInsight.minText} · 평균 {summaryInsight.avgText} · 최고{" "}
+                {summaryInsight.maxText}
+              </span>
+            </div>
+          )}
+
           {isSearchFallback && (
             <div
               role="note"
@@ -1385,7 +1532,55 @@ export default function DealDetailModal({
           )}
         </div>
 
-        {/* 1급 영역 ③: 본문 상세 내용 (이중 스크롤 제거) + 할인코드 copyTextSafe + 다중 옵션 */}
+        {/* 2급 영역 (Summary Pill 직후 가격 추이 아코디언 전진 배치 -> bodySlot 본문 -> 투표/의견/알림 아코디언) */}
+        <DealDetailSecondarySections
+          deal={deal}
+          activePrice={activePrice}
+          activeCurrency={activeCurrency}
+          activeOptionTitle={activeOptionTitle}
+          initialHistory={
+            selectedOptionIndex === 0 ? detailInitialHistory : undefined
+          }
+          initialHistoryPeriod={
+            selectedOptionIndex === 0 ? detailInitialHistoryPeriod : undefined
+          }
+          expandedSections={expandedSections}
+          onToggleSection={handleToggleSection}
+          historyCount={historyCount}
+          onHistoryStatus={(hasData, stats) => {
+            setChartStats(hasData && stats ? stats : null);
+          }}
+          buyCount={buyCount}
+          saveCount={saveCount}
+          userVote={userVote}
+          votesLoading={votesLoading}
+          votesError={votesError}
+          onRetryVotes={() => void loadVotesLazy(deal.id)}
+          onVote={handleVote}
+          comments={comments}
+          commentCount={commentCount}
+          commentsLoading={commentsLoading}
+          commentsError={commentsError}
+          onRetryComments={() => void loadCommentsLazy(deal.id)}
+          commentInput={commentInput}
+          onCommentInputChange={setCommentInput}
+          submittingComment={submittingComment}
+          onAddComment={handleAddComment}
+          currentDeviceUuid={currentDeviceUuid}
+          deletingCommentId={deletingCommentId}
+          onDeleteComment={handleDeleteComment}
+          canShowTargetAlert={canShowTargetAlert}
+          currSymbol={currSymbol}
+          parsedTargetInput={parsedTargetInput}
+          diffAmount={diffAmount}
+          savedTargetPrice={savedTargetPrice}
+          savingTargetAlert={savingTargetAlert}
+          presets={presets}
+          formatUnit={formatUnit}
+          onSelectPreset={(val) => setTargetPriceInput(String(val))}
+          onTargetInputChange={(val) => setTargetPriceInput(val)}
+          onSaveTargetAlert={handleSaveTargetAlert}
+          bodySlot={
         <div
           style={{
             width: "100%",
@@ -1919,49 +2114,7 @@ export default function DealDetailModal({
             </div>
           )}
         </div>
-
-        {/* 2급 영역 (초기 접힘 4개 아코디언 + 펼침 시 Lazy-fetch) */}
-        <DealDetailSecondarySections
-          deal={deal}
-          activePrice={activePrice}
-          activeCurrency={activeCurrency}
-          activeOptionTitle={activeOptionTitle}
-          expandedSections={expandedSections}
-          onToggleSection={handleToggleSection}
-          historyCount={historyCount}
-          onHistoryStatus={(hasData, stats) => {
-            setChartStats(hasData && stats ? stats : null);
-          }}
-          buyCount={buyCount}
-          saveCount={saveCount}
-          userVote={userVote}
-          votesLoading={votesLoading}
-          votesError={votesError}
-          onRetryVotes={() => void loadVotesLazy(deal.id)}
-          onVote={handleVote}
-          comments={comments}
-          commentCount={commentCount}
-          commentsLoading={commentsLoading}
-          commentsError={commentsError}
-          onRetryComments={() => void loadCommentsLazy(deal.id)}
-          commentInput={commentInput}
-          onCommentInputChange={setCommentInput}
-          submittingComment={submittingComment}
-          onAddComment={handleAddComment}
-          currentDeviceUuid={currentDeviceUuid}
-          deletingCommentId={deletingCommentId}
-          onDeleteComment={handleDeleteComment}
-          canShowTargetAlert={canShowTargetAlert}
-          currSymbol={currSymbol}
-          parsedTargetInput={parsedTargetInput}
-          diffAmount={diffAmount}
-          savedTargetPrice={savedTargetPrice}
-          savingTargetAlert={savingTargetAlert}
-          presets={presets}
-          formatUnit={formatUnit}
-          onSelectPreset={(val) => setTargetPriceInput(String(val))}
-          onTargetInputChange={(val) => setTargetPriceInput(val)}
-          onSaveTargetAlert={handleSaveTargetAlert}
+          }
         />
 
         {/* 하단 Sticky 2버튼 액션 바 (닫기 버튼은 상단 X로 일원화하여 360px 압착 해소) */}

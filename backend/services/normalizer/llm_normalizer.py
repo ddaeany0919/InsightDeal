@@ -3,11 +3,11 @@ import json
 import logging
 import re
 from typing import Optional
-import google.generativeai as genai
 from .base import ProductNormalizer, NormalizedProduct
 from .regex_normalizer import RegexNormalizer
 
 logger = logging.getLogger(__name__)
+_LOGGED_MISSING_KEY = False
 
 class LlmNormalizer(ProductNormalizer):
     """
@@ -15,6 +15,7 @@ class LlmNormalizer(ProductNormalizer):
     API 키가 없거나 할당량 초과 시 자동으로 RegexNormalizer(정규식)로 Fallback 됩니다.
     """
     def __init__(self):
+        global _LOGGED_MISSING_KEY
         from backend.core.ai_utils import get_random_gemini_key
         self.api_key = get_random_gemini_key()
         self.fallback_normalizer = RegexNormalizer()
@@ -22,6 +23,7 @@ class LlmNormalizer(ProductNormalizer):
 
         if self.api_key:
             try:
+                import google.generativeai as genai
                 genai.configure(api_key=self.api_key)
                 self.model = genai.GenerativeModel('gemini-flash-latest')
                 self.is_active = True
@@ -29,7 +31,9 @@ class LlmNormalizer(ProductNormalizer):
             except Exception as e:
                 logger.warning(f"[WARNING] Failed to init Gemini API, falling back to Regex: {e}")
         else:
-            logger.info("[WARNING] GEMINI_API_KEY not found. LlmNormalizer will skip and use Regex fallback.")
+            if not _LOGGED_MISSING_KEY:
+                _LOGGED_MISSING_KEY = True
+                logger.info("[WARNING] GEMINI_API_KEY not found. LlmNormalizer will skip and use Regex fallback.")
 
     async def normalize(self, title: str, scraped_category: Optional[str] = None) -> NormalizedProduct:
         # [FAST] 1단계: 정규표현식 파서 강제 선공

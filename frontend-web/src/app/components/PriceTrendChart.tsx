@@ -17,6 +17,8 @@ interface PriceTrendChartProps {
   dealId?: number;
   currency?: string;
   optionName?: string;
+  initialHistory?: PriceHistoryItem[];
+  initialHistoryPeriod?: string;
   onHistoryStatus?: (hasData: boolean, stats?: PriceTrendStats) => void;
 }
 
@@ -115,10 +117,75 @@ function parseSafeHistoryDate(raw: string | null | undefined): ParsedHistoryDate
 // [react-patterns] React StrictMode 이중 마운트 및 탭 재전환 시 중복 네트워크 호출 방지용 인플라이트 캐시
 const historyPromiseCache = new Map<string, { ts: number; promise: Promise<PriceHistoryItem[]> }>();
 
+function parseChartPoints(rawData: PriceHistoryItem[]) {
+  // 0원 이하 또는 비정상(NaN/Infinity) 데이터 포인트 원천 필터링
+  const validItems = Array.isArray(rawData)
+    ? rawData.filter((item) => {
+        if (!item) return false;
+        const numPrice = Number(item.price);
+        return Number.isFinite(numPrice) && numPrice > 0;
+      })
+    : [];
+
+  if (validItems.length < 2) {
+    return {
+      points: [] as { price: number; date: string }[],
+      fellBackTo3m: false,
+      stats: null as PriceTrendStats | null,
+    };
+  }
+
+  const parsedDates = validItems.map((item) => {
+    const rawDate =
+      item.recordedAt ??
+      (item as unknown as { recorded_at?: string }).recorded_at;
+    return parseSafeHistoryDate(rawDate);
+  });
+
+  const firstParsed = parsedDates[0];
+  const lastParsed = parsedDates[parsedDates.length - 1];
+  let fellBackTo3m = parsedDates.some((d) => d.isLongRangeFormat);
+  if (
+    !fellBackTo3m &&
+    firstParsed.daySerial !== null &&
+    lastParsed.daySerial !== null
+  ) {
+    let daySpan = lastParsed.daySerial - firstParsed.daySerial;
+    if (daySpan < -180) {
+      daySpan += 365;
+    }
+    if (Math.abs(daySpan) > 7) {
+      fellBackTo3m = true;
+    }
+  }
+
+  const formatted = validItems.map((item, idx) => {
+    const rawDate =
+      item.recordedAt ??
+      (item as unknown as { recorded_at?: string }).recorded_at;
+    return {
+      price: Math.round(Number(item.price)),
+      date: parsedDates[idx].label || String(rawDate || "").trim(),
+    };
+  });
+
+  const pVals = formatted.map((d) => d.price);
+  const stats: PriceTrendStats = {
+    minPrice: Math.min(...pVals),
+    avgPrice: Math.round(pVals.reduce((a, b) => a + b, 0) / pVals.length),
+    maxPrice: Math.max(...pVals),
+    latestPrice: pVals[pVals.length - 1],
+  };
+
+  return { points: formatted, fellBackTo3m, stats };
+}
+
 export default function PriceTrendChart({
   dealId,
   currency = "KRW",
   optionName,
+  initialHistory,
+  initialHistoryPeriod,
   onHistoryStatus,
 }: PriceTrendChartProps) {
   const gradientId = useId().replace(/:/g, "");
@@ -141,7 +208,10 @@ export default function PriceTrendChart({
     scope: string;
     index: number | null;
   }>({ scope: scopeKey, index: null });
-  const [retryCount, setRetryCount] = useState(0);
+  const [retryByScope, setRetryByScope] = useState<{
+    scope: string;
+    count: number;
+  }>({ scope: scopeKey, count: 0 });
   const [fetchedState, setFetchedState] = useState<{
     requestKey: string;
     points: { price: number; date: string }[];
@@ -154,8 +224,36 @@ export default function PriceTrendChart({
     fallbackByScope.scope === scopeKey ? fallbackByScope.fellBack : false;
   const activePointIdx =
     activePointByScope.scope === scopeKey ? activePointByScope.index : null;
+  const retryCount =
+    retryByScope.scope === scopeKey ? retryByScope.count : 0;
 
-  const period: PeriodKey = userPeriod ?? (autoFellBackTo3m ? "3m" : "7d");
+  // 기본 옵션 · 초기 진입 · 재시도 0회일 때 상세 API에 동봉된 initialHistory로 추가 fetch 없이 0ms 즉시 렌더링
+  const canUseInitialHistory =
+    !cleanOpt &&
+    userPeriod === null &&
+    retryCount === 0 &&
+    Array.isArray(initialHistory);
+  const initialParsed = canUseInitialHistory
+    ? parseChartPoints(initialHistory)
+    : null;
+
+  const resolvedInitialPeriod: PeriodKey =
+    initialHistoryPeriod === "1m" ||
+    initialHistoryPeriod === "3m" ||
+    initialHistoryPeriod === "6m" ||
+    initialHistoryPeriod === "7d"
+      ? initialHistoryPeriod
+      : initialParsed?.fellBackTo3m
+        ? "3m"
+        : "7d";
+
+  const period: PeriodKey =
+    userPeriod ??
+    (canUseInitialHistory
+      ? resolvedInitialPeriod
+      : autoFellBackTo3m
+        ? "3m"
+        : "7d");
   const setPeriod = (nextPeriod: PeriodKey) => {
     setPeriodByScope({ scope: scopeKey, value: nextPeriod });
     setActivePointByScope({ scope: scopeKey, index: null });
@@ -166,13 +264,33 @@ export default function PriceTrendChart({
   const requestKey = dealId ? `${scopeKey}:${queryPeriod}` : null;
 
   const onHistoryStatusRef = useRef(onHistoryStatus);
+  const lastNotifiedStatusKeyRef = useRef<string | null>(null);
   useEffect(() => {
     onHistoryStatusRef.current = onHistoryStatus;
   }, [onHistoryStatus]);
 
   useEffect(() => {
+    const notifyStatus = (hasData: boolean, stats?: PriceTrendStats) => {
+      const statusKey = `${scopeKey}:${queryPeriod}:${hasData}:${
+        stats
+          ? `${stats.minPrice}:${stats.avgPrice}:${stats.maxPrice}:${stats.latestPrice}`
+          : "none"
+      }`;
+      if (lastNotifiedStatusKeyRef.current === statusKey) return;
+      lastNotifiedStatusKeyRef.current = statusKey;
+      onHistoryStatusRef.current?.(hasData, stats);
+    };
+
+    if (canUseInitialHistory && initialParsed) {
+      notifyStatus(
+        initialParsed.points.length >= 2,
+        initialParsed.stats ?? undefined
+      );
+      return;
+    }
+
     if (!dealId || !requestKey) {
-      onHistoryStatusRef.current?.(false);
+      notifyStatus(false);
       return;
     }
 
@@ -203,82 +321,54 @@ export default function PriceTrendChart({
         const rawData: PriceHistoryItem[] = await cached.promise;
         if (!isMounted) return;
 
-        // 0원 이하 또는 비정상(NaN/Infinity) 데이터 포인트 원천 필터링
-        const validItems = Array.isArray(rawData)
-          ? rawData.filter(
-              (item) =>
-                item &&
-                typeof item.price === "number" &&
-                Number.isFinite(item.price) &&
-                item.price > 0
-            )
-          : [];
+        const parsed = parseChartPoints(rawData);
 
-        if (validItems.length >= 2) {
-          const parsedDates = validItems.map((item) =>
-            parseSafeHistoryDate(item.recordedAt)
-          );
-
+        if (parsed.points.length >= 2 && parsed.stats) {
           if (userPeriod === null) {
-            const firstParsed = parsedDates[0];
-            const lastParsed = parsedDates[parsedDates.length - 1];
-            let fellBack = parsedDates.some((d) => d.isLongRangeFormat);
-            if (
-              !fellBack &&
-              firstParsed.daySerial !== null &&
-              lastParsed.daySerial !== null
-            ) {
-              let daySpan = lastParsed.daySerial - firstParsed.daySerial;
-              if (daySpan < -180) {
-                daySpan += 365;
-              }
-              if (Math.abs(daySpan) > 7) {
-                fellBack = true;
-              }
-            }
-            setFallbackByScope({ scope: scopeKey, fellBack });
+            setFallbackByScope({ scope: scopeKey, fellBack: parsed.fellBackTo3m });
           }
-
-          const formatted = validItems.map((item, idx) => ({
-            price: Math.round(item.price),
-            date: parsedDates[idx].label || String(item.recordedAt || "").trim(),
-          }));
-
-          setFetchedState({ requestKey, points: formatted, error: false });
-          const pVals = formatted.map((d) => d.price);
-          onHistoryStatusRef.current?.(true, {
-            minPrice: Math.min(...pVals),
-            avgPrice: Math.round(
-              pVals.reduce((a, b) => a + b, 0) / pVals.length
-            ),
-            maxPrice: Math.max(...pVals),
-            latestPrice: pVals[pVals.length - 1],
-          });
+          setFetchedState({ requestKey, points: parsed.points, error: false });
+          notifyStatus(true, parsed.stats);
         } else {
           setFetchedState({ requestKey, points: [], error: false });
-          onHistoryStatusRef.current?.(false);
+          notifyStatus(false);
         }
       } catch {
         historyPromiseCache.delete(requestKey);
         if (!isMounted) return;
         setFetchedState({ requestKey, points: [], error: true });
-        onHistoryStatusRef.current?.(false);
+        notifyStatus(false);
       }
     })();
 
     return () => {
       isMounted = false;
     };
-  }, [dealId, requestKey, queryPeriod, cleanOpt, normCurrency, userPeriod, scopeKey, retryCount]);
+  }, [
+    dealId,
+    requestKey,
+    queryPeriod,
+    cleanOpt,
+    normCurrency,
+    userPeriod,
+    scopeKey,
+    retryCount,
+    canUseInitialHistory,
+    initialParsed,
+  ]);
 
   const loading =
-    requestKey !== null && fetchedState?.requestKey !== requestKey;
+    !canUseInitialHistory &&
+    requestKey !== null &&
+    fetchedState?.requestKey !== requestKey;
   const fetchError =
+    !canUseInitialHistory &&
     requestKey !== null &&
     fetchedState?.requestKey === requestKey &&
     Boolean(fetchedState.error);
-  const chartData =
-    dealId && fetchedState?.requestKey === requestKey
+  const chartData = canUseInitialHistory
+    ? (initialParsed?.points ?? [])
+    : dealId && fetchedState?.requestKey === requestKey
       ? fetchedState.points
       : [];
 
@@ -287,7 +377,10 @@ export default function PriceTrendChart({
       historyPromiseCache.delete(requestKey);
     }
     setFetchedState(null);
-    setRetryCount((c) => c + 1);
+    setRetryByScope((prev) => ({
+      scope: scopeKey,
+      count: prev.scope === scopeKey ? prev.count + 1 : 1,
+    }));
   };
 
   const formatPriceNum = (num: number) => {
@@ -459,10 +552,10 @@ export default function PriceTrendChart({
   const dates = chartData.map((d) => d.date);
 
   const width = 500;
-  const height = 214;
-  const paddingLeft = 68;
-  const paddingRight = 22;
-  const paddingY = 32;
+  const height = 220;
+  const paddingLeft = 78;
+  const paddingRight = 24;
+  const paddingY = 34;
   const plotWidth = width - paddingLeft - paddingRight;
   const plotHeight = height - paddingY * 2;
 
@@ -504,8 +597,8 @@ export default function PriceTrendChart({
   `;
 
   const getCalloutAnchor = (x: number): "start" | "middle" | "end" => {
-    if (x <= paddingLeft + 52) return "start";
-    if (x >= width - paddingRight - 52) return "end";
+    if (x <= paddingLeft + 62) return "start";
+    if (x >= width - paddingRight - 62) return "end";
     return "middle";
   };
 
@@ -769,7 +862,7 @@ export default function PriceTrendChart({
           {/* 평균가 수평 점선 기준선 */}
           <line x1={paddingLeft} y1={avgY} x2={width - paddingRight} y2={avgY} stroke="rgba(148,163,184,0.45)" strokeWidth="1.2" strokeDasharray="4,4" />
           {maxPrice > minPrice && (
-            <text x={width - paddingRight} y={Math.max(14, avgY - 5)} fill="var(--text-sub)" fontSize="8.5" fontWeight="700" textAnchor="end">
+            <text x={width - paddingRight} y={Math.max(16, avgY - 6)} fill="var(--text-sub)" fontSize="11" fontWeight="700" textAnchor="end">
               평균 {formatPriceNum(avgPrice)}
             </text>
           )}
@@ -826,9 +919,9 @@ export default function PriceTrendChart({
           {minIdx >= 0 && maxPrice > minPrice && (
             <text
               x={points[minIdx].x}
-              y={Math.min(height - paddingY - 4, points[minIdx].y + 15)}
+              y={Math.min(height - paddingY - 4, points[minIdx].y + 17)}
               fill="var(--success-text)"
-              fontSize="9.5"
+              fontSize="11.5"
               fontWeight="800"
               textAnchor={getCalloutAnchor(points[minIdx].x)}
             >
@@ -838,9 +931,9 @@ export default function PriceTrendChart({
           {maxIdx >= 0 && maxPrice > minPrice && maxIdx !== minIdx && (
             <text
               x={points[maxIdx].x}
-              y={Math.max(14, points[maxIdx].y - 9)}
+              y={Math.max(16, points[maxIdx].y - 10)}
               fill="var(--warning-text)"
-              fontSize="9.5"
+              fontSize="11.5"
               fontWeight="800"
               textAnchor={getCalloutAnchor(points[maxIdx].x)}
             >
@@ -851,24 +944,24 @@ export default function PriceTrendChart({
           {/* 좌측 Y축 눈금 (평행선일 때는 중앙 기준값 1개만 표시) */}
           {maxPrice > minPrice ? (
             <>
-              <text x={paddingLeft - 8} y={paddingY + 4} fill="var(--text-sub)" fontSize="9" fontWeight="600" textAnchor="end">
+              <text x={paddingLeft - 8} y={paddingY + 4} fill="var(--text-sub)" fontSize="11" fontWeight="600" textAnchor="end">
                 {formatPriceNum(maxPrice)}
               </text>
-              <text x={paddingLeft - 8} y={height - paddingY + 4} fill="var(--text-sub)" fontSize="9" fontWeight="600" textAnchor="end">
+              <text x={paddingLeft - 8} y={height - paddingY + 4} fill="var(--text-sub)" fontSize="11" fontWeight="600" textAnchor="end">
                 {formatPriceNum(minPrice)}
               </text>
             </>
           ) : (
-            <text x={paddingLeft - 8} y={avgY + 3} fill="var(--text-sub)" fontSize="9" fontWeight="700" textAnchor="end">
+            <text x={paddingLeft - 8} y={avgY + 4} fill="var(--text-sub)" fontSize="11" fontWeight="700" textAnchor="end">
               {formatPriceNum(avgPrice)}
             </text>
           )}
 
-          <text x={points[0].x} y={height - paddingY + 18} fill="var(--text-sub)" fontSize="9" fontWeight="600" textAnchor="start">
+          <text x={points[0].x} y={height - paddingY + 20} fill="var(--text-sub)" fontSize="11" fontWeight="600" textAnchor="start">
             {points[0].date}
           </text>
           {points.length > 1 && (
-            <text x={points[points.length - 1].x} y={height - paddingY + 18} fill="var(--text-sub)" fontSize="9" fontWeight="600" textAnchor="end">
+            <text x={points[points.length - 1].x} y={height - paddingY + 20} fill="var(--text-sub)" fontSize="11" fontWeight="600" textAnchor="end">
               {points[points.length - 1].date}
             </text>
           )}

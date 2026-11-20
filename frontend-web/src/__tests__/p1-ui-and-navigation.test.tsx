@@ -6,6 +6,9 @@ import DealCard from "@/app/components/DealCard";
 import WishlistDrawer from "@/app/components/WishlistDrawer";
 import InAppBrowserBanner from "@/app/components/InAppBrowserBanner";
 import TrendingKeywordsTicker from "@/app/components/TrendingKeywordsTicker";
+import DealDetailModal from "@/app/components/DealDetailModal";
+import PriceTrendChart from "@/app/components/PriceTrendChart";
+import ImageLightboxModal from "@/app/components/ImageLightboxModal";
 import Home from "@/app/page";
 import { PLATFORMS } from "@/app/lib/utils";
 import type { Deal } from "@/app/lib/types";
@@ -524,5 +527,310 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     );
     expect(screen.getByText("신규")).toBeInTheDocument();
     expect(screen.getByText("5건")).toBeInTheDocument();
+  });
+
+  it("홈 3단 공간 위계(.discovery-bar-grid·.filter-scope-dock·.feed-control-toolbar)와 상위 6개 카드 priority eager 로딩을 검증한다", async () => {
+    const eightDeals = Array.from({ length: 8 }, (_, idx) => ({
+      id: 1100 + idx,
+      title: `[쿠팡] 우선로딩 테스트 상품 ${idx + 1}`,
+      price: 19900 + idx * 1000,
+      currency: "KRW",
+      site_name: "뽐뿌",
+      image_url: `https://cdn.example.com/prio-${idx + 1}.jpg`,
+      is_closed: false,
+    }));
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.includes("/api/meta/categories")) {
+        return new Response(JSON.stringify({ categories: [] }), { status: 200 });
+      }
+      if (url.includes("/api/community/popular-keywords")) {
+        return new Response(
+          JSON.stringify({
+            keywords: ["제로콜라"],
+            rankings: [
+              { rank: 1, keyword: "제로콜라", deal_count: 9, recent_count: 3, status: "HOT" },
+            ],
+          }),
+          { status: 200 }
+        );
+      }
+      if (url.includes("/api/push/device")) {
+        return new Response(
+          JSON.stringify({ status: "ok", device_uuid: "web_ui3", device_token: "tok_ui3" }),
+          { status: 200 }
+        );
+      }
+      if (url.includes("/api/users/notifications") || url.includes("/api/wishlist/")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.includes("/api/community/hot-deals")) {
+        return new Response(
+          JSON.stringify({ deals: eightDeals, has_more: false, next_cursor: null }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+
+    const { container } = render(<Home />);
+
+    await waitFor(() => {
+      expect(screen.getByText("우선로딩 테스트 상품 1")).toBeInTheDocument();
+      expect(screen.getByText("우선로딩 테스트 상품 8")).toBeInTheDocument();
+    });
+
+    // Tier 1: 헤더 구분선 및 접근성 버튼 마운트 확인
+    expect(container.querySelector(".nav-divider")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "내 찜 목록 열기" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "알림 내역 열기" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "키워드 알림 설정" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "기기 동기화 및 계정 연결" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "화면 테마 전환" })).toBeInTheDocument();
+
+    // Tier 2-A: sr-only h1 + 통합 검색·급상승 그리드
+    const heading = screen.getByRole("heading", { level: 1, name: "실시간 핫딜 모아보기" });
+    expect(heading).toHaveClass("sr-only");
+    const discoveryGrid = container.querySelector(".discovery-bar-grid");
+    expect(discoveryGrid).not.toBeNull();
+    expect(discoveryGrid?.querySelector(".search-container")).not.toBeNull();
+    expect(discoveryGrid?.querySelector(".trending-ticker-wrapper")).not.toBeNull();
+    expect(
+      screen.getByPlaceholderText(
+        "주요 커뮤니티 10곳 핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
+      )
+    ).toBeInTheDocument();
+
+    // Tier 2-B: 출처/카테고리 라벨 도크 및 .platform-chip / .tab 분리 렌더
+    const dock = container.querySelector(".filter-scope-dock");
+    expect(dock).not.toBeNull();
+    expect(screen.getByText("출처")).toBeInTheDocument();
+    expect(screen.getByText("카테고리")).toBeInTheDocument();
+    expect(dock?.querySelectorAll(".platform-chip").length).toBe(11);
+    expect(dock?.querySelectorAll(".tab").length).toBe(16);
+
+    // Tier 3: .feed-control-toolbar가 .filter-scope-dock 뒤, .deal-list 직상단에 위치
+    const toolbar = container.querySelector(".feed-control-toolbar");
+    const dealList = container.querySelector(".deal-list");
+    expect(toolbar).not.toBeNull();
+    expect(dealList).not.toBeNull();
+    expect(
+      toolbar!.compareDocumentPosition(dealList!) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(toolbar?.querySelector('[aria-label="정렬 기준"]')).not.toBeNull();
+
+    // 상위 6개 카드 eager + fetchpriority="high", 7번째 이후 lazy
+    for (let i = 1; i <= 8; i++) {
+      const img = screen.getByAltText(`우선로딩 테스트 상품 ${i}`) as HTMLImageElement;
+      expect(img.getAttribute("decoding")).toBe("async");
+      if (i <= 6) {
+        expect(img.getAttribute("loading")).toBe("eager");
+        expect(img.getAttribute("fetchpriority")).toBe("high");
+      } else {
+        expect(img.getAttribute("loading")).toBe("lazy");
+        expect(img.getAttribute("fetchpriority")).toBeNull();
+      }
+    }
+  });
+
+  it("PriceTrendChart는 initialHistory 제공 시 fetch 없이 0ms 동기 렌더링하고 기간 탭 클릭 시에만 /history를 호출한다", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          { price: 32000, recordedAt: "2026-10-20T00:00:00Z", originalPrice: null, discountRate: null, source: "뽐뿌" },
+          { price: 27000, recordedAt: "2026-11-18T00:00:00Z", originalPrice: null, discountRate: null, source: "뽐뿌" },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+    const onHistoryStatus = vi.fn();
+
+    const { container, rerender } = render(
+      <PriceTrendChart
+        dealId={9201}
+        currency="KRW"
+        initialHistory={[
+          { price: 30000, recordedAt: "2026-11-10T00:00:00Z", originalPrice: null, discountRate: null, source: "뽐뿌" },
+          { price: 25000, recordedAt: "2026-11-15T00:00:00Z", originalPrice: null, discountRate: null, source: "뽐뿌" },
+          { price: 20000, recordedAt: "2026-11-19T00:00:00Z", originalPrice: null, discountRate: null, source: "뽐뿌" },
+        ]}
+        initialHistoryPeriod="7d_auto"
+        onHistoryStatus={onHistoryStatus}
+      />
+    );
+
+    // 0ms 동기 렌더링: 로딩 스피너 및 추가 fetch 없이 즉시 SVG 차트 표시
+    expect(screen.queryByText(/불러오고 있어요/)).toBeNull();
+    expect(screen.getByText("실거래 3건")).toBeInTheDocument();
+    expect(container.querySelector("polyline")).not.toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(onHistoryStatus).toHaveBeenCalledWith(true, {
+      minPrice: 20000,
+      avgPrice: 25000,
+      maxPrice: 30000,
+      latestPrice: 20000,
+    });
+
+    // SVG 내부 라벨 가독성 크기(>=11) 검증
+    const svgTexts = Array.from(container.querySelectorAll("svg text"));
+    expect(svgTexts.length).toBeGreaterThan(0);
+    svgTexts.forEach((t) => {
+      expect(Number(t.getAttribute("font-size"))).toBeGreaterThanOrEqual(11);
+    });
+
+    // 기간 탭('1개월') 클릭 시에만 백엔드 /history 호출
+    fireEvent.click(screen.getByRole("button", { name: "1개월" }));
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(String(fetchSpy.mock.calls[0][0])).toContain(
+        "/api/community/deals/9201/history?period=1m"
+      );
+    });
+
+    // <2건 initialHistory인 경우에도 fetch 없이 즉시 부족 안내 문구 표시
+    fetchSpy.mockClear();
+    rerender(
+      <PriceTrendChart
+        dealId={9202}
+        currency="KRW"
+        initialHistory={[
+          { price: 15000, recordedAt: "2026-11-19T00:00:00Z", originalPrice: null, discountRate: null, source: "뽐뿌" },
+          { price: 0, recordedAt: "2026-11-18T00:00:00Z", originalPrice: null, discountRate: null, source: "뽐뿌" },
+        ]}
+      />
+    );
+    expect(screen.queryByText(/불러오고 있어요/)).toBeNull();
+    expect(screen.getByText("아직 비교할 가격 이력이 충분하지 않아요")).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("DealDetailModal은 initial_history 수신 시 0클릭 시세 요약 바를 표시하고 차트 아코디언을 본문 위로 전진 배치해 0ms 렌더링한다", async () => {
+    localStorage.setItem("insightdeal_web_device_uuid", "web_0click");
+    localStorage.setItem("insightdeal_web_device_token", "tok_0click");
+
+    const fetchCalls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      fetchCalls.push(url);
+      return new Response(
+        JSON.stringify({
+          id: 802,
+          title: "[쿠팡] 0클릭 시세 요약 테스트 상품",
+          price: 20000,
+          currency: "KRW",
+          site_name: "뽐뿌",
+          content_html: "<p>상세 본문 내용입니다</p>",
+          history_count: 3,
+          initial_history_period: "7d_auto",
+          initial_history: [
+            { price: 30000, recordedAt: "2026-11-10T00:00:00Z", originalPrice: null, discountRate: null, source: "뽐뿌" },
+            { price: 25000, recordedAt: "2026-11-15T00:00:00Z", originalPrice: null, discountRate: null, source: "뽐뿌" },
+            { price: 20000, recordedAt: "2026-11-19T00:00:00Z", originalPrice: null, discountRate: null, source: "뽐뿌" },
+          ],
+        }),
+        { status: 200 }
+      );
+    });
+
+    const deal = buildDeal(802, { title: "[쿠팡] 0클릭 시세 요약 테스트 상품", price: "20000" });
+    render(<DealDetailModal deal={deal} onClose={vi.fn()} showToast={vi.fn()} />);
+
+    // 0클릭 시세 요약 바 즉시 노출 (Summary Pill은 여전히 aria-expanded="false")
+    await waitFor(() => {
+      expect(screen.getByText("역대 최저가 구간 · 평균 대비 20% 저렴")).toBeInTheDocument();
+      expect(screen.getByText("최저 20,000원 · 평균 25,000원 · 최고 30,000원")).toBeInTheDocument();
+    });
+    const chartPill = screen.getByRole("button", { name: /가격 추이 \(3건\)/ });
+    expect(chartPill).toHaveAttribute("aria-expanded", "false");
+    expect(fetchCalls).toHaveLength(1);
+
+    // 가격 추이 아코디언이 상세 본문보다 DOM 상단에 전진 배치되었는지 확인
+    const chartAccordion = document.getElementById("deal-accordion-chart-802");
+    const bodyHeading = screen.getByText("상세 내용 및 구매 조건");
+    expect(chartAccordion).not.toBeNull();
+    expect(
+      chartAccordion!.compareDocumentPosition(bodyHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    // 가격 추이 클릭 시 추가 /history fetch 없이 즉시 0ms 차트 렌더링
+    fireEvent.click(chartPill);
+    expect(chartPill).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("실거래 3건")).toBeInTheDocument();
+    expect(fetchCalls).toHaveLength(1);
+  });
+
+  it("ImageLightboxModal은 차단 도메인에 &w=1200을 보조 부착하고 인접 이미지 프리로드와 로딩 스피너를 제공한다", () => {
+    const preloadedSrcs: string[] = [];
+    const OrigImage = window.Image;
+    class TrackingImage {
+      referrerPolicy = "";
+      private _src = "";
+      set src(val: string) {
+        this._src = val;
+        preloadedSrcs.push(val);
+      }
+      get src() {
+        return this._src;
+      }
+    }
+    Object.defineProperty(window, "Image", {
+      configurable: true,
+      writable: true,
+      value: TrackingImage,
+    });
+
+    try {
+      render(
+        <ImageLightboxModal
+          isOpen={true}
+          images={[
+            "https://cdn.ppomppu.co.kr/img/main.jpg",
+            "https://cdn.example.com/next-1.jpg",
+            "https://cdn.ppomppu.co.kr/img/prev-1.jpg",
+          ]}
+          initialIndex={0}
+          title="라이트박스 테스트"
+          onClose={vi.fn()}
+        />
+      );
+
+      // 로딩 스피너 초기 노출 및 고해상도 &w=1200 힌트 확인
+      expect(screen.getByText("이미지 불러오는 중...")).toBeInTheDocument();
+      const mainImg = screen.getByAltText("라이트박스 테스트 상세 이미지 1") as HTMLImageElement;
+      expect(mainImg.getAttribute("src")).toBe(
+        `/api/proxy-image?url=${encodeURIComponent("https://cdn.ppomppu.co.kr/img/main.jpg")}&w=1200`
+      );
+
+      // 인접 이미지(index 1, index 2) 백그라운드 프리로드 확인
+      expect(preloadedSrcs).toContain(
+        `https://wsrv.nl/?url=${encodeURIComponent("https://cdn.example.com/next-1.jpg")}&output=webp&w=1200&we=1`
+      );
+      expect(preloadedSrcs).toContain(
+        `/api/proxy-image?url=${encodeURIComponent("https://cdn.ppomppu.co.kr/img/prev-1.jpg")}&w=1200`
+      );
+
+      // 이미지 로드 완료 시 스피너 제거
+      fireEvent.load(mainImg);
+      expect(screen.queryByText("이미지 불러오는 중...")).toBeNull();
+    } finally {
+      Object.defineProperty(window, "Image", {
+        configurable: true,
+        writable: true,
+        value: OrigImage,
+      });
+    }
   });
 });

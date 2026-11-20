@@ -1246,3 +1246,194 @@ def test_db_pool_config_and_sqlite_indexed_at_normalization_migration(monkeypatc
         assert isinstance(mem_mgr.engine.pool, StaticPool)
     finally:
         mem_mgr.close_all_connections()
+
+
+def test_proxy_image_large_png_auto_webp_and_width_buckets(unit_v11b_env, monkeypatch):
+    """대용량 PNG(50KB+) 자동 WebP 변환, ?w=400/?w=1200 버킷 양자화, 외부 1회 수집, 소형 PNG 원본 유지 검증"""
+    import io
+    from PIL import Image
+
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda host, port, *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))],
+    )
+
+    # 1600x900 고엔트로피 PNG 생성 (압축 후 > 50KB 보장)
+    noise_bytes = os.urandom(1600 * 900 * 3)
+    src_img = Image.frombytes("RGB", (1600, 900), noise_bytes)
+    buf = io.BytesIO()
+    src_img.save(buf, format="PNG")
+    big_png_bytes = buf.getvalue()
+    assert len(big_png_bytes) > 50 * 1024
+
+    fetch_urls: list[str] = []
+
+    async def _fake_get(url, **kwargs):
+        fetch_urls.append(url)
+        if "tiny" in url:
+            return httpx.Response(200, content=VALID_PNG, request=httpx.Request("GET", url))
+        return httpx.Response(200, content=big_png_bytes, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(main_mod.proxy_client, "get", _fake_get)
+    client = unit_v11b_env.client
+
+    target_big_url = "https://cdn.example.com/large-photo.png"
+    url_hash = hashlib.md5(target_big_url.encode("utf-8")).hexdigest()
+
+    # 1. w 미지정 + 50KB+ PNG -> 자동 WebP(_auto800.webp.cache, 최대 너비 800) 변환
+    r_auto = client.get("/api/proxy-image", params={"url": target_big_url})
+    assert r_auto.status_code == 200
+    assert r_auto.headers["content-type"].startswith("image/webp")
+    assert r_auto.headers.get("cache-control") == "public, max-age=604800, immutable"
+    assert len(fetch_urls) == 1
+    with Image.open(io.BytesIO(r_auto.content)) as out_auto:
+        assert out_auto.format == "WEBP"
+        assert out_auto.size == (800, 450)
+
+    # 2. ?w=350 -> 400 버킷 양자화 (_w400.webp.cache), 외부 fetch 추가 0회
+    r_w400 = client.get("/api/proxy-image", params={"url": target_big_url, "w": 350})
+    assert r_w400.status_code == 200
+    assert r_w400.headers["content-type"].startswith("image/webp")
+    assert len(fetch_urls) == 1
+    with Image.open(io.BytesIO(r_w400.content)) as out_400:
+        assert out_400.format == "WEBP"
+        assert out_400.size == (400, 225)
+
+    # 3. ?width=1000 -> 1200 버킷 양자화 (_w1200.webp.cache), /api/community/proxy-image 경유 및 v 파라미터 호환
+    r_w1200 = client.get("/api/community/proxy-image", params={"url": target_big_url, "width": 1000, "v": "2"})
+    assert r_w1200.status_code == 200
+    assert r_w1200.headers["content-type"].startswith("image/webp")
+    assert len(fetch_urls) == 1
+    with Image.open(io.BytesIO(r_w1200.content)) as out_1200:
+        assert out_1200.format == "WEBP"
+        assert out_1200.size == (1200, 675)
+
+    # 디스크 캐시 파일명 검증 (.cache 접미사로 cache_purger.py 정제 호환)
+    assert (unit_v11b_env.tmp_path / f"{url_hash}.cache").exists()
+    assert (unit_v11b_env.tmp_path / f"{url_hash}_auto800.webp.cache").exists()
+    assert (unit_v11b_env.tmp_path / f"{url_hash}_w400.webp.cache").exists()
+    assert (unit_v11b_env.tmp_path / f"{url_hash}_w1200.webp.cache").exists()
+
+    # 4. 인메모리 핫 LRU 재요청 히트 + 소형 PNG(<=40KB) 원본 바이트/MIME 보존 계약 검증
+    r_w400_lru = client.get("/api/proxy-image", params={"url": target_big_url, "w": 400, "v": "hot"})
+    assert r_w400_lru.status_code == 200 and r_w400_lru.content == r_w400.content
+    assert len(fetch_urls) == 1
+
+    r_tiny = client.get("/api/proxy-image", params={"url": "https://cdn.example.com/tiny.png"})
+    assert r_tiny.status_code == 200
+    assert r_tiny.headers["content-type"].startswith("image/png")
+    assert r_tiny.content == VALID_PNG
+
+    # 5. 파이썬 직접 함수 호출 시 Query() 객체 충돌 없이 정상 동작 검증
+    direct_resp = asyncio.run(main_mod.proxy_image("https://cdn.example.com/tiny.png"))
+    assert direct_resp.status_code == 200 and direct_resp.body == VALID_PNG
+
+
+def test_deal_detail_1rtt_initial_history_triggers_and_max_id_cache(unit_v11b_env):
+    """상세 API initial_history 1-RTT 동봉, SQLite indexed_at 트리거 자동 정규화, _DEAL_HISTORY_CACHE 및 max_id 캐시 최신화 검증"""
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+    base_utc = datetime(2026, 11, 19, 10, 0, 0)
+
+    db = SessionCls()
+    try:
+        # 1. SQLite after_create 트리거: raw SQL 19자 및 ISO T/Z INSERT 자동 26자 정규화 검증
+        db.execute(
+            text(
+                "INSERT INTO deals (source_community_id, title, post_link, ecommerce_link, price, category, indexed_at, is_closed, deal_type, has_options, is_super_hotdeal) "
+                "VALUES (1, '[트리거테스트] 19자 타임스탬프 상품', 'https://www.ppomppu.co.kr/trg1', 'https://www.coupang.com/vp/products/11111', '29000', '가전제품', '2026-11-19 08:10:00', 0, '일반', 0, 0)"
+            )
+        )
+        db.execute(
+            text(
+                "INSERT INTO deals (source_community_id, title, post_link, ecommerce_link, price, category, indexed_at, is_closed, deal_type, has_options, is_super_hotdeal) "
+                "VALUES (1, '[트리거테스트] ISO TZ 타임스탬프 상품', 'https://www.ppomppu.co.kr/trg2', 'https://www.coupang.com/vp/products/22222', '31000', '가전제품', '2026-11-19T08:11:00Z', 0, '일반', 0, 0)"
+            )
+        )
+        db.commit()
+
+        raw_ts_rows = db.execute(
+            text("SELECT post_link, indexed_at FROM deals WHERE post_link LIKE 'https://www.ppomppu.co.kr/trg%' ORDER BY id ASC")
+        ).fetchall()
+        assert raw_ts_rows[0][1] == "2026-11-19 08:10:00.000000"
+        assert raw_ts_rows[1][1] == "2026-11-19 08:11:00.000000"
+
+        # 2. 7d 2포인트 딜 + 3m 폴백(7d 1포인트, 3m 2포인트) 딜 시드
+        d_7d = models.Deal(
+            source_community_id=1,
+            title="[쿠팡] 로지텍 MX Master 3S 무선 마우스 (99,000원)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=99001",
+            ecommerce_link="https://www.coupang.com/vp/products/99001",
+            price="99000",
+            currency="KRW",
+            indexed_at=base_utc,
+        )
+        d_3m = models.Deal(
+            source_community_id=1,
+            title="[네이버] 브라운 전기면도기 시리즈9 (249,000원)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=99002",
+            ecommerce_link="https://smartstore.naver.com/shop/products/99002",
+            price="249000",
+            currency="KRW",
+            indexed_at=base_utc,
+        )
+        db.add_all([d_7d, d_3m])
+        db.flush()
+        d7_id, d3m_id = d_7d.id, d_3m.id
+
+        db.add_all([
+            models.PriceHistory(deal_id=d7_id, price="119000", checked_at=base_utc - timedelta(days=2)),
+            models.PriceHistory(deal_id=d7_id, price="99000", checked_at=base_utc),
+            models.PriceHistory(deal_id=d3m_id, price="279000", checked_at=base_utc - timedelta(days=25)),
+            models.PriceHistory(deal_id=d3m_id, price="249000", checked_at=base_utc),
+        ])
+        db.commit()
+    finally:
+        db.close()
+
+    # 3. GET /api/community/deals/{id} 1-RTT initial_history / initialHistory 및 기간 폴백 검증
+    det_7d = client.get(f"/api/community/deals/{d7_id}").json()
+    assert det_7d["initial_history_period"] == "7d"
+    assert det_7d["initialHistoryPeriod"] == "7d"
+    assert isinstance(det_7d["initial_history"], list)
+    assert det_7d["initial_history"] == det_7d["initialHistory"]
+    assert [p["price"] for p in det_7d["initial_history"]] == [119000, 99000]
+    assert det_7d["history_count"] == 2
+    assert det_7d["initial_history"] == client.get(f"/api/community/deals/{d7_id}/history", params={"period": "7d_auto"}).json()
+
+    det_3m = client.get(f"/api/community/deals/{d3m_id}").json()
+    assert det_3m["initial_history_period"] == "3m"
+    assert det_3m["initialHistoryPeriod"] == "3m"
+    assert [p["price"] for p in det_3m["initial_history"]] == [279000, 249000]
+    assert det_3m["history_count"] == 2
+    assert len(community_router._DEAL_HISTORY_CACHE) >= 2
+
+    community_router.invalidate_feed_api_cache()
+    assert len(community_router._DEAL_HISTORY_CACHE) == 0
+
+    # 4. _HOT_DEALS_API_CACHE max_id 비교를 통한 별도 프로세스 적재 즉시 반영 검증
+    feed_before = client.get("/api/community/hot-deals", params={"limit": 20}).json()
+    ids_before = {d["id"] for d in feed_before["deals"]}
+
+    db = SessionCls()
+    try:
+        new_deal = models.Deal(
+            source_community_id=1,
+            title="[지마켓] 신규 적재 삼성 SSD 2TB (189,000원)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=99003",
+            ecommerce_link="https://item.gmarket.co.kr/Item?goodscode=99003",
+            price="189000",
+            currency="KRW",
+            indexed_at=base_utc + timedelta(minutes=10),
+        )
+        db.add(new_deal)
+        db.commit()
+        new_id = new_deal.id
+    finally:
+        db.close()
+
+    # invalidate_feed_api_cache() 미호출 상태에서도 max(id) 변화로 즉시 최신 딜 노출
+    assert new_id not in ids_before
+    feed_after = client.get("/api/community/hot-deals", params={"limit": 20}).json()
+    assert new_id in {d["id"] for d in feed_after["deals"]}

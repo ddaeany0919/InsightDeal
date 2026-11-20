@@ -2106,17 +2106,7 @@ export default function Home() {
         </button>
 
         <div className="nav-actions">
-          <ThemeToggle />
-          <div className="global-counters">
-            <button
-              type="button"
-              className="counter-item bounce-click"
-              aria-label="기기 동기화 및 계정 연결"
-              onClick={() => setShowSyncModal(true)}
-            >
-              <Smartphone size={16} color="var(--text-sub)" aria-hidden="true" />
-              <span className="counter-label">기기 동기화</span>
-            </button>
+          <div className="nav-group nav-group-feed global-counters">
             <button
               type="button"
               className="counter-item bounce-click"
@@ -2173,207 +2163,94 @@ export default function Home() {
               <span className="counter-label">키워드 알림</span>
             </Link>
           </div>
-          {!isTossMiniApp && (
+
+          <span className="nav-divider" aria-hidden="true" />
+
+          <div className="nav-group nav-group-env">
             <button
               type="button"
-              className="btn-primary"
-              aria-label="앱 설치"
-              onClick={handleInstallApp}
+              className="counter-item counter-item-env bounce-click"
+              aria-label="기기 동기화 및 계정 연결"
+              onClick={() => setShowSyncModal(true)}
             >
-              <Download size={17} aria-hidden="true" />
-              <span>앱 설치</span>
+              <Smartphone size={16} color="var(--text-sub)" aria-hidden="true" />
+              <span className="counter-label">기기 동기화</span>
             </button>
-          )}
+            <ThemeToggle />
+            {!isTossMiniApp && (
+              <button
+                type="button"
+                className="btn-primary nav-install-btn"
+                aria-label="앱 설치"
+                onClick={handleInstallApp}
+              >
+                <Download size={16} aria-hidden="true" />
+                <span>앱 설치</span>
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
       <div className="web-container">
         <InAppBrowserBanner onShowToast={showToast} />
-        <section style={{ padding: "10px 0 80px 0" }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "12px",
-              marginBottom: "18px",
-            }}
-          >
-            <div>
-              <h1
-                className="section-title"
-                style={{
-                  textAlign: "left",
-                  fontSize: "var(--fs-title)",
-                  marginBottom: "4px",
-                }}
-              >
-                실시간 핫딜 모아보기
-              </h1>
-              <p style={{ color: "var(--text-sub)", fontSize: "var(--fs-body)" }}>
-                주요 커뮤니티 10곳의 실시간 핫딜을 한눈에 모아보세요
-              </p>
-            </div>
+        <section style={{ padding: "4px 0 80px 0" }}>
+          <h1 className="sr-only">실시간 핫딜 모아보기</h1>
 
-            <div
-              style={{
-                display: "flex",
-                gap: "8px",
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <button
-                type="button"
-                aria-pressed={onlyHotDeals}
-                onClick={handleToggleOnlyHot}
-                className="filter-chip-btn bounce-click"
-                style={{
-                  background: onlyHotDeals
-                    ? "var(--deal-orange-bg)"
-                    : "var(--card-bg)",
-                  color: onlyHotDeals ? "var(--deal-orange)" : "var(--text-sub)",
-                  border: onlyHotDeals
-                    ? "1px solid var(--deal-orange)"
-                    : "1px solid var(--card-border)",
-                }}
-              >
-                <Flame size={14} aria-hidden="true" />
-                <span>인기 딜만</span>
-              </button>
-
-              <button
-                type="button"
-                aria-pressed={hideClosedDeals}
-                onClick={handleToggleHideClosed}
-                className="filter-chip-btn bounce-click"
-                style={{
-                  background: hideClosedDeals
-                    ? "var(--accent-soft-bg)"
-                    : "var(--card-bg)",
-                  color: hideClosedDeals ? "var(--accent)" : "var(--text-sub)",
-                  border: hideClosedDeals
-                    ? "1px solid var(--accent)"
-                    : "1px solid var(--card-border)",
-                }}
-              >
-                품절 제외
-              </button>
-
-              <button
-                type="button"
-                aria-pressed={includeClosedDeals}
-                onClick={handleToggleIncludeClosed}
-                className="filter-chip-btn bounce-click"
-                style={{
-                  background: includeClosedDeals
-                    ? "var(--secondary-soft-bg)"
-                    : "var(--card-bg)",
-                  color: includeClosedDeals ? "var(--secondary)" : "var(--text-sub)",
-                  border: includeClosedDeals
-                    ? "1px solid var(--secondary)"
-                    : "1px solid var(--card-border)",
-                }}
-              >
-                종료 포함
-              </button>
-
-              <div className="sort-segment-group" role="group" aria-label="정렬 기준">
-                {(
-                  [
-                    { key: "latest", label: "최신순" },
-                    { key: "popular", label: "인기순" },
-                    { key: "price_asc", label: "낮은가격순" },
-                  ] as const
-                ).map((opt) => {
-                  const active = sortBy === opt.key;
-                  return (
-                    <button
-                      key={opt.key}
-                      type="button"
-                      aria-pressed={active}
-                      className="sort-segment-btn"
-                      onClick={() => handleSortChange(opt.key)}
-                      style={{
-                        background: active ? "var(--accent)" : "transparent",
-                        color: active ? "var(--on-accent)" : "var(--text-sub)",
-                        fontWeight: active ? 700 : 600,
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                className="filter-chip-btn bounce-click"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                style={{
-                  background: "var(--card-bg)",
-                  color: "var(--text-main)",
-                  border: "1px solid var(--card-border)",
-                  cursor: isRefreshing ? "not-allowed" : "pointer",
-                  opacity: isRefreshing ? 0.7 : 1,
-                }}
-              >
-                <RefreshCw
-                  size={14}
-                  color="var(--accent)"
-                  aria-hidden="true"
-                  className={isRefreshing ? "spin-animation" : ""}
+          <div className="discovery-bar-grid">
+            <form onSubmit={handleSearchSubmit} className="search-container">
+              <div className="search-bar-wrapper">
+                <Search size={18} className="search-icon" aria-hidden="true" />
+                <input
+                  type="text"
+                  aria-label="핫딜 검색어 입력"
+                  placeholder="주요 커뮤니티 10곳 핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
+                  value={searchQuery}
+                  onCompositionStart={() => {
+                    isComposingRef.current = true;
+                    clearSearchDebounce();
+                  }}
+                  onCompositionEnd={(e) => {
+                    isComposingRef.current = false;
+                    const composedVal = e.currentTarget.value;
+                    setSearchQuery(composedVal);
+                    scheduleDebouncedSearch(composedVal);
+                  }}
+                  onChange={(e) => {
+                    const nextVal = e.target.value;
+                    setSearchQuery(nextVal);
+                    const nativeEvt = e.nativeEvent as InputEvent;
+                    if (nativeEvt?.isComposing || isComposingRef.current) {
+                      return;
+                    }
+                    scheduleDebouncedSearch(nextVal);
+                  }}
+                  className="search-input"
                 />
-                <span>새로고침</span>
-              </button>
-            </div>
-          </div>
-
-          <form onSubmit={handleSearchSubmit} className="search-container">
-            <div className="search-bar-wrapper">
-              <Search size={18} className="search-icon" aria-hidden="true" />
-              <input
-                type="text"
-                placeholder="상품명 검색 (예: 맥북 -파우치, 콜라 :15000)"
-                value={searchQuery}
-                onCompositionStart={() => {
-                  isComposingRef.current = true;
-                  clearSearchDebounce();
-                }}
-                onCompositionEnd={(e) => {
-                  isComposingRef.current = false;
-                  const composedVal = e.currentTarget.value;
-                  setSearchQuery(composedVal);
-                  scheduleDebouncedSearch(composedVal);
-                }}
-                onChange={(e) => {
-                  const nextVal = e.target.value;
-                  setSearchQuery(nextVal);
-                  const nativeEvt = e.nativeEvent as InputEvent;
-                  if (nativeEvt?.isComposing || isComposingRef.current) {
-                    return;
-                  }
-                  scheduleDebouncedSearch(nextVal);
-                }}
-                className="search-input"
-              />
-              {(searchQuery || appliedSearch) && (
-                <button
-                  type="button"
-                  aria-label="검색어 지우기"
-                  onClick={handleClearSearch}
-                  className="search-clear-btn"
-                >
-                  <X size={16} />
+                {(searchQuery || appliedSearch) && (
+                  <button
+                    type="button"
+                    aria-label="검색어 지우기"
+                    onClick={handleClearSearch}
+                    className="search-clear-btn"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+                <button type="submit" className="search-submit-btn">
+                  검색
                 </button>
-              )}
-              <button type="submit" className="search-submit-btn">
-                검색
-              </button>
-            </div>
-          </form>
+              </div>
+            </form>
+
+            <TrendingKeywordsTicker
+              keywords={popularKeywords}
+              rankings={popularRankings}
+              updatedAt={popularUpdatedAt}
+              selectedKeyword={appliedSearch}
+              onSelectKeyword={handleSelectPopularKeyword}
+            />
+          </div>
 
           {recentSearches.length > 0 && (
             <div
@@ -2383,7 +2260,7 @@ export default function Home() {
                 justifyContent: "space-between",
                 gap: "8px",
                 flexWrap: "wrap",
-                marginBottom: "12px",
+                marginBottom: "10px",
               }}
             >
               <div
@@ -2497,7 +2374,7 @@ export default function Home() {
                 flexWrap: "wrap",
                 gap: "10px",
                 padding: "10px 14px",
-                marginBottom: "14px",
+                marginBottom: "10px",
                 borderRadius: "12px",
                 background: "rgba(var(--accent-rgb), 0.06)",
                 border: "1px solid rgba(var(--accent-rgb), 0.2)",
@@ -2541,83 +2418,192 @@ export default function Home() {
             </div>
           )}
 
-          <TrendingKeywordsTicker
-            keywords={popularKeywords}
-            rankings={popularRankings}
-            updatedAt={popularUpdatedAt}
-            selectedKeyword={appliedSearch}
-            onSelectKeyword={handleSelectPopularKeyword}
-          />
-
-          <div className="platform-chips-row" role="group" aria-label="커뮤니티 필터">
-            {PLATFORMS.map((platform) => {
-              const isSelected =
-                platform === "전체"
-                  ? selectedPlatforms.length === 0
-                  : selectedPlatforms.includes(platform);
-              return (
-                <button
-                  key={platform}
-                  type="button"
-                  aria-pressed={isSelected}
-                  onClick={() => handlePlatformToggle(platform)}
-                  className={`platform-chip bounce-click ${isSelected ? "active" : ""}`}
-                >
-                  {isSelected && (
-                    <Check size={13} strokeWidth={2.5} aria-hidden="true" />
-                  )}
-                  <span>{platform === "전체" ? "전체 커뮤니티" : platform}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="category-rail-wrapper">
-            <div
-              id="category-filter-rail"
-              className={`tabs-container ${isCategoriesExpanded ? "expanded" : ""}`}
-            >
-              <div
-                className={`tabs ${isCategoriesExpanded ? "expanded" : ""}`}
-                role="group"
-                aria-label="카테고리 필터"
-              >
-                {categories.map((cat) => {
-                  const isCatActive =
-                    cat.key === "전체"
-                      ? selectedCategories.length === 0
-                      : selectedCategories.includes(cat.key);
+          <div className="filter-scope-dock">
+            <div className="filter-scope-row">
+              <span className="filter-scope-label">출처</span>
+              <div className="platform-chips-row" role="group" aria-label="커뮤니티 필터">
+                {PLATFORMS.map((platform) => {
+                  const isSelected =
+                    platform === "전체"
+                      ? selectedPlatforms.length === 0
+                      : selectedPlatforms.includes(platform);
                   return (
                     <button
-                      key={cat.key}
+                      key={platform}
                       type="button"
-                      aria-pressed={isCatActive}
-                      className={`tab bounce-click ${isCatActive ? "active" : ""}`}
-                      onClick={() => handleCategoryToggle(cat.key)}
+                      aria-pressed={isSelected}
+                      onClick={() => handlePlatformToggle(platform)}
+                      className={`platform-chip bounce-click ${isSelected ? "active" : ""}`}
                     >
-                      {isCatActive && (
+                      {isSelected && (
                         <Check size={13} strokeWidth={2.5} aria-hidden="true" />
                       )}
-                      <span>{cat.label}</span>
+                      <span>{platform === "전체" ? "전체 커뮤니티" : platform}</span>
                     </button>
                   );
                 })}
               </div>
             </div>
-            <button
-              type="button"
-              className="category-expand-btn bounce-click"
-              aria-expanded={isCategoriesExpanded}
-              aria-controls="category-filter-rail"
-              onClick={() => setIsCategoriesExpanded((prev) => !prev)}
-            >
-              <span>{isCategoriesExpanded ? "접기" : "전체 펼치기"}</span>
-              {isCategoriesExpanded ? (
-                <ChevronUp size={13} aria-hidden="true" />
-              ) : (
-                <ChevronDown size={13} aria-hidden="true" />
-              )}
-            </button>
+
+            <div className="filter-scope-row filter-scope-row--category">
+              <span className="filter-scope-label">카테고리</span>
+              <div className="category-rail-wrapper">
+                <div
+                  id="category-filter-rail"
+                  className={`tabs-container ${isCategoriesExpanded ? "expanded" : ""}`}
+                >
+                  <div
+                    className={`tabs ${isCategoriesExpanded ? "expanded" : ""}`}
+                    role="group"
+                    aria-label="카테고리 필터"
+                  >
+                    {categories.map((cat) => {
+                      const isCatActive =
+                        cat.key === "전체"
+                          ? selectedCategories.length === 0
+                          : selectedCategories.includes(cat.key);
+                      return (
+                        <button
+                          key={cat.key}
+                          type="button"
+                          aria-pressed={isCatActive}
+                          className={`tab bounce-click ${isCatActive ? "active" : ""}`}
+                          onClick={() => handleCategoryToggle(cat.key)}
+                        >
+                          {isCatActive && (
+                            <Check size={13} strokeWidth={2.5} aria-hidden="true" />
+                          )}
+                          <span>{cat.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="category-expand-btn bounce-click"
+                  aria-expanded={isCategoriesExpanded}
+                  aria-controls="category-filter-rail"
+                  onClick={() => setIsCategoriesExpanded((prev) => !prev)}
+                >
+                  <span>{isCategoriesExpanded ? "접기" : "전체 펼치기"}</span>
+                  {isCategoriesExpanded ? (
+                    <ChevronUp size={13} aria-hidden="true" />
+                  ) : (
+                    <ChevronDown size={13} aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="feed-control-toolbar">
+            <div className="sort-segment-group" role="group" aria-label="정렬 기준">
+              {(
+                [
+                  { key: "latest", label: "최신순" },
+                  { key: "popular", label: "인기순" },
+                  { key: "price_asc", label: "낮은가격순" },
+                ] as const
+              ).map((opt) => {
+                const active = sortBy === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    aria-pressed={active}
+                    className="sort-segment-btn"
+                    onClick={() => handleSortChange(opt.key)}
+                    style={{
+                      background: active ? "var(--accent)" : "transparent",
+                      color: active ? "var(--on-accent)" : "var(--text-sub)",
+                      fontWeight: active ? 700 : 600,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="feed-control-toggles">
+              <button
+                type="button"
+                aria-pressed={onlyHotDeals}
+                onClick={handleToggleOnlyHot}
+                className="filter-chip-btn bounce-click"
+                style={{
+                  background: onlyHotDeals
+                    ? "var(--deal-orange-bg)"
+                    : "var(--card-bg)",
+                  color: onlyHotDeals ? "var(--deal-orange)" : "var(--text-sub)",
+                  border: onlyHotDeals
+                    ? "1px solid var(--deal-orange)"
+                    : "1px solid var(--card-border)",
+                }}
+              >
+                <Flame size={14} aria-hidden="true" />
+                <span>인기 딜만</span>
+              </button>
+
+              <button
+                type="button"
+                aria-pressed={hideClosedDeals}
+                onClick={handleToggleHideClosed}
+                className="filter-chip-btn bounce-click"
+                style={{
+                  background: hideClosedDeals
+                    ? "var(--accent-soft-bg)"
+                    : "var(--card-bg)",
+                  color: hideClosedDeals ? "var(--accent)" : "var(--text-sub)",
+                  border: hideClosedDeals
+                    ? "1px solid var(--accent)"
+                    : "1px solid var(--card-border)",
+                }}
+              >
+                품절 제외
+              </button>
+
+              <button
+                type="button"
+                aria-pressed={includeClosedDeals}
+                onClick={handleToggleIncludeClosed}
+                className="filter-chip-btn bounce-click"
+                style={{
+                  background: includeClosedDeals
+                    ? "var(--secondary-soft-bg)"
+                    : "var(--card-bg)",
+                  color: includeClosedDeals ? "var(--secondary)" : "var(--text-sub)",
+                  border: includeClosedDeals
+                    ? "1px solid var(--secondary)"
+                    : "1px solid var(--card-border)",
+                }}
+              >
+                종료 포함
+              </button>
+
+              <button
+                type="button"
+                className="filter-chip-btn bounce-click"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                style={{
+                  background: "var(--card-bg)",
+                  color: "var(--text-main)",
+                  border: "1px solid var(--card-border)",
+                  cursor: isRefreshing ? "not-allowed" : "pointer",
+                  opacity: isRefreshing ? 0.7 : 1,
+                }}
+              >
+                <RefreshCw
+                  size={14}
+                  color="var(--accent)"
+                  aria-hidden="true"
+                  className={isRefreshing ? "spin-animation" : ""}
+                />
+                <span>새로고침</span>
+              </button>
+            </div>
           </div>
 
           {hasActiveFilters && (
@@ -2914,7 +2900,7 @@ export default function Home() {
                 )}
               </div>
             ) : (
-              filteredDeals.map((deal) => (
+              filteredDeals.map((deal, idx) => (
                 <DealCard
                   key={deal.id}
                   deal={deal}
@@ -2923,6 +2909,7 @@ export default function Home() {
                   currentTime={currentTime}
                   isWishlisted={wishlist.includes(deal.id)}
                   isAlertSet={alerts.includes(deal.id)}
+                  priority={idx < 6}
                   onSelectDeal={(selected) => setSelectedDeal(selected)}
                   onShareDeal={handleShareDeal}
                   onToggleAlert={toggleAlert}

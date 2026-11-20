@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, TIMESTAMP, TEXT, UniqueConstraint, Float, create_engine
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, TIMESTAMP, TEXT, UniqueConstraint, Float, create_engine, event, text
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime, timezone
@@ -61,6 +61,66 @@ class Deal(Base):
     community = relationship("Community", back_populates="deals")
     price_history = relationship("PriceHistory", back_populates="deal")
     deal_reactions = relationship("DealReaction", back_populates="deal")
+
+
+def _build_sqlite_indexed_at_norm_expr(col_expr: str) -> str:
+    """SQLite deals.indexed_at 텍스트를 26자 'YYYY-MM-DD HH:MM:SS.ffffff' 포맷으로 정규화하는 SQL 식"""
+    cleaned = f"replace(replace(replace({col_expr}, 'T', ' '), 'Z', ''), '+00:00', '')"
+    return (
+        "CASE "
+        f"WHEN length({cleaned}) <= 19 THEN {cleaned} || '.000000' "
+        f"WHEN length({cleaned}) < 26 THEN substr({cleaned} || '000000', 1, 26) "
+        f"ELSE substr({cleaned}, 1, 26) "
+        "END"
+    )
+
+
+def _build_sqlite_indexed_at_need_norm_cond(col_expr: str) -> str:
+    """정규화가 필요한 비표준(비-26자 또는 'T'/'Z' 포함) SQLite 타임스탬프 조건식"""
+    return (
+        f"typeof({col_expr}) = 'text' AND length({col_expr}) >= 19 "
+        f"AND (length({col_expr}) != 26 OR instr({col_expr}, 'T') > 0 OR instr({col_expr}, 'Z') > 0)"
+    )
+
+
+def normalize_sqlite_deals_indexed_at(connection) -> None:
+    """기존 deals 테이블의 비-26자 indexed_at 행을 26자 포맷으로 일괄 정규화"""
+    norm_expr = _build_sqlite_indexed_at_norm_expr("indexed_at")
+    need_cond = _build_sqlite_indexed_at_need_norm_cond("indexed_at")
+    connection.execute(text(f"UPDATE deals SET indexed_at = {norm_expr} WHERE {need_cond}"))
+
+
+def ensure_sqlite_deals_indexed_at_triggers(connection) -> None:
+    """SQLite raw INSERT/UPDATE 시에도 indexed_at을 즉시 26자 포맷으로 정규화하는 트리거 2종 보장"""
+    new_norm_expr = _build_sqlite_indexed_at_norm_expr("NEW.indexed_at")
+    new_need_cond = _build_sqlite_indexed_at_need_norm_cond("NEW.indexed_at")
+    connection.execute(
+        text(
+            "CREATE TRIGGER IF NOT EXISTS trg_deals_norm_indexed_at_ins "
+            "AFTER INSERT ON deals "
+            f"WHEN {new_need_cond} "
+            "BEGIN "
+            f"    UPDATE deals SET indexed_at = {new_norm_expr} WHERE id = NEW.id; "
+            "END"
+        )
+    )
+    connection.execute(
+        text(
+            "CREATE TRIGGER IF NOT EXISTS trg_deals_norm_indexed_at_upd "
+            "AFTER UPDATE OF indexed_at ON deals "
+            f"WHEN {new_need_cond} "
+            "BEGIN "
+            f"    UPDATE deals SET indexed_at = {new_norm_expr} WHERE id = NEW.id; "
+            "END"
+        )
+    )
+
+
+@event.listens_for(Deal.__table__, "after_create")
+def _create_sqlite_deals_indexed_at_triggers(target, connection, **kw):
+    """SQLite 테이블 생성 직후(:memory: 테스트 포함) indexed_at 정규화 트리거 자동 부착"""
+    if connection.dialect.name == "sqlite":
+        ensure_sqlite_deals_indexed_at_triggers(connection)
 
 class PriceHistory(Base):
     __tablename__ = "price_history"

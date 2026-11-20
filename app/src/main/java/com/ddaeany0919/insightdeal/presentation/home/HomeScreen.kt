@@ -22,6 +22,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.rounded.*
@@ -32,7 +34,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
@@ -102,6 +106,11 @@ private val CLOSED_DEAL_COLOR_FILTER by lazy {
 }
 private val ALERT_DATE_FORMATTER: java.time.format.DateTimeFormatter =
     java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm")
+private val HOME_SORT_OPTIONS = listOf(
+    "latest" to "최신순",
+    "popular" to "인기순",
+    "price_asc" to "낮은가격순"
+)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -380,6 +389,45 @@ fun HomeScreen(
 
     val hasNewDeals by viewModel.hasNewDeals.collectAsStateWithLifecycle()
     val newDealsCount by viewModel.newDealsCount.collectAsStateWithLifecycle()
+
+    val topHotDeals by viewModel.topHotDeals.collectAsStateWithLifecycle()
+    val topPicks = remember(topHotDeals) {
+        topHotDeals
+            .filter { deal ->
+                val isSuperHot = deal.honeyScore >= 100
+                !deal.isClosed && isSuperHot
+            }
+            .filter { deal ->
+                deal.category != "적립" && !deal.title.contains("적립") && !deal.title.contains("불가") && !deal.title.contains("정보")
+            }
+            .sortedByDescending { it.createdAt ?: "" }
+    }
+    val popularRankings by viewModel.popularRankings.collectAsStateWithLifecycle()
+    val popularKeywords by viewModel.popularKeywords.collectAsStateWithLifecycle()
+    val tickerItems = remember(popularRankings, popularKeywords) {
+        if (popularRankings.isNotEmpty()) {
+            popularRankings.take(10)
+        } else {
+            popularKeywords.take(10).mapIndexed { idx, kw ->
+                com.ddaeany0919.insightdeal.network.PopularKeywordRankingItem(
+                    rank = idx + 1,
+                    keyword = kw,
+                    dealCount = 0,
+                    recentCount = 0,
+                    status = if (idx == 0) "HOT" else if (idx < 3) "UP" else "SAME"
+                )
+            }
+        }
+    }
+    var hideKeywordBanner by remember {
+        mutableStateOf(
+            runCatching {
+                com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
+                    .getEncryptedPrefs(context)
+                    .getBoolean("hide_home_kw_banner", false)
+            }.getOrDefault(false)
+        )
+    }
 
     val pullRefreshState = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
 
@@ -704,29 +752,19 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (activeCategories.isEmpty()) {
+                if (!hasActiveFilter && (topPicks.isNotEmpty() || !hideKeywordBanner)) {
                     item(
                         key = "today_picks_section",
                         span = { GridItemSpan(maxLineSpan) },
                         contentType = "today_picks_section"
                     ) {
-                        val topHotDeals by viewModel.topHotDeals.collectAsStateWithLifecycle()
-
-                        val topPicks = remember(topHotDeals) {
-                            topHotDeals
-                                .filter { deal ->
-                                    val isSuperHot = deal.honeyScore >= 100
-                                    !deal.isClosed && isSuperHot
-                                }
-                                .filter { deal ->
-                                    deal.category != "적립" && !deal.title.contains("적립") && !deal.title.contains("불가") && !deal.title.contains("정보")
-                                }
-                                .sortedByDescending { it.createdAt ?: "" }
-                        }
-
                         Column(modifier = Modifier.fillMaxWidth()) {
                             if (topPicks.isNotEmpty()) {
-                                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = if (!hideKeywordBanner) 8.dp else 0.dp)
+                                ) {
                                     Text(
                                         text = "오늘의 핫딜",
                                         fontWeight = FontWeight.ExtraBold,
@@ -967,50 +1005,8 @@ fun HomeScreen(
                                         }
                                     }
                                 }
-                            } else {
-                                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp, top = 8.dp)) {
-                                    Text(
-                                        text = "오늘의 핫딜",
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 18.sp,
-                                        modifier = Modifier
-                                            .padding(bottom = 12.dp, start = 4.dp)
-                                            .semantics { heading() },
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                                        shape = RoundedCornerShape(12.dp),
-                                        elevation = CardDefaults.cardElevation(0.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                    ) {
-                                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Icon(
-                                                    imageVector = Icons.Default.SearchOff,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                                                    modifier = Modifier.size(36.dp).padding(bottom = 8.dp)
-                                                )
-                                                Text("아직 오늘의 핫딜을 모으고 있어요", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                Text("잠시 후 다시 확인해 보세요", fontSize = 12.sp, color = LocalInsightDealColors.current.textMuted, modifier = Modifier.padding(top = 4.dp))
-                                            }
-                                        }
-                                    }
-                                }
                             }
 
-                            Spacer(Modifier.height(4.dp))
-
-                            var hideKeywordBanner by remember {
-                                mutableStateOf(
-                                    runCatching {
-                                        com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
-                                            .getEncryptedPrefs(context)
-                                            .getBoolean("hide_home_kw_banner", false)
-                                    }.getOrDefault(false)
-                                )
-                            }
                             if (!hideKeywordBanner) {
                                 Card(
                                     modifier = Modifier
@@ -1093,147 +1089,11 @@ fun HomeScreen(
                                     }
                                 }
                             }
-                            Spacer(Modifier.height(6.dp))
-
-                            val popularRankings by viewModel.popularRankings.collectAsStateWithLifecycle()
-                            val popularKeywords by viewModel.popularKeywords.collectAsStateWithLifecycle()
-                            val tickerItems = remember(popularRankings, popularKeywords) {
-                                if (popularRankings.isNotEmpty()) {
-                                    popularRankings.take(10)
-                                } else {
-                                    popularKeywords.take(10).mapIndexed { idx, kw ->
-                                        com.ddaeany0919.insightdeal.network.PopularKeywordRankingItem(
-                                            rank = idx + 1,
-                                            keyword = kw,
-                                            dealCount = 0,
-                                            recentCount = 0,
-                                            status = if (idx == 0) "HOT" else if (idx < 3) "UP" else "SAME"
-                                        )
-                                    }
-                                }
-                            }
-                            if (tickerItems.isNotEmpty()) {
-                                var tickerIndex by remember { mutableIntStateOf(0) }
-                                LaunchedEffect(tickerItems.size) {
-                                    while (true) {
-                                        kotlinx.coroutines.delay(3200L)
-                                        if (tickerItems.isNotEmpty()) {
-                                            tickerIndex = (tickerIndex + 1) % tickerItems.size
-                                        }
-                                    }
-                                }
-                                val currentItem = tickerItems[tickerIndex.coerceIn(0, tickerItems.lastIndex)]
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                                        .bounceClick {
-                                            searchInput = currentItem.keyword
-                                            viewModel.searchDeals(currentItem.keyword)
-                                        },
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(
-                                        1.dp,
-                                        if (isDark) Color(0xFF2B333E) else Color(0xFFE5E8EB)
-                                    )
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 9.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Surface(
-                                                shape = RoundedCornerShape(6.dp),
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.2f else 0.1f)
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Outlined.TrendingUp,
-                                                        contentDescription = null,
-                                                        tint = MaterialTheme.colorScheme.primary,
-                                                        modifier = Modifier.size(12.dp)
-                                                    )
-                                                    Text(
-                                                        text = "급상승",
-                                                        fontSize = 10.5.sp,
-                                                        fontWeight = FontWeight.ExtraBold,
-                                                        color = MaterialTheme.colorScheme.primary
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Text(
-                                                text = "${currentItem.rank}",
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                color = if (currentItem.rank <= 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.width(18.dp)
-                                            )
-                                            Text(
-                                                text = currentItem.keyword,
-                                                fontSize = 13.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            if (currentItem.status == "HOT") {
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = MaterialTheme.colorScheme.secondaryContainer
-                                                ) {
-                                                    Text(
-                                                        text = "인기",
-                                                        fontSize = 10.5.sp,
-                                                        fontWeight = FontWeight.ExtraBold,
-                                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier
-                                                .heightIn(min = 48.dp)
-                                                .clickable {
-                                                    navController.navigate("advanced_search")
-                                                }
-                                                .padding(horizontal = 4.dp)
-                                        ) {
-                                            Text(
-                                                text = "전체 순위",
-                                                fontSize = 11.5.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Icon(
-                                                imageVector = Icons.Default.KeyboardArrowRight,
-                                                contentDescription = "전체 순위 보기",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(15.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                 }
 
-                // 인라인 검색바 + 커뮤니티 가로 필터 칩 + 정렬 3종 탭 (단정한 M3 무채색/단색 위계)
+                // 인라인 검색바 → 급상승 티커 → 출처/분류 필터 → 리스트 직상단 정렬·상태 단일 바
                 item(
                     key = "search_and_filters_section",
                     span = { GridItemSpan(maxLineSpan) },
@@ -1242,8 +1102,7 @@ fun HomeScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 2.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                            .padding(horizontal = 2.dp)
                     ) {
                         // 1) 컴팩트 인라인 검색바
                         Surface(
@@ -1321,134 +1180,188 @@ fun HomeScreen(
                             }
                         }
 
-                        // 2) 가로 스크롤 커뮤니티 필터 칩 (다중 선택 · 재클릭 해제)
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            contentPadding = PaddingValues(horizontal = 2.dp)
-                        ) {
-                            items(
-                                count = HomeViewModel.COMMUNITY_FILTER_CHIPS.size,
-                                key = { idx -> HomeViewModel.COMMUNITY_FILTER_CHIPS[idx] }
-                            ) { idx ->
-                                val chip = HomeViewModel.COMMUNITY_FILTER_CHIPS[idx]
-                                val isSelected = if (chip == "전체") {
-                                    activeCommunityChips.isEmpty()
-                                } else {
-                                    chip in activeCommunityChips
+                        // 2) 급상승 키워드 슬림 바 (웹과 동일한 [검색창 → 급상승 티커] 순서)
+                        if (tickerItems.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            HomeTrendingTickerBar(
+                                tickerItems = tickerItems,
+                                isDark = isDark,
+                                onKeywordClick = { keyword ->
+                                    searchInput = keyword
+                                    viewModel.searchDeals(keyword)
+                                    focusManager.clearFocus()
+                                },
+                                onAllRankingsClick = {
+                                    navController.navigate("advanced_search")
                                 }
-                                HomeSelectablePillChip(
-                                    label = chip,
-                                    selected = isSelected,
-                                    role = if (chip == "전체") Role.Tab else Role.Checkbox,
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        viewModel.toggleCommunityChip(chip)
-                                    }
-                                )
-                            }
+                            )
                         }
 
-                        // 2-1) 가로 스크롤 카테고리 필터 칩 (다중 선택 · 재클릭 해제)
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            contentPadding = PaddingValues(horizontal = 2.dp)
-                        ) {
-                            item(key = "cat_all") {
-                                HomeSelectablePillChip(
-                                    label = "전체",
-                                    selected = activeCategories.isEmpty(),
-                                    role = Role.Tab,
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        viewModel.toggleCategory("전체")
-                                    }
-                                )
-                            }
-                            items(
-                                items = catalogCategories,
-                                key = { "cat_${it.key}" }
-                            ) { cat ->
-                                val isCatSelected = cat.key in activeCategories
-                                HomeSelectablePillChip(
-                                    label = cat.label,
-                                    selected = isCatSelected,
-                                    role = Role.Checkbox,
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        viewModel.toggleCategory(cat.key)
-                                    }
-                                )
-                            }
-                        }
+                        Spacer(modifier = Modifier.height(4.dp))
 
-                        // 3) 정렬 3종 세그먼트 (최신순 / 인기순 / 낮은가격순) + 보조 필터 칩 (높이 38.dp · 13.sp 통일 · FlowRow 줄바꿈 안전)
-                        FlowRow(
+                        // 3) "출처" 고정 라벨 + 각진 배지형 커뮤니티 필터 칩 (RoundedCornerShape(8.dp), 높이 34.dp)
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            val sortOptions = remember {
-                                listOf(
-                                    "latest" to "최신순",
-                                    "popular" to "인기순",
-                                    "price_asc" to "낮은가격순"
-                                )
+                            HomeFilterRowLabel(
+                                text = "출처",
+                                shape = RoundedCornerShape(6.dp),
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            LazyRow(
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                contentPadding = PaddingValues(end = 2.dp)
+                            ) {
+                                items(
+                                    count = HomeViewModel.COMMUNITY_FILTER_CHIPS.size,
+                                    key = { idx -> HomeViewModel.COMMUNITY_FILTER_CHIPS[idx] },
+                                    contentType = { "community_chip" }
+                                ) { idx ->
+                                    val chip = HomeViewModel.COMMUNITY_FILTER_CHIPS[idx]
+                                    val isSelected = if (chip == "전체") {
+                                        activeCommunityChips.isEmpty()
+                                    } else {
+                                        chip in activeCommunityChips
+                                    }
+                                    HomeSelectablePillChip(
+                                        label = chip,
+                                        selected = isSelected,
+                                        role = if (chip == "전체") Role.Tab else Role.Checkbox,
+                                        shape = RoundedCornerShape(8.dp),
+                                        chipHeight = 34.dp,
+                                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        selectedContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        selectedBorderColor = MaterialTheme.colorScheme.secondary,
+                                        unselectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        unselectedBorderColor = homeSemantic.cardBorder,
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            viewModel.toggleCommunityChip(chip)
+                                        }
+                                    )
+                                }
                             }
-                            val trackColor = if (isDark) Color(0xFF191F28) else Color(0xFFF2F4F7)
-                            Box(contentAlignment = Alignment.Center) {
-                                Surface(
-                                    modifier = Modifier
-                                        .matchParentSize()
-                                        .padding(vertical = 5.dp),
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = trackColor,
-                                    border = BorderStroke(1.dp, homeSemantic.cardBorder)
-                                ) {}
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 3.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    sortOptions.forEach { (sortKey, sortLabel) ->
-                                        val isSortSelected = filterState.sortBy == sortKey
-                                        Box(
-                                            modifier = Modifier
-                                                .heightIn(min = 48.dp)
-                                                .semantics {
-                                                    role = Role.Tab
-                                                    selected = isSortSelected
-                                                }
-                                                .clickable {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    viewModel.selectSort(sortKey)
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Surface(
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = when {
-                                                    isSortSelected && isDark -> MaterialTheme.colorScheme.surfaceVariant
-                                                    isSortSelected -> MaterialTheme.colorScheme.surface
-                                                    else -> Color.Transparent
-                                                },
-                                                shadowElevation = if (isSortSelected && !isDark) 1.dp else 0.dp,
-                                                modifier = Modifier.height(32.dp)
+                        }
+
+                        // 4) "분류" 고정 라벨 + 알약형 카테고리 필터 칩 (RoundedCornerShape(999.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            HomeFilterRowLabel(
+                                text = "분류",
+                                shape = RoundedCornerShape(999.dp),
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            LazyRow(
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                contentPadding = PaddingValues(end = 2.dp)
+                            ) {
+                                item(key = "cat_all", contentType = "category_chip") {
+                                    HomeSelectablePillChip(
+                                        label = "전체",
+                                        selected = activeCategories.isEmpty(),
+                                        role = Role.Tab,
+                                        shape = RoundedCornerShape(999.dp),
+                                        chipHeight = 36.dp,
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            viewModel.toggleCategory("전체")
+                                        }
+                                    )
+                                }
+                                items(
+                                    items = catalogCategories,
+                                    key = { "cat_${it.key}" },
+                                    contentType = { "category_chip" }
+                                ) { cat ->
+                                    val isCatSelected = cat.key in activeCategories
+                                    HomeSelectablePillChip(
+                                        label = cat.label,
+                                        selected = isCatSelected,
+                                        role = Role.Checkbox,
+                                        shape = RoundedCornerShape(999.dp),
+                                        chipHeight = 36.dp,
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            viewModel.toggleCategory(cat.key)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // 5) 리스트 직상단 정렬·상태 단일 가로 스크롤 바 (최신순/인기순/낮은가격순 + 인기 딜만 + 품절 제외 + 무료배송)
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            item(key = "sort_segment", contentType = "sort_segment") {
+                                val trackColor = if (isDark) Color(0xFF191F28) else Color(0xFFF2F4F7)
+                                Box(contentAlignment = Alignment.Center) {
+                                    Surface(
+                                        modifier = Modifier
+                                            .matchParentSize()
+                                            .padding(vertical = 6.dp),
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = trackColor,
+                                        border = BorderStroke(1.dp, homeSemantic.cardBorder)
+                                    ) {}
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 3.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        HOME_SORT_OPTIONS.forEach { (sortKey, sortLabel) ->
+                                            val isSortSelected = filterState.sortBy == sortKey
+                                            Box(
+                                                modifier = Modifier
+                                                    .heightIn(min = 48.dp)
+                                                    .semantics {
+                                                        role = Role.Tab
+                                                        selected = isSortSelected
+                                                    }
+                                                    .clickable {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        viewModel.selectSort(sortKey)
+                                                    },
+                                                contentAlignment = Alignment.Center
                                             ) {
-                                                Box(
-                                                    modifier = Modifier.padding(horizontal = 10.dp),
-                                                    contentAlignment = Alignment.Center
+                                                Surface(
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = when {
+                                                        isSortSelected && isDark -> MaterialTheme.colorScheme.surfaceVariant
+                                                        isSortSelected -> MaterialTheme.colorScheme.surface
+                                                        else -> Color.Transparent
+                                                    },
+                                                    shadowElevation = if (isSortSelected && !isDark) 1.dp else 0.dp,
+                                                    modifier = Modifier.height(30.dp)
                                                 ) {
-                                                    Text(
-                                                        text = sortLabel,
-                                                        fontSize = 13.sp,
-                                                        fontWeight = if (isSortSelected) FontWeight.Bold else FontWeight.Medium,
-                                                        color = if (isSortSelected) MaterialTheme.colorScheme.onSurface
-                                                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        maxLines = 1,
-                                                        style = TextStyle(
-                                                            platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                                    Box(
+                                                        modifier = Modifier.padding(horizontal = 10.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = sortLabel,
+                                                            fontSize = 12.5.sp,
+                                                            fontWeight = if (isSortSelected) FontWeight.Bold else FontWeight.Medium,
+                                                            color = if (isSortSelected) MaterialTheme.colorScheme.onSurface
+                                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            maxLines = 1,
+                                                            style = TextStyle(
+                                                                platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                                            )
                                                         )
-                                                    )
+                                                    }
                                                 }
                                             }
                                         }
@@ -1456,25 +1369,51 @@ fun HomeScreen(
                                 }
                             }
 
-                            HomeSelectablePillChip(
-                                label = "품절 제외",
-                                selected = filterState.hideClosed,
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    viewModel.toggleHideClosed()
-                                }
-                            )
-                            HomeSelectablePillChip(
-                                label = "무료배송",
-                                selected = filterState.freeShippingOnly,
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    viewModel.toggleFreeShippingOnly()
-                                }
-                            )
+                            item(key = "filter_popular_only", contentType = "status_chip") {
+                                HomeSelectablePillChip(
+                                    label = "인기 딜만",
+                                    selected = filterState.popularOnly,
+                                    shape = RoundedCornerShape(999.dp),
+                                    chipHeight = 36.dp,
+                                    leadingIcon = Icons.Filled.LocalFireDepartment,
+                                    selectedContainerColor = homeSemantic.priceContainer,
+                                    selectedContentColor = homeSemantic.onPriceContainer,
+                                    selectedBorderColor = homeSemantic.priceAccent,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.togglePopularOnly()
+                                    }
+                                )
+                            }
+
+                            item(key = "filter_hide_closed", contentType = "status_chip") {
+                                HomeSelectablePillChip(
+                                    label = "품절 제외",
+                                    selected = filterState.hideClosed,
+                                    shape = RoundedCornerShape(999.dp),
+                                    chipHeight = 36.dp,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.toggleHideClosed()
+                                    }
+                                )
+                            }
+
+                            item(key = "filter_free_shipping", contentType = "status_chip") {
+                                HomeSelectablePillChip(
+                                    label = "무료배송",
+                                    selected = filterState.freeShippingOnly,
+                                    shape = RoundedCornerShape(999.dp),
+                                    chipHeight = 36.dp,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.toggleFreeShippingOnly()
+                                    }
+                                )
+                            }
                         }
 
-                        // 4) 적용 필터 바 (활성 필터 개별 원클릭 해제 + 전체 초기화)
+                        // 6) 적용 필터 바 (활성 필터 개별 원클릭 해제 + 전체 초기화)
                         if (hasActiveFilter) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1494,7 +1433,7 @@ fun HomeScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     filterState.keyword?.takeIf { it.isNotBlank() }?.let { kw ->
-                                        item(key = "active_kw") {
+                                        item(key = "active_kw", contentType = "active_filter_chip") {
                                             HomeActiveFilterChip(
                                                 label = "검색: $kw",
                                                 onRemove = {
@@ -1506,7 +1445,8 @@ fun HomeScreen(
                                     }
                                     items(
                                         items = activeCommunityChips.sorted(),
-                                        key = { "active_comm_$it" }
+                                        key = { "active_comm_$it" },
+                                        contentType = { "active_filter_chip" }
                                     ) { chip ->
                                         HomeActiveFilterChip(
                                             label = chip,
@@ -1514,7 +1454,7 @@ fun HomeScreen(
                                         )
                                     }
                                     if (activeCommunityChips.isEmpty() && !filterState.platform.isNullOrBlank() && filterState.platform != "전체") {
-                                        item(key = "active_platform") {
+                                        item(key = "active_platform", contentType = "active_filter_chip") {
                                             HomeActiveFilterChip(
                                                 label = "출처: ${filterState.platform}",
                                                 onRemove = { viewModel.selectPlatform("") }
@@ -1523,7 +1463,8 @@ fun HomeScreen(
                                     }
                                     items(
                                         items = activeCategories.sorted(),
-                                        key = { "active_cat_$it" }
+                                        key = { "active_cat_$it" },
+                                        contentType = { "active_filter_chip" }
                                     ) { cat ->
                                         HomeActiveFilterChip(
                                             label = CategoryCatalog.getDisplayLabel(cat),
@@ -1531,7 +1472,7 @@ fun HomeScreen(
                                         )
                                     }
                                     if (filterState.hideClosed) {
-                                        item(key = "active_hide_closed") {
+                                        item(key = "active_hide_closed", contentType = "active_filter_chip") {
                                             HomeActiveFilterChip(
                                                 label = "품절 제외",
                                                 onRemove = { viewModel.toggleHideClosed() }
@@ -1539,7 +1480,7 @@ fun HomeScreen(
                                         }
                                     }
                                     if (filterState.freeShippingOnly) {
-                                        item(key = "active_free_ship") {
+                                        item(key = "active_free_ship", contentType = "active_filter_chip") {
                                             HomeActiveFilterChip(
                                                 label = "무료배송",
                                                 onRemove = { viewModel.toggleFreeShippingOnly() }
@@ -1547,9 +1488,9 @@ fun HomeScreen(
                                         }
                                     }
                                     if (filterState.popularOnly) {
-                                        item(key = "active_popular_only") {
+                                        item(key = "active_popular_only", contentType = "active_filter_chip") {
                                             HomeActiveFilterChip(
-                                                label = "인기만",
+                                                label = "인기 딜만",
                                                 onRemove = { viewModel.togglePopularOnly() }
                                             )
                                         }
@@ -2174,27 +2115,176 @@ fun HomeScreen(
 }
 
 @Composable
+private fun HomeTrendingTickerBar(
+    tickerItems: List<com.ddaeany0919.insightdeal.network.PopularKeywordRankingItem>,
+    isDark: Boolean,
+    onKeywordClick: (String) -> Unit,
+    onAllRankingsClick: () -> Unit
+) {
+    if (tickerItems.isEmpty()) return
+    var tickerIndex by remember { mutableIntStateOf(0) }
+    LaunchedEffect(tickerItems.size) {
+        while (true) {
+            kotlinx.coroutines.delay(3200L)
+            if (tickerItems.isNotEmpty()) {
+                tickerIndex = (tickerIndex + 1) % tickerItems.size
+            }
+        }
+    }
+    val currentItem = tickerItems[tickerIndex.coerceIn(0, tickerItems.lastIndex)]
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .bounceClick(onClickLabel = "${currentItem.keyword} 급상승 키워드 검색") {
+                onKeywordClick(currentItem.keyword)
+            },
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            1.dp,
+            if (isDark) Color(0xFF2B333E) else Color(0xFFE5E8EB)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.2f else 0.1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.TrendingUp,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = "급상승",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "${currentItem.rank}",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (currentItem.rank <= 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(18.dp)
+                )
+                Text(
+                    text = currentItem.keyword,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (currentItem.status == "HOT") {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(
+                            text = "인기",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .clickable(onClick = onAllRankingsClick)
+                    .padding(horizontal = 4.dp)
+            ) {
+                Text(
+                    text = "전체 순위",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "전체 순위 보기",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeFilterRowLabel(
+    text: String,
+    shape: Shape,
+    containerColor: Color,
+    contentColor: Color
+) {
+    Surface(
+        shape = shape,
+        color = containerColor,
+        modifier = Modifier.height(26.dp)
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = text,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = contentColor,
+                maxLines = 1,
+                style = TextStyle(
+                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                )
+            )
+        }
+    }
+}
+
+@Composable
 private fun HomeSelectablePillChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    role: Role = Role.Checkbox
+    role: Role = Role.Checkbox,
+    shape: Shape = RoundedCornerShape(999.dp),
+    chipHeight: Dp = 36.dp,
+    selectedContainerColor: Color = MaterialTheme.colorScheme.primary,
+    selectedContentColor: Color = MaterialTheme.colorScheme.onPrimary,
+    selectedBorderColor: Color = selectedContainerColor,
+    unselectedContainerColor: Color = MaterialTheme.colorScheme.surface,
+    unselectedContentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    unselectedBorderColor: Color = MaterialTheme.colorScheme.outline,
+    leadingIcon: ImageVector? = null
 ) {
-    val containerColor = if (selected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.surface
-    }
-    val contentColor = if (selected) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val borderColor = if (selected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.outline
-    }
+    val containerColor = if (selected) selectedContainerColor else unselectedContainerColor
+    val contentColor = if (selected) selectedContentColor else unselectedContentColor
+    val borderColor = if (selected) selectedBorderColor else unselectedBorderColor
 
     Box(
         modifier = Modifier
@@ -2208,19 +2298,24 @@ private fun HomeSelectablePillChip(
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            modifier = Modifier.height(38.dp),
-            shape = RoundedCornerShape(999.dp),
+            modifier = Modifier.height(chipHeight),
+            shape = shape,
             color = containerColor,
             border = BorderStroke(1.dp, borderColor)
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 12.dp),
+                modifier = Modifier.padding(horizontal = if (chipHeight <= 34.dp) 10.dp else 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (selected) {
+                val iconToShow = when {
+                    leadingIcon != null -> leadingIcon
+                    selected -> Icons.Default.Check
+                    else -> null
+                }
+                if (iconToShow != null) {
                     Icon(
-                        imageVector = Icons.Default.Check,
+                        imageVector = iconToShow,
                         contentDescription = null,
                         tint = contentColor,
                         modifier = Modifier.size(14.dp)
@@ -2228,7 +2323,7 @@ private fun HomeSelectablePillChip(
                 }
                 Text(
                     text = label,
-                    fontSize = 13.sp,
+                    fontSize = if (chipHeight <= 34.dp) 12.5.sp else 13.sp,
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                     color = contentColor,
                     maxLines = 1,

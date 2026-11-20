@@ -4,6 +4,7 @@ import logging
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from datetime import datetime, timezone
+from starlette.concurrency import run_in_threadpool
 from backend.database.models import Deal, PriceHistory, Community
 from backend.services.normalizer.llm_normalizer import LlmNormalizer
 from backend.services.ai_product_name_service import AIProductNameService
@@ -1349,28 +1350,33 @@ class AggregatorService:
                     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
                     res = await client.get(u, headers=headers, timeout=2.5, follow_redirects=True)
                     if res.status_code == 200 and res.text:
-                        soup = BeautifulSoup(res.text, "html.parser")
-                        meta_img = (
-                            soup.find("meta", property="og:image")
-                            or soup.find("meta", attrs={"name": "twitter:image"})
-                            or soup.find("meta", property="twitter:image")
-                            or soup.find("meta", property="image")
-                        )
-                        if meta_img and meta_img.get("content"):
-                            img_cand = meta_img["content"].strip()
-                            if img_cand.startswith("//"):
-                                img_cand = "https:" + img_cand
-                            elif not img_cand.startswith("http"):
-                                img_cand = urljoin(str(res.url), img_cand)
-                            
-                            low_img = img_cand.lower().split("?")[0]
-                            bad_tokens = (
-                                "logo", "icon", "blank", "noimage", "transparent", "avatar",
-                                "default", "og_default", "share_img", "sns_share", "common"
+                        def _extract_og_img_sync(raw_html_txt: str, final_url: str) -> str | None:
+                            soup = BeautifulSoup(raw_html_txt, "html.parser")
+                            meta_img = (
+                                soup.find("meta", property="og:image")
+                                or soup.find("meta", attrs={"name": "twitter:image"})
+                                or soup.find("meta", property="twitter:image")
+                                or soup.find("meta", property="image")
                             )
-                            if not any(bad in low_img for bad in bad_tokens) and not low_img.endswith((".svg", ".ico")):
-                                opt["image_url"] = img_cand
-                                return
+                            if meta_img and meta_img.get("content"):
+                                img_cand = meta_img["content"].strip()
+                                if img_cand.startswith("//"):
+                                    img_cand = "https:" + img_cand
+                                elif not img_cand.startswith("http"):
+                                    img_cand = urljoin(final_url, img_cand)
+                                low_img = img_cand.lower().split("?")[0]
+                                bad_tokens = (
+                                    "logo", "icon", "blank", "noimage", "transparent", "avatar",
+                                    "default", "og_default", "share_img", "sns_share", "common"
+                                )
+                                if not any(bad in low_img for bad in bad_tokens) and not low_img.endswith((".svg", ".ico")):
+                                    return img_cand
+                            return None
+
+                        found_img = await run_in_threadpool(_extract_og_img_sync, res.text, str(res.url))
+                        if found_img:
+                            opt["image_url"] = found_img
+                            return
                 except Exception:
                     pass
 
@@ -1461,6 +1467,68 @@ class AggregatorService:
             monetized_list.append(item)
         return monetized_list
 
+    @classmethod
+    async def _unwrap_outbound_url_async(cls, raw_url: str) -> str:
+        """블로킹 requests.get을 포함한 URL 디코딩/리다이렉트 해제를 스레드풀로 격리"""
+        if not raw_url or not str(raw_url).strip():
+            return raw_url or ""
+        u = str(raw_url).strip()
+        if not u.startswith("http"):
+            return u
+        from backend.core.url_utils import (
+            DEFAULT_COUPANG_LPTAG,
+            DEFAULT_LINKPRICE_AFFILIATE_ID,
+            normalize_url,
+            unwrap_third_party_affiliate_url,
+        )
+        u_low = u.lower()
+        if DEFAULT_COUPANG_LPTAG.lower() in u_low or (
+            ("newtip.net" in u_low or "click.linkprice.com" in u_low)
+            and DEFAULT_LINKPRICE_AFFILIATE_ID.lower() in u_low
+        ):
+            return u
+        decoded = await run_in_threadpool(_decode_and_clean_shop_url, u)
+        unwrapped = await run_in_threadpool(unwrap_third_party_affiliate_url, decoded, allow_network=True)
+        return normalize_url(unwrapped)
+
+    @classmethod
+    async def _monetize_outbound_url_async(cls, raw_url: str) -> str:
+        """블로킹 제휴 리다이렉트 추적 및 수익화 변환을 스레드풀로 격리"""
+        if not raw_url or not str(raw_url).strip():
+            return raw_url or ""
+        u = str(raw_url).strip()
+        if not u.startswith("http"):
+            return u
+        u_low = u.lower()
+        if any(cd in u_low for cd in ("ppomppu.co.kr", "fmkorea.com", "fmkorea.org", "quasarzone.com", "ruliweb.com", "clien.net", "bbasak.com")):
+            return u
+        from backend.core.url_utils import (
+            DEFAULT_COUPANG_LPTAG,
+            DEFAULT_LINKPRICE_AFFILIATE_ID,
+            apply_affiliate_monetization,
+            unwrap_third_party_affiliate_url,
+        )
+        if DEFAULT_COUPANG_LPTAG.lower() in u_low or (
+            ("newtip.net" in u_low or "click.linkprice.com" in u_low)
+            and DEFAULT_LINKPRICE_AFFILIATE_ID.lower() in u_low
+        ):
+            return u
+        decoded = await run_in_threadpool(_decode_and_clean_shop_url, u)
+        clean_u = await run_in_threadpool(unwrap_third_party_affiliate_url, decoded, allow_network=True)
+        return apply_affiliate_monetization(clean_u)
+
+    @classmethod
+    async def _unwrap_options_urls_async(cls, options: list[dict] | None) -> list[dict]:
+        if not options or not isinstance(options, list):
+            return []
+        return await run_in_threadpool(cls._unwrap_options_urls, options)
+
+    @classmethod
+    async def _monetize_options_urls_async(cls, options: list[dict] | None) -> list[dict]:
+        if not options or not isinstance(options, list):
+            return []
+        return await run_in_threadpool(cls._monetize_options_urls, options)
+
     async def process_scraped_deal(self, community_id: int, scraped_data: dict) -> Deal:
         from backend.core.url_utils import normalize_url
         raw_input_title = (scraped_data.get("title", "") or "").replace("\xa0", " ").replace("릿模셈", "넾다세일").replace("\ufffd", "").strip()
@@ -1469,7 +1537,7 @@ class AggregatorService:
         url = normalize_url(scraped_data.get("url", "") or "")
         scraped_data["url"] = url
         if scraped_data.get("ecommerce_link"):
-            scraped_data["ecommerce_link"] = self._unwrap_outbound_url(scraped_data["ecommerce_link"])
+            scraped_data["ecommerce_link"] = await self._unwrap_outbound_url_async(scraped_data["ecommerce_link"])
         if scraped_data.get("sub_urls_json"):
             try:
                 import json as _sub_json
@@ -1479,7 +1547,9 @@ class AggregatorService:
                     else scraped_data["sub_urls_json"]
                 )
                 if isinstance(raw_subs, list):
-                    monetized_subs = [self._monetize_outbound_url(su) for su in raw_subs if su]
+                    monetized_subs = await run_in_threadpool(
+                        lambda: [self._monetize_outbound_url(su) for su in raw_subs if su]
+                    )
                     scraped_data["sub_urls_json"] = _sub_json.dumps(monetized_subs, ensure_ascii=False)
             except Exception:
                 pass
@@ -1580,17 +1650,18 @@ class AggregatorService:
             )
 
         # 다중 상품/옵션 규칙 기반 정밀 추출 (타이틀 다중 옵션 & 본문 멀티 링크/라인 옵션)
-        structured_opts = extract_structured_multi_options(
+        structured_opts = await run_in_threadpool(
+            extract_structured_multi_options,
             raw_title=raw_title,
             content_html=content_html_for_opts,
             default_currency=currency,
-            default_url=scraped_data.get("ecommerce_link") or ""
+            default_url=scraped_data.get("ecommerce_link") or "",
         )
         if not structured_opts and scraped_data.get("options_data") and isinstance(scraped_data["options_data"], list):
             structured_opts = scraped_data["options_data"]
 
         if structured_opts and len(structured_opts) >= 2:
-            self._unwrap_options_urls(structured_opts)
+            await self._unwrap_options_urls_async(structured_opts)
             try:
                 await self._enrich_option_images_safely(structured_opts)
             except Exception as e:
@@ -1633,10 +1704,16 @@ class AggregatorService:
                     async with httpx.AsyncClient(timeout=2.0, follow_redirects=True) as client:
                         res = await client.get(target_url, headers={'User-Agent': 'Mozilla/5.0'})
                         if res.status_code == 200:
-                            soup = BeautifulSoup(res.text, 'html.parser')
-                            meta_price = soup.find('meta', property='product:price:amount') or soup.find('meta', property='og:price:amount')
-                            if meta_price and meta_price.get('content'):
-                                final_price = int(float(meta_price['content'].replace(',', '')))
+                            def _extract_meta_price_sync(html_txt: str) -> int | None:
+                                soup = BeautifulSoup(html_txt, 'html.parser')
+                                meta_price = soup.find('meta', property='product:price:amount') or soup.find('meta', property='og:price:amount')
+                                if meta_price and meta_price.get('content'):
+                                    return int(float(meta_price['content'].replace(',', '')))
+                                return None
+
+                            sniped_p = await run_in_threadpool(_extract_meta_price_sync, res.text)
+                            if sniped_p is not None:
+                                final_price = sniped_p
                                 logger.info(f"[Hit] 쇼핑몰 메타태그에서 가격 적중! {final_price}원")
             except Exception as e:
                 logger.debug(f"쇼핑몰 메타 스나이핑 실패: {e}")
@@ -2014,7 +2091,7 @@ class AggregatorService:
                      # 구매 링크 강제 갱신
                      new_ecom = (scraped_data.get("ecommerce_link") or "").strip()
                      if new_ecom:
-                         existing_deal.ecommerce_link = self._monetize_outbound_url(new_ecom)
+                         existing_deal.ecommerce_link = await self._monetize_outbound_url_async(new_ecom)
 
                      # 대표 이미지 강제 갱신
                      new_img = image_url or scraped_data.get("image_url")
@@ -2059,7 +2136,8 @@ class AggregatorService:
                      # 옵션 데이터: 과거 옵션 역오염 차단 및 최신화
                      new_opts_list = scraped_data.get("options_data") or []
                      if not new_opts_list and (raw_title or content_html):
-                         re_extracted = extract_structured_multi_options(
+                         re_extracted = await run_in_threadpool(
+                             extract_structured_multi_options,
                              raw_title=raw_title,
                              content_html=content_html or "",
                              default_currency=currency,
@@ -2069,7 +2147,7 @@ class AggregatorService:
                              new_opts_list = re_extracted
 
                      if new_opts_list:
-                         new_opts_list = self._monetize_options_urls(new_opts_list)
+                         new_opts_list = await self._monetize_options_urls_async(new_opts_list)
                          scraped_data["options_data"] = new_opts_list
                          existing_deal.options_data = json.dumps(new_opts_list, ensure_ascii=False)
                          existing_deal.has_options = True
@@ -2201,9 +2279,9 @@ class AggregatorService:
                          or any(sk in old_ecom_curr for sk in ("search?keyword=", "search/all?query=", "total-search?kwd=", "np/search?q=", "wholesale-"))
                      )
                      if is_old_invalid_or_search:
-                         existing_deal.ecommerce_link = self._monetize_outbound_url(new_ecom_cand)
+                         existing_deal.ecommerce_link = await self._monetize_outbound_url_async(new_ecom_cand)
                  if existing_deal.ecommerce_link:
-                     existing_deal.ecommerce_link = self._monetize_outbound_url(existing_deal.ecommerce_link)
+                     existing_deal.ecommerce_link = await self._monetize_outbound_url_async(existing_deal.ecommerce_link)
                  
                  if shop_name and (is_recycled_post or not existing_deal.shop_name or (is_same_post_url and existing_deal.shop_name != shop_name)):
                      existing_deal.shop_name = shop_name
@@ -2293,7 +2371,8 @@ class AggregatorService:
                  import json
                  new_opts_list = (scraped_data.get("options_data") or []) if (is_same_post_url or lowest_price_dropped or not existing_deal.options_data) else []
                  if not content_html and existing_deal.content_html:
-                     re_extracted = extract_structured_multi_options(
+                     re_extracted = await run_in_threadpool(
+                         extract_structured_multi_options,
                          raw_title=existing_deal.title or raw_title,
                          content_html=existing_deal.content_html,
                          default_currency=getattr(existing_deal, "currency", None) or currency,
@@ -2317,7 +2396,7 @@ class AggregatorService:
                      except Exception:
                          pass
                  if new_opts_list:
-                     new_opts_list = self._monetize_options_urls(new_opts_list)
+                     new_opts_list = await self._monetize_options_urls_async(new_opts_list)
                      scraped_data["options_data"] = new_opts_list
                      existing_deal.options_data = json.dumps(new_opts_list, ensure_ascii=False)
                      existing_deal.has_options = True
@@ -2581,7 +2660,7 @@ class AggregatorService:
                 
                 item_ecommerce_link = item.get("ecommerce_link") or scraped_data.get("ecommerce_link")
                 if item_ecommerce_link:
-                    item_ecommerce_link = self._monetize_outbound_url(item_ecommerce_link)
+                    item_ecommerce_link = await self._monetize_outbound_url_async(item_ecommerce_link)
                 
                 # ai_summary가 있으면 사용, 없으면 디폴트 문자열
                 default_summary = ""
@@ -2633,7 +2712,7 @@ class AggregatorService:
                             item.get("name", normalized.name) or "",
                             brand_info.get("model_code") or "",
                         ),
-                        indexed_at=posted_dt if posted_dt else func.now()
+                        indexed_at=posted_dt if posted_dt else datetime.now(timezone.utc).replace(tzinfo=None)
                     )
                     self.db.add(new_deal)
                     self.db.commit()
@@ -2657,7 +2736,7 @@ class AggregatorService:
                 options_data_str = None
                 has_options = False
                 if scraped_data.get("options_data"):
-                    monetized_opts = self._monetize_options_urls(scraped_data.get("options_data"))
+                    monetized_opts = await self._monetize_options_urls_async(scraped_data.get("options_data"))
                     scraped_data["options_data"] = monetized_opts
                     options_data_str = json.dumps(monetized_opts, ensure_ascii=False).replace("\xa0", " ")
                     has_options = True
@@ -2675,7 +2754,7 @@ class AggregatorService:
                 raw_single_ecom = (scraped_data.get("ecommerce_link") or "").strip()
                 if any(cd in raw_single_ecom.lower() for cd in ("ppomppu.co.kr", "fmkorea.com", "fmkorea.org", "quasarzone.com", "ruliweb.com", "clien.net", "bbasak.com")):
                     raw_single_ecom = ""
-                single_ecommerce_link = self._monetize_outbound_url(raw_single_ecom) if raw_single_ecom else ""
+                single_ecommerce_link = (await self._monetize_outbound_url_async(raw_single_ecom)) if raw_single_ecom else ""
 
                 single_ai_summary = ai_summary
                 if scraped_data.get("options_data") and len(scraped_data["options_data"]) >= 2:
@@ -2719,7 +2798,7 @@ class AggregatorService:
                         normalized.name or "",
                         brand_info.get("model_code") or "",
                     ),
-                    indexed_at=posted_dt if posted_dt else func.now()
+                    indexed_at=posted_dt if posted_dt else datetime.now(timezone.utc).replace(tzinfo=None)
                 )
                 self.db.add(new_deal)
                 self.db.commit()

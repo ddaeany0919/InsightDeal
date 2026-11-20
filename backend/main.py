@@ -26,9 +26,13 @@ if "pytest" not in sys.modules and "PYTEST_CURRENT_TEST" not in os.environ:
     except Exception:
         pass
 import asyncio
+from collections import OrderedDict
+import io
 import logging
 import ipaddress
 import tempfile
+import threading
+from typing import Optional
 import weakref
 import httpx
 from backend.core.url_utils import is_public_ip as _is_public_ip, is_safe_external_url as _is_safe_external_url
@@ -173,9 +177,75 @@ FALLBACK_SVG_IMAGE = """<svg xmlns="http://www.w3.org/2000/svg" width="400" heig
 
 _MAX_IMAGE_BYTES = 10 * 1024 * 1024
 _MAX_IMAGE_REDIRECTS = 3
+_IMAGE_WIDTH_BUCKETS = (120, 240, 400, 600, 800, 1200)
+_AUTO_WEBP_MAX_WIDTH = 800
+_AUTO_WEBP_SIZE_THRESHOLD = 40 * 1024
+
+_IMAGE_MEM_LRU: OrderedDict[str, tuple[bytes, str, str, int, int]] = OrderedDict()
+_IMAGE_MEM_LRU_BYTES = 0
+_IMAGE_MEM_LRU_MAX_BYTES = 32 * 1024 * 1024
+_IMAGE_MEM_LRU_MAX_ITEM_BYTES = 512 * 1024
+_IMAGE_MEM_LRU_LOCK = threading.Lock()
+
 _PROXY_LOOP_INFLIGHT: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Task]] = (
     weakref.WeakKeyDictionary()
 )
+
+
+def _quantize_image_width(w: Optional[int], width: Optional[int]) -> Optional[int]:
+    """요청 너비를 (120, 240, 400, 600, 800, 1200) 표준 버킷으로 양자화"""
+    raw_w = w if (w is not None and w > 0) else (width if (width is not None and width > 0) else None)
+    if raw_w is None:
+        return None
+    for bucket in _IMAGE_WIDTH_BUCKETS:
+        if raw_w <= bucket:
+            return bucket
+    return _IMAGE_WIDTH_BUCKETS[-1]
+
+
+def _mem_lru_get(mem_key: str) -> tuple[bytes, str] | None:
+    """32MB 바이트 상한 인메모리 LRU 조회 (디스크 파일 변경/삭제 시 즉시 무효화)"""
+    global _IMAGE_MEM_LRU_BYTES
+    with _IMAGE_MEM_LRU_LOCK:
+        entry = _IMAGE_MEM_LRU.get(mem_key)
+        if entry is None:
+            return None
+        payload, mime, disk_path, expected_size, expected_mtime_ns = entry
+    try:
+        st = os.stat(disk_path)
+    except OSError:
+        st = None
+    if st is None or st.st_size != expected_size or st.st_mtime_ns != expected_mtime_ns:
+        with _IMAGE_MEM_LRU_LOCK:
+            if _IMAGE_MEM_LRU.get(mem_key) is entry:
+                _IMAGE_MEM_LRU.pop(mem_key, None)
+                _IMAGE_MEM_LRU_BYTES = max(0, _IMAGE_MEM_LRU_BYTES - len(payload))
+        return None
+    with _IMAGE_MEM_LRU_LOCK:
+        if _IMAGE_MEM_LRU.get(mem_key) is entry:
+            _IMAGE_MEM_LRU.move_to_end(mem_key)
+    return payload, mime
+
+
+def _mem_lru_put(mem_key: str, payload: bytes, mime: str, disk_path: str) -> None:
+    """단건 512KB·전체 32MB 상한을 준수해 핫 이미지 바이트를 인메모리 LRU에 적재"""
+    global _IMAGE_MEM_LRU_BYTES
+    if not payload or not mime or not disk_path or len(payload) > _IMAGE_MEM_LRU_MAX_ITEM_BYTES:
+        return
+    try:
+        st = os.stat(disk_path)
+    except OSError:
+        return
+    entry_size = len(payload)
+    with _IMAGE_MEM_LRU_LOCK:
+        old = _IMAGE_MEM_LRU.pop(mem_key, None)
+        if old is not None:
+            _IMAGE_MEM_LRU_BYTES = max(0, _IMAGE_MEM_LRU_BYTES - len(old[0]))
+        while _IMAGE_MEM_LRU and (_IMAGE_MEM_LRU_BYTES + entry_size) > _IMAGE_MEM_LRU_MAX_BYTES:
+            _, (evicted_payload, _, _, _, _) = _IMAGE_MEM_LRU.popitem(last=False)
+            _IMAGE_MEM_LRU_BYTES = max(0, _IMAGE_MEM_LRU_BYTES - len(evicted_payload))
+        _IMAGE_MEM_LRU[mem_key] = (payload, mime, disk_path, st.st_size, st.st_mtime_ns)
+        _IMAGE_MEM_LRU_BYTES += entry_size
 
 
 async def _is_safe_external_url_async(url: str) -> bool:
@@ -247,7 +317,7 @@ def _read_cached_image_sync(cache_file_path: str) -> bytes | None:
 
 
 def _write_cached_image_sync(cache_file_path: str, content: bytes) -> None:
-    """동일 디렉토리 내 임시 파일 기록 후 os.replace로 원자적 캐시 교체 (.tmp 잔류 차단)"""
+    """동일 디렉토리 내 임시 파일 기록 후 os.replace로 원자적 캐시 교체 (fsync 블로킹 제거, .tmp 잔류 차단)"""
     cache_dir = os.path.dirname(os.path.abspath(cache_file_path))
     os.makedirs(cache_dir, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(prefix=".cache_tmp_", suffix=".tmp", dir=cache_dir)
@@ -255,8 +325,6 @@ def _write_cached_image_sync(cache_file_path: str, content: bytes) -> None:
         try:
             with os.fdopen(fd, "wb") as f:
                 f.write(content)
-                f.flush()
-                os.fsync(f.fileno())
         except Exception:
             try:
                 os.close(fd)
@@ -438,9 +506,109 @@ async def _fetch_and_cache_image_leader(
         return 404, b"", None
 
 
+def _transform_image_to_webp_sync(
+    orig: bytes,
+    detected_mime: str,
+    target_w: Optional[int],
+) -> tuple[bytes, str, bool]:
+    """Pillow 리사이즈/WebP 변환 (소형·GIF·애니메이션·오류 시 원본 바이트/MIME 안전 폴백)"""
+    if not orig or not detected_mime or detected_mime == "image/gif":
+        return orig, detected_mime, False
+    if target_w is None and len(orig) <= _AUTO_WEBP_SIZE_THRESHOLD:
+        return orig, detected_mime, False
+    try:
+        from PIL import Image, ImageOps
+
+        with Image.open(io.BytesIO(orig)) as raw_img:
+            is_animated = bool(
+                getattr(raw_img, "is_animated", False) or getattr(raw_img, "n_frames", 1) > 1
+            )
+            if is_animated:
+                return orig, detected_mime, False
+            if target_w is None and detected_mime == "image/webp" and raw_img.width <= _AUTO_WEBP_MAX_WIDTH:
+                return orig, detected_mime, False
+
+            img = ImageOps.exif_transpose(raw_img)
+            max_w = target_w if target_w is not None else _AUTO_WEBP_MAX_WIDTH
+            if max_w > 0 and img.width > max_w and img.height > 0:
+                new_h = max(1, round(img.height * (max_w / img.width)))
+                resample = getattr(Image, "Resampling", Image).LANCZOS
+                img = img.resize((max_w, new_h), resample)
+
+            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                img = img.convert("RGBA")
+            elif img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGB")
+
+            out_buf = io.BytesIO()
+            img.save(out_buf, format="WEBP", quality=82, method=4)
+            webp_bytes = out_buf.getvalue()
+            if webp_bytes:
+                return webp_bytes, "image/webp", True
+    except Exception as exc:
+        logger.debug("이미지 WebP 변환 스킵 -> 원본 폴백 (%s): %s", detected_mime, exc)
+    return orig, detected_mime, False
+
+
+async def _resolve_image_variant_leader(
+    raw_input_url: str,
+    url: str,
+    url_hash: str,
+    orig_cache_path: str,
+    variant_cache_path: str,
+    target_w: Optional[int],
+    inflight_map: dict[str, asyncio.Task],
+) -> tuple[int, bytes, str | None, str]:
+    """파생 WebP 캐시 확인 -> 원본 Single-flight 확보 -> 필요 시 Pillow WebP 변환 및 캐싱"""
+    try:
+        cached_var = await run_in_threadpool(_read_cached_image_sync, variant_cache_path)
+        if cached_var is not None:
+            if _detect_image_mime(cached_var) == "image/webp":
+                return 200, cached_var, "image/webp", variant_cache_path
+            await run_in_threadpool(_remove_file_quietly_sync, variant_cache_path)
+
+        orig_key = f"orig:{IMAGE_CACHE_DIR}:{url_hash}"
+        orig_task = inflight_map.get(orig_key)
+        if orig_task is None:
+            orig_task = asyncio.create_task(
+                _fetch_and_cache_image_leader(raw_input_url, url, orig_cache_path)
+            )
+            inflight_map[orig_key] = orig_task
+
+            def _cleanup_orig(finished_task: asyncio.Task, m: dict = inflight_map, k: str = orig_key) -> None:
+                if m.get(k) is finished_task:
+                    m.pop(k, None)
+
+            orig_task.add_done_callback(_cleanup_orig)
+
+        status_code, orig_bytes, orig_mime = await asyncio.shield(orig_task)
+        if status_code != 200 or not orig_bytes or not orig_mime:
+            return 404, b"", None, ""
+
+        # 계약 보존 가드: target_w 미지정 + 소형(<=40KB) 또는 GIF는 변환 없이 원본 즉시 반환
+        if target_w is None and (len(orig_bytes) <= _AUTO_WEBP_SIZE_THRESHOLD or orig_mime == "image/gif"):
+            return 200, orig_bytes, orig_mime, orig_cache_path
+
+        out_bytes, out_mime, is_webp = await run_in_threadpool(
+            _transform_image_to_webp_sync, orig_bytes, orig_mime, target_w
+        )
+        if is_webp:
+            await run_in_threadpool(_write_cached_image_sync, variant_cache_path, out_bytes)
+            return 200, out_bytes, out_mime, variant_cache_path
+        return 200, orig_bytes, orig_mime, orig_cache_path
+    except Exception as exc:
+        logger.debug("이미지 파생 변환 리더 예외 (%s): %s", raw_input_url, exc)
+        return 404, b"", None, ""
+
+
 @app.get("/api/proxy-image")
 @app.get("/api/image-proxy")
-async def proxy_image(url: str):
+async def proxy_image(
+    url: str,
+    w: Optional[int] = None,
+    width: Optional[int] = None,
+    v: Optional[str] = None,
+):
     import hashlib
     raw_input_url = url
     url = (url or "").replace("&amp;", "&").strip().rstrip(",)")
@@ -449,7 +617,11 @@ async def proxy_image(url: str):
     if ("gmarket.co.kr" in url or "esmplus.com" in url or "auction.co.kr" in url) and "?ver=" in url:
         url = url.split("?ver=")[0]
     url_hash = hashlib.md5(raw_input_url.encode('utf-8')).hexdigest()
-    cache_file_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}.cache")
+    orig_cache_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}.cache")
+    target_w = _quantize_image_width(w, width)
+    variant_tag = f"w{target_w}" if target_w is not None else "auto800"
+    variant_cache_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}_{variant_tag}.webp.cache")
+    mem_key = f"{IMAGE_CACHE_DIR}:{url_hash}:{variant_tag}"
 
     try:
         if not await _is_safe_external_url_async(url):
@@ -463,26 +635,46 @@ async def proxy_image(url: str):
             headers={"Cache-Control": "no-store"}
         )
 
+    mem_hit = _mem_lru_get(mem_key)
+    if mem_hit is not None:
+        mem_payload, mem_mime = mem_hit
+        return Response(
+            content=mem_payload,
+            media_type=mem_mime,
+            headers={"Cache-Control": "public, max-age=604800, immutable"},
+        )
+
     loop = asyncio.get_running_loop()
     inflight_map = _PROXY_LOOP_INFLIGHT.get(loop)
     if inflight_map is None:
         inflight_map = {}
         _PROXY_LOOP_INFLIGHT[loop] = inflight_map
 
-    cache_key = f"{IMAGE_CACHE_DIR}:{url_hash}"
-    task = inflight_map.get(cache_key)
+    var_key = f"var:{IMAGE_CACHE_DIR}:{url_hash}:{variant_tag}"
+    task = inflight_map.get(var_key)
     if task is None:
-        task = asyncio.create_task(_fetch_and_cache_image_leader(raw_input_url, url, cache_file_path))
-        inflight_map[cache_key] = task
+        task = asyncio.create_task(
+            _resolve_image_variant_leader(
+                raw_input_url,
+                url,
+                url_hash,
+                orig_cache_path,
+                variant_cache_path,
+                target_w,
+                inflight_map,
+            )
+        )
+        inflight_map[var_key] = task
 
-        def _cleanup_inflight(finished_task: asyncio.Task, m: dict = inflight_map, k: str = cache_key) -> None:
+        def _cleanup_inflight(finished_task: asyncio.Task, m: dict = inflight_map, k: str = var_key) -> None:
             if m.get(k) is finished_task:
                 m.pop(k, None)
 
         task.add_done_callback(_cleanup_inflight)
 
-    status_code, payload, detected_mime = await asyncio.shield(task)
+    status_code, payload, detected_mime, actual_disk_path = await asyncio.shield(task)
     if status_code == 200 and payload and detected_mime:
+        _mem_lru_put(mem_key, payload, detected_mime, actual_disk_path)
         return Response(
             content=payload,
             media_type=detected_mime,

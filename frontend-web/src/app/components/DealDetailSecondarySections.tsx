@@ -13,7 +13,7 @@ import {
   Trash2,
   RefreshCw,
 } from "lucide-react";
-import type { Deal, DealCommentItem } from "../lib/types";
+import type { Deal, DealCommentItem, PriceHistoryItem } from "../lib/types";
 import PriceTrendChart, { type PriceTrendStats } from "./PriceTrendChart";
 import { formatRelativeTimeKo } from "../lib/utils";
 
@@ -24,6 +24,9 @@ interface DealDetailSecondarySectionsProps {
   activePrice: string | number | undefined;
   activeCurrency: string;
   activeOptionTitle: string;
+  initialHistory?: PriceHistoryItem[];
+  initialHistoryPeriod?: string;
+  bodySlot?: React.ReactNode;
   expandedSections: Record<AccordionSectionKey, boolean>;
   onToggleSection: (key: AccordionSectionKey) => void;
   // 가격 추이
@@ -69,6 +72,9 @@ export default function DealDetailSecondarySections({
   activePrice,
   activeCurrency,
   activeOptionTitle,
+  initialHistory,
+  initialHistoryPeriod,
+  bodySlot,
   expandedSections,
   onToggleSection,
   historyCount,
@@ -150,11 +156,15 @@ export default function DealDetailSecondarySections({
               dealId={deal.id}
               currency={activeCurrency}
               optionName={activeOptionTitle}
+              initialHistory={initialHistory}
+              initialHistoryPeriod={initialHistoryPeriod}
               onHistoryStatus={onHistoryStatus}
             />
           </div>
         )}
       </div>
+
+      {bodySlot}
 
       {/* 2. 살까 / 말까 투표 아코디언 */}
       <div id={`deal-accordion-vote-${deal.id}`} className="deal-accordion">

@@ -92,6 +92,10 @@ export interface RawDealApiResponse {
   bodyImages?: string[];
   report_count?: number;
   reportCount?: number;
+  initial_history?: PriceHistoryItem[];
+  initialHistory?: PriceHistoryItem[];
+  initial_history_period?: string;
+  initialHistoryPeriod?: string;
 }
 
 export interface Deal {

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer, joinedload
+from sqlalchemy.orm.attributes import set_committed_value
 from backend.database.session import get_db_session
 from fastapi.responses import StreamingResponse
 import hmac
@@ -12,11 +14,14 @@ from backend.core.device_auth import assert_device_owner, require_device_token
 from backend.core.url_utils import is_safe_external_url, is_search_or_community_url
 from backend.core.utils import to_utc_iso
 from backend.routers.admin import _verify_admin_key
+from collections import OrderedDict
 import logging
 import os
 import re
 import requests
+import threading
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from urllib.parse import unquote as _unquote, urlsplit as _urlsplit, urlunsplit as _urlunsplit
 
 import json
@@ -43,6 +48,8 @@ def _to_utc_naive(dt_val: Optional[datetime]) -> Optional[datetime]:
     """DB의 naive(UTC 기준) 또는 timezone-aware 시각을 비교 안전한 UTC naive datetime으로 정규화합니다."""
     if dt_val is None:
         return None
+    if isinstance(dt_val, str):
+        dt_val = datetime.fromisoformat(dt_val.strip().replace("Z", "+00:00"))
     if getattr(dt_val, "tzinfo", None) is not None:
         return dt_val.astimezone(timezone.utc).replace(tzinfo=None)
     return dt_val
@@ -610,9 +617,14 @@ def get_scraper_stats():
     return {}
 
 @router.get("/proxy-image")
-async def proxy_image(url: str):
+async def proxy_image(
+    url: str,
+    w: Optional[int] = None,
+    width: Optional[int] = None,
+    v: Optional[str] = None,
+):
     from backend.main import proxy_image as main_proxy_image
-    return await main_proxy_image(url)
+    return await main_proxy_image(url=url, w=w, width=width, v=v)
 
 def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = None, db = None, is_multi_item: bool = False) -> str:
     if not url:
@@ -693,20 +705,10 @@ def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = Non
                 if real_url:
                     break
                     
-        # 2차 실시간 파싱(requests.get)은 API 블로킹(응답 지연 및 새로고침 무한루프)을 유발하므로 제거함.
+        # 2차 실시간 파싱(requests.get) 및 GET 중 DB UPDATE/commit은 SQLite 쓰기 락 경합(검색/피드 지연)을 유발하므로
+        # 복원된 URL만 메모리에서 즉시 반환합니다. (영구 백필은 수집기 AggregatorService에서 수행)
         if real_url:
             url_str = real_url
-            if db and deal_id:
-                try:
-                    db.execute(
-                        models.Deal.__table__.update()
-                        .where(models.Deal.id == deal_id)
-                        .values(ecommerce_link=url_str)
-                    )
-                    db.commit()
-                    logger.info(f"Successfully backfilled ecommerce_link in DB for deal {deal_id} -> {url_str}")
-                except Exception as db_err:
-                    logger.error(f"Failed to commit backfilled ecommerce_link for deal {deal_id}: {db_err}")
 
     # 1. 펨코 (link.fmkorea.org/link.php?url=...)
     if "fmkorea.org/link.php" in url_str or "fmkorea.com/link.php" in url_str:
@@ -1358,14 +1360,24 @@ import time as _feed_time
 
 # 자체 프리파싱(Pre-parsed) 인메모리 JSON API 캐시 (페이지 이동·탭 전환 시 재파싱 없이 0.5ms 내 즉시 응답)
 _TOP_DEALS_API_CACHE = {"ts": 0.0, "max_id": 0, "bind_id": 0, "data": None}
-_HOT_DEALS_API_CACHE = {}  # key: (bind_id, category, keyword, platform, sort) -> {"ts": float, "max_id": int, "grouped": list}
+_HOT_DEALS_API_CACHE = {}  # key: (bind_id, category, keyword, platform, sort, only_hot, include_closed) -> {"ts": float, "max_id": int, "grouped": list, ...}
+_HOT_DEALS_CACHE_LOCK = threading.Lock()
 _FEED_CACHE_TTL_SEC = 20.0
+
+_DEAL_HISTORY_CACHE: OrderedDict = OrderedDict()
+_DEAL_HISTORY_CACHE_MAX_SIZE = 512
+_DEAL_HISTORY_CACHE_TTL_SEC = 60.0
+_DEAL_HISTORY_CACHE_LOCK = threading.Lock()
+
 
 def invalidate_feed_api_cache():
     import sys as _sys
     _TOP_DEALS_API_CACHE["ts"] = 0.0
     _TOP_DEALS_API_CACHE["data"] = None
-    _HOT_DEALS_API_CACHE.clear()
+    with _HOT_DEALS_CACHE_LOCK:
+        _HOT_DEALS_API_CACHE.clear()
+    with _DEAL_HISTORY_CACHE_LOCK:
+        _DEAL_HISTORY_CACHE.clear()
     for _alias in ("routers.community", "backend.routers.community"):
         _mod = _sys.modules.get(_alias)
         if _mod is not None and _mod is not _sys.modules.get(__name__):
@@ -1374,9 +1386,116 @@ def invalidate_feed_api_cache():
                 _mod._TOP_DEALS_API_CACHE["data"] = None
             if hasattr(_mod, "_HOT_DEALS_API_CACHE"):
                 _mod._HOT_DEALS_API_CACHE.clear()
+            if hasattr(_mod, "_DEAL_HISTORY_CACHE"):
+                _mod._DEAL_HISTORY_CACHE.clear()
 
 
 invalidate_deals_cache = invalidate_feed_api_cache
+
+
+def _hydrate_content_html_batch(db: Session, deals_list: list) -> set[int]:
+    """지연 로딩(defer)된 Deal 목록 중 미로드 content_html만 배치 IN 쿼리로 적재하여 N+1 차단"""
+    if not deals_list:
+        return set()
+    need_map: dict[int, list] = {}
+    for d in deals_list:
+        if d is None or getattr(d, "id", None) is None:
+            continue
+        try:
+            if "content_html" not in sa_inspect(d).unloaded:
+                continue
+        except Exception:
+            continue
+        need_map.setdefault(int(d.id), []).append(d)
+    if not need_map:
+        return set()
+
+    html_by_id: dict[int, Optional[str]] = {}
+    all_ids = list(need_map.keys())
+    for start in range(0, len(all_ids), 400):
+        batch_ids = all_ids[start:start + 400]
+        rows = (
+            db.query(models.Deal.id, models.Deal.content_html)
+            .filter(models.Deal.id.in_(batch_ids))
+            .all()
+        )
+        for did, html_val in rows:
+            html_by_id[int(did)] = html_val
+
+    hydrated_ids: set[int] = set()
+    for did, objs in need_map.items():
+        html_val = html_by_id.get(did)
+        for obj in objs:
+            try:
+                set_committed_value(obj, "content_html", html_val)
+            except Exception:
+                pass
+        hydrated_ids.add(did)
+    return hydrated_ids
+
+
+def _hydrate_suspect_krw_cents_content_html(db: Session, deals_list: list) -> None:
+    """KRW·소액(0 < price < 100000) 외화 센트 오표기 및 본문 폴백 의심 행만 선택 IN 하이드레이션"""
+    suspects = []
+    for d in deals_list:
+        if d is None:
+            continue
+        curr = (getattr(d, "currency", None) or "KRW").strip().upper()
+        if curr != "KRW":
+            continue
+        p_val = extract_price(getattr(d, "price", 0))
+        if 0 < p_val < 100000:
+            suspects.append(d)
+    if suspects:
+        _hydrate_content_html_batch(db, suspects)
+
+
+def _apply_html_fields_to_deal_dict(
+    g: dict,
+    primary_html: str,
+    primary_title: str,
+    primary_clean_title: str,
+    cluster_htmls: list[str],
+    ecom_obj,
+    ecom_html: str,
+    ecom_is_multi: bool,
+    ecom_comp_name: str,
+    db: Session,
+) -> None:
+    """2단계 지연 로드된 content_html을 기반으로 본문/태그/이미지/구매처 폴백 필드를 보강"""
+    g["content_html"] = _clean_content_text(primary_html, primary_clean_title)
+    g["tags"] = extract_deal_benefit_tags(primary_title, primary_html)
+
+    merged_imgs: list[str] = []
+    for ch in cluster_htmls:
+        if ch:
+            merged_imgs = _merge_body_images(merged_imgs, _extract_body_images(ch))
+    g["body_images"] = merged_imgs
+    g["bodyImages"] = merged_imgs
+
+    if ecom_html:
+        clean_ecom_url = get_clean_ecommerce_url(
+            (getattr(ecom_obj, "ecommerce_link", "") or "") or (getattr(ecom_obj, "post_link", "") or ""),
+            ecom_html,
+            getattr(ecom_obj, "id", None),
+            db,
+            is_multi_item=ecom_is_multi,
+        )
+        resolved_ecom_url = clean_ecom_url
+        if not resolved_ecom_url:
+            resolved_ecom_url = _build_direct_mall_search_url(
+                getattr(ecom_obj, "shop_name", "") or "",
+                getattr(ecom_obj, "title", "") or "",
+                getattr(ecom_obj, "post_link", "") or "",
+                ecom_comp_name,
+            )
+        is_fb = _compute_is_search_fallback(clean_ecom_url, resolved_ecom_url)
+        g["ecommerce_url"] = resolved_ecom_url
+        g["is_search_fallback"] = is_fb
+        g["isSearchFallback"] = is_fb
+        new_shop = _resolve_canonical_shop_name(ecom_obj, resolved_ecom_url)
+        if new_shop or not g.get("shop_name"):
+            g["shop_name"] = new_shop
 
 def _clean_content_text(raw_text: str, title: str = "") -> str:
     if not raw_text:
@@ -1851,8 +1970,7 @@ def get_hot_deals(
     db: Session = Depends(get_db_session)
 ):
     try:
-        from sqlalchemy import and_, not_, or_
-        from sqlalchemy.orm import joinedload
+        from sqlalchemy import and_, func, not_, or_
 
         if limit < 1 or limit > 1000:
             raise HTTPException(status_code=400, detail="Invalid limit")
@@ -1895,23 +2013,72 @@ def get_hot_deals(
             effective_only_hot,
             effective_include_closed,
         )
+        current_max_id = (db.query(func.max(models.Deal.id)).scalar() or 0) if cursor_dt is None else 0
         if cursor_dt is None:
-            cached_entry = _HOT_DEALS_API_CACHE.get(cache_key)
+            with _HOT_DEALS_CACHE_LOCK:
+                cached_entry = _HOT_DEALS_API_CACHE.get(cache_key)
             if (
                 cached_entry is not None
+                and cached_entry.get("max_id") == current_max_id
                 and (now_ts - cached_entry["ts"]) < _FEED_CACHE_TTL_SEC
             ):
                 cached_grouped = cached_entry["grouped"]
                 is_exhausted = bool(cached_entry.get("exhausted", True))
                 if is_exhausted or (offset + limit < len(cached_grouped)):
                     cached_slice = cached_grouped[offset:offset + limit]
+                    need_meta = []
+                    need_cluster_ids = set()
+                    with _HOT_DEALS_CACHE_LOCK:
+                        hydrated_gids = cached_entry.setdefault("hydrated_gids", set())
+                        meta_map = cached_entry.get("hydrator_meta") or {}
+                        for g in cached_slice:
+                            if g["id"] not in hydrated_gids and g["id"] in meta_map:
+                                m = meta_map[g["id"]]
+                                need_meta.append((g, m))
+                                need_cluster_ids.update(m["cluster_ids"])
+                    if need_cluster_ids:
+                        html_by_id: dict[int, str] = {}
+                        cids_list = list(need_cluster_ids)
+                        for start in range(0, len(cids_list), 400):
+                            rows = (
+                                db.query(models.Deal.id, models.Deal.content_html)
+                                .filter(models.Deal.id.in_(cids_list[start:start + 400]))
+                                .all()
+                            )
+                            for did, h_val in rows:
+                                html_by_id[int(did)] = h_val or ""
+                        with _HOT_DEALS_CACHE_LOCK:
+                            hydrated_gids = cached_entry.setdefault("hydrated_gids", set())
+                            for g, m in need_meta:
+                                if g["id"] in hydrated_gids:
+                                    continue
+                                ecom_obj = SimpleNamespace(
+                                    id=m["ecom_id"],
+                                    ecommerce_link=m["ecom_link"],
+                                    post_link=m["ecom_post_link"],
+                                    title=m["ecom_title"],
+                                    shop_name=m["ecom_shop_name"],
+                                )
+                                _apply_html_fields_to_deal_dict(
+                                    g=g,
+                                    primary_html=html_by_id.get(m["primary_id"], ""),
+                                    primary_title=m["primary_title"],
+                                    primary_clean_title=m["primary_clean_title"],
+                                    cluster_htmls=[html_by_id.get(cid, "") for cid in m["cluster_ids"]],
+                                    ecom_obj=ecom_obj,
+                                    ecom_html=html_by_id.get(m["ecom_id"], ""),
+                                    ecom_is_multi=m["ecom_is_multi"],
+                                    ecom_comp_name=m["ecom_comp_name"],
+                                    db=db,
+                                )
+                                hydrated_gids.add(g["id"])
                     cached_has_more = (offset + len(cached_slice)) < len(cached_grouped)
                     cached_next_cursor = None
                     if sort_mode == "latest" and cached_has_more and cached_slice:
                         cursors_map = cached_entry.get("cursors", {})
                         cached_next_cursor = cursors_map.get(offset + len(cached_slice) - 1)
                     return {
-                        "deals": cached_slice,
+                        "deals": [dict(item) for item in cached_slice],
                         "has_more": cached_has_more,
                         "next_cursor": cached_next_cursor,
                         "nextCursor": cached_next_cursor,
@@ -1919,7 +2086,8 @@ def get_hot_deals(
 
         query = db.query(models.Deal).join(models.Community).options(
             joinedload(models.Deal.community),
-            joinedload(models.Deal.deal_reactions)
+            joinedload(models.Deal.deal_reactions),
+            defer(models.Deal.content_html),
         )
 
         # 블라인드 처리된 게시글 제외 + include_closed/hide_closed 반영
@@ -2142,7 +2310,8 @@ def get_hot_deals(
                     existing_ids = {d.id for d in deals_all}
                     backfill_q = db.query(models.Deal).join(models.Community).options(
                         joinedload(models.Deal.community),
-                        joinedload(models.Deal.deal_reactions)
+                        joinedload(models.Deal.deal_reactions),
+                        defer(models.Deal.content_html),
                     ).filter(
                         models.Deal.ecommerce_link.in_(ecom_links),
                         ~models.Deal.id.in_(existing_ids),
@@ -2153,9 +2322,13 @@ def get_hot_deals(
                     if additional_deals:
                         deals_all.extend(additional_deals)
 
+            # 1단계 선택 하이드레이션: KRW·소액(0 < price < 100000) 외화 센트 오표기 의심 행만 본문 보충
+            _hydrate_suspect_krw_cents_content_html(db, deals_all)
+
             COMMUNITY_MAP = _COMMUNITY_DISPLAY_MAP
             c_map = {}
             g_list = []
+            cluster_meta_by_gid = {}
             dsu_obj = build_dsu(deals_all)
             valid_c_keys = {dsu_obj.find(sid) for sid in seed_ids} if has_search_or_platform_filter else None
 
@@ -2179,10 +2352,13 @@ def get_hot_deals(
                 norm_shipping_fee = _normalize_shipping_fee(deal.shipping_fee, title_hint=deal.title or "")
                 total_price = _compute_total_price(parsed_price_int, resolved_currency, norm_shipping_fee)
                 serialized_opts = _serialize_options_data(getattr(deal, "options_data", None), deal.id)
-                deal_body_imgs = _extract_body_images(getattr(deal, "content_html", "") or "")
+                loaded_html = _safe_loaded_attr(deal, "content_html", "")
+                deal_body_imgs = _extract_body_images(loaded_html)
 
                 if c_key in c_map:
                     existing = c_map[c_key]
+                    meta = cluster_meta_by_gid[existing["id"]]
+                    meta["cluster_deals"].append(deal)
                     merged_imgs = _merge_body_images(existing.get("body_images", []), deal_body_imgs)
                     existing["body_images"] = merged_imgs
                     existing["bodyImages"] = merged_imgs
@@ -2198,7 +2374,7 @@ def get_hot_deals(
                             if image_url or not existing.get("image_url") or "ui-avatars.com" in (existing.get("image_url", "") or ""):
                                 existing["image_url"] = image_url or existing.get("image_url")
                             existing["title"] = clean_title
-                            clean_new_ecom = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
+                            clean_new_ecom = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", loaded_html, deal.id, db, is_multi_item=is_multi)
                             new_ecom_url = clean_new_ecom
                             if not new_ecom_url:
                                 new_ecom_url = _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
@@ -2207,6 +2383,9 @@ def get_hot_deals(
                                 cand_fb = _compute_is_search_fallback(clean_new_ecom, new_ecom_url)
                                 existing["is_search_fallback"] = cand_fb
                                 existing["isSearchFallback"] = cand_fb
+                            meta["ecom_deal"] = deal
+                            meta["ecom_is_multi"] = is_multi
+                            meta["ecom_comp_name"] = comp_name
                             new_shop = _resolve_canonical_shop_name(deal, new_ecom_url)
                             if new_shop or not existing.get("shop_name"):
                                 existing["shop_name"] = new_shop
@@ -2264,7 +2443,7 @@ def get_hot_deals(
                             except (ValueError, TypeError) as exc:
                                 logger.debug(f"Invalid merged_communities cid token {cid_str!r}: {exc}")
 
-                    clean_ecom_url = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", deal.content_html, deal.id, db, is_multi_item=is_multi)
+                    clean_ecom_url = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", loaded_html, deal.id, db, is_multi_item=is_multi)
                     resolved_ecom_url = clean_ecom_url
                     if not resolved_ecom_url:
                         resolved_ecom_url = _build_direct_mall_search_url(getattr(deal, 'shop_name', '') or '', deal.title or '', deal.post_link or '', comp_name)
@@ -2291,14 +2470,14 @@ def get_hot_deals(
                         "honey_score": final_honey_score,
                         "is_super_hotdeal": is_hot,
                         "ai_summary": _clean_ai_summary(deal.ai_summary or ""),
-                        "content_html": _clean_content_text(deal.content_html or "", clean_title),
+                        "content_html": _clean_content_text(loaded_html, clean_title),
                         "is_closed": getattr(deal, 'is_closed', False),
                         "created_at": to_utc_iso(deal.indexed_at),
                         "view_count": deal.view_count or 0,
                         "comment_count": deal.comment_count or 0,
                         "like_count": buy_count,
                         "dislike_count": save_count,
-                        "tags": extract_deal_benefit_tags(deal.title, deal.content_html),
+                        "tags": extract_deal_benefit_tags(deal.title, loaded_html),
                         "has_options": bool(getattr(deal, "has_options", False) or serialized_opts),
                         "body_images": deal_body_imgs,
                         "bodyImages": deal_body_imgs,
@@ -2307,6 +2486,15 @@ def get_hot_deals(
                     }
                     c_map[c_key] = deal_dict
                     g_list.append(deal_dict)
+                    cluster_meta_by_gid[deal.id] = {
+                        "primary_deal": deal,
+                        "primary_title": deal.title or "",
+                        "primary_clean_title": clean_title,
+                        "ecom_deal": deal,
+                        "ecom_is_multi": is_multi,
+                        "ecom_comp_name": comp_name,
+                        "cluster_deals": [deal],
+                    }
 
             if search_max_price is not None and search_max_price > 0:
                 g_list = [
@@ -2320,34 +2508,16 @@ def get_hot_deals(
                     if int(g.get("honey_score") or 0) >= 100 or bool(g.get("is_super_hotdeal"))
                 ]
 
-            return g_list, dsu_obj
+            return g_list, dsu_obj, cluster_meta_by_gid
 
         raw_seed_deals = []
         grouped_result = []
+        cluster_meta_by_gid = {}
         dsu = None
         db_exhausted = True
 
         is_sqlite_dialect = getattr(getattr(db.get_bind(), "dialect", None), "name", None) == "sqlite"
-        if is_sqlite_dialect:
-            from sqlalchemy import case, func
-            base_clean = func.replace(
-                func.replace(
-                    func.replace(func.coalesce(models.Deal.indexed_at, ""), "T", " "),
-                    "Z",
-                    "",
-                ),
-                "+00:00",
-                "",
-            )
-            order_ts_expr = case(
-                [
-                    (func.length(base_clean) <= 19, base_clean.op("||")(".000000")),
-                    (func.length(base_clean) < 26, func.substr(base_clean.op("||")("000000"), 1, 26)),
-                ],
-                else_=func.substr(base_clean, 1, 26),
-            )
-        else:
-            order_ts_expr = models.Deal.indexed_at
+        order_ts_expr = models.Deal.indexed_at
 
         if sort_mode == "latest":
             effective_offset = 0 if cursor_dt is not None else max(0, offset)
@@ -2424,14 +2594,14 @@ def get_hot_deals(
 
                 if lookback_rows:
                     combined_raw = lookback_rows + raw_seed_deals
-                    grouped_all, dsu = _build_grouped_from_raw(combined_raw)
+                    grouped_all, dsu, cluster_meta_by_gid = _build_grouped_from_raw(combined_raw)
                     lookback_cluster_keys = {dsu.find(d.id) for d in lookback_rows}
                     grouped_result = [
                         g for g in grouped_all
                         if dsu.find(g["id"]) not in lookback_cluster_keys
                     ]
                 else:
-                    grouped_result, dsu = _build_grouped_from_raw(raw_seed_deals)
+                    grouped_result, dsu, cluster_meta_by_gid = _build_grouped_from_raw(raw_seed_deals)
                 if db_exhausted or len(grouped_result) >= target_needed:
                     break
 
@@ -2454,7 +2624,7 @@ def get_hot_deals(
                     models.Deal.id.desc(),
                 ).limit(raw_limit).all()
             db_exhausted = len(raw_seed_deals) < raw_limit
-            grouped_result, dsu = _build_grouped_from_raw(raw_seed_deals)
+            grouped_result, dsu, cluster_meta_by_gid = _build_grouped_from_raw(raw_seed_deals)
 
             if sort_mode == "popular":
                 grouped_result.sort(
@@ -2476,6 +2646,34 @@ def get_hot_deals(
 
             final_result = grouped_result[offset:offset + limit]
             has_more = (offset + len(final_result)) < len(grouped_result)
+
+        # 2단계 배치 하이드레이션: 최종 노출 slice(최대 limit건)에 대해 아직 미로드된 content_html만 1회 IN 조회
+        if final_result and cluster_meta_by_gid:
+            slice_deals = []
+            for g in final_result:
+                m = cluster_meta_by_gid.get(g["id"])
+                if m:
+                    slice_deals.extend(m["cluster_deals"])
+            newly_hydrated_ids = _hydrate_content_html_batch(db, slice_deals)
+            if newly_hydrated_ids:
+                for g in final_result:
+                    m = cluster_meta_by_gid.get(g["id"])
+                    if not m or not any(cd.id in newly_hydrated_ids for cd in m["cluster_deals"]):
+                        continue
+                    p_deal = m["primary_deal"]
+                    e_deal = m["ecom_deal"]
+                    _apply_html_fields_to_deal_dict(
+                        g=g,
+                        primary_html=_safe_loaded_attr(p_deal, "content_html", ""),
+                        primary_title=m["primary_title"],
+                        primary_clean_title=m["primary_clean_title"],
+                        cluster_htmls=[_safe_loaded_attr(cd, "content_html", "") for cd in m["cluster_deals"]],
+                        ecom_obj=e_deal,
+                        ecom_html=_safe_loaded_attr(e_deal, "content_html", "") if e_deal.id in newly_hydrated_ids else "",
+                        ecom_is_multi=m["ecom_is_multi"],
+                        ecom_comp_name=m["ecom_comp_name"],
+                        db=db,
+                    )
 
         def _compute_next_cursor_for_slice(slice_end_idx: int) -> Optional[dict]:
             if sort_mode != "latest" or dsu is None or not raw_seed_deals:
@@ -2512,17 +2710,37 @@ def get_hot_deals(
                     nc = _compute_next_cursor_for_slice(idx)
                     if nc:
                         cursors_map[idx] = nc
-            if len(_HOT_DEALS_API_CACHE) > 50:
-                _HOT_DEALS_API_CACHE.clear()
-            _HOT_DEALS_API_CACHE[cache_key] = {
-                "ts": now_ts,
-                "grouped": grouped_result,
-                "exhausted": db_exhausted,
-                "cursors": cursors_map,
+            primitive_meta = {
+                gid: {
+                    "primary_id": m["primary_deal"].id,
+                    "primary_title": m["primary_title"],
+                    "primary_clean_title": m["primary_clean_title"],
+                    "ecom_id": m["ecom_deal"].id,
+                    "ecom_link": m["ecom_deal"].ecommerce_link or "",
+                    "ecom_post_link": m["ecom_deal"].post_link or "",
+                    "ecom_title": m["ecom_deal"].title or "",
+                    "ecom_shop_name": m["ecom_deal"].shop_name or "",
+                    "ecom_is_multi": m["ecom_is_multi"],
+                    "ecom_comp_name": m["ecom_comp_name"],
+                    "cluster_ids": [cd.id for cd in m["cluster_deals"]],
+                }
+                for gid, m in cluster_meta_by_gid.items()
             }
+            with _HOT_DEALS_CACHE_LOCK:
+                if len(_HOT_DEALS_API_CACHE) > 50:
+                    _HOT_DEALS_API_CACHE.clear()
+                _HOT_DEALS_API_CACHE[cache_key] = {
+                    "ts": now_ts,
+                    "max_id": current_max_id,
+                    "grouped": grouped_result,
+                    "exhausted": db_exhausted,
+                    "cursors": cursors_map,
+                    "hydrated_gids": {g["id"] for g in final_result},
+                    "hydrator_meta": primitive_meta,
+                }
 
         return {
-            "deals": final_result,
+            "deals": [dict(item) for item in final_result],
             "has_more": has_more,
             "next_cursor": next_cursor_obj,
             "nextCursor": next_cursor_obj,
@@ -2960,15 +3178,22 @@ def get_deal(
         models.DealComment.is_deleted == False,
     ).count()
 
+    initial_history: list = []
+    initial_history_period: str = "7d"
     try:
-        hist_points = _compute_deal_history(deal_id, "7d_auto", db)
-        if isinstance(hist_points, list) and len(hist_points) <= 1:
+        hist_points = _compute_deal_history(deal_id, "7d", db)
+        if isinstance(hist_points, list):
+            initial_history = hist_points
+        if len(initial_history) <= 1:
             hist_3m = _compute_deal_history(deal_id, "3m", db)
             if isinstance(hist_3m, list) and len(hist_3m) >= 2:
-                hist_points = hist_3m
-        history_count = len(hist_points) if isinstance(hist_points, list) else 0
+                initial_history = hist_3m
+                initial_history_period = "3m"
+        history_count = len(initial_history)
     except Exception as hist_exc:
         logger.debug(f"[get_deal] history_count fallback (deal_id={deal_id}): {hist_exc}")
+        initial_history = []
+        initial_history_period = "7d"
         history_count = 0
 
     raw_detail_opts = getattr(best_deal, "options_data", None) or getattr(deal, "options_data", None)
@@ -3015,6 +3240,10 @@ def get_deal(
         "commentCount": active_comment_count,
         "history_count": history_count,
         "historyCount": history_count,
+        "initial_history": initial_history,
+        "initialHistory": initial_history,
+        "initial_history_period": initial_history_period,
+        "initialHistoryPeriod": initial_history_period,
         "is_search_fallback": is_search_fallback,
         "isSearchFallback": is_search_fallback,
         "is_free": is_free,
@@ -3148,11 +3377,24 @@ def _compute_deal_history(
     if not target_opt_name and resolved_deal_curr == effective_currency and target_price_val <= 0:
         return []
 
+    period_norm = (period or "7d").strip().lower()
+    if period_norm == "7d_auto":
+        period_norm = "7d"
+
+    hist_cache_key = (id(db.get_bind()), deal_id, period_norm, target_opt_name, effective_currency)
+    now_hist_ts = _feed_time.time()
+    with _DEAL_HISTORY_CACHE_LOCK:
+        hist_entry = _DEAL_HISTORY_CACHE.get(hist_cache_key)
+        if hist_entry is not None:
+            if (now_hist_ts - hist_entry["ts"]) < _DEAL_HISTORY_CACHE_TTL_SEC:
+                _DEAL_HISTORY_CACHE.move_to_end(hist_cache_key)
+                return [dict(pt) for pt in hist_entry["data"]]
+            _DEAL_HISTORY_CACHE.pop(hist_cache_key, None)
+
     now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
     ref_base_utc = _to_utc_naive(deal.indexed_at) if deal.indexed_at else now_utc
     end_time_utc = max(now_utc, ref_base_utc) + timedelta(minutes=5)
 
-    period_norm = (period or "7d").strip().lower()
     is_all_period = (period_norm == "all")
     days_map = {
         "7d": 7,
@@ -3198,7 +3440,11 @@ def _compute_deal_history(
             esc_cw = _escape_like(cw)
             search_clauses.append(models.Deal.title.ilike(f"%{esc_cw}%", escape="\\"))
 
-    query = db.query(models.Deal).filter(models.Deal.indexed_at <= end_time_utc)
+    query = (
+        db.query(models.Deal)
+        .options(defer(models.Deal.content_html))
+        .filter(models.Deal.indexed_at <= end_time_utc)
+    )
     if time_limit_utc is not None:
         query = query.filter(models.Deal.indexed_at >= time_limit_utc)
 
@@ -3209,6 +3455,9 @@ def _compute_deal_history(
         candidate_deals = query.filter(or_(*search_clauses)).order_by(models.Deal.indexed_at.asc()).limit(450).all()
     else:
         candidate_deals = [deal]
+
+    # 본문 가격 자가치유가 필요한 소수 행(KRW 소액)만 선택 배치 로드하여 N+1 차단
+    _hydrate_suspect_krw_cents_content_html(db, candidate_deals)
 
     target_is_collection = bool(re.search(r'(?:외\s*\d+종|모음전|골라담기)', deal.title or ""))
 
@@ -3503,6 +3752,14 @@ def _compute_deal_history(
             "source": p["source"],
             "platform": p["source"],
         })
+
+    with _DEAL_HISTORY_CACHE_LOCK:
+        while len(_DEAL_HISTORY_CACHE) >= _DEAL_HISTORY_CACHE_MAX_SIZE:
+            _DEAL_HISTORY_CACHE.popitem(last=False)
+        _DEAL_HISTORY_CACHE[hist_cache_key] = {
+            "ts": _feed_time.time(),
+            "data": [dict(pt) for pt in result],
+        }
 
     return result
 

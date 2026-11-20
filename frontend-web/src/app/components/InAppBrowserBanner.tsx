@@ -72,59 +72,30 @@ export default function InAppBrowserBanner({
       role="region"
       aria-label="외부 브라우저 열기 안내"
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "10px",
-          flex: "1 1 220px",
-          minWidth: 0,
-        }}
-      >
-        <Compass size={18} aria-hidden="true" style={{ flexShrink: 0 }} />
-        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-          <span style={{ fontSize: "var(--fs-control)", fontWeight: 800 }}>
-            외부 브라우저로 열면 알림과 결제 이동이 더 원활해요
-          </span>
-          <span style={{ fontSize: "var(--fs-caption)", fontWeight: 600 }}>
-            {isIos
-              ? "Safari에서 홈 화면에 추가하면 실시간 키워드 알림도 받을 수 있어요"
-              : "Chrome으로 열면 실시간 푸시 알림과 구매처 연결이 안정적이에요"}
-          </span>
-        </div>
+      <div className="inapp-banner-main">
+        <Compass size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
+        <span className="inapp-banner-text">
+          외부 브라우저로 열면 알림과 결제 이동이 더 원활해요
+        </span>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <div className="inapp-banner-actions">
         {intentUrl ? (
           <a
             href={intentUrl}
-            className="btn-primary bounce-click"
-            style={{
-              minHeight: "var(--control-h-lg)",
-              padding: "8px 14px",
-              borderRadius: "var(--radius-sm)",
-              fontSize: "var(--fs-control)",
-              whiteSpace: "nowrap",
-            }}
+            className="btn-primary bounce-click inapp-banner-cta"
           >
             <span>Chrome으로 열기</span>
-            <ExternalLink size={14} aria-hidden="true" />
+            <ExternalLink size={13} aria-hidden="true" />
           </a>
         ) : (
           <button
             type="button"
             onClick={() => void handleCopyAndGuideIos()}
-            className="btn-primary bounce-click"
-            style={{
-              minHeight: "var(--control-h-lg)",
-              padding: "8px 14px",
-              borderRadius: "var(--radius-sm)",
-              fontSize: "var(--fs-control)",
-              whiteSpace: "nowrap",
-            }}
+            className="btn-primary bounce-click inapp-banner-cta"
           >
             <span>{isIos ? "주소 복사하기" : "Chrome으로 열기"}</span>
-            <ExternalLink size={14} aria-hidden="true" />
+            <ExternalLink size={13} aria-hidden="true" />
           </button>
         )}
 
@@ -132,10 +103,10 @@ export default function InAppBrowserBanner({
           type="button"
           onClick={handleDismiss}
           aria-label="외부 브라우저 안내 닫기"
-          className="banner-close-btn"
+          className="banner-close-btn inapp-banner-close"
           style={{ color: "var(--warning-text)" }}
         >
-          <X size={16} aria-hidden="true" />
+          <X size={15} aria-hidden="true" />
         </button>
       </div>
     </aside>

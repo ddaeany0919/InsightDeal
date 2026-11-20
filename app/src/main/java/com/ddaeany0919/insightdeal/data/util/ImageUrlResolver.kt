@@ -101,7 +101,8 @@ object ImageUrlResolver {
         if (isBlockedCommunity(normalizedInput)) {
             return try {
                 val encoded = URLEncoder.encode(normalizedInput, "UTF-8")
-                "$cleanBase/api/proxy-image?url=$encoded&v=5"
+                val widthParam = if (targetWidth != null && targetWidth > 0) "&w=$targetWidth" else ""
+                "$cleanBase/api/proxy-image?url=$encoded$widthParam&v=5"
             } catch (_: Exception) {
                 ensureHttpsForExternal(normalizedInput)
             }

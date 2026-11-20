@@ -10,6 +10,7 @@ import androidx.paging.RemoteMediator
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ddaeany0919.insightdeal.data.network.ClaimPairingCodeResponse
 import com.ddaeany0919.insightdeal.data.network.PairingCodeResponse
+import com.ddaeany0919.insightdeal.data.util.ImageUrlResolver
 import com.ddaeany0919.insightdeal.local.db.AppDatabase
 import com.ddaeany0919.insightdeal.local.db.DealDao
 import com.ddaeany0919.insightdeal.local.db.DealEntity
@@ -1082,5 +1083,158 @@ class InsightDealV11bUnitTest {
             assertTrue("DealDao.kt에 '%,$key' 접미 다중 매칭 SQL이 포함되어야 합니다.", daoText.contains(":category LIKE '%,$key'"))
             assertTrue("DealDao.kt에 '%,$key,%' 중간 다중 매칭 SQL이 포함되어야 합니다.", daoText.contains(":category LIKE '%,$key,%'"))
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // 16. Track 3: ImageUrlResolver 차단 커뮤니티 백엔드 프록시 &w=600&v=5 파라미터 검증
+    // -----------------------------------------------------------------------
+    @Test
+    fun imageUrlResolver_appendsWidthParamBeforeVersionTagForBlockedCommunities() {
+        val debugBase = "http://10.0.2.2:8080/"
+        val releaseBase = "http://insightdeal.site/"
+
+        val debugWithWidth = ImageUrlResolver.resolve("http://cdn.ppomppu.co.kr/a.jpg", 600, debugBase, isDebug = true)
+        assertNotNull(debugWithWidth)
+        assertTrue(debugWithWidth!!.startsWith("http://10.0.2.2:8080/api/proxy-image?url="))
+        assertTrue(debugWithWidth.contains("&w=600&v=5"))
+        assertTrue(debugWithWidth.endsWith("&v=5"))
+        assertFalse(debugWithWidth.contains("wsrv.nl"))
+
+        val releaseWithWidth = ImageUrlResolver.resolve("https://img.fmkorea.com/b.png", 600, releaseBase, isDebug = false)
+        assertNotNull(releaseWithWidth)
+        assertTrue(releaseWithWidth!!.startsWith("https://insightdeal.site/api/proxy-image?url="))
+        assertTrue(releaseWithWidth.contains("&w=600&v=5"))
+        assertTrue(releaseWithWidth.endsWith("&v=5"))
+        assertFalse(releaseWithWidth.contains("wsrv.nl"))
+
+        val withoutWidth = ImageUrlResolver.resolve("https://ruliweb.com/c.webp", null, releaseBase, isDebug = false)
+        assertNotNull(withoutWidth)
+        assertFalse(withoutWidth!!.contains("&w="))
+        assertTrue(withoutWidth.endsWith("&v=5"))
+
+        val zeroWidth = ImageUrlResolver.resolve("https://ruliweb.com/c.webp", 0, releaseBase, isDebug = false)
+        assertNotNull(zeroWidth)
+        assertFalse(zeroWidth!!.contains("&w="))
+        assertTrue(zeroWidth.endsWith("&v=5"))
+    }
+
+    // -----------------------------------------------------------------------
+    // 17. Track 3: DealDetailViewModel initialHistory 1-RTT 무왕복 즉시 적재 및 캐시 검증
+    // -----------------------------------------------------------------------
+    @Test
+    fun dealDetailViewModel_loadsInitialHistoryInSingleRttWithoutExtraHistoryCall() = runBlocking {
+        val gson = Gson()
+        val camelDeal = gson.fromJson(
+            """{"id":1,"title":"카멜","price":10000,"site_name":"뽐뿌","initialHistory":[{"recordedAt":"2026-11-18","price":12000,"platform":"뽐뿌"}]}""",
+            DealItem::class.java
+        )
+        assertEquals(1, camelDeal.initialHistory?.size)
+        assertEquals(12000, camelDeal.initialHistory?.firstOrNull()?.price)
+
+        val server = LocalStubHttpServer { req ->
+            when {
+                req.method == "GET" && req.path.startsWith("/api/community/deals/301/history") ->
+                    200 to """[{"recordedAt":"26.09.01","price":32000,"platform":"뽐뿌"},{"recordedAt":"26.11.19","price":25900,"platform":"뽐뿌"}]"""
+                req.method == "GET" && req.path.startsWith("/api/community/deals/301") ->
+                    200 to """{
+                        "id": 301,
+                        "title": "1-RTT 시세 포함 단일 딜",
+                        "price": 25900,
+                        "currency": "KRW",
+                        "site_name": "뽐뿌",
+                        "history_count": 2,
+                        "initial_history": [
+                            {"recordedAt": "11.18", "price": 29900, "platform": "뽐뿌"},
+                            {"recordedAt": "11.19", "price": 25900, "platform": "뽐뿌"},
+                            {"recordedAt": "11.20", "price": 0, "platform": "뽐뿌"}
+                        ]
+                    }"""
+                req.method == "GET" && req.path.startsWith("/api/community/deals/302/history") ->
+                    200 to """[{"recordedAt":"11.18","price":19900,"platform":"퀘이사존"}]"""
+                req.method == "GET" && req.path.startsWith("/api/community/deals/302") ->
+                    200 to """{
+                        "id": 302,
+                        "title": "3m 자동확장 시세 포함 딜",
+                        "price": 18000,
+                        "currency": "KRW",
+                        "site_name": "퀘이사존",
+                        "history_count": 2,
+                        "initialHistory": [
+                            {"recordedAt": "26.10.15", "price": 22000, "platform": "퀘이사존"},
+                            {"recordedAt": "26.11.19", "price": 18000, "platform": "퀘이사존"}
+                        ]
+                    }"""
+                req.method == "GET" && req.path.startsWith("/api/community/deals/303/history") ->
+                    200 to """[{"recordedAt":"11.18","price":45000,"platform":"펨코"},{"recordedAt":"11.19","price":42000,"platform":"펨코"}]"""
+                req.method == "GET" && req.path.startsWith("/api/community/deals/303") ->
+                    200 to """{
+                        "id": 303,
+                        "title": "멀티옵션 시세 분리 딜",
+                        "price": 42000,
+                        "currency": "KRW",
+                        "site_name": "펨코",
+                        "history_count": 2,
+                        "options_data": [
+                            {"name": "옵션 A", "price": 42000, "currency": "KRW"},
+                            {"name": "옵션 B", "price": 52000, "currency": "KRW"}
+                        ],
+                        "initial_history": [
+                            {"recordedAt": "11.18", "price": 99000, "platform": "펨코"}
+                        ]
+                    }"""
+                else -> 404 to """{"detail":"Not Found"}"""
+            }
+        }.also { resourcesToClose += it }
+
+        // (1) 단일 옵션 + initial_history -> 추가 /history 왕복 0회 + 0원 필터링 + historyCache 저장 검증
+        val vm1 = DealDetailViewModel(
+            apiService = createApiService(server.baseUrl),
+            deviceUuidProvider = { "device-1rtt-test" },
+            ioDispatcher = Dispatchers.Unconfined,
+            coroutineScopeOverride = newUnconfinedScope()
+        )
+        vm1.loadDealData(301)
+        withTimeout(3000) { while (vm1.uiState.value.deal?.id != 301 || vm1.uiState.value.isLoading) delay(10) }
+
+        assertEquals(0, server.recordedRequests.count { it.path.startsWith("/api/community/deals/301/history") })
+        assertEquals(listOf(29900, 25900), vm1.uiState.value.priceHistory.map { it.price })
+        assertTrue(vm1.uiState.value.isRecordLow)
+        assertEquals(2, vm1.uiState.value.historyCount)
+        assertEquals("7d", vm1.selectedPeriod.value)
+
+        // 기간 전환("3m")은 네트워크 1회 호출 후 캐시, 다시 "7d" 복귀 시 initialHistory 캐시 히트로 추가 왕복 0회
+        vm1.setPeriod("3m")
+        withTimeout(3000) { while (vm1.uiState.value.isHistoryLoading || vm1.uiState.value.priceHistory.firstOrNull()?.price != 32000) delay(10) }
+        assertEquals(1, server.recordedRequests.count { it.path.startsWith("/api/community/deals/301/history") })
+
+        vm1.setPeriod("7d")
+        withTimeout(3000) { while (vm1.uiState.value.isHistoryLoading || vm1.uiState.value.priceHistory.firstOrNull()?.price != 29900) delay(10) }
+        assertEquals(1, server.recordedRequests.count { it.path.startsWith("/api/community/deals/301/history") })
+
+        // (2) yy.MM.dd 3m 자동 확장 initialHistory -> 0회 호출 & selectedPeriod="3m" 자동 전환 & 캐시 히트
+        val vm2 = DealDetailViewModel(
+            apiService = createApiService(server.baseUrl),
+            deviceUuidProvider = { "device-1rtt-test" },
+            ioDispatcher = Dispatchers.Unconfined,
+            coroutineScopeOverride = newUnconfinedScope()
+        )
+        vm2.loadDealData(302)
+        withTimeout(3000) { while (vm2.uiState.value.deal?.id != 302 || vm2.uiState.value.isLoading) delay(10) }
+        assertEquals(0, server.recordedRequests.count { it.path.startsWith("/api/community/deals/302/history") })
+        assertEquals("3m", vm2.selectedPeriod.value)
+        assertEquals(listOf(22000, 18000), vm2.uiState.value.priceHistory.map { it.price })
+        assertTrue(vm2.uiState.value.isRecordLow)
+
+        // (3) 멀티옵션(firstOptQuery != null)인 경우 initial_history가 있어도 옵션별 /history API 호출 유지
+        val vm3 = DealDetailViewModel(
+            apiService = createApiService(server.baseUrl),
+            deviceUuidProvider = { "device-1rtt-test" },
+            ioDispatcher = Dispatchers.Unconfined,
+            coroutineScopeOverride = newUnconfinedScope()
+        )
+        vm3.loadDealData(303)
+        withTimeout(3000) { while (vm3.uiState.value.deal?.id != 303 || vm3.uiState.value.isLoading) delay(10) }
+        assertEquals(1, server.recordedRequests.count { it.path.startsWith("/api/community/deals/303/history") })
+        assertEquals(listOf(45000, 42000), vm3.uiState.value.priceHistory.map { it.price })
     }
 }

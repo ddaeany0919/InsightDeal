@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Bell, ExternalLink, Heart, Share2 } from "lucide-react";
 import type { Deal, DealSource } from "../lib/types";
 import {
@@ -28,6 +28,7 @@ interface DealCardProps {
   currentTime: number;
   isWishlisted: boolean;
   isAlertSet: boolean;
+  priority?: boolean;
   onSelectDeal: (deal: Deal) => void;
   onShareDeal: (e: React.MouseEvent, deal: Deal) => void;
   onToggleAlert: (e: React.MouseEvent, dealId: number) => void;
@@ -42,6 +43,7 @@ export default function DealCard({
   currentTime,
   isWishlisted,
   isAlertSet,
+  priority = false,
   onSelectDeal,
   onShareDeal,
   onToggleAlert,
@@ -50,6 +52,19 @@ export default function DealCard({
 }: DealCardProps) {
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!deal.image_url || !img || !img.complete || img.naturalWidth <= 0) {
+      return;
+    }
+    const targetUrl = deal.image_url;
+    const rafId = window.requestAnimationFrame(() => {
+      setLoadedImageUrl(targetUrl);
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [deal.image_url]);
 
   const imgFailed = !deal.image_url || failedImageUrl === deal.image_url;
   const imgLoaded = Boolean(deal.image_url && loadedImageUrl === deal.image_url);
@@ -143,10 +158,13 @@ export default function DealCard({
               )}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
+                ref={imgRef}
                 src={getProxyImageUrl(deal.image_url, { width: 400 })}
                 alt={displayTitle}
-                className="deal-image"
-                loading="lazy"
+                className={`deal-image ${imgLoaded ? "is-loaded" : ""}`}
+                loading={priority ? "eager" : "lazy"}
+                fetchPriority={priority ? "high" : undefined}
+                decoding="async"
                 referrerPolicy="no-referrer"
                 style={
                   deal.isClosed

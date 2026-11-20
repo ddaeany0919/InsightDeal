@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { TrendingUp, ChevronDown, ChevronUp } from "lucide-react";
 import type { PopularKeywordRanking } from "../lib/types";
 
@@ -21,6 +21,7 @@ export default function TrendingKeywordsTicker({
 }: TrendingKeywordsTickerProps) {
   const [tickerIndex, setTickerIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const boardId = useId();
 
   const items: PopularKeywordRanking[] =
@@ -41,6 +42,27 @@ export default function TrendingKeywordsTicker({
     }, 3200);
     return () => clearInterval(timer);
   }, [items.length, isExpanded]);
+
+  // 팝오버 형태로 펼쳐졌을 때 외부 클릭 또는 Escape 키로 자연스럽게 닫기
+  useEffect(() => {
+    if (!isExpanded) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setIsExpanded(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsExpanded(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isExpanded]);
 
   if (items.length === 0) return null;
 
@@ -76,7 +98,7 @@ export default function TrendingKeywordsTicker({
   };
 
   return (
-    <div className="trending-ticker-wrapper">
+    <div ref={wrapperRef} className="trending-ticker-wrapper">
       <div className="trending-ticker-bar">
         <button
           type="button"
