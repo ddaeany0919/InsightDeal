@@ -1395,7 +1395,7 @@ export default function Home() {
     setRecentSearches((prev) => {
       const next = [trimmed, ...prev.filter((item) => item !== trimmed)].slice(
         0,
-        8
+        5
       );
       if (typeof window !== "undefined") {
         localStorage.setItem(
@@ -1539,6 +1539,27 @@ export default function Home() {
       );
       return;
     }
+    setSearchQuery(trimmed);
+    updateAppliedSearch(trimmed);
+    saveRecentSearch(trimmed);
+    setIsFetchingMore(false);
+    dealsRef.current = [];
+    setDeals([]);
+    setHasMore(true);
+    void fetchLiveDeals(
+      true,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current,
+      trimmed
+    );
+  };
+
+  const handleSelectRecentKeyword = (kw: string) => {
+    clearSearchDebounce();
+    isComposingRef.current = false;
+    const trimmed = kw.trim();
+    if (!trimmed) return;
     setSearchQuery(trimmed);
     updateAppliedSearch(trimmed);
     saveRecentSearch(trimmed);
@@ -1846,7 +1867,7 @@ export default function Home() {
       if (savedRecent) {
         try {
           const parsed = JSON.parse(savedRecent);
-          if (Array.isArray(parsed)) setRecentSearches(parsed.slice(0, 8));
+          if (Array.isArray(parsed)) setRecentSearches(parsed.slice(0, 5));
         } catch {}
       }
       if (token) {
@@ -2305,7 +2326,7 @@ export default function Home() {
                     >
                       <button
                         type="button"
-                        onClick={() => handleSelectPopularKeyword(kw)}
+                        onClick={() => handleSelectRecentKeyword(kw)}
                         style={{
                           cursor: "pointer",
                           minWidth: "44px",

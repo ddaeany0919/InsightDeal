@@ -1605,3 +1605,322 @@ def test_hot_deals_popular_and_price_asc_zero_n_plus_1_content_html_loads(unit_v
         assert len(sql_log) < first_queries
     finally:
         event.remove(engine, "before_cursor_execute", _capture_sql)
+
+
+def test_ppomppu_rss_no_shipping_text_uses_title_hint():
+    """뽐뿌 RSS 파싱 시 제목에 배송비 키워드가 없어도 title_hint 키워드 인자로 TypeError 없이 정상 파싱되어야 한다."""
+    from backend.scrapers.ppomppu_scraper import PpomppuScraper
+
+    rss_xml = """<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0"><channel>
+      <item>
+        <title>[쿠팡] 삼성 갤럭시 핏3 (69,000원/와우무료)</title>
+        <link>https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&amp;no=999001</link>
+        <description>와우회원 무료배송 안내 본문입니다.</description>
+      </item>
+      <item>
+        <title>[지마켓] 로지텍 무선 마우스 (29,000원)</title>
+        <link>https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&amp;no=999002</link>
+        <description>상세 본문 테스트입니다.</description>
+      </item>
+    </channel></rss>"""
+
+    scraper = PpomppuScraper(community_id=1)
+    parsed = asyncio.run(scraper.parse_list(rss_xml))
+    assert len(parsed) == 2
+    assert parsed[0]["title"] == "[쿠팡] 삼성 갤럭시 핏3 (69,000원/와우무료)"
+    assert parsed[1]["title"] == "[지마켓] 로지텍 무선 마우스 (29,000원)"
+    assert parsed[1]["shipping_fee"] == ""
+
+
+def test_ingest_batch_upsert_preserves_cache_and_insert_invalidates_feed_keeps_ecom(unit_v11b_env, monkeypatch):
+    """ingest-batch 순수 Upsert 시 피드/제휴URL 캐시를 모두 보존하고, 신규 Insert 시에만 피드 캐시를 무효화(제휴URL 캐시 유지)한다."""
+    from backend.services.aggregator_service import AggregatorService
+
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+    monkeypatch.setenv("FEEDER_API_TOKEN", "test-feeder-secret")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    async def _noop_url_passthrough(self, url, *args, **kwargs):
+        return url
+
+    monkeypatch.setattr(AggregatorService, "_unwrap_outbound_url_async", _noop_url_passthrough)
+    monkeypatch.setattr(AggregatorService, "_monetize_outbound_url_async", _noop_url_passthrough)
+
+    db = SessionCls()
+    try:
+        db.query(models.Deal).delete()
+        existing = models.Deal(
+            source_community_id=1,
+            title="[지마켓] 기존 캐시 보존 테스트 핫딜 (19,900원/무배)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=777001",
+            ecommerce_link="https://item.gmarket.co.kr/Item?goodscode=777001",
+            price="19900",
+            currency="KRW",
+            shipping_fee="무료배송",
+            is_closed=False,
+            is_super_hotdeal=False,
+            honey_score=20,
+            like_count=1,
+            view_count=500,
+            content_html="<p>이미 수집되어 데이터베이스에 저장된 충분히 긴 상세 본문 텍스트입니다. 스텁 방어 조건을 통과합니다.</p>",
+            indexed_at=datetime(2026, 11, 20, 2, 0, 0),
+        )
+        db.add(existing)
+        db.commit()
+    finally:
+        db.close()
+
+    community_router.invalidate_feed_api_cache()
+    warm_resp = client.get("/api/community/hot-deals", params={"limit": 20, "offset": 0})
+    assert warm_resp.status_code == 200
+    assert len(community_router._HOT_DEALS_API_CACHE) >= 1
+    feed_cache_before = len(community_router._HOT_DEALS_API_CACHE)
+
+    ecom_sentinel_key = ("https://sentinel.example.com/item/1", False, community_router._ecom_url_cache_env_sig())
+    with community_router._CLEAN_ECOM_URL_LOCK:
+        community_router._CLEAN_ECOM_URL_CACHE[ecom_sentinel_key] = "https://sentinel.example.com/item/1"
+
+    headers = {"X-Feeder-Token": "test-feeder-secret"}
+    upsert_payload = {
+        "community_name": "ppomppu",
+        "display_name": "뽐뿌",
+        "base_url": "https://www.ppomppu.co.kr",
+        "deals": [
+            {
+                "title": "[지마켓] 기존 캐시 보존 테스트 핫딜 (19,900원/무배)",
+                "url": "https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=777001",
+                "ecommerce_link": "https://item.gmarket.co.kr/Item?goodscode=777001",
+                "price": 19900,
+                "currency": "KRW",
+                "shipping_fee": "무료배송",
+                "content_html": "<p>이미 수집되어 데이터베이스에 저장된 충분히 긴 상세 본문 텍스트입니다. 스텁 방어 조건을 통과합니다.</p>",
+                "view_count": 700,
+                "like_count": 1,
+                "is_closed": False,
+                "is_super_hotdeal": False,
+            }
+        ],
+    }
+    res_upsert = client.post("/api/community/ingest-batch", json=upsert_payload, headers=headers)
+    assert res_upsert.status_code == 200
+    assert res_upsert.json()["processed"] == 1
+    assert len(community_router._HOT_DEALS_API_CACHE) == feed_cache_before
+    assert ecom_sentinel_key in community_router._CLEAN_ECOM_URL_CACHE
+
+    insert_payload = {
+        "community_name": "ppomppu",
+        "display_name": "뽐뿌",
+        "base_url": "https://www.ppomppu.co.kr",
+        "deals": [
+            {
+                "title": "[지마켓] 신규 인입 핫딜 테스트 모니터 (199,000원/무배)",
+                "url": "https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=777002",
+                "ecommerce_link": "https://item.gmarket.co.kr/Item?goodscode=777002",
+                "price": 199000,
+                "currency": "KRW",
+                "shipping_fee": "무료배송",
+                "content_html": "<p>신규 핫딜 상세 본문 텍스트가 충분히 길게 들어갑니다. 무결점 캐시 무효화 검증용 본문입니다. 199,000원 무료배송.</p>",
+                "view_count": 1500,
+                "like_count": 3,
+                "is_closed": False,
+                "is_super_hotdeal": False,
+            }
+        ],
+    }
+    res_insert = client.post("/api/community/ingest-batch", json=insert_payload, headers=headers)
+    assert res_insert.status_code == 200
+    assert res_insert.json()["processed"] == 1
+    assert len(community_router._HOT_DEALS_API_CACHE) == 0
+    assert ecom_sentinel_key in community_router._CLEAN_ECOM_URL_CACHE
+
+
+def test_get_deal_detail_cache_hit_and_mutation_eviction(unit_v11b_env):
+    """단건 상세 API(/deals/{id}) 캐시 히트 시 무거운 조회를 생략하고 투표·댓글·품절제보 시 즉시 캐시가 무효화된다."""
+    from sqlalchemy import event
+
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+    engine = unit_v11b_env.engine
+
+    db = SessionCls()
+    try:
+        db.query(models.Deal).delete()
+        deal = models.Deal(
+            source_community_id=1,
+            title="[쿠팡] 상세 캐시 검증용 헤드셋 (49,000원/무료)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=777900",
+            ecommerce_link="https://www.coupang.com/vp/products/777900",
+            price="49000",
+            currency="KRW",
+            shipping_fee="무료배송",
+            content_html="<p>상세 캐시 히트 및 변이 무효화 테스트 본문입니다.</p>",
+            indexed_at=datetime(2026, 11, 20, 2, 0, 0),
+        )
+        db.add(deal)
+        db.commit()
+        db.refresh(deal)
+        deal_id = deal.id
+    finally:
+        db.close()
+
+    community_router.invalidate_feed_api_cache()
+    sql_log: list[str] = []
+
+    def _capture_sql(conn, cursor, statement, parameters, context, executemany):
+        sql_log.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _capture_sql)
+    try:
+        sql_log.clear()
+        r1 = client.get(f"/api/community/deals/{deal_id}")
+        assert r1.status_code == 200
+        assert r1.json()["buy_count"] == 0
+        miss_queries = len(sql_log)
+        assert miss_queries >= 4
+
+        sql_log.clear()
+        r2 = client.get(f"/api/community/deals/{deal_id}")
+        assert r2.status_code == 200
+        assert r2.json()["id"] == deal_id
+        assert len(sql_log) == 1
+
+        dev_uuid = "device-detail-cache-tester-1"
+        tok = create_device_token(dev_uuid)
+        sql_log.clear()
+        r3 = client.get(f"/api/community/deals/{deal_id}", params={"user_id": dev_uuid})
+        assert r3.status_code == 200
+        assert r3.json()["user_vote"] is None
+        assert len(sql_log) == 2
+
+        # 투표 시 즉시 캐시 무효화
+        rv = client.post(
+            f"/api/community/deals/{deal_id}/votes",
+            json={"user_id": dev_uuid, "vote_type": "buy"},
+            headers={"X-Device-Token": tok},
+        )
+        assert rv.status_code == 200
+        r4 = client.get(f"/api/community/deals/{deal_id}", params={"user_id": dev_uuid})
+        assert r4.status_code == 200
+        assert r4.json()["buy_count"] == 1
+        assert r4.json()["user_vote"] == "buy"
+
+        # 댓글 작성 및 삭제 시 즉시 캐시 무효화
+        rc = client.post(
+            f"/api/community/deals/{deal_id}/comments",
+            json={"user_id": dev_uuid, "nickname": "테스터", "content": "캐시 무효화 확인 댓글"},
+            headers={"X-Device-Token": tok},
+        )
+        assert rc.status_code == 200
+        comment_id = rc.json()["id"]
+        r5 = client.get(f"/api/community/deals/{deal_id}")
+        assert r5.status_code == 200
+        assert r5.json()["comment_count"] == 1
+
+        rd = client.delete(
+            f"/api/community/deals/{deal_id}/comments/{comment_id}",
+            headers={"X-Device-Token": tok},
+        )
+        assert rd.status_code == 200
+        r6 = client.get(f"/api/community/deals/{deal_id}")
+        assert r6.status_code == 200
+        assert r6.json()["comment_count"] == 0
+
+        # 품절 제보 시 즉시 캐시 무효화
+        rr = client.post(
+            f"/api/community/deals/{deal_id}/report-closed",
+            headers={"X-Device-Token": tok},
+        )
+        assert rr.status_code == 200
+        r7 = client.get(f"/api/community/deals/{deal_id}")
+        assert r7.status_code == 200
+        assert r7.json()["report_count"] == 1
+    finally:
+        event.remove(engine, "before_cursor_execute", _capture_sql)
+
+
+def test_category_misclassification_guards_and_low_price_won_decimal_recovery(unit_v11b_env):
+    """오븐구이/워치페이스 카테고리 오분류 차단 및 94원 미만 폴백 차단·해외몰 ￦101.94 USD 복원 검증"""
+    from backend.services.normalizer.regex_normalizer import RegexNormalizer
+
+    norm = RegexNormalizer()
+    assert norm._map_category("하림 오븐구이 치킨 3팩") == "음식"
+    assert norm._map_category("LG 광파오븐 32L 스팀오븐") == "가전제품"
+    assert norm._map_category("Blue Linear 워치페이스 외 1종") == "SW/게임"
+
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+    base_utc = datetime(2026, 11, 20, 2, 0, 0)
+
+    db = SessionCls()
+    try:
+        db.query(models.Deal).delete()
+        d_chicken = models.Deal(
+            source_community_id=1,
+            title="[롯데온] 하림 오븐구이 치킨 3팩 (15,140원)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=888001",
+            ecommerce_link="https://www.lotteon.com/p/product/888001",
+            price="15140",
+            currency="KRW",
+            category="가전제품",
+            content_html="<p>맛있는 오븐구이 치킨 3팩</p>",
+            indexed_at=base_utc,
+        )
+        d_watchface = models.Deal(
+            source_community_id=1,
+            title="[구글] Blue Linear 워치페이스 외 1종",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=888002",
+            ecommerce_link="https://play.google.com/store/apps/888002",
+            price="0",
+            currency="KRW",
+            category="PC용품",
+            content_html="<p>갤럭시 워치페이스 무료 배포</p>",
+            indexed_at=base_utc - timedelta(minutes=1),
+        )
+        d_padding_94 = models.Deal(
+            source_community_id=1,
+            title="[롯데온] 공용 2L 방풍 롱패딩 L몬트벤치 다운자켓3",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=888003",
+            ecommerce_link="https://www.lotteon.com/p/product/888003",
+            price="94",
+            currency="KRW",
+            category="패션",
+            content_html="<p>토스 적용가 94 롱패딩 90 95 사이즈</p>",
+            indexed_at=base_utc - timedelta(minutes=2),
+        )
+        d_speaker_101 = models.Deal(
+            source_community_id=1,
+            title="[알리] 에디파이어 M90 블루투스 6.0 스피커_역대가",
+            post_link="https://quasarzone.com/bbs/qb_saleinfo/views/888004",
+            ecommerce_link="https://ko.aliexpress.com/item/1005012525933520.html",
+            price="101",
+            currency="KRW",
+            category="PC용품",
+            content_html="<p>[알리] 에디파이어 M90 블루투스 6.0 스피커 💰 ￦ 101.94 (KRW) 무료배송</p>",
+            indexed_at=base_utc - timedelta(minutes=3),
+        )
+        db.add_all([d_chicken, d_watchface, d_padding_94, d_speaker_101])
+        db.commit()
+        for obj in (d_chicken, d_watchface, d_padding_94, d_speaker_101):
+            db.refresh(obj)
+        id_pad, id_spk = d_padding_94.id, d_speaker_101.id
+    finally:
+        db.close()
+
+    community_router.invalidate_feed_api_cache()
+    res_app = client.get("/api/community/hot-deals", params={"category": "가전제품"})
+    assert res_app.status_code == 200
+    assert all("오븐구이" not in d["title"] for d in res_app.json()["deals"])
+
+    res_pc = client.get("/api/community/hot-deals", params={"category": "PC용품"})
+    assert res_pc.status_code == 200
+    assert all("워치페이스" not in d["title"] for d in res_pc.json()["deals"])
+
+    det_pad = client.get(f"/api/community/deals/{id_pad}").json()
+    assert det_pad["price"] == 0
+
+    det_spk = client.get(f"/api/community/deals/{id_spk}").json()
+    assert det_spk["price"] == 10194
+    assert det_spk["currency"] == "USD"
+    assert det_spk["sources"][0]["currency"] == "USD"

@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
-from sqlalchemy import inspect as sa_inspect
+from fastapi.concurrency import run_in_threadpool
+from sqlalchemy import func, inspect as sa_inspect, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, defer, joinedload
 from sqlalchemy.orm.attributes import set_committed_value
 from backend.database.session import get_db_session
 from fastapi.responses import StreamingResponse
+import asyncio
+import copy
 import hmac
 import html as _html
 import httpx
@@ -498,9 +501,16 @@ def _build_direct_mall_search_url(shop_name: str, raw_title: str, post_url: str 
     return apply_affiliate_monetization(target_search_url)
 
 
-def get_deal_sources(deal, comp_name, parsed_price_int, db=None, content_html_override: Optional[str] = None):
+def get_deal_sources(
+    deal,
+    comp_name,
+    parsed_price_int,
+    db=None,
+    content_html_override: Optional[str] = None,
+    currency_override: Optional[str] = None,
+):
     deal_sources = []
-    currency = getattr(deal, 'currency', 'KRW') or 'KRW'
+    currency = currency_override or getattr(deal, 'currency', 'KRW') or 'KRW'
     # defer(content_html) 상태인 ORM 객체에서 SQLAlchemy N+1 lazy load가 발동하지 않도록 적재된 값만 읽음
     content_html = (
         content_html_override
@@ -951,9 +961,23 @@ def resolve_deal_price_and_currency(deal) -> tuple[int, str]:
                 return tp, tc
             if body_html:
                 fb_p, fb_c = extract_body_fallback_price(body_html, title)
-                if fb_p > 0:
+                if (fb_c == "KRW" and fb_p >= 100) or (fb_c != "KRW" and fb_p > 0):
                     return fb_p, fb_c
             return 0, "KRW"
+
+        if currency == "KRW" and 1 <= parsed_price < 5000 and body_html:
+            m_won_dec = re.search(
+                r"[₩￦]\s*([0-9]{1,4})\.([0-9]{2})(?=\s*(?:\(KRW\)|\(|$|\s|<))",
+                body_html,
+                re.IGNORECASE,
+            )
+            overseas_ctx = (title + " " + ecom_url).lower()
+            is_overseas_hint = any(
+                tok in overseas_ctx
+                for tok in ("[알리]", "[아마존]", "aliexpress.", "amazon.", "ebay.", "temu.", "qoo10.")
+            )
+            if m_won_dec and is_overseas_hint and abs(int(m_won_dec.group(1)) - parsed_price) <= 1:
+                return int(m_won_dec.group(1)) * 100 + int(m_won_dec.group(2)), "USD"
 
         if currency == "KRW" and tp == 0 and body_html:
             currency = infer_currency_from_deal_context(
@@ -1426,8 +1450,20 @@ _POPULAR_KEYWORDS_CACHE: dict = {}
 _POPULAR_KEYWORDS_LOCK = threading.Lock()
 _POPULAR_KEYWORDS_TTL_SEC = 60.0
 
+_DEAL_DETAIL_CACHE: OrderedDict = OrderedDict()
+_DEAL_DETAIL_CACHE_MAX_SIZE = 256
+_DEAL_DETAIL_CACHE_TTL_SEC = 20.0
+_DEAL_DETAIL_CACHE_LOCK = threading.Lock()
 
-def invalidate_feed_api_cache():
+
+def _evict_deal_detail_cache(deal_id: int) -> None:
+    with _DEAL_DETAIL_CACHE_LOCK:
+        keys = [k for k in _DEAL_DETAIL_CACHE if len(k) >= 2 and k[1] == deal_id]
+        for k in keys:
+            _DEAL_DETAIL_CACHE.pop(k, None)
+
+
+def invalidate_feed_api_cache(clear_ecom_url_cache: bool = True):
     import sys as _sys
     _TOP_DEALS_API_CACHE["ts"] = 0.0
     _TOP_DEALS_API_CACHE["data"] = None
@@ -1437,8 +1473,11 @@ def invalidate_feed_api_cache():
         _DEAL_HISTORY_CACHE.clear()
     with _POPULAR_KEYWORDS_LOCK:
         _POPULAR_KEYWORDS_CACHE.clear()
-    with _CLEAN_ECOM_URL_LOCK:
-        _CLEAN_ECOM_URL_CACHE.clear()
+    with _DEAL_DETAIL_CACHE_LOCK:
+        _DEAL_DETAIL_CACHE.clear()
+    if clear_ecom_url_cache:
+        with _CLEAN_ECOM_URL_LOCK:
+            _CLEAN_ECOM_URL_CACHE.clear()
     for _alias in ("routers.community", "backend.routers.community"):
         _mod = _sys.modules.get(_alias)
         if _mod is not None and _mod is not _sys.modules.get(__name__):
@@ -1451,7 +1490,9 @@ def invalidate_feed_api_cache():
                 _mod._DEAL_HISTORY_CACHE.clear()
             if hasattr(_mod, "_POPULAR_KEYWORDS_CACHE"):
                 _mod._POPULAR_KEYWORDS_CACHE.clear()
-            if hasattr(_mod, "_CLEAN_ECOM_URL_CACHE"):
+            if hasattr(_mod, "_DEAL_DETAIL_CACHE"):
+                _mod._DEAL_DETAIL_CACHE.clear()
+            if clear_ecom_url_cache and hasattr(_mod, "_CLEAN_ECOM_URL_CACHE"):
                 _mod._CLEAN_ECOM_URL_CACHE.clear()
 
 
@@ -1845,14 +1886,14 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
                         if comp_name not in existing.setdefault("site_names", []):
                             existing["site_names"].append(comp_name)
                             existing["site_name"] = ", ".join(existing["site_names"])
-                        extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db))
+                        extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db, currency_override=resolved_currency))
                 else:
                     if existing.get("total_price", 0) == 0:
                         if not any(s.get('post_url') == (deal.post_link or "") for s in existing.setdefault("sources", [])):
                             if comp_name not in existing.setdefault("site_names", []):
                                 existing["site_names"].append(comp_name)
                                 existing["site_name"] = ", ".join(existing["site_names"])
-                            extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db))
+                            extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db, currency_override=resolved_currency))
                 
                 # 하나라도 살아있다면 전체 딜을 진행중인 것으로 처리
                 existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
@@ -1896,7 +1937,7 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     "post_url": deal.post_link or "",
                     "site_name": comp_name,
                     "site_names": [comp_name],
-                    "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
+                    "sources": get_deal_sources(deal, comp_name, parsed_price_int, db, currency_override=resolved_currency),
                     "options_data": serialized_opts,
                     "category": normalize_category_key(deal.category),
                     "created_at": to_utc_iso(deal.indexed_at),
@@ -2035,11 +2076,17 @@ def _build_single_category_clause(models, single_cat: str, or_, and_, not_):
             "믹서기", "다리미", "안마", "드라이기", "면도기", "전동칫솔", "이어폰", "헤드폰", "스피커",
             "사운드바", "버즈", "에어팟", "빔프로젝터", "TV", "티비",
         ]
-        return or_(
-            *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
-            *[models.Deal.title.ilike(f"%{kw}%") for kw in appliance_title_kws],
+        return and_(
+            or_(
+                *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
+                *[models.Deal.title.ilike(f"%{kw}%") for kw in appliance_title_kws],
+            ),
+            not_(models.Deal.title.ilike("%오븐구이%")),
         )
-    return or_(*[models.Deal.category.ilike(f"%{_escape_like(kw)}%", escape="\\") for kw in target_keywords])
+    base_clause = or_(*[models.Deal.category.ilike(f"%{_escape_like(kw)}%", escape="\\") for kw in target_keywords])
+    if canonical_cat == "PC용품":
+        return and_(base_clause, not_(models.Deal.title.ilike("%워치페이스%")))
+    return base_clause
 
 
 @router.get("/hot-deals")
@@ -2494,14 +2541,14 @@ def get_hot_deals(
                             if comp_name not in existing.setdefault("site_names", []):
                                 existing["site_names"].append(comp_name)
                                 existing["site_name"] = ", ".join(existing["site_names"])
-                            extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db))
+                            extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db, currency_override=resolved_currency))
                     else:
                         if existing.get("total_price", 0) == 0:
                             if not any(s.get('post_url') == (deal.post_link or "") for s in existing.setdefault("sources", [])):
                                 if comp_name not in existing.setdefault("site_names", []):
                                     existing["site_names"].append(comp_name)
                                     existing["site_name"] = ", ".join(existing["site_names"])
-                                extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db))
+                                extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db, currency_override=resolved_currency))
 
                     existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
                     existing["has_options"] = existing.get("has_options", False) or bool(getattr(deal, "has_options", False)) or bool(serialized_opts)
@@ -2554,7 +2601,7 @@ def get_hot_deals(
                         "post_url": deal.post_link or "",
                         "site_name": ", ".join(site_names_list),
                         "site_names": site_names_list,
-                        "sources": get_deal_sources(deal, comp_name, parsed_price_int, db),
+                        "sources": get_deal_sources(deal, comp_name, parsed_price_int, db, currency_override=resolved_currency),
                         "options_data": serialized_opts,
                         "category": normalize_category_key(deal.category),
                         "honey_score": final_honey_score,
@@ -2701,7 +2748,7 @@ def get_hot_deals(
                 has_more = True
         else:
             if sort_mode == "popular":
-                raw_limit = min(2000, max(600, offset + limit + 300))
+                raw_limit = min(2000, max(260, offset + limit * 5 + 150))
                 raw_seed_deals = query.order_by(
                     models.Deal.honey_score.desc(),
                     models.Deal.like_count.desc(),
@@ -3118,6 +3165,61 @@ def get_deal(
     user_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db_session),
 ):
+    bind_obj = db.get_bind() if hasattr(db, "get_bind") else None
+    detail_cache_key = (id(bind_obj), deal_id) if bind_obj is not None else None
+    now_detail_ts = _feed_time.time()
+    if detail_cache_key is not None:
+        with _DEAL_DETAIL_CACHE_LOCK:
+            detail_entry = _DEAL_DETAIL_CACHE.get(detail_cache_key)
+            if detail_entry is not None and (now_detail_ts - detail_entry["ts"]) >= _DEAL_DETAIL_CACHE_TTL_SEC:
+                _DEAL_DETAIL_CACHE.pop(detail_cache_key, None)
+                detail_entry = None
+        if detail_entry is not None:
+            stamp_row = (
+                db.query(
+                    models.Deal.price,
+                    models.Deal.is_closed,
+                    models.Deal.comment_count,
+                    models.Deal.honey_score,
+                    func.length(models.Deal.content_html),
+                    models.Deal.title,
+                )
+                .filter(models.Deal.id == deal_id)
+                .first()
+            )
+            curr_stamp = (
+                (
+                    stamp_row[0],
+                    bool(stamp_row[1]),
+                    int(stamp_row[2] or 0),
+                    int(stamp_row[3] or 0),
+                    int(stamp_row[4] or 0),
+                    stamp_row[5] or "",
+                )
+                if stamp_row is not None
+                else None
+            )
+            if curr_stamp is not None and curr_stamp == detail_entry.get("stamp"):
+                with _DEAL_DETAIL_CACHE_LOCK:
+                    if detail_cache_key in _DEAL_DETAIL_CACHE:
+                        _DEAL_DETAIL_CACHE.move_to_end(detail_cache_key)
+                cached_res = copy.deepcopy(detail_entry["data"])
+                if user_id:
+                    uv_row = (
+                        db.query(models.DealVote.vote_type)
+                        .filter(
+                            models.DealVote.deal_id == deal_id,
+                            models.DealVote.user_id == user_id,
+                        )
+                        .first()
+                    )
+                    uv_val = uv_row[0] if uv_row else None
+                    cached_res["user_vote"] = uv_val
+                    cached_res["userVote"] = uv_val
+                return cached_res
+            with _DEAL_DETAIL_CACHE_LOCK:
+                _DEAL_DETAIL_CACHE.pop(detail_cache_key, None)
+
     from sqlalchemy.orm import joinedload
     deal = db.query(models.Deal).options(
         joinedload(models.Deal.community),
@@ -3219,7 +3321,7 @@ def get_deal(
             if not any(s.get('post_url') == (d.post_link or "") for s in sources):
                 if c_name not in site_names:
                     site_names.append(c_name)
-                for new_src in get_deal_sources(d, c_name, p_val, db):
+                for new_src in get_deal_sources(d, c_name, p_val, db, currency_override=d_curr):
                     if not any(
                         s.get("site_name") == new_src.get("site_name") and s.get("price") == new_src.get("price")
                         for s in sources
@@ -3229,8 +3331,8 @@ def get_deal(
     if not sources:
         c_name = deal.community.display_name if deal.community and hasattr(deal.community, 'display_name') and deal.community.display_name else (COMMUNITY_MAP.get(deal.community.name, deal.community.name) if deal.community else "Unknown")
         site_names = [c_name]
-        p_val, _ = resolve_deal_price_and_currency(deal)
-        sources = get_deal_sources(deal, c_name, p_val, db)
+        p_val, orig_c = resolve_deal_price_and_currency(deal)
+        sources = get_deal_sources(deal, c_name, p_val, db, currency_override=orig_c)
         best_deal = deal
 
     community_name = ", ".join(site_names)
@@ -3321,7 +3423,7 @@ def get_deal(
     )
     detail_shop_name = _resolve_canonical_shop_name(best_deal, detail_ecom_url) or _resolve_canonical_shop_name(deal, detail_ecom_url)
 
-    return {
+    detail_payload = {
         "id": deal.id,
         "title": clean_deal_title(deal.title or ""),
         "price": final_price_int,
@@ -3351,8 +3453,8 @@ def get_deal(
         "pass_count": pass_count,
         "saveCount": pass_count,
         "passCount": pass_count,
-        "user_vote": user_vote,
-        "userVote": user_vote,
+        "user_vote": None,
+        "userVote": None,
         "comment_count": active_comment_count,
         "commentCount": active_comment_count,
         "history_count": history_count,
@@ -3369,6 +3471,28 @@ def get_deal(
         "report_count": report_count,
         "reportCount": report_count,
     }
+    if detail_cache_key is not None:
+        fresh_stamp = (
+            deal.price,
+            bool(deal.is_closed),
+            int(deal.comment_count or 0),
+            int(deal.honey_score or 0),
+            len(deal.content_html or ""),
+            deal.title or "",
+        )
+        with _DEAL_DETAIL_CACHE_LOCK:
+            _DEAL_DETAIL_CACHE[detail_cache_key] = {
+                "ts": _feed_time.time(),
+                "stamp": fresh_stamp,
+                "data": copy.deepcopy(detail_payload),
+            }
+            _DEAL_DETAIL_CACHE.move_to_end(detail_cache_key)
+            while len(_DEAL_DETAIL_CACHE) > _DEAL_DETAIL_CACHE_MAX_SIZE:
+                _DEAL_DETAIL_CACHE.popitem(last=False)
+
+    detail_payload["user_vote"] = user_vote
+    detail_payload["userVote"] = user_vote
+    return detail_payload
 
 
 @router.post("/deals/{deal_id}/report-closed")
@@ -3417,6 +3541,7 @@ def report_deal_closed(
         deal.is_closed = True
 
     db.commit()
+    _evict_deal_detail_cache(deal_id)
     invalidate_feed_api_cache()
 
     is_closed_val = bool(deal.is_closed)
@@ -3960,6 +4085,7 @@ def add_deal_comment(
     deal.comment_count = (deal.comment_count or 0) + 1
 
     db.commit()
+    _evict_deal_detail_cache(deal_id)
     db.refresh(new_comment)
 
     return _serialize_deal_comment(new_comment)
@@ -3993,6 +4119,7 @@ def delete_deal_comment(
         reaction.comment_count = max(0, (reaction.comment_count or 0) - 1)
 
     db.commit()
+    _evict_deal_detail_cache(deal_id)
     return {
         "status": "ok",
         "message": "Comment deleted successfully",
@@ -4079,6 +4206,7 @@ def add_deal_vote(
         reaction.negative_reactions = pass_count
 
     db.commit()
+    _evict_deal_detail_cache(deal_id)
 
     uv = db.query(models.DealVote).filter(
         models.DealVote.deal_id == deal_id,
@@ -4444,17 +4572,71 @@ async def ingest_scraped_deals_batch(
         db.commit()
         db.refresh(community)
 
+    def _fetch_ingest_snapshot() -> tuple[int, dict[int, tuple]]:
+        prev_max = int(db.query(func.max(models.Deal.id)).scalar() or 0)
+        cand_post_urls: set[str] = set()
+        cand_ecom_urls: set[str] = set()
+        for raw_item in payload.deals:
+            if not isinstance(raw_item, dict):
+                continue
+            for key_name, bucket in (("url", cand_post_urls), ("ecommerce_link", cand_ecom_urls)):
+                val = str(raw_item.get(key_name) or "").strip()
+                if not val or len(val) > 512:
+                    continue
+                bucket.add(val)
+                if val.startswith("http://"):
+                    bucket.add("https://" + val[len("http://"):])
+                elif val.startswith("https://"):
+                    bucket.add("http://" + val[len("https://"):])
+        clauses = []
+        if cand_post_urls:
+            clauses.append(models.Deal.post_link.in_(list(cand_post_urls)[:200]))
+        if cand_ecom_urls:
+            clauses.append(models.Deal.ecommerce_link.in_(list(cand_ecom_urls)[:200]))
+        snap: dict[int, tuple] = {}
+        if clauses:
+            rows = (
+                db.query(
+                    models.Deal.id,
+                    models.Deal.price,
+                    models.Deal.is_closed,
+                    models.Deal.is_super_hotdeal,
+                )
+                .filter(or_(*clauses))
+                .all()
+            )
+            for r_id, r_price, r_closed, r_hot in rows:
+                snap[int(r_id)] = (r_price, bool(r_closed), bool(r_hot))
+        return prev_max, snap
+
+    prev_max_id, prev_snap_by_id = await run_in_threadpool(_fetch_ingest_snapshot)
+
     aggregator = AggregatorService(db)
     inserted = 0
-    touched_images: list[str] = []
+    has_feed_change = False
+    new_inserted_images: list[str] = []
     for item in payload.deals:
+        await asyncio.sleep(0)
         try:
             deal = await aggregator.process_scraped_deal(community.id, item)
             if deal:
                 inserted += 1
                 img_u = getattr(deal, "image_url", None)
-                if img_u:
-                    touched_images.append(img_u)
+                d_id = getattr(deal, "id", None)
+                if d_id is not None and d_id > prev_max_id:
+                    has_feed_change = True
+                    if img_u:
+                        new_inserted_images.append(img_u)
+                elif d_id is not None:
+                    curr_snap = (
+                        getattr(deal, "price", None),
+                        bool(getattr(deal, "is_closed", False)),
+                        bool(getattr(deal, "is_super_hotdeal", False)),
+                    )
+                    prev_snap = prev_snap_by_id.get(d_id)
+                    if prev_snap is None or prev_snap != curr_snap:
+                        has_feed_change = True
+                    _evict_deal_detail_cache(d_id)
         except Exception as e:
             db.rollback()
             logger.warning(f"[ingest-batch] item error ({payload.community_name}): {e}")
@@ -4480,13 +4662,13 @@ async def ingest_scraped_deals_batch(
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning(f"[ingest-batch] failed to update scraper_stats.json: {exc}")
 
-    if inserted > 0:
-        invalidate_feed_api_cache()
-        if touched_images:
-            try:
-                from backend.main import schedule_thumbnail_prewarm
-                schedule_thumbnail_prewarm(touched_images)
-            except Exception as exc:
-                logger.debug("Thumbnail prewarm scheduling skipped: %s", exc)
+    if has_feed_change:
+        invalidate_feed_api_cache(clear_ecom_url_cache=False)
+    if new_inserted_images:
+        try:
+            from backend.main import schedule_thumbnail_prewarm
+            schedule_thumbnail_prewarm(new_inserted_images)
+        except Exception as exc:
+            logger.debug("Thumbnail prewarm scheduling skipped: %s", exc)
     return {"status": "ok", "community": payload.display_name, "processed": inserted}
 

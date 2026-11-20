@@ -58,10 +58,12 @@ class DatabaseManager:
         if is_memory_sqlite:
             engine_kwargs["poolclass"] = StaticPool
         else:
+            pool_size = max(1, int(os.getenv("DB_POOL_SIZE", "30")))
+            max_overflow = max(0, int(os.getenv("DB_MAX_OVERFLOW", "60")))
             engine_kwargs.update({
                 "poolclass": QueuePool,
-                "pool_size": 30,
-                "max_overflow": 60,
+                "pool_size": pool_size,
+                "max_overflow": max_overflow,
                 "pool_timeout": 15,
                 "pool_pre_ping": True,
             })
@@ -75,7 +77,8 @@ class DatabaseManager:
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA synchronous=NORMAL")
                 cursor.execute("PRAGMA busy_timeout=60000")
-                cursor.execute("PRAGMA cache_size=-32000")  # 32MB in-memory page cache
+                cache_kb = max(1000, int(os.getenv("SQLITE_CACHE_SIZE_KB", "4000")))
+                cursor.execute(f"PRAGMA cache_size=-{cache_kb}")  # 연결당 페이지 캐시 상한 (기본 4MB)
                 cursor.execute("PRAGMA temp_store=MEMORY")
                 cursor.close()
         

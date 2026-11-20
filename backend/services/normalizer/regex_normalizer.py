@@ -260,6 +260,14 @@ class RegexNormalizer(ProductNormalizer):
         if "바지락" in text_lower:
             return "음식"
 
+        # ⚡ [예외 필터 0-0] '오븐구이' 닭요리/식품 및 '워치페이스' SW 오분류 방지
+        if "오븐구이" in text_lower and not any(
+            app_kw in text_lower for app_kw in ("전자레인지", "광파오븐", "스팀오븐", "전기오븐", "오븐기", "에어프라이어")
+        ):
+            return "음식"
+        if "워치페이스" in text_lower or "watch face" in text_lower:
+            return "SW/게임"
+
         # ⚡ [예외 필터 0-1] '바지' 키워드 예외 격리 (아버지, 할아버지 등 서브스트링 오분류 방지)
         if "바지" in text_lower:
             if "아버지" in text_lower or "할아버지" in text_lower:

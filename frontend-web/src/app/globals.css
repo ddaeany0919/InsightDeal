@@ -321,7 +321,7 @@ body {
   flex-shrink: 0;
 }
 
-.nav-install-btn {
+.navbar .nav-install-btn {
   position: relative;
   height: var(--control-h);
   min-height: var(--control-h);
@@ -331,7 +331,7 @@ body {
   white-space: nowrap;
 }
 
-.nav-install-btn::after {
+.navbar .nav-install-btn::after {
   content: "";
   position: absolute;
   inset: -4px 0;
@@ -668,6 +668,19 @@ body {
   inset: -6px;
   min-width: var(--touch-target-min);
   min-height: var(--touch-target-min);
+}
+
+@media (max-width: 640px) {
+  .inapp-banner {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .inapp-banner-text {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
 }
 
 @media (max-width: 480px) {

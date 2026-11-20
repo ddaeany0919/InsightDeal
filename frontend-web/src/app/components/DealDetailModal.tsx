@@ -911,9 +911,9 @@ export default function DealDetailModal({
     }
     const copied = await copyTextSafe(`${shareText}\n${shareUrl}`);
     if (copied) {
-      showToast("상품 주소를 복사했어요");
+      showToast("상품 링크를 복사했어요");
     } else {
-      showToast("상품 주소를 복사하지 못했어요");
+      showToast("상품 링크를 복사하지 못했어요");
     }
   };
 
@@ -1138,14 +1138,25 @@ export default function DealDetailModal({
                       <div
                         className="skeleton-shimmer"
                         aria-hidden="true"
-                        style={{ position: "absolute", inset: 0 }}
+                        style={{ position: "absolute", inset: 0, zIndex: 0 }}
                       />
                     )}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
+                      ref={(imgEl) => {
+                        if (imgEl && imgEl.complete && imgEl.naturalWidth > 0) {
+                          setLoadedImageMap((prev) =>
+                            prev[activeImageUrl]
+                              ? prev
+                              : { ...prev, [activeImageUrl]: true }
+                          );
+                        }
+                      }}
                       src={getProxyImageUrl(activeImageUrl, { width: 400 })}
                       alt={activeOptionTitle || deal.title}
                       style={{
+                        position: "relative",
+                        zIndex: 0,
                         width: "100%",
                         height: "100%",
                         objectFit: "cover",

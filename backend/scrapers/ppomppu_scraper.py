@@ -35,7 +35,7 @@ class PpomppuScraper(AsyncBaseScraper):
                     ecom_m = re.search(r"(https?://[^\s\"'<>]+)", desc_txt)
                     ecom_url = ecom_m.group(1) if ecom_m and "ppomppu.co.kr" not in ecom_m.group(1) else ""
                     extracted_price, extracted_currency, extracted_ship, _ = parse_title_price_and_shipping(full_title)
-                    shipping_fee = extracted_ship or normalize_shipping_fee("", title=full_title)
+                    shipping_fee = extracted_ship or normalize_shipping_fee("", title_hint=full_title)
                     m_hits = re.search(r"<hits>(.*?)</hits>", blk, re.DOTALL)
                     hits_txt = m_hits.group(1).strip() if m_hits else ""
                     like_count, view_count = 0, 1500

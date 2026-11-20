@@ -650,7 +650,7 @@ async def run_pipeline_job():
         
         try:
             from backend.routers.community import invalidate_feed_api_cache
-            invalidate_feed_api_cache()
+            invalidate_feed_api_cache(clear_ecom_url_cache=False)
         except Exception:
             pass
         
