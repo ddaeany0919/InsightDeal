@@ -4,10 +4,10 @@ import React, { useEffect, useRef, useState } from "react";
 import { Bell, ExternalLink, Heart, Share2 } from "lucide-react";
 import type { Deal, DealSource } from "../lib/types";
 import {
+  computeUnitPriceBadge,
   decodeHtmlEntities,
   formatPrice,
   formatRelativeTimeKo,
-  getFallbackProxyImageUrl,
   getOptionSources,
   getProxyImageUrl,
   isNonMallLabel,
@@ -16,6 +16,7 @@ import {
   resolveOutboundUrl,
   stripLeadingShopBracket,
   trackOutboundClick,
+  tryApplyFallbackProxyImage,
 } from "../lib/utils";
 import { openExternalUrlInToss } from "../lib/tossBridge";
 import BrandImagePlaceholder from "./BrandImagePlaceholder";
@@ -96,6 +97,15 @@ export default function DealCard({
   const isSearchFallback = Boolean(
     deal.isSearchFallback || deal.is_search_fallback
   );
+  const unitPriceBadge =
+    !deal.isClosed && !deal.isFree && !isMultiDeal
+      ? computeUnitPriceBadge(
+          displayTitle,
+          deal.price,
+          deal.currency,
+          deal.category
+        )
+      : null;
 
   const badgeSources: DealSource[] =
     deal.sources && deal.sources.length > 0
@@ -173,15 +183,10 @@ export default function DealCard({
                 }
                 onLoad={() => setLoadedImageUrl(deal.image_url)}
                 onError={(e) => {
-                  const img = e.currentTarget;
                   const primarySrc = getProxyImageUrl(deal.image_url, { width: 400 });
-                  const fallback = getFallbackProxyImageUrl(deal.image_url);
-                  if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
-                    img.dataset.fallbackTried = "1";
-                    img.src = fallback;
+                  if (tryApplyFallbackProxyImage(e.currentTarget, deal.image_url, primarySrc)) {
                     return;
                   }
-                  img.dataset.fallbackTried = "1";
                   setFailedImageUrl(deal.image_url);
                 }}
               />
@@ -311,6 +316,14 @@ export default function DealCard({
             )}
             {displayShipping && !deal.isClosed && (
               <span className="badge badge-mint">{displayShipping}</span>
+            )}
+            {unitPriceBadge && (
+              <span
+                className="deal-tag deal-unit-price-badge"
+                title={unitPriceBadge.detail}
+              >
+                {unitPriceBadge.label}
+              </span>
             )}
             {!deal.isClosed &&
               deal.tags &&

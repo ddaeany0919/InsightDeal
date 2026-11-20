@@ -3,7 +3,7 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus, RefreshCw, RotateCcw, X } from "lucide-react";
 import { useDialogA11y } from "../lib/useDialogA11y";
-import { getFallbackProxyImageUrl, getProxyImageUrl } from "../lib/utils";
+import { getProxyImageUrl, tryApplyFallbackProxyImage } from "../lib/utils";
 import BrandImagePlaceholder from "./BrandImagePlaceholder";
 
 interface ImageLightboxModalProps {
@@ -485,15 +485,10 @@ function LightboxViewer({
                   setLoadedMap((prev) => (prev[activeUrl] ? prev : { ...prev, [activeUrl]: true }))
                 }
                 onError={(e) => {
-                  const img = e.currentTarget;
                   const primarySrc = buildLightboxImageSrc(activeUrl);
-                  const fallback = getFallbackProxyImageUrl(activeUrl);
-                  if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
-                    img.dataset.fallbackTried = "1";
-                    img.src = fallback;
+                  if (tryApplyFallbackProxyImage(e.currentTarget, activeUrl, primarySrc)) {
                     return;
                   }
-                  img.dataset.fallbackTried = "1";
                   setFailedMap((prev) => ({ ...prev, [activeUrl]: true }));
                 }}
               />
@@ -598,15 +593,10 @@ function LightboxViewer({
                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
                       referrerPolicy="no-referrer"
                       onError={(e) => {
-                        const img = e.currentTarget;
                         const primarySrc = getProxyImageUrl(imgUrl, { width: 120 });
-                        const fallback = getFallbackProxyImageUrl(imgUrl);
-                        if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
-                          img.dataset.fallbackTried = "1";
-                          img.src = fallback;
+                        if (tryApplyFallbackProxyImage(e.currentTarget, imgUrl, primarySrc)) {
                           return;
                         }
-                        img.dataset.fallbackTried = "1";
                         setFailedMap((prev) => ({ ...prev, [imgUrl]: true }));
                       }}
                     />

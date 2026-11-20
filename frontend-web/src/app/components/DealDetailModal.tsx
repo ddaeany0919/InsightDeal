@@ -30,7 +30,7 @@ import type {
 import {
   formatPrice,
   getProxyImageUrl,
-  getFallbackProxyImageUrl,
+  tryApplyFallbackProxyImage,
   apiUrl,
   resolveOutboundUrl,
   trackOutboundClick,
@@ -1168,15 +1168,10 @@ export default function DealDetailModal({
                         setLoadedImageMap((prev) => ({ ...prev, [activeImageUrl]: true }))
                       }
                       onError={(e) => {
-                        const img = e.currentTarget;
                         const primarySrc = getProxyImageUrl(activeImageUrl, { width: 400 });
-                        const fallback = getFallbackProxyImageUrl(activeImageUrl);
-                        if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
-                          img.dataset.fallbackTried = "1";
-                          img.src = fallback;
+                        if (tryApplyFallbackProxyImage(e.currentTarget, activeImageUrl, primarySrc)) {
                           return;
                         }
-                        img.dataset.fallbackTried = "1";
                         setFailedImageMap((prev) => ({ ...prev, [activeImageUrl]: true }));
                       }}
                     />
@@ -1769,15 +1764,10 @@ export default function DealDetailModal({
                               setLoadedImageMap((prev) => ({ ...prev, [imgUrl]: true }))
                             }
                             onError={(e) => {
-                              const img = e.currentTarget;
                               const primarySrc = getProxyImageUrl(imgUrl, { width: 240 });
-                              const fallback = getFallbackProxyImageUrl(imgUrl);
-                              if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
-                                img.dataset.fallbackTried = "1";
-                                img.src = fallback;
+                              if (tryApplyFallbackProxyImage(e.currentTarget, imgUrl, primarySrc)) {
                                 return;
                               }
-                              img.dataset.fallbackTried = "1";
                               setFailedImageMap((prev) => ({ ...prev, [imgUrl]: true }));
                             }}
                           />
@@ -1905,15 +1895,10 @@ export default function DealDetailModal({
                               referrerPolicy="no-referrer"
                               loading="lazy"
                               onError={(e) => {
-                                const img = e.currentTarget;
                                 const primarySrc = getProxyImageUrl(src.image_url, { width: 120 });
-                                const fallback = getFallbackProxyImageUrl(src.image_url);
-                                if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
-                                  img.dataset.fallbackTried = "1";
-                                  img.src = fallback;
+                                if (tryApplyFallbackProxyImage(e.currentTarget, src.image_url, primarySrc)) {
                                   return;
                                 }
-                                img.dataset.fallbackTried = "1";
                                 if (src.image_url) {
                                   setFailedImageMap((prev) => ({
                                     ...prev,
@@ -2232,11 +2217,11 @@ export default function DealDetailModal({
           </div>
           <p
             style={{
-              fontSize: "0.68rem",
+              fontSize: "0.75rem",
               color: "var(--text-muted)",
               textAlign: "center",
               margin: "1px 0 0 0",
-              lineHeight: 1.3,
+              lineHeight: 1.35,
             }}
           >
             일부 쇼핑몰 이동 링크는 제휴 마케팅의 일환으로 일정액의 수수료를 제공받을 수 있습니다.

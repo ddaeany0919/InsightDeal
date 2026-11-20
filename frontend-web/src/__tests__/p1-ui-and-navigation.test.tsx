@@ -10,7 +10,7 @@ import DealDetailModal from "@/app/components/DealDetailModal";
 import PriceTrendChart from "@/app/components/PriceTrendChart";
 import ImageLightboxModal from "@/app/components/ImageLightboxModal";
 import Home from "@/app/page";
-import { PLATFORMS } from "@/app/lib/utils";
+import { PLATFORMS, computeUnitPriceBadge } from "@/app/lib/utils";
 import type { Deal } from "@/app/lib/types";
 
 vi.mock("next/link", () => ({
@@ -831,6 +831,127 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
         writable: true,
         value: OrigImage,
       });
+    }
+  });
+
+  it("computeUnitPriceBadge는 식품·생필품 체감 단가를 계산하고 IT·가전·USD 오탐을 차단한다", () => {
+    expect(computeUnitPriceBadge("[쿠팡] 비비고 육개장 500g x 6개", 17900, "KRW", "음식")).toEqual({
+      label: "100g당 597원",
+      detail: "총 3,000g · 개당 2,983원",
+    });
+    expect(computeUnitPriceBadge("[지마켓] 코카콜라 제로 당류 0g 355ml x 24캔", 16900, "KRW", "음식")).toEqual({
+      label: "100ml당 198원",
+      detail: "총 8,520ml · 개당 704원",
+    });
+    expect(computeUnitPriceBadge("[티몬] 베베숲 물티슈 70매 x 10팩", 15900, "KRW", "육아/유아용품")).toEqual({
+      label: "1팩당 1,590원",
+      detail: "70매 × 10팩 기준",
+    });
+    expect(computeUnitPriceBadge("[쿠팡] 두루마리 휴지 30롤", 18000, "KRW", "생활용품")).toEqual({
+      label: "1롤당 600원",
+      detail: "총 30롤 기준",
+    });
+    expect(computeUnitPriceBadge("[알리] Netac NVMe SSD 1TB", 69000, "KRW", "PC용품")).toBeNull();
+    expect(computeUnitPriceBadge("[쿠팡] 27인치 게이밍 모니터 165Hz", 199000, "KRW", "생활용품")).toBeNull();
+    expect(computeUnitPriceBadge("[아마존] 비타민 500g", 2000, "USD", "음식")).toBeNull();
+  });
+
+  it("DealCard는 단가 배지와 1-Step /api/proxy-image 즉시 플레이스홀더를 동작시키고 Home은 h2.sr-only·모바일 단축 플레이스홀더·맨 위로 FAB를 제공한다", async () => {
+    const dealUnit = buildDeal(901, {
+      title: "[쿠팡] 코카콜라 제로 355ml x 24캔",
+      price: "16900",
+      category: "음식",
+      image_url: "https://cdn.ppomppu.co.kr/zboard/expired_901.jpg",
+    });
+    render(
+      <DealCard
+        deal={dealUnit}
+        appliedSearch=""
+        isMounted={true}
+        currentTime={Date.now()}
+        isWishlisted={false}
+        isAlertSet={false}
+        onSelectDeal={vi.fn()}
+        onShareDeal={vi.fn()}
+        onToggleAlert={vi.fn()}
+        onToggleWishlist={vi.fn()}
+        onShowToast={vi.fn()}
+      />
+    );
+    expect(screen.getByText("100ml당 198원")).toBeInTheDocument();
+
+    const img = screen.getByAltText("코카콜라 제로 355ml x 24캔") as HTMLImageElement;
+    expect(img.getAttribute("src")).toContain("/api/proxy-image");
+    fireEvent.error(img);
+    expect(screen.queryByAltText("코카콜라 제로 355ml x 24캔")).toBeNull();
+
+    const origWidth = window.innerWidth;
+    const origScrollTo = window.scrollTo;
+    const scrollToSpy = vi.fn();
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
+    Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: scrollToSpy });
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("/api/meta/categories")) {
+        return new Response(JSON.stringify({ categories: [], sources: [] }), { status: 200 });
+      }
+      if (url.includes("/api/community/popular-keywords")) {
+        return new Response(JSON.stringify({ keywords: ["콜라"], rankings: [] }), { status: 200 });
+      }
+      if (url.includes("/api/push/device")) {
+        return new Response(JSON.stringify({ status: "ok", device_uuid: "web_fab", device_token: "tok_fab" }), { status: 200 });
+      }
+      if (url.includes("/api/users/notifications") || url.includes("/api/wishlist/")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.includes("/api/community/hot-deals")) {
+        return new Response(
+          JSON.stringify({
+            deals: [
+              {
+                id: 901,
+                title: dealUnit.title,
+                price: 16900,
+                currency: "KRW",
+                site_name: "뽐뿌",
+                shop_name: "쿠팡",
+                post_url: dealUnit.post_link,
+                ecommerce_url: dealUnit.ecommerce_url,
+                image_url: dealUnit.image_url,
+                category: "음식",
+                honey_score: 120,
+                indexed_at: "2026-11-20T04:00:00Z",
+                is_closed: false,
+              },
+            ],
+            has_more: false,
+            next_cursor: null,
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+
+    try {
+      render(<Home />);
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { level: 2, name: "실시간 핫딜 목록" })).toHaveClass("sr-only");
+      });
+      expect(
+        screen.getByPlaceholderText("핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)")
+      ).toBeInTheDocument();
+
+      Object.defineProperty(window, "scrollY", { configurable: true, writable: true, value: 720 });
+      fireEvent.scroll(window);
+      const scrollTopBtn = await screen.findByRole("button", { name: "맨 위로 이동" });
+      fireEvent.click(scrollTopBtn);
+      expect(scrollToSpy).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: origWidth });
+      Object.defineProperty(window, "scrollY", { configurable: true, writable: true, value: 0 });
+      Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: origScrollTo });
     }
   });
 });

@@ -1438,6 +1438,7 @@ import time as _feed_time
 # 자체 프리파싱(Pre-parsed) 인메모리 JSON API 캐시 (페이지 이동·탭 전환 시 재파싱 없이 0.5ms 내 즉시 응답)
 _TOP_DEALS_API_CACHE = {"ts": 0.0, "max_id": 0, "bind_id": 0, "data": None}
 _HOT_DEALS_API_CACHE = {}  # key: (bind_id, category, keyword, platform, sort, only_hot, include_closed) -> {"ts": float, "max_id": int, "grouped": list, ...}
+_HOT_DEALS_CURSOR_CACHE: dict[tuple, dict] = {}
 _HOT_DEALS_CACHE_LOCK = threading.Lock()
 _FEED_CACHE_TTL_SEC = 45.0
 
@@ -1469,6 +1470,7 @@ def invalidate_feed_api_cache(clear_ecom_url_cache: bool = True):
     _TOP_DEALS_API_CACHE["data"] = None
     with _HOT_DEALS_CACHE_LOCK:
         _HOT_DEALS_API_CACHE.clear()
+        _HOT_DEALS_CURSOR_CACHE.clear()
     with _DEAL_HISTORY_CACHE_LOCK:
         _DEAL_HISTORY_CACHE.clear()
     with _POPULAR_KEYWORDS_LOCK:
@@ -1486,6 +1488,8 @@ def invalidate_feed_api_cache(clear_ecom_url_cache: bool = True):
                 _mod._TOP_DEALS_API_CACHE["data"] = None
             if hasattr(_mod, "_HOT_DEALS_API_CACHE"):
                 _mod._HOT_DEALS_API_CACHE.clear()
+            if hasattr(_mod, "_HOT_DEALS_CURSOR_CACHE"):
+                _mod._HOT_DEALS_CURSOR_CACHE.clear()
             if hasattr(_mod, "_DEAL_HISTORY_CACHE"):
                 _mod._DEAL_HISTORY_CACHE.clear()
             if hasattr(_mod, "_POPULAR_KEYWORDS_CACHE"):
@@ -2150,66 +2154,70 @@ def get_hot_deals(
             effective_only_hot,
             effective_include_closed,
         )
-        current_max_id = (db.query(func.max(models.Deal.id)).scalar() or 0) if cursor_dt is None else 0
-        if cursor_dt is None:
+        def _hydrate_cached_slice_rows(cached_entry_obj: dict, target_slice: list) -> None:
+            need_meta = []
+            need_cluster_ids = set()
             with _HOT_DEALS_CACHE_LOCK:
-                cached_entry = _HOT_DEALS_API_CACHE.get(cache_key)
-            if (
-                cached_entry is not None
-                and cached_entry.get("max_id") == current_max_id
-                and (now_ts - cached_entry["ts"]) < _FEED_CACHE_TTL_SEC
-            ):
+                hydrated_gids = cached_entry_obj.setdefault("hydrated_gids", set())
+                meta_map = cached_entry_obj.get("hydrator_meta") or {}
+                for g in target_slice:
+                    if g["id"] not in hydrated_gids and g["id"] in meta_map:
+                        m = meta_map[g["id"]]
+                        need_meta.append((g, m))
+                        need_cluster_ids.update(m["cluster_ids"])
+            if need_cluster_ids:
+                html_by_id: dict[int, str] = {}
+                cids_list = list(need_cluster_ids)
+                for start in range(0, len(cids_list), 400):
+                    rows = (
+                        db.query(models.Deal.id, models.Deal.content_html)
+                        .filter(models.Deal.id.in_(cids_list[start:start + 400]))
+                        .all()
+                    )
+                    for did, h_val in rows:
+                        html_by_id[int(did)] = h_val or ""
+                with _HOT_DEALS_CACHE_LOCK:
+                    hydrated_gids = cached_entry_obj.setdefault("hydrated_gids", set())
+                    for g, m in need_meta:
+                        if g["id"] in hydrated_gids:
+                            continue
+                        ecom_obj = SimpleNamespace(
+                            id=m["ecom_id"],
+                            ecommerce_link=m["ecom_link"],
+                            post_link=m["ecom_post_link"],
+                            title=m["ecom_title"],
+                            shop_name=m["ecom_shop_name"],
+                        )
+                        _apply_html_fields_to_deal_dict(
+                            g=g,
+                            primary_html=html_by_id.get(m["primary_id"], ""),
+                            primary_title=m["primary_title"],
+                            primary_clean_title=m["primary_clean_title"],
+                            cluster_htmls=[html_by_id.get(cid, "") for cid in m["cluster_ids"]],
+                            ecom_obj=ecom_obj,
+                            ecom_html=html_by_id.get(m["ecom_id"], ""),
+                            ecom_is_multi=m["ecom_is_multi"],
+                            ecom_comp_name=m["ecom_comp_name"],
+                            db=db,
+                        )
+                        hydrated_gids.add(g["id"])
+
+        current_max_id = db.query(func.max(models.Deal.id)).scalar() or 0
+        with _HOT_DEALS_CACHE_LOCK:
+            cached_entry = _HOT_DEALS_API_CACHE.get(cache_key)
+        is_main_cache_valid = (
+            cached_entry is not None
+            and cached_entry.get("max_id") == current_max_id
+            and (now_ts - cached_entry["ts"]) < _FEED_CACHE_TTL_SEC
+        )
+        if cursor_dt is None:
+            if is_main_cache_valid:
                 cached_grouped = cached_entry["grouped"]
                 is_exhausted = bool(cached_entry.get("exhausted", True))
                 if is_exhausted or (offset + limit < len(cached_grouped)):
                     cached_slice = cached_grouped[offset:offset + limit]
-                    need_meta = []
-                    need_cluster_ids = set()
-                    with _HOT_DEALS_CACHE_LOCK:
-                        hydrated_gids = cached_entry.setdefault("hydrated_gids", set())
-                        meta_map = cached_entry.get("hydrator_meta") or {}
-                        for g in cached_slice:
-                            if g["id"] not in hydrated_gids and g["id"] in meta_map:
-                                m = meta_map[g["id"]]
-                                need_meta.append((g, m))
-                                need_cluster_ids.update(m["cluster_ids"])
-                    if need_cluster_ids:
-                        html_by_id: dict[int, str] = {}
-                        cids_list = list(need_cluster_ids)
-                        for start in range(0, len(cids_list), 400):
-                            rows = (
-                                db.query(models.Deal.id, models.Deal.content_html)
-                                .filter(models.Deal.id.in_(cids_list[start:start + 400]))
-                                .all()
-                            )
-                            for did, h_val in rows:
-                                html_by_id[int(did)] = h_val or ""
-                        with _HOT_DEALS_CACHE_LOCK:
-                            hydrated_gids = cached_entry.setdefault("hydrated_gids", set())
-                            for g, m in need_meta:
-                                if g["id"] in hydrated_gids:
-                                    continue
-                                ecom_obj = SimpleNamespace(
-                                    id=m["ecom_id"],
-                                    ecommerce_link=m["ecom_link"],
-                                    post_link=m["ecom_post_link"],
-                                    title=m["ecom_title"],
-                                    shop_name=m["ecom_shop_name"],
-                                )
-                                _apply_html_fields_to_deal_dict(
-                                    g=g,
-                                    primary_html=html_by_id.get(m["primary_id"], ""),
-                                    primary_title=m["primary_title"],
-                                    primary_clean_title=m["primary_clean_title"],
-                                    cluster_htmls=[html_by_id.get(cid, "") for cid in m["cluster_ids"]],
-                                    ecom_obj=ecom_obj,
-                                    ecom_html=html_by_id.get(m["ecom_id"], ""),
-                                    ecom_is_multi=m["ecom_is_multi"],
-                                    ecom_comp_name=m["ecom_comp_name"],
-                                    db=db,
-                                )
-                                hydrated_gids.add(g["id"])
-                    cached_has_more = (offset + len(cached_slice)) < len(cached_grouped)
+                    _hydrate_cached_slice_rows(cached_entry, cached_slice)
+                    cached_has_more = (offset + len(cached_slice)) < len(cached_grouped) or (not is_exhausted)
                     cached_next_cursor = None
                     if sort_mode == "latest" and cached_has_more and cached_slice:
                         cursors_map = cached_entry.get("cursors", {})
@@ -2220,6 +2228,49 @@ def get_hot_deals(
                         "next_cursor": cached_next_cursor,
                         "nextCursor": cached_next_cursor,
                     }
+        elif sort_mode == "latest" and cursor_indexed_at is not None and cursor_id is not None:
+            cursor_iso_norm = cursor_indexed_at.strip()
+            cursor_id_int = int(cursor_id)
+            if is_main_cache_valid:
+                cursors_map = cached_entry.get("cursors", {})
+                matched_c_idx = None
+                for idx_k, nc_val in cursors_map.items():
+                    if nc_val.get("id") == cursor_id_int and nc_val.get("indexed_at") == cursor_iso_norm:
+                        matched_c_idx = int(idx_k)
+                        break
+                if matched_c_idx is not None:
+                    cached_grouped = cached_entry["grouped"]
+                    is_exhausted = bool(cached_entry.get("exhausted", True))
+                    if is_exhausted or (matched_c_idx + 1 + limit < len(cached_grouped)):
+                        cached_slice = cached_grouped[matched_c_idx + 1:matched_c_idx + 1 + limit]
+                        _hydrate_cached_slice_rows(cached_entry, cached_slice)
+                        end_idx = matched_c_idx + 1 + len(cached_slice)
+                        cached_has_more = end_idx < len(cached_grouped) or (not is_exhausted)
+                        cached_next_cursor = (
+                            cursors_map.get(matched_c_idx + len(cached_slice))
+                            if (cached_has_more and cached_slice)
+                            else None
+                        )
+                        return {
+                            "deals": [dict(item) for item in cached_slice],
+                            "has_more": cached_has_more,
+                            "next_cursor": cached_next_cursor,
+                            "nextCursor": cached_next_cursor,
+                        }
+            cursor_cache_key = (cache_key, cursor_iso_norm, cursor_id_int, int(limit))
+            with _HOT_DEALS_CACHE_LOCK:
+                cursor_entry = _HOT_DEALS_CURSOR_CACHE.get(cursor_cache_key)
+            if (
+                cursor_entry is not None
+                and cursor_entry.get("max_id") == current_max_id
+                and (now_ts - cursor_entry["ts"]) < _FEED_CACHE_TTL_SEC
+            ):
+                return {
+                    "deals": [dict(item) for item in cursor_entry["deals"]],
+                    "has_more": bool(cursor_entry["has_more"]),
+                    "next_cursor": cursor_entry.get("next_cursor"),
+                    "nextCursor": cursor_entry.get("next_cursor"),
+                }
 
         query = db.query(models.Deal).join(models.Community).options(
             joinedload(models.Deal.community),
@@ -2666,7 +2717,7 @@ def get_hot_deals(
 
             lookback_rows: list = []
             if cursor_dt is not None and cursor_id is not None:
-                lookback_limit = 500
+                lookback_limit = 180
                 if is_sqlite_dialect:
                     init_cursor_val = cursor_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
                     lb_q = query.filter(
@@ -2875,6 +2926,18 @@ def get_hot_deals(
                     "cursors": cursors_map,
                     "hydrated_gids": {g["id"] for g in final_result},
                     "hydrator_meta": primitive_meta,
+                }
+        elif sort_mode == "latest" and cursor_indexed_at is not None and cursor_id is not None:
+            cursor_cache_key = (cache_key, cursor_indexed_at.strip(), int(cursor_id), int(limit))
+            with _HOT_DEALS_CACHE_LOCK:
+                if len(_HOT_DEALS_CURSOR_CACHE) > 50:
+                    _HOT_DEALS_CURSOR_CACHE.clear()
+                _HOT_DEALS_CURSOR_CACHE[cursor_cache_key] = {
+                    "ts": now_ts,
+                    "max_id": current_max_id,
+                    "deals": [dict(item) for item in final_result],
+                    "has_more": has_more,
+                    "next_cursor": next_cursor_obj,
                 }
 
         return {

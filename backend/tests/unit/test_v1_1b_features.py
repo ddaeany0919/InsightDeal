@@ -1939,3 +1939,130 @@ def test_category_misclassification_guards_and_low_price_won_decimal_recovery(un
     assert det_spk["price"] == 10194
     assert det_spk["currency"] == "USD"
     assert det_spk["sources"][0]["currency"] == "USD"
+
+
+def test_get_hot_deals_latest_cursor_cache_hit_and_invalidation(unit_v11b_env):
+    """sort=latest 커서 2페이지 조회 시 메인 피드 캐시 슬라이스 및 _HOT_DEALS_CURSOR_CACHE가 적중해 중복·누락 없이 고속 응답한다."""
+    from sqlalchemy import event
+
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+    engine = unit_v11b_env.engine
+    base_utc = datetime(2026, 11, 20, 4, 0, 0)
+
+    db = SessionCls()
+    try:
+        db.query(models.Deal).delete()
+        for idx in range(1, 9):
+            db.add(
+                models.Deal(
+                    source_community_id=1,
+                    title=f"[쿠팡] 커서 캐시 검증 상품 {idx}번 ({10000 + idx * 100}원/무배)",
+                    post_link=f"https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no={991000 + idx}",
+                    ecommerce_link=f"https://www.coupang.com/vp/products/{991000 + idx}",
+                    price=str(10000 + idx * 100),
+                    currency="KRW",
+                    shipping_fee="무료배송",
+                    content_html=f"<p>커서 캐시 검증용 본문 {idx}번입니다.</p>",
+                    indexed_at=base_utc + timedelta(minutes=idx),
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
+
+    community_router.invalidate_feed_api_cache()
+    sql_log: list[str] = []
+
+    def _capture_sql(conn, cursor, statement, parameters, context, executemany):
+        sql_log.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _capture_sql)
+    try:
+        # 1페이지 로드 -> 메인 캐시(_HOT_DEALS_API_CACHE) 및 cursors 맵 적재
+        p1 = client.get("/api/community/hot-deals", params={"limit": 3, "offset": 0, "sort": "latest"})
+        assert p1.status_code == 200
+        p1_json = p1.json()
+        assert len(p1_json["deals"]) == 3
+        assert p1_json["has_more"] is True
+        cursor_1 = p1_json["next_cursor"]
+        assert cursor_1 is not None
+        p1_ids = {d["id"] for d in p1_json["deals"]}
+
+        # 2페이지 로드 -> 메인 캐시 슬라이스 히트(전체 deals 테이블 스캔 없이 MAX(id) + content_html 1회)
+        sql_log.clear()
+        p2 = client.get(
+            "/api/community/hot-deals",
+            params={
+                "limit": 3,
+                "offset": 3,
+                "sort": "latest",
+                "cursor_indexed_at": cursor_1["indexed_at"],
+                "cursor_id": cursor_1["id"],
+            },
+        )
+        assert p2.status_code == 200
+        p2_json = p2.json()
+        assert len(p2_json["deals"]) == 3
+        p2_ids = {d["id"] for d in p2_json["deals"]}
+        assert p1_ids.isdisjoint(p2_ids)
+        assert len(sql_log) <= 2
+
+        # 메인 캐시만 비워 2차 _HOT_DEALS_CURSOR_CACHE 미스→적재→히트 경로 검증
+        with community_router._HOT_DEALS_CACHE_LOCK:
+            community_router._HOT_DEALS_API_CACHE.clear()
+        p2_miss = client.get(
+            "/api/community/hot-deals",
+            params={
+                "limit": 3,
+                "offset": 3,
+                "sort": "latest",
+                "cursor_indexed_at": cursor_1["indexed_at"],
+                "cursor_id": cursor_1["id"],
+            },
+        )
+        assert p2_miss.status_code == 200
+        assert {d["id"] for d in p2_miss.json()["deals"]} == p2_ids
+        assert len(community_router._HOT_DEALS_CURSOR_CACHE) == 1
+
+        sql_log.clear()
+        p2_hit = client.get(
+            "/api/community/hot-deals",
+            params={
+                "limit": 3,
+                "offset": 3,
+                "sort": "latest",
+                "cursor_indexed_at": cursor_1["indexed_at"],
+                "cursor_id": cursor_1["id"],
+            },
+        )
+        assert p2_hit.status_code == 200
+        assert {d["id"] for d in p2_hit.json()["deals"]} == p2_ids
+        assert len(sql_log) == 1  # MAX(id) 단건 확인만 실행
+
+        # 신규 딜 인입 + 무효화 시 커서 캐시도 함께 초기화되어 최신 딜이 즉시 반영됨
+        db = SessionCls()
+        try:
+            db.add(
+                models.Deal(
+                    source_community_id=1,
+                    title="[쿠팡] 커서 캐시 무효화 검증 최신 상품 (25,000원/무배)",
+                    post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=991999",
+                    ecommerce_link="https://www.coupang.com/vp/products/991999",
+                    price="25000",
+                    currency="KRW",
+                    shipping_fee="무료배송",
+                    content_html="<p>신규 딜 인입 시 커서 캐시 초기화 확인</p>",
+                    indexed_at=base_utc + timedelta(minutes=30),
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        community_router.invalidate_feed_api_cache()
+        assert len(community_router._HOT_DEALS_CURSOR_CACHE) == 0
+        p1_after = client.get("/api/community/hot-deals", params={"limit": 3, "offset": 0, "sort": "latest"}).json()
+        assert "무효화 검증 최신 상품" in p1_after["deals"][0]["title"]
+    finally:
+        event.remove(engine, "before_cursor_execute", _capture_sql)

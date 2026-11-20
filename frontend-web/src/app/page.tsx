@@ -16,6 +16,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  ArrowUp,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -176,6 +177,22 @@ export default function Home() {
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showEulaModal, setShowEulaModal] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [isCompactViewport, setIsCompactViewport] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const syncViewport = () => setIsCompactViewport(window.innerWidth <= 480);
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    return () => window.removeEventListener("resize", syncViewport);
+  }, []);
+
+  useEffect(() => {
+    const onScroll = () => setShowScrollTop(window.scrollY > 640);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveDealsAbortRef = useRef<AbortController | null>(null);
@@ -2225,7 +2242,11 @@ export default function Home() {
                 <input
                   type="text"
                   aria-label="핫딜 검색어 입력"
-                  placeholder="주요 커뮤니티 10곳 핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
+                  placeholder={
+                    isCompactViewport
+                      ? "핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
+                      : "주요 커뮤니티 10곳 핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
+                  }
                   value={searchQuery}
                   onCompositionStart={() => {
                     isComposingRef.current = true;
@@ -2783,6 +2804,7 @@ export default function Home() {
             </div>
           )}
 
+          <h2 className="sr-only">실시간 핫딜 목록</h2>
           <div className="deal-list">
             {loading && filteredDeals.length === 0 && !fetchError ? (
               <>
@@ -2979,6 +3001,18 @@ export default function Home() {
         <div role="status" aria-live="polite" aria-atomic="true">
           {toastMessage && <div className="toast">{toastMessage}</div>}
         </div>
+
+        {showScrollTop && !selectedDeal && (
+          <button
+            type="button"
+            className="scroll-top-fab bounce-click"
+            aria-label="맨 위로 이동"
+            title="맨 위로 이동"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          >
+            <ArrowUp size={18} aria-hidden="true" />
+          </button>
+        )}
 
         <footer className="footer">
           <div

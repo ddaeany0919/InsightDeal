@@ -7,7 +7,7 @@ import {
   formatPrice,
   decodeHtmlEntities,
   getProxyImageUrl,
-  getFallbackProxyImageUrl,
+  tryApplyFallbackProxyImage,
 } from "../lib/utils";
 import { useDialogA11y } from "../lib/useDialogA11y";
 import BrandImagePlaceholder from "./BrandImagePlaceholder";
@@ -243,15 +243,10 @@ export default function WishlistDrawer({
                           style={{ width: "100%", height: "100%", objectFit: "cover" }}
                           referrerPolicy="no-referrer"
                           onError={(e) => {
-                            const img = e.currentTarget;
                             const primarySrc = getProxyImageUrl(deal.image_url, { width: 120 });
-                            const fallback = getFallbackProxyImageUrl(deal.image_url);
-                            if (fallback && fallback !== primarySrc && !img.dataset.fallbackTried) {
-                              img.dataset.fallbackTried = "1";
-                              img.src = fallback;
+                            if (tryApplyFallbackProxyImage(e.currentTarget, deal.image_url, primarySrc)) {
                               return;
                             }
-                            img.dataset.fallbackTried = "1";
                             setFailedImages((prev) => ({ ...prev, [imgKey]: true }));
                           }}
                         />

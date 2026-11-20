@@ -330,6 +330,7 @@ function DeviceSyncModalContent({
             type="button"
             onClick={onClose}
             aria-label="모달 닫기"
+            title="다기기 동기화 모달 닫기"
             style={{
               background: "var(--surface-subtle)",
               border: "1px solid var(--card-border)",

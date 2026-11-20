@@ -910,6 +910,30 @@ export const getFallbackProxyImageUrl = (
   return apiUrl(`/api/proxy-image?url=${encodeURIComponent(trimmed)}`);
 };
 
+/**
+ * 1차 이미지(wsrv.nl 등) 로드 실패 시 /api/proxy-image 로 단 1회만 폴백을 시도한다.
+ * 이미 /api/proxy-image 경로에서 실패한 경우 중복 404 왕복 없이 즉시 false를 반환한다.
+ */
+export const tryApplyFallbackProxyImage = (
+  img: HTMLImageElement,
+  rawUrl: string | null | undefined,
+  primarySrc: string
+): boolean => {
+  const fallback = getFallbackProxyImageUrl(rawUrl);
+  if (
+    fallback &&
+    fallback !== primarySrc &&
+    !img.dataset.fallbackTried &&
+    !primarySrc.includes("/api/proxy-image")
+  ) {
+    img.dataset.fallbackTried = "1";
+    img.src = fallback;
+    return true;
+  }
+  img.dataset.fallbackTried = "1";
+  return false;
+};
+
 export const resolveOutboundUrl = (
   rawUrl: string | undefined | null
 ): string => {
@@ -2251,4 +2275,176 @@ export const trackOutboundClick = (
       keepalive: true,
     }).catch(() => {});
   } catch {}
+};
+
+const _UNIT_PRICE_EXCLUDED_CATEGORIES = new Set([
+  "PC/하드웨어",
+  "PC용품",
+  "SW/게임",
+  "가전/TV",
+  "가전제품",
+  "상품권",
+  "적립/포인트",
+  "적립",
+  "이벤트",
+  "모바일/기프티콘",
+]);
+
+const _UNIT_PRICE_TECH_SPEC_RE =
+  /(?:^|[\s(/\[,])(?:\d+\s*(?:gb|tb|mb|ghz|mhz|hz|mah|wh|w|인치|inch)|rtx\s*\d+|gtx\s*\d+|ddr[45]|nvme|ssd|hdd|모니터|노트북|그래픽카드|메인보드|키보드|마우스|이어폰|헤드셋|충전기|케이블|보조배터리|스마트워치|태블릿|아이패드|갤럭시탭|맥북)(?=$|[\s)/\],])/i;
+
+export interface UnitPriceBadgeInfo {
+  label: string;
+  detail: string;
+}
+
+/**
+ * 식품·생활용품·소모품 제목에서 중량/용량/팩/수량을 추출해 100g당·100ml당·1팩당·개당 체감 단가를 계산한다.
+ * IT/가전 스펙이나 비원화 딜은 오탐 방지를 위해 null을 반환한다.
+ */
+export const computeUnitPriceBadge = (
+  title?: string | null,
+  price?: number | string | null,
+  currency?: string | null,
+  category?: string | null
+): UnitPriceBadgeInfo | null => {
+  const numericPrice =
+    typeof price === "number"
+      ? price
+      : typeof price === "string"
+        ? Number(price.replace(/[^0-9.]/g, ""))
+        : NaN;
+  if (!title || !Number.isFinite(numericPrice) || numericPrice < 1000) return null;
+  const normalizedPrice = Math.round(numericPrice);
+  if (currency && currency.trim().toUpperCase() !== "KRW") return null;
+  if (category && _UNIT_PRICE_EXCLUDED_CATEGORIES.has(category.trim())) {
+    return null;
+  }
+
+  const cleanedTitle = decodeHtmlEntities(title)
+    .replace(/\([^)]*원[^)]*\)/g, " ")
+    .replace(/^\[[^\]]+\]\s*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleanedTitle || _UNIT_PRICE_TECH_SPEC_RE.test(cleanedTitle)) {
+    return null;
+  }
+
+  // 1. 물티슈/시트류 (N매 x M팩)
+  const sheetPackRe =
+    /(\d{2,4})\s*매(?:입)?\s*(?:[xX×*]|,|\s)\s*(\d{1,3})\s*(팩|봉|개|통|박스)(?![가-힣])/;
+  const sheetMatch = sheetPackRe.exec(cleanedTitle);
+  if (sheetMatch) {
+    const sheets = Number(sheetMatch[1]);
+    const packCount = Number(sheetMatch[2]);
+    if (packCount >= 2 && packCount <= 200) {
+      const perPack = Math.round(normalizedPrice / packCount);
+      if (perPack >= 10 && perPack < normalizedPrice) {
+        return {
+          label: `1팩당 ${perPack.toLocaleString("ko-KR")}원`,
+          detail: `${sheets.toLocaleString("ko-KR")}매 × ${packCount}팩 기준`,
+        };
+      }
+    }
+  }
+
+  // Helper: 기준 단위 직후 12자 내 수량(+증정분) 추출
+  const extractTrailingCount = (afterStr: string, pattern: RegExp): number => {
+    const windowStr = afterStr.slice(0, 14);
+    const m = pattern.exec(windowStr);
+    if (!m) return 1;
+    const baseCnt = Number(m[1]);
+    if (!Number.isFinite(baseCnt) || baseCnt < 1 || baseCnt > 500) return 1;
+    const bonusWindow = windowStr.slice(m.index + m[0].length);
+    const bonusM = /^\s*\+\s*(\d{1,2})\s*(?:개|팩|봉|캔|병|포|통)/.exec(bonusWindow);
+    const bonusCnt = bonusM ? Number(bonusM[1]) : 0;
+    return baseCnt + (Number.isFinite(bonusCnt) ? bonusCnt : 0);
+  };
+
+  // 2. 중량 (kg / g) — 0g 영양표기·소량 제외
+  const weightRe = /(?<![a-zA-Z0-9.])(\d+(?:\.\d+)?)\s*(kg|g)(?![a-zA-Z])/gi;
+  for (const wm of cleanedTitle.matchAll(weightRe)) {
+    const rawVal = Number(wm[1]);
+    const unit = wm[2].toLowerCase();
+    if (!Number.isFinite(rawVal) || rawVal <= 0) continue;
+    const unitGrams = unit === "kg" ? rawVal * 1000 : rawVal;
+    if (unitGrams < 10) continue;
+    const afterStr = cleanedTitle.slice((wm.index ?? 0) + wm[0].length);
+    const count = extractTrailingCount(
+      afterStr,
+      /^\s*(?:[xX×*,]|\s)+\s*(\d{1,3})\s*(?:개입|개|팩|봉지|봉|캔|병|통|포|곽|입|박스|세트)(?![가-힣])/
+    );
+    const totalGrams = unitGrams * count;
+    if (totalGrams >= 50 && totalGrams <= 100000) {
+      const per100g = Math.round((normalizedPrice / totalGrams) * 100);
+      if (per100g >= 10 && per100g < normalizedPrice) {
+        return {
+          label: `100g당 ${per100g.toLocaleString("ko-KR")}원`,
+          detail:
+            count >= 2
+              ? `총 ${Math.round(totalGrams).toLocaleString("ko-KR")}g · 개당 ${Math.round(
+                  normalizedPrice / count
+                ).toLocaleString("ko-KR")}원`
+              : `총 ${Math.round(totalGrams).toLocaleString("ko-KR")}g 기준`,
+        };
+      }
+    }
+  }
+
+  // 3. 용량 (ml / L / 리터)
+  const volumeRe = /(?<![a-zA-Z0-9.])(\d+(?:\.\d+)?)\s*(ml|l|리터)(?![a-zA-Z])/gi;
+  for (const vm of cleanedTitle.matchAll(volumeRe)) {
+    const rawVal = Number(vm[1]);
+    const unit = vm[2].toLowerCase();
+    if (!Number.isFinite(rawVal) || rawVal <= 0) continue;
+    const unitMl = unit === "ml" ? rawVal : rawVal * 1000;
+    if (unitMl < 10) continue;
+    const afterStr = cleanedTitle.slice((vm.index ?? 0) + vm[0].length);
+    const count = extractTrailingCount(
+      afterStr,
+      /^\s*(?:[xX×*,]|\s)+\s*(\d{1,3})\s*(?:개입|개|캔|병|팩|페트|pet|포|통|입|박스|세트)(?![a-zA-Z가-힣])/i
+    );
+    const totalMl = unitMl * count;
+    if (totalMl >= 50 && totalMl <= 100000) {
+      const per100ml = Math.round((normalizedPrice / totalMl) * 100);
+      if (per100ml >= 10 && per100ml < normalizedPrice) {
+        return {
+          label: `100ml당 ${per100ml.toLocaleString("ko-KR")}원`,
+          detail:
+            count >= 2
+              ? `총 ${Math.round(totalMl).toLocaleString("ko-KR")}ml · 개당 ${Math.round(
+                  normalizedPrice / count
+                ).toLocaleString("ko-KR")}원`
+              : `총 ${Math.round(totalMl).toLocaleString("ko-KR")}ml 기준`,
+        };
+      }
+    }
+  }
+
+  // 4. 순수 묶음 수량 (롤/캡슐/정/켤레/팩/봉 등)
+  const bundleRe =
+    /(?:^|[\s,xX×*+(/\[])(\d{2,3}|[2-9])\s*(개입|팩|봉지|봉|캔|병|포|롤|캡슐|정|켤레|박스)(?![가-힣])/;
+  const bm = bundleRe.exec(cleanedTitle);
+  if (bm) {
+    const count = Number(bm[1]);
+    const unitLabel = bm[2];
+    if (count >= 2 && count <= 500) {
+      const perUnit = Math.round(normalizedPrice / count);
+      if (perUnit >= 10 && perUnit < normalizedPrice) {
+        const prefix =
+          unitLabel === "롤" ||
+          unitLabel === "캡슐" ||
+          unitLabel === "정" ||
+          unitLabel === "켤레"
+            ? `1${unitLabel}당`
+            : "개당";
+        return {
+          label: `${prefix} ${perUnit.toLocaleString("ko-KR")}원`,
+          detail: `총 ${count}${unitLabel} 기준`,
+        };
+      }
+    }
+  }
+
+  return null;
 };

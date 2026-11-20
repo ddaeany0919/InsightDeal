@@ -1487,6 +1487,14 @@ mark.search-highlight {
   color: var(--secondary);
 }
 
+.deal-unit-price-badge {
+  background: var(--secondary-soft-bg);
+  color: var(--secondary);
+  border: 1px solid rgba(27, 100, 218, 0.22);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .badge-warning,
 .search-fallback-badge {
   background: var(--warning-bg);
@@ -1587,13 +1595,13 @@ mark.search-highlight {
 
   .deal-card-body-trigger {
     flex-direction: row;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px;
   }
 
   .deal-image-wrapper {
-    width: 104px;
-    height: 104px;
+    width: 92px;
+    height: 92px;
     flex-shrink: 0;
     border-radius: 10px;
   }
@@ -1638,6 +1646,33 @@ mark.search-highlight {
 }
 
 /* 푸터 */
+
+/* 우측 하단 맨 위로 플로팅 버튼 (모바일 @media 규칙 위 선언으로 반응형 우선순위 보장) */
+.scroll-top-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: var(--card-bg);
+  color: var(--text-main);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 890;
+  transition: transform 0.16s ease, background-color 0.16s ease, color 0.16s ease;
+}
+
+.scroll-top-fab:hover {
+  background: var(--accent-solid-bg);
+  color: var(--accent-solid-fg);
+  border-color: var(--accent-solid-bg);
+  transform: translateY(-2px);
+}
 .footer {
   border-top: 1px solid var(--card-border);
   padding: 40px 0 calc(40px + env(safe-area-inset-bottom, 0px)) 0;
@@ -2424,5 +2459,12 @@ mark.search-highlight {
     padding: 12px 10px;
     border-radius: 12px;
     font-size: 0.82rem;
+  }
+
+  .scroll-top-fab {
+    right: 16px;
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    width: 40px;
+    height: 40px;
   }
 }
