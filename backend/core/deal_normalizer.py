@@ -932,7 +932,12 @@ def parse_price_string(
         return int(round(float(m_chun.group(1)) * 1000)), "KRW"
 
     if any(c in s_no_ship for c in ("원", "₩", "￦")):
-        m_won = re.search(r"([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)", s_no_ship)
+        s_won_norm = re.sub(
+            r"(?<![0-9.])([1-9][0-9]{0,2}(?:\.[0-9]{3})+)(?=\s*원)",
+            lambda m: m.group(1).replace(".", ","),
+            s_no_ship,
+        )
+        m_won = re.search(r"([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)", s_won_norm)
         if m_won:
             val = int(m_won.group(1).replace(",", ""))
             if any(x in s_no_ship.lower() for x in ("0원", "무료", "공짜", "나눔", "free")) and val == 0:
@@ -1105,6 +1110,11 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
     sanitized = html.unescape(str(raw_title)).replace("\xa0", " ").strip()
     sanitized = _PLACEHOLDER_COMMA_RE.sub("", sanitized)
     sanitized = _SEED_DUMMY_TAIL_RE.sub("", sanitized)
+    sanitized = re.sub(
+        r"(?<![0-9.])([1-9][0-9]{0,2}(?:\.[0-9]{3})+)(?=\s*원)",
+        lambda m: m.group(1).replace(".", ","),
+        sanitized,
+    )
 
     masked = _UNIT_PRICE_RE.sub(" ", sanitized)
     masked = _DATE_TIME_PAREN_RE.sub(" ", masked)

@@ -1889,6 +1889,17 @@ def test_category_misclassification_guards_and_low_price_won_decimal_recovery(un
             content_html="<p>토스 적용가 94 롱패딩 90 95 사이즈</p>",
             indexed_at=base_utc - timedelta(minutes=2),
         )
+        d_padding_dot_94520 = models.Deal(
+            source_community_id=1,
+            title="[지마켓] 테스트 울 플리스 하프코트 XZ990 (94.520원/무배)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=888005",
+            ecommerce_link="https://item.gmarket.co.kr/Item?goodscode=888005",
+            price="0",
+            currency="KRW",
+            category="패션",
+            content_html="<p>울 플리스 하프코트 94.520원 무료배송</p>",
+            indexed_at=base_utc - timedelta(minutes=4),
+        )
         d_speaker_101 = models.Deal(
             source_community_id=1,
             title="[알리] 에디파이어 M90 블루투스 6.0 스피커_역대가",
@@ -1900,11 +1911,11 @@ def test_category_misclassification_guards_and_low_price_won_decimal_recovery(un
             content_html="<p>[알리] 에디파이어 M90 블루투스 6.0 스피커 💰 ￦ 101.94 (KRW) 무료배송</p>",
             indexed_at=base_utc - timedelta(minutes=3),
         )
-        db.add_all([d_chicken, d_watchface, d_padding_94, d_speaker_101])
+        db.add_all([d_chicken, d_watchface, d_padding_94, d_padding_dot_94520, d_speaker_101])
         db.commit()
-        for obj in (d_chicken, d_watchface, d_padding_94, d_speaker_101):
+        for obj in (d_chicken, d_watchface, d_padding_94, d_padding_dot_94520, d_speaker_101):
             db.refresh(obj)
-        id_pad, id_spk = d_padding_94.id, d_speaker_101.id
+        id_pad, id_pad_dot, id_spk = d_padding_94.id, d_padding_dot_94520.id, d_speaker_101.id
     finally:
         db.close()
 
@@ -1919,6 +1930,10 @@ def test_category_misclassification_guards_and_low_price_won_decimal_recovery(un
 
     det_pad = client.get(f"/api/community/deals/{id_pad}").json()
     assert det_pad["price"] == 0
+
+    det_pad_dot = client.get(f"/api/community/deals/{id_pad_dot}").json()
+    assert det_pad_dot["price"] == 94520
+    assert det_pad_dot["currency"] == "KRW"
 
     det_spk = client.get(f"/api/community/deals/{id_spk}").json()
     assert det_spk["price"] == 10194
