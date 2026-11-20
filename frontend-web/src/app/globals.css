@@ -1576,6 +1576,13 @@ mark.search-highlight {
   }
 }
 
+.deal-payment-cond-badge {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border: 1px solid var(--warning-border);
+  font-weight: 700;
+}
+
 .badge-warning,
 .search-fallback-badge {
   background: var(--warning-bg);
@@ -1927,6 +1934,27 @@ mark.search-highlight {
 @media (max-width: 420px) {
   .search-input::placeholder {
     font-size: clamp(12px, 0.78rem, 14px);
+  }
+
+  .trending-ticker-bar {
+    padding: 3px 6px 3px 8px;
+    gap: 4px;
+  }
+
+  .trending-ticker-left {
+    gap: 6px;
+  }
+
+  .trending-badge-pill {
+    padding: 2px 6px;
+  }
+
+  .trending-expand-btn {
+    padding: 0 6px;
+  }
+
+  .trending-ticker-left .trending-deal-count {
+    display: none;
   }
 }
 

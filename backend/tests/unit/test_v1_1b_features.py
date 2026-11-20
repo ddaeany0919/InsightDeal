@@ -2381,3 +2381,100 @@ def test_wave1_v11d_normalizer_categories_search_and_price_sort(unit_v11b_env):
     idx_free = next(i for i, t in enumerate(totals) if "무배 라면" in t[0])
     idx_ship = next(i for i, t in enumerate(totals) if "유료배송 생수" in t[0])
     assert idx_free < idx_ship
+
+
+def test_v11d_wave2_category_synonyms_and_filtering(unit_v11b_env):
+    """v1.1d Wave 2: 패션/의류 카테고리 조회, OTT 오유입 차단, 신규 오분류 교정 및 문상·switch2 검색을 검증한다."""
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+    from backend.database import models
+    from backend.routers import community as community_router
+    from backend.services.normalizer.regex_normalizer import RegexNormalizer
+    from backend.core.deal_normalizer import build_search_keywords
+
+    norm = RegexNormalizer()
+    assert norm._map_category("냉동 모닝 잉글리쉬 머핀6입 1박스(840g)") == "음식"
+    assert norm._map_category("[네이버] 햇 대봉감5kg 특대과") == "음식"
+    assert norm._map_category("[던킨도너츠] 네이버페이 결제시 50% 할인") == "음식"
+    assert norm._map_category("고향사랑기부제 3만원 답례품 + 2만원 네이버 페이 지급") == "모바일/기프티콘"
+    assert asyncio.run(norm.normalize("고향사랑기부제 3만원 답례품 + 2만원 네이버 페이 지급", "식품건강")).category == "모바일/기프티콘"
+    assert norm._map_category("[네이버] 호리 일렉트릭 시간의 오카리나") == "SW/게임"
+    assert norm._map_category("[newegg] Bitdefender Family Pack 2027") == "SW/게임"
+    assert norm._map_category("[카카오톡딜] 10초 설치 완성 원터치 스노우트리 150cm") == "생활용품"
+    assert norm._map_category("[지마켓] 사가미 러브미골드 10개입 X 12개") == "생활용품"
+
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    db = unit_v11b_env.SessionCls()
+    try:
+        d_cloth = models.Deal(
+            source_community_id=1,
+            title="나이키 더블 스우시 퓨추라 맨투맨",
+            price="34720",
+            currency="KRW",
+            shipping_fee="무료배송",
+            category="패션",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=88101",
+            indexed_at=now_naive - timedelta(minutes=2),
+            is_closed=False,
+        )
+        d_appletv = models.Deal(
+            source_community_id=1,
+            title="apple TV+ 6개월간 월 2900원씩 프로모션",
+            price="2900",
+            currency="KRW",
+            shipping_fee="",
+            category="상품권",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=88102",
+            indexed_at=now_naive - timedelta(minutes=3),
+            is_closed=False,
+        )
+        d_culture = models.Deal(
+            source_community_id=1,
+            title="[네이버] 컬쳐랜드 모바일 문화상품권 5만",
+            price="46500",
+            currency="KRW",
+            shipping_fee="무료배송",
+            category="모바일/기프티콘",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=88103",
+            search_keywords=build_search_keywords("[네이버] 컬쳐랜드 모바일 문화상품권 5만"),
+            indexed_at=now_naive - timedelta(minutes=4),
+            is_closed=False,
+        )
+        d_sw2 = models.Deal(
+            source_community_id=1,
+            title="닌텐도 스위치 2 호리 일렉트릭 시간의 오카리나 젤다의 전설",
+            price="79800",
+            currency="KRW",
+            shipping_fee="무료배송",
+            category="SW/게임",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=88104",
+            search_keywords=build_search_keywords("닌텐도 스위치 2 호리 일렉트릭 시간의 오카리나 젤다의 전설"),
+            indexed_at=now_naive - timedelta(minutes=5),
+            is_closed=False,
+        )
+        db.add_all([d_cloth, d_appletv, d_culture, d_sw2])
+        db.commit()
+    finally:
+        db.close()
+
+    community_router.invalidate_feed_api_cache()
+
+    r_fashion = unit_v11b_env.client.get("/api/community/hot-deals", params={"category": "패션/의류", "limit": 20})
+    assert r_fashion.status_code == 200
+    assert any("나이키 더블 스우시" in d["title"] for d in r_fashion.json()["deals"])
+
+    r_tv = unit_v11b_env.client.get("/api/community/hot-deals", params={"category": "가전/TV", "limit": 20})
+    assert r_tv.status_code == 200
+    assert not any("apple TV+" in d["title"] for d in r_tv.json()["deals"])
+
+    r_evt = unit_v11b_env.client.get("/api/community/hot-deals", params={"category": "이벤트", "limit": 20})
+    assert r_evt.status_code == 200
+    assert not any("apple TV+" in d["title"] for d in r_evt.json()["deals"])
+
+    r_munsang = unit_v11b_env.client.get("/api/community/hot-deals", params={"keyword": "문상", "limit": 20})
+    assert r_munsang.status_code == 200
+    assert any("문화상품권" in d["title"] for d in r_munsang.json()["deals"])
+
+    r_sw2 = unit_v11b_env.client.get("/api/community/hot-deals", params={"keyword": "switch2", "limit": 20})
+    assert r_sw2.status_code == 200
+    assert any("스위치 2" in d["title"] for d in r_sw2.json()["deals"])

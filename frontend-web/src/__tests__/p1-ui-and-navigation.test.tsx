@@ -10,7 +10,12 @@ import DealDetailModal from "@/app/components/DealDetailModal";
 import PriceTrendChart from "@/app/components/PriceTrendChart";
 import ImageLightboxModal from "@/app/components/ImageLightboxModal";
 import Home from "@/app/page";
-import { PLATFORMS, computeUnitPriceBadge, upgradeLowresImageUrl } from "@/app/lib/utils";
+import {
+  PLATFORMS,
+  computeUnitPriceBadge,
+  extractPaymentConditionBadge,
+  upgradeLowresImageUrl,
+} from "@/app/lib/utils";
 import type { Deal } from "@/app/lib/types";
 
 vi.mock("next/link", () => ({
@@ -992,6 +997,17 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
       label: "개당 4,975원",
       detail: "총 4개 기준",
     });
+    expect(computeUnitPriceBadge("[네이버] 레스노베 워터 앰플 미스트60ml", 4900, "KRW", "뷰티")).toEqual({
+      label: "10ml당 817원",
+      detail: "총 60ml 기준",
+    });
+    expect(computeUnitPriceBadge("와인25플러스 모바일상품권 5만원권", 46560, "KRW", "모바일/기프티콘")).toEqual({
+      label: "약 6.9% 할인",
+      detail: "액면가 50,000원 기준",
+    });
+    expect(extractPaymentConditionBadge("[던킨도너츠] 네이버페이 결제시 50% 할인", "")).toBe("네이버페이 조건");
+    expect(extractPaymentConditionBadge("[컴퓨존] 스위치2 포켓몬 레전드 ZA (우리카드)", "")).toBe("우리카드 조건");
+    expect(extractPaymentConditionBadge("퍼실 세탁세제", "네멤무료")).toBe("네멤 조건");
 
     // 2. kakaocdn 저해상도 썸네일 고해상도 업그레이드
     expect(

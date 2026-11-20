@@ -2333,8 +2333,64 @@ export interface UnitPriceBadgeInfo {
   detail: string;
 }
 
+const _VOUCHER_TITLE_RE =
+  /(?:상품권|컬쳐랜드|컬처랜드|해피머니|북앤라이프|기프트카드|금액권)/;
+const _VOUCHER_GIFT_ATTACHED_RE =
+  /\+\s*[^+]{0,16}(?:상품권|컬쳐|컬처|해피머니|기프트|금액권)/;
+const _VOUCHER_MAN_FACE_RE =
+  /(?:^|[\s(\[,·])(\d{1,2})\s*만\s*(?:원\s*권|원권|권|원)?(?=$|[\s)\],·]|(?![가-힣0-9]))(?!\s*(?:이상|이하|할인|적립|페이백|증정|답례품))/;
+const _VOUCHER_THOUSAND_FACE_RE = /([1-9]\d?,000)\s*원?\s*권/;
+
 /**
- * 식품·생활용품·소모품 제목에서 중량/용량/팩/수량을 추출해 100g당·100ml당·1팩당·개당 체감 단가를 계산한다.
+ * 제목/배송비에서 특정 카드사·간편결제·멤버십 전용 조건 배지를 추출한다.
+ * 단순 쇼핑몰 말머리([네이버], [토스])나 일반 적립글 오탐을 방지한다.
+ */
+export const extractPaymentConditionBadge = (
+  title?: string | null,
+  shippingFee?: string | null
+): string | null => {
+  const cleanTitle = decodeHtmlEntities(title || "").trim();
+  const cleanShip = decodeHtmlEntities(shippingFee || "").trim();
+  const combined = `${cleanTitle} ${cleanShip}`.trim();
+  if (!combined) return null;
+
+  const cardMatch =
+    /(우리카드|삼성카드|신한카드|국민카드|KB\s*국민카드|KB\s*카드|현대카드|롯데카드|하나카드|농협카드|NH\s*농협카드|NH\s*카드|비씨카드|BC\s*카드)/i.exec(
+      cleanTitle
+    );
+  if (cardMatch) {
+    const rawCard = cardMatch[1].replace(/\s+/g, "").toUpperCase();
+    if (rawCard.startsWith("KB")) return "국민카드 조건";
+    if (rawCard.startsWith("NH")) return "농협카드 조건";
+    if (rawCard.startsWith("BC")) return "비씨카드 조건";
+    return `${cardMatch[1].replace(/\s+/g, "")} 조건`;
+  }
+
+  const payMatch =
+    /(네이버페이|카카오페이|토스페이|페이코)\s*(?:결제|할인|시\s*\d|적립\s*할인|체감|최대|\d+%)/i.exec(
+      cleanTitle
+    );
+  if (payMatch) {
+    return `${payMatch[1]} 조건`;
+  }
+
+  if (/(?:와우\s*(?:할인|회원|특가|전용|\d)|\[\s*와우\s+\d)/i.test(cleanTitle) || /와우/i.test(cleanShip)) {
+    return "와우회원 조건";
+  }
+  if (/(?:네멤\s*(?:할인|특가|전용)|네이버\s*멤버십)/i.test(cleanTitle) || /네멤/i.test(cleanShip)) {
+    return "네멤 조건";
+  }
+  if (/유니버스\s*클럽/i.test(cleanTitle)) {
+    return "유니버스클럽 조건";
+  }
+  if (/슈퍼\s*적립/i.test(cleanTitle)) {
+    return "슈퍼적립 조건";
+  }
+  return null;
+};
+
+/**
+ * 식품·생활용품·소모품 제목에서 중량/용량/팩/수량을 추출해 100g당·100ml당·1팩당·개당·상품권 할인율을 계산한다.
  * IT/가전 스펙이나 비원화 딜은 오탐 방지를 위해 null을 반환한다.
  */
 export const computeUnitPriceBadge = (
@@ -2352,6 +2408,44 @@ export const computeUnitPriceBadge = (
   if (!title || !Number.isFinite(numericPrice) || numericPrice < 1000) return null;
   const normalizedPrice = Math.round(numericPrice);
   if (currency && currency.trim().toUpperCase() !== "KRW") return null;
+
+  // 0. 상품권·금액권 액면가 대비 할인율 배지 (모바일/기프티콘·상품권 카테고리 제외 전 선판정)
+  const voucherTitle = decodeHtmlEntities(title)
+    .replace(/^\[[^\]]+\]\s*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (
+    voucherTitle &&
+    !voucherTitle.includes("/") &&
+    _VOUCHER_TITLE_RE.test(voucherTitle) &&
+    !_VOUCHER_GIFT_ATTACHED_RE.test(voucherTitle)
+  ) {
+    let faceValue = 0;
+    const manMatch = _VOUCHER_MAN_FACE_RE.exec(voucherTitle);
+    if (manMatch) {
+      faceValue = Number(manMatch[1]) * 10000;
+    } else {
+      const thouMatch = _VOUCHER_THOUSAND_FACE_RE.exec(voucherTitle);
+      if (thouMatch) {
+        faceValue = Number(thouMatch[1].replace(/,/g, ""));
+      }
+    }
+    if (faceValue > normalizedPrice) {
+      const discountPct = ((faceValue - normalizedPrice) / faceValue) * 100;
+      if (discountPct >= 1.0 && discountPct <= 35.0) {
+        const rounded10 = Math.round(discountPct * 10);
+        const pctLabel =
+          rounded10 % 10 === 0
+            ? `${Math.round(rounded10 / 10)}% 할인`
+            : `약 ${(rounded10 / 10).toFixed(1)}% 할인`;
+        return {
+          label: pctLabel,
+          detail: `액면가 ${faceValue.toLocaleString("ko-KR")}원 기준`,
+        };
+      }
+    }
+  }
+
   if (category && _UNIT_PRICE_EXCLUDED_CATEGORIES.has(category.trim())) {
     return null;
   }
@@ -2527,6 +2621,23 @@ export const computeUnitPriceBadge = (
     }
   }
 
+  for (const we of weightEntries) {
+    if (we.totalGrams >= 10 && we.totalGrams < 100) {
+      const per10g = Math.round((normalizedPrice / we.totalGrams) * 10);
+      if (per10g >= 10 && per10g < normalizedPrice) {
+        return {
+          label: `10g당 ${per10g.toLocaleString("ko-KR")}원`,
+          detail:
+            we.count >= 2
+              ? `총 ${Math.round(we.totalGrams).toLocaleString("ko-KR")}g · 개당 ${Math.round(
+                  normalizedPrice / we.count
+                ).toLocaleString("ko-KR")}원`
+              : `총 ${Math.round(we.totalGrams).toLocaleString("ko-KR")}g 기준`,
+        };
+      }
+    }
+  }
+
   // 3. 용량 (ml / L / 리터)
   const volumeRe = /(?<![a-zA-Z0-9.])(\d+(?:\.\d+)?)\s*(ml|l|리터)(?![a-wyz]|x(?!\d))/gi;
   const volumeEntries: Array<{
@@ -2584,6 +2695,23 @@ export const computeUnitPriceBadge = (
       if (per100ml >= 10 && per100ml < normalizedPrice) {
         return {
           label: `100ml당 ${per100ml.toLocaleString("ko-KR")}원`,
+          detail:
+            ve.count >= 2
+              ? `총 ${Math.round(ve.totalMl).toLocaleString("ko-KR")}ml · 개당 ${Math.round(
+                  normalizedPrice / ve.count
+                ).toLocaleString("ko-KR")}원`
+              : `총 ${Math.round(ve.totalMl).toLocaleString("ko-KR")}ml 기준`,
+        };
+      }
+    }
+  }
+
+  for (const ve of volumeEntries) {
+    if (ve.totalMl >= 10 && ve.totalMl < 100) {
+      const per10ml = Math.round((normalizedPrice / ve.totalMl) * 10);
+      if (per10ml >= 10 && per10ml < normalizedPrice) {
+        return {
+          label: `10ml당 ${per10ml.toLocaleString("ko-KR")}원`,
           detail:
             ve.count >= 2
               ? `총 ${Math.round(ve.totalMl).toLocaleString("ko-KR")}ml · 개당 ${Math.round(

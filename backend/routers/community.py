@@ -47,7 +47,8 @@ _COMPOUND_KOR_SEGMENTS = (
     "오픈런", "오픈핏", "오픈닷", "닌텐도", "플레이스테이션", "듀얼센스",
     "폴드", "플립", "버즈", "워치", "프로", "에어", "미니", "울트라", "플러스", "맥스",
     "패드", "북", "탭", "스위치", "청소기", "노트북", "모니터", "키보드", "마우스", "이어폰", "헤드셋",
-    "무선", "유선", "게이밍", "기계식", "블루투스", "로봇", "보조", "배터리", "충전기", "스피커", "외장", "포터블", "제로", "콜라", "물티슈",
+    "무선", "유선", "유무선", "게이밍", "기계식", "블루투스", "로봇", "보조", "배터리", "충전기", "스피커", "외장", "포터블", "제로", "콜라", "물티슈",
+    "강아지", "고양이", "사료", "모래", "배변", "아기", "유아", "문화", "상품권", "충전", "세정제", "기저귀",
 )
 
 
@@ -2031,7 +2032,7 @@ def _build_single_category_clause(models, single_cat: str, or_, and_, not_):
     elif cat_token == "생활용품":
         canonical_cat = "생활용품"
         target_keywords = ["생활", "생필품", "주방", "가구", "인테리어"]
-    elif cat_token in ("패션", "의류/패션"):
+    elif cat_token in ("패션", "의류/패션", "패션/의류", "의류"):
         canonical_cat = "패션"
         target_keywords = ["패션", "의류", "신발", "잡화", "가방"]
     elif cat_token == "뷰티":
@@ -2082,7 +2083,10 @@ def _build_single_category_clause(models, single_cat: str, or_, and_, not_):
         event_title_kws = ["이벤트", "선착순", "무료배포", "일시무료", "프로모션", "체험단", "응모"]
         return or_(
             *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
-            *[models.Deal.title.ilike(f"%{kw}%") for kw in event_title_kws],
+            and_(
+                or_(models.Deal.category.in_(["이벤트", "기타"]), models.Deal.category.is_(None)),
+                or_(*[models.Deal.title.ilike(f"%{kw}%") for kw in event_title_kws]),
+            ),
         )
     if canonical_cat == "뷰티":
         beauty_title_kws = ["선크림", "바디워시", "샴푸", "트리트먼트", "클렌징", "토너패드", "스킨토너", "세럼", "로션", "올리브영", "이니스프리", "토니모리", "닥터지", "달바"]
@@ -2108,6 +2112,9 @@ def _build_single_category_clause(models, single_cat: str, or_, and_, not_):
                 *[models.Deal.title.ilike(f"%{kw}%") for kw in appliance_title_kws],
             ),
             not_(models.Deal.title.ilike("%오븐구이%")),
+            not_(models.Deal.title.ilike("%apple tv+%")),
+            not_(models.Deal.title.ilike("%애플티비%")),
+            not_(models.Deal.title.ilike("%애플 티비%")),
         )
     base_clause = or_(*[models.Deal.category.ilike(f"%{_escape_like(kw)}%", escape="\\") for kw in target_keywords])
     if canonical_cat == "PC용품":
@@ -2416,6 +2423,7 @@ def get_hot_deals(
                                             models.Deal.title.ilike(f"%{_escape_like(sp)}%", escape="\\"),
                                             models.Deal.base_product_name.ilike(f"%{_escape_like(sp)}%", escape="\\"),
                                             models.Deal.search_keywords.ilike(f"%{_escape_like(sp)}%", escape="\\"),
+                                            models.Deal.options_data.ilike(f"%{_escape_like(sp)}%", escape="\\"),
                                         )
                                         for sp in sub_parts
                                     ]
@@ -2429,11 +2437,11 @@ def get_hot_deals(
                         clauses.append(models.Deal.base_product_name.ilike(syn_like, escape="\\"))
                         clauses.append(models.Deal.search_keywords.ilike(syn_like, escape="\\"))
 
-                    m_knum = re.fullmatch(r"([가-힣]{2,})([0-9]+[a-zA-Z]*)", pt_compact.lower())
+                    m_knum = re.fullmatch(r"([가-힣]{2,}|[a-z]{2,})([0-9]+[a-z0-9]*)", pt_compact.lower())
                     if m_knum:
                         k_pref, num_suf = m_knum.group(1), m_knum.group(2)
                         for p_syn in KOR_ENG_SEARCH_SYNONYMS.get(k_pref, ()):
-                            if re.fullmatch(r"[a-z0-9]+", p_syn):
+                            if re.fullmatch(r"[a-z가-힣0-9]+", p_syn):
                                 comb_tok = f"{p_syn}{num_suf}"
                                 comb_like = f"%{_escape_like(comb_tok)}%"
                                 clauses.append(models.Deal.title.ilike(comb_like, escape="\\"))

@@ -53,6 +53,7 @@ import {
   buildDealWishlistKeyword,
   saveWishlistIdEntry,
   computeUnitPriceBadge,
+  extractPaymentConditionBadge,
 } from "../lib/utils";
 import type { PriceTrendStats } from "./PriceTrendChart";
 import DealDetailSecondarySections, {
@@ -1163,6 +1164,13 @@ export default function DealDetailModal({
     !(deal.has_options && !selectedOption)
       ? (unitFromOption ?? unitFromDealTitle)
       : null;
+  const detailPaymentCondBadge =
+    !isClosedState && !showZeroWonPrice
+      ? extractPaymentConditionBadge(
+          activeOptionTitle ? `${deal.title} ${activeOptionTitle}` : deal.title,
+          deal.shipping_fee
+        )
+      : null;
 
   const summaryInsight = (() => {
     if (!activeSummaryStats || showZeroWonPrice || comparePriceForSummary <= 0) {
@@ -1566,7 +1574,7 @@ export default function DealDetailModal({
             </div>
           )}
 
-          {detailUnitPriceBadge && (
+          {(detailUnitPriceBadge || detailPaymentCondBadge) && (
             <div
               className="deal-detail-unit-price-row"
               style={{
@@ -1577,19 +1585,28 @@ export default function DealDetailModal({
                 minWidth: 0,
               }}
             >
-              <span className="badge deal-unit-price-badge">
-                {detailUnitPriceBadge.label}
-              </span>
-              {detailUnitPriceBadge.detail && (
-                <span
-                  style={{
-                    fontSize: "0.78rem",
-                    color: "var(--text-muted)",
-                    fontWeight: 600,
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  {detailUnitPriceBadge.detail}
+              {detailUnitPriceBadge && (
+                <>
+                  <span className="badge deal-unit-price-badge">
+                    {detailUnitPriceBadge.label}
+                  </span>
+                  {detailUnitPriceBadge.detail && (
+                    <span
+                      style={{
+                        fontSize: "0.78rem",
+                        color: "var(--text-muted)",
+                        fontWeight: 600,
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {detailUnitPriceBadge.detail}
+                    </span>
+                  )}
+                </>
+              )}
+              {detailPaymentCondBadge && (
+                <span className="badge deal-payment-cond-badge">
+                  {detailPaymentCondBadge}
                 </span>
               )}
             </div>

@@ -146,8 +146,74 @@ private fun formatBundleBadge(price: Long, count: Long, unitLabel: String): Unit
     )
 }
 
+private val VOUCHER_TITLE_REGEX = Regex(
+    "(?:상품권|컬쳐랜드|컬처랜드|해피머니|북앤라이프|기프트카드|금액권)"
+)
+private val VOUCHER_GIFT_ATTACHED_REGEX = Regex(
+    "\\+\\s*[^+]{0,16}(?:상품권|컬쳐|컬처|해피머니|기프트|금액권)"
+)
+private val VOUCHER_MAN_FACE_REGEX = Regex(
+    "(?:^|[\\s(\\[,·])(\\d{1,2})\\s*만\\s*(?:원\\s*권|원권|권|원)?(?=$|[\\s)\\],·]|(?![가-힣0-9]))(?!\\s*(?:이상|이하|할인|적립|페이백|증정|답례품))"
+)
+private val VOUCHER_THOUSAND_FACE_REGEX = Regex("([1-9]\\d?,000)\\s*원?\\s*권")
+
+private val PAYMENT_CARD_REGEX = Regex(
+    "(우리카드|삼성카드|신한카드|국민카드|KB\\s*국민카드|KB\\s*카드|현대카드|롯데카드|하나카드|농협카드|NH\\s*농협카드|NH\\s*카드|비씨카드|BC\\s*카드)",
+    RegexOption.IGNORE_CASE
+)
+private val PAYMENT_EASY_PAY_REGEX = Regex(
+    "(네이버페이|카카오페이|토스페이|페이코)\\s*(?:결제|할인|시\\s*\\d|적립\\s*할인|체감|최대|\\d+%)",
+    RegexOption.IGNORE_CASE
+)
+private val WOW_MEMBERSHIP_TITLE_REGEX = Regex("(?:와우\\s*(?:할인|회원|특가|전용|\\d)|\\[\\s*와우\\s+\\d)", RegexOption.IGNORE_CASE)
+private val WOW_SHIP_REGEX = Regex("와우", RegexOption.IGNORE_CASE)
+private val NMEM_MEMBERSHIP_TITLE_REGEX = Regex("(?:네멤\\s*(?:할인|특가|전용)|네이버\\s*멤버십)", RegexOption.IGNORE_CASE)
+private val NMEM_SHIP_REGEX = Regex("네멤", RegexOption.IGNORE_CASE)
+private val UNIVERSE_CLUB_REGEX = Regex("유니버스\\s*클럽", RegexOption.IGNORE_CASE)
+private val SUPER_REWARD_REGEX = Regex("슈퍼\\s*적립", RegexOption.IGNORE_CASE)
+
 /**
- * 식품·생활용품·소모품 제목에서 중량/용량/매x팩/수량을 추출해 100g당·100ml당·1팩당·개당 체감 단가를 계산한다.
+ * 제목/배송비에서 특정 카드사·간편결제·멤버십 전용 조건 배지를 추출한다.
+ */
+fun extractPaymentConditionBadge(
+    title: String?,
+    shippingFee: String? = null
+): String? {
+    val cleanTitle = decodeHtmlEntities(title.orEmpty()).trim()
+    val cleanShip = decodeHtmlEntities(shippingFee.orEmpty()).trim()
+    if (cleanTitle.isEmpty() && cleanShip.isEmpty()) return null
+
+    PAYMENT_CARD_REGEX.find(cleanTitle)?.let { match ->
+        val rawUpper = match.groupValues[1].replace(MULTI_WHITESPACE_REGEX, "").uppercase(Locale.US)
+        return when {
+            rawUpper.startsWith("KB") -> "국민카드 조건"
+            rawUpper.startsWith("NH") -> "농협카드 조건"
+            rawUpper.startsWith("BC") -> "비씨카드 조건"
+            else -> "${match.groupValues[1].replace(MULTI_WHITESPACE_REGEX, "")} 조건"
+        }
+    }
+
+    PAYMENT_EASY_PAY_REGEX.find(cleanTitle)?.let { match ->
+        return "${match.groupValues[1]} 조건"
+    }
+
+    if (WOW_MEMBERSHIP_TITLE_REGEX.containsMatchIn(cleanTitle) || WOW_SHIP_REGEX.containsMatchIn(cleanShip)) {
+        return "와우회원 조건"
+    }
+    if (NMEM_MEMBERSHIP_TITLE_REGEX.containsMatchIn(cleanTitle) || NMEM_SHIP_REGEX.containsMatchIn(cleanShip)) {
+        return "네멤 조건"
+    }
+    if (UNIVERSE_CLUB_REGEX.containsMatchIn(cleanTitle)) {
+        return "유니버스클럽 조건"
+    }
+    if (SUPER_REWARD_REGEX.containsMatchIn(cleanTitle)) {
+        return "슈퍼적립 조건"
+    }
+    return null
+}
+
+/**
+ * 식품·생활용품·소모품 제목에서 중량/용량/매x팩/수량을 추출해 100g당·100ml당·1팩당·개당·상품권 할인율을 계산한다.
  * IT/가전 스펙이나 비원화 딜은 오탐 방지를 위해 null을 반환한다.
  */
 fun computeUnitPriceBadge(
@@ -158,6 +224,45 @@ fun computeUnitPriceBadge(
 ): UnitPriceBadgeInfo? {
     if (title.isNullOrBlank() || price == null || price < 1000L) return null
     if (!currency.isNullOrBlank() && !currency.trim().equals("KRW", ignoreCase = true)) return null
+
+    // 0. 상품권·금액권 액면가 대비 할인율 배지
+    val voucherTitle = MULTI_WHITESPACE_REGEX.replace(
+        LEADING_BRACKET_TITLE_REGEX.replace(decodeHtmlEntities(title), ""),
+        " "
+    ).trim()
+    if (
+        voucherTitle.isNotEmpty() &&
+        !voucherTitle.contains("/") &&
+        VOUCHER_TITLE_REGEX.containsMatchIn(voucherTitle) &&
+        !VOUCHER_GIFT_ATTACHED_REGEX.containsMatchIn(voucherTitle)
+    ) {
+        var faceValue = 0L
+        val manMatch = VOUCHER_MAN_FACE_REGEX.find(voucherTitle)
+        if (manMatch != null) {
+            faceValue = (manMatch.groupValues[1].toLongOrNull() ?: 0L) * 10_000L
+        } else {
+            val thouMatch = VOUCHER_THOUSAND_FACE_REGEX.find(voucherTitle)
+            if (thouMatch != null) {
+                faceValue = thouMatch.groupValues[1].replace(",", "").toLongOrNull() ?: 0L
+            }
+        }
+        if (faceValue > price) {
+            val discountPct = ((faceValue - price).toDouble() / faceValue.toDouble()) * 100.0
+            if (discountPct in 1.0..35.0) {
+                val rounded10 = (discountPct * 10.0).roundToLong()
+                val pctLabel = if (rounded10 % 10L == 0L) {
+                    "${rounded10 / 10L}% 할인"
+                } else {
+                    String.format(Locale.US, "약 %.1f%% 할인", rounded10 / 10.0)
+                }
+                return UnitPriceBadgeInfo(
+                    label = pctLabel,
+                    detail = "액면가 ${formatKorComma(faceValue)}원 기준"
+                )
+            }
+        }
+    }
+
     if (!category.isNullOrBlank() && category.trim() in UNIT_PRICE_EXCLUDED_CATEGORIES) return null
 
     val cleanedTitle = MULTI_WHITESPACE_REGEX.replace(
@@ -273,6 +378,25 @@ fun computeUnitPriceBadge(
         }
     }
 
+    for (we in weightEntries) {
+        if (we.totalGrams >= 10.0 && we.totalGrams < 100.0) {
+            val per10g = ((price.toDouble() / we.totalGrams) * 10.0).roundToLong()
+            if (per10g in 10L until price) {
+                val totalRounded = we.totalGrams.roundToLong()
+                val detail = if (we.count >= 2L) {
+                    val perCount = (price.toDouble() / we.count).roundToLong()
+                    "총 ${formatKorComma(totalRounded)}g · 개당 ${formatKorComma(perCount)}원"
+                } else {
+                    "총 ${formatKorComma(totalRounded)}g 기준"
+                }
+                return UnitPriceBadgeInfo(
+                    label = "10g당 ${formatKorComma(per10g)}원",
+                    detail = detail
+                )
+            }
+        }
+    }
+
     // 3. 용량 (ml / L / 리터)
     val volumeEntries = mutableListOf<VolumeEntry>()
     for (vm in VOLUME_REGEX.findAll(cleanedTitle)) {
@@ -325,6 +449,25 @@ fun computeUnitPriceBadge(
                 }
                 return UnitPriceBadgeInfo(
                     label = "100ml당 ${formatKorComma(per100ml)}원",
+                    detail = detail
+                )
+            }
+        }
+    }
+
+    for (ve in volumeEntries) {
+        if (ve.totalMl >= 10.0 && ve.totalMl < 100.0) {
+            val per10ml = ((price.toDouble() / ve.totalMl) * 10.0).roundToLong()
+            if (per10ml in 10L until price) {
+                val totalRounded = ve.totalMl.roundToLong()
+                val detail = if (ve.count >= 2L) {
+                    val perCount = (price.toDouble() / ve.count).roundToLong()
+                    "총 ${formatKorComma(totalRounded)}ml · 개당 ${formatKorComma(perCount)}원"
+                } else {
+                    "총 ${formatKorComma(totalRounded)}ml 기준"
+                }
+                return UnitPriceBadgeInfo(
+                    label = "10ml당 ${formatKorComma(per10ml)}원",
                     detail = detail
                 )
             }

@@ -21,6 +21,7 @@ import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.presentation.DealDetailViewModel
 import com.ddaeany0919.insightdeal.presentation.computeUnitPriceBadge
+import com.ddaeany0919.insightdeal.presentation.extractPaymentConditionBadge
 import com.ddaeany0919.insightdeal.presentation.formatDetailPriceText
 import com.ddaeany0919.insightdeal.presentation.formatPrice
 import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
@@ -1302,6 +1303,20 @@ class InsightDealV11bUnitTest {
         assertNotNull(pizzaCombo)
         assertEquals("개당 4,975원", pizzaCombo?.label)
         assertEquals("총 4개 기준", pizzaCombo?.detail)
+
+        val mist60ml = computeUnitPriceBadge("[네이버] 레스노베 워터 앰플 미스트60ml", 4900L, "KRW", "뷰티")
+        assertNotNull(mist60ml)
+        assertEquals("10ml당 817원", mist60ml?.label)
+        assertEquals("총 60ml 기준", mist60ml?.detail)
+
+        val giftVoucher = computeUnitPriceBadge("와인25플러스 모바일상품권 5만원권", 46560L, "KRW", "모바일/기프티콘")
+        assertNotNull(giftVoucher)
+        assertEquals("약 6.9% 할인", giftVoucher?.label)
+        assertEquals("액면가 50,000원 기준", giftVoucher?.detail)
+
+        assertEquals("네이버페이 조건", extractPaymentConditionBadge("[던킨도너츠] 네이버페이 결제시 50% 할인", ""))
+        assertEquals("우리카드 조건", extractPaymentConditionBadge("[컴퓨존] 스위치2 포켓몬 레전드 ZA (우리카드)", ""))
+        assertEquals("네멤 조건", extractPaymentConditionBadge("퍼실 세탁세제", "네멤무료"))
 
         // kakaocdn 저해상도 썸네일 업그레이드 검증
         assertEquals(

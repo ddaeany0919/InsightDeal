@@ -6,6 +6,7 @@ import type { Deal, DealSource } from "../lib/types";
 import {
   computeUnitPriceBadge,
   decodeHtmlEntities,
+  extractPaymentConditionBadge,
   formatPrice,
   formatRelativeTimeKo,
   getOptionSources,
@@ -106,6 +107,17 @@ export default function DealCard({
           deal.category
         )
       : null;
+  const rawPaymentCondBadge =
+    !deal.isClosed && !deal.isFree
+      ? extractPaymentConditionBadge(deal.title, deal.shipping_fee)
+      : null;
+  const paymentCondBadge =
+    rawPaymentCondBadge &&
+    displayShipping &&
+    ((displayShipping.includes("네멤") && rawPaymentCondBadge.includes("네멤")) ||
+      (displayShipping.includes("와우") && rawPaymentCondBadge.includes("와우")))
+      ? null
+      : rawPaymentCondBadge;
 
   const badgeSources: DealSource[] =
     deal.sources && deal.sources.length > 0
@@ -323,6 +335,14 @@ export default function DealCard({
                 title={unitPriceBadge.detail}
               >
                 {unitPriceBadge.label}
+              </span>
+            )}
+            {paymentCondBadge && (
+              <span
+                className="deal-tag deal-payment-cond-badge"
+                title={`특정 결제수단·멤버십 조건: ${paymentCondBadge}`}
+              >
+                {paymentCondBadge}
               </span>
             )}
             {!deal.isClosed &&
