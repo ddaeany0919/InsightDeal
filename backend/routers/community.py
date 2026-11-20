@@ -8,6 +8,7 @@ from backend.database.session import get_db_session
 from fastapi.responses import StreamingResponse
 import asyncio
 import copy
+import hashlib
 import hmac
 import html as _html
 import httpx
@@ -23,6 +24,7 @@ import os
 import re
 import requests
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from urllib.parse import unquote as _unquote, urlsplit as _urlsplit, urlunsplit as _urlunsplit
@@ -4594,6 +4596,69 @@ def get_user_comments(
         })
 
     return result
+
+
+class RelayTokenVerifyPayload(BaseModel):
+    target_url: str
+
+
+_RELAY_ALLOWED_HOSTS = (
+    "ppomppu.co.kr",
+    "quasarzone.com",
+    "fmkorea.com",
+    "ruliweb.com",
+    "clien.net",
+    "bbasak.com",
+    "auction.co.kr",
+    "gmarket.co.kr",
+    "11st.co.kr",
+    "bnkrmall.co.kr",
+)
+
+
+def _is_allowed_relay_host(hostname: str) -> bool:
+    norm = (hostname or "").lower()
+    return any(norm == h or norm.endswith(f".{h}") for h in _RELAY_ALLOWED_HOSTS)
+
+
+@router.post("/verify-relay-token")
+def verify_relay_token(
+    payload: RelayTokenVerifyPayload,
+    x_feeder_token: Optional[str] = Header(default=None, alias="X-Feeder-Token"),
+):
+    """Vercel 서울 릴레이(/api/scraper-relay)가 자체 시크릿 미설정 시 HMAC 토큰 검증을 위임하는 엔드포인트."""
+    try:
+        parsed = _urlsplit((payload.target_url or "").strip())
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid url")
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Invalid url")
+    if not _is_allowed_relay_host(parsed.hostname):
+        raise HTTPException(status_code=403, detail="Host not allowed")
+
+    secret = (os.getenv("FEEDER_API_TOKEN") or os.getenv("SCRAPER_RELAY_SECRET") or "").strip()
+    if not secret:
+        raise HTTPException(status_code=503, detail="Relay authentication secret is not configured")
+
+    provided = (x_feeder_token or "").strip()
+    m = re.fullmatch(r"v1\.(0|[1-9]\d*)\.([0-9a-fA-F]{64})", provided)
+    if not m:
+        raise HTTPException(status_code=401, detail="Invalid or missing feeder token")
+
+    ts = int(m.group(1))
+    sig_hex = m.group(2).lower()
+    if abs(int(time.time()) - ts) > 300:
+        raise HTTPException(status_code=401, detail="Invalid or expired feeder token")
+
+    expected_hex = hmac.new(
+        secret.encode("utf-8"),
+        f"{ts}:{payload.target_url}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(sig_hex, expected_hex):
+        raise HTTPException(status_code=401, detail="Invalid or expired feeder token")
+
+    return {"valid": True}
 
 
 class IngestBatchPayload(BaseModel):

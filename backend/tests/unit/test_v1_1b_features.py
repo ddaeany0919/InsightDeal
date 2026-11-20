@@ -2114,6 +2114,64 @@ def test_regex_normalizer_single_char_boundary_and_pairing_cleanup(unit_v11b_env
     cleaner_norm = asyncio.run(norm.normalize("[카카오톡딜] 피죤 무때제로 다용도세정제 500mlx2개+2개", "생활식품"))
     assert cleaner_norm.category == "생활용품"
 
+    # 가중치 점수제 및 _STRICT_PREFIX_KEYWORDS 합성어 오탐 방어
+    assert norm._map_category("[코인딜] 애슐리 딥디쉬 피자 시카고2+고구마2") == "음식"
+    assert norm._map_category("남성 와이드 카고 팬츠") == "의류"
+    assert norm._map_category("스트릿 카고바지") == "의류"
+    assert norm._map_category("스타벅스 카푸치노 캔커피 275ml 24캔") == "음식"
+    assert norm._map_category("독거미 AULA 쿤룬 KUNLUN L5") == "PC제품"
+    assert norm._map_category("아이나비 VX5000 64GB 전방QHD 후방FHD 2채널 블랙박스") == "생활용품"
+    assert norm._map_category("파이널 판타지 7 리버스") == "SW/게임"
+
+    # POST /api/community/verify-relay-token 계약 검증 (200 / 401 / 403)
+    import hashlib
+    import hmac as _hmac
+    import time as _time
+    relay_secret = "unit-relay-delegation-secret"
+    prev_secret = os.environ.get("FEEDER_API_TOKEN")
+    os.environ["FEEDER_API_TOKEN"] = relay_secret
+    try:
+        target_ok = "https://www.ppomppu.co.kr/rss.php?id=ppomppu"
+        now_ts = int(_time.time())
+        sig = _hmac.new(
+            relay_secret.encode("utf-8"),
+            f"{now_ts}:{target_ok}".encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        v_ok = unit_v11b_env.client.post(
+            "/api/community/verify-relay-token",
+            json={"target_url": target_ok},
+            headers={"X-Feeder-Token": f"v1.{now_ts}.{sig}"},
+        )
+        assert v_ok.status_code == 200
+        assert v_ok.json() == {"valid": True}
+
+        v_bad = unit_v11b_env.client.post(
+            "/api/community/verify-relay-token",
+            json={"target_url": target_ok},
+            headers={"X-Feeder-Token": f"v1.{now_ts}.{'0' * 64}"},
+        )
+        assert v_bad.status_code == 401
+
+        v_exp = unit_v11b_env.client.post(
+            "/api/community/verify-relay-token",
+            json={"target_url": target_ok},
+            headers={"X-Feeder-Token": f"v1.{now_ts - 400}.{sig}"},
+        )
+        assert v_exp.status_code == 401
+
+        v_host = unit_v11b_env.client.post(
+            "/api/community/verify-relay-token",
+            json={"target_url": "https://evil.example.com/hook"},
+            headers={"X-Feeder-Token": f"v1.{now_ts}.{sig}"},
+        )
+        assert v_host.status_code == 403
+    finally:
+        if prev_secret is None:
+            os.environ.pop("FEEDER_API_TOKEN", None)
+        else:
+            os.environ["FEEDER_API_TOKEN"] = prev_secret
+
     SessionCls = unit_v11b_env.SessionCls
     now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
     db = SessionCls()

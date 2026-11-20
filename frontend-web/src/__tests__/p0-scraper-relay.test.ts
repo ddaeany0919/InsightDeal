@@ -14,13 +14,20 @@ function signRelayToken(secret: string, ts: number, targetUrl: string): string {
 describe("GET /api/scraper-relay HMAC 인증 및 호스트 가드", () => {
   const originalFeederToken = process.env.FEEDER_API_TOKEN;
   const originalRelaySecret = process.env.SCRAPER_RELAY_SECRET;
+  const originalVercel = process.env.VERCEL;
+  const originalBackendUrl = process.env.BACKEND_URL;
+  const originalBackendApiUrl = process.env.BACKEND_API_URL;
 
   beforeEach(() => {
     delete process.env.FEEDER_API_TOKEN;
     delete process.env.SCRAPER_RELAY_SECRET;
+    delete process.env.VERCEL;
+    delete process.env.BACKEND_URL;
+    delete process.env.BACKEND_API_URL;
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     if (originalFeederToken === undefined) {
       delete process.env.FEEDER_API_TOKEN;
     } else {
@@ -30,6 +37,21 @@ describe("GET /api/scraper-relay HMAC 인증 및 호스트 가드", () => {
       delete process.env.SCRAPER_RELAY_SECRET;
     } else {
       process.env.SCRAPER_RELAY_SECRET = originalRelaySecret;
+    }
+    if (originalVercel === undefined) {
+      delete process.env.VERCEL;
+    } else {
+      process.env.VERCEL = originalVercel;
+    }
+    if (originalBackendUrl === undefined) {
+      delete process.env.BACKEND_URL;
+    } else {
+      process.env.BACKEND_URL = originalBackendUrl;
+    }
+    if (originalBackendApiUrl === undefined) {
+      delete process.env.BACKEND_API_URL;
+    } else {
+      process.env.BACKEND_API_URL = originalBackendApiUrl;
     }
   });
 
@@ -122,5 +144,59 @@ describe("GET /api/scraper-relay HMAC 인증 및 호스트 가드", () => {
     expect(res.headers.get("cache-control")).toBe("no-store, max-age=0");
     expect(await res.text()).toContain("ppomppu deal");
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("로컬 시크릿 미설정 시 BACKEND_URL /api/community/verify-relay-token 검증 위임(200/401/503)으로 동작한다", async () => {
+    process.env.BACKEND_URL = "https://backend.example.com";
+    const target = "https://www.ppomppu.co.kr/rss.php?id=ppomppu";
+    const ts = Math.floor(Date.now() / 1000);
+    const token = signRelayToken("delegated-secret", ts, target);
+
+    // 1. 검증 위임 200 -> 타겟 200 페칭 성공
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ valid: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response("<rss><item><title>test</title></item></rss>", {
+          status: 200,
+          headers: { "Content-Type": "text/xml; charset=utf-8" },
+        })
+      );
+
+    const okReq = new NextRequest(
+      `http://localhost:3000/api/scraper-relay?url=${encodeURIComponent(target)}`,
+      { headers: { "X-Feeder-Token": token } }
+    );
+    const okRes = await GET(okReq);
+    expect(okRes.status).toBe(200);
+    expect(await okRes.text()).toContain("<item>");
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      "https://backend.example.com/api/community/verify-relay-token",
+      expect.objectContaining({ method: "POST" })
+    );
+
+    // 2. 검증 위임 401 -> 401 반환 (타겟 미호출)
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Invalid" }), { status: 401 })
+    );
+    const badReq = new NextRequest(
+      `http://localhost:3000/api/scraper-relay?url=${encodeURIComponent(target)}`,
+      { headers: { "X-Feeder-Token": token } }
+    );
+    expect((await GET(badReq)).status).toBe(401);
+
+    // 3. 검증 백엔드 500 장애 -> 503 Fail-Closed 반환
+    fetchSpy.mockResolvedValueOnce(new Response("err", { status: 500 }));
+    const errReq = new NextRequest(
+      `http://localhost:3000/api/scraper-relay?url=${encodeURIComponent(target)}`,
+      { headers: { "X-Feeder-Token": token } }
+    );
+    expect((await GET(errReq)).status).toBe(503);
   });
 });

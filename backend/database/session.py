@@ -381,9 +381,15 @@ class DatabaseManager:
 db_manager = DatabaseManager()
 
 def get_db_session() -> Generator[Session, None, None]:
+    from fastapi.exceptions import RequestValidationError
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
     session = db_manager.get_session()
     try:
         yield session
+    except (StarletteHTTPException, RequestValidationError):
+        session.rollback()
+        raise
     except Exception as e:
         logger.error(f"API 세션 오류: {e}")
         session.rollback()

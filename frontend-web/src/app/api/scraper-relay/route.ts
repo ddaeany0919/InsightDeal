@@ -282,10 +282,37 @@ async function solveFmkoreaWasmInNode(
   return outCookies.map((c) => c.split(";")[0].trim());
 }
 
+function parseHmacShapeAndTimestamp(providedToken: string): boolean {
+  const parts = providedToken.split(".");
+  if (parts.length !== 3 || parts[0] !== "v1") return false;
+  const tsStr = parts[1];
+  const sigHex = parts[2];
+  if (!/^(?:0|[1-9]\d*)$/.test(tsStr) || !/^[0-9a-f]{64}$/i.test(sigHex)) {
+    return false;
+  }
+  const ts = Number(tsStr);
+  if (!Number.isSafeInteger(ts)) return false;
+  const nowSec = Math.floor(Date.now() / 1000);
+  return Math.abs(nowSec - ts) <= HMAC_TOLERANCE_SECONDS;
+}
+
+function getDelegateBackendBaseUrl(): string {
+  const raw =
+    process.env.BACKEND_URL ||
+    process.env.BACKEND_API_URL ||
+    "https://34.59.208.14.sslip.io";
+  return raw.replace(/\/+$/, "");
+}
+
 export async function GET(req: NextRequest) {
-  // 1. 시크릿 미설정 시 즉시 503 Fail-Closed
+  // 1. 시크릿 미설정 & 백엔드 위임 불가 시 즉시 503 Fail-Closed
   const secret = getRelaySecret();
-  if (!secret) {
+  const canDelegateToBackend =
+    !secret &&
+    (process.env.VERCEL === "1" ||
+      Boolean(process.env.BACKEND_URL || process.env.BACKEND_API_URL));
+
+  if (!secret && !canDelegateToBackend) {
     return NextResponse.json(
       { error: "Relay authentication secret is not configured" },
       { status: 503 }
@@ -307,14 +334,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid url" }, { status: 400 });
   }
 
-  // 4. 엄격 v1.<unix_ts>.<hmac_sha256_hex> 상수 시간 HMAC 검증
-  if (!verifyFeederHmacToken(providedToken, secret, targetUrl)) {
-    return NextResponse.json(
-      { error: "Invalid or expired feeder token" },
-      { status: 401 }
-    );
-  }
-
   let parsed: URL;
   try {
     parsed = new URL(targetUrl);
@@ -324,6 +343,55 @@ export async function GET(req: NextRequest) {
 
   if (!isAllowedRelayHost(parsed.hostname)) {
     return NextResponse.json({ error: "Host not allowed" }, { status: 403 });
+  }
+
+  // 4. 엄격 v1.<unix_ts>.<hmac_sha256_hex> 검증 (로컬 시크릿 우선, 미설정 시 백엔드 위임)
+  if (secret) {
+    if (!verifyFeederHmacToken(providedToken, secret, targetUrl)) {
+      return NextResponse.json(
+        { error: "Invalid or expired feeder token" },
+        { status: 401 }
+      );
+    }
+  } else {
+    if (!parseHmacShapeAndTimestamp(providedToken)) {
+      return NextResponse.json(
+        { error: "Invalid or expired feeder token" },
+        { status: 401 }
+      );
+    }
+    try {
+      const verifyRes = await fetch(
+        `${getDelegateBackendBaseUrl()}/api/community/verify-relay-token`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Feeder-Token": providedToken,
+          },
+          body: JSON.stringify({ target_url: targetUrl }),
+          signal: AbortSignal.timeout(4000),
+          cache: "no-store",
+        }
+      );
+      if (verifyRes.status === 401 || verifyRes.status === 403) {
+        return NextResponse.json(
+          { error: "Invalid or expired feeder token" },
+          { status: verifyRes.status }
+        );
+      }
+      if (!verifyRes.ok) {
+        return NextResponse.json(
+          { error: "Relay authentication secret is not configured" },
+          { status: 503 }
+        );
+      }
+    } catch {
+      return NextResponse.json(
+        { error: "Relay authentication backend unavailable" },
+        { status: 503 }
+      );
+    }
   }
 
   const controller = new AbortController();
