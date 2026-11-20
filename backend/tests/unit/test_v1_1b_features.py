@@ -1532,3 +1532,76 @@ async def test_cloud_feeder_fresh_cache_skips_remote_preload(tmp_path, monkeypat
     await cf._preload_existing_urls(FakeClient())
     assert len(called_urls) == 10
     assert all("limit=60&offset=0" in u for u in called_urls)
+
+
+def test_hot_deals_popular_and_price_asc_zero_n_plus_1_content_html_loads(unit_v11b_env):
+    """sort=popular / price_asc 시 defer(content_html) 우회 N+1 SQL 0건 및 2단계 배치 하이드레이션·인기검색어 캐시 검증"""
+    from sqlalchemy import event
+
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+    engine = unit_v11b_env.engine
+    base_utc = datetime(2026, 11, 20, 2, 0, 0)
+
+    db = SessionCls()
+    try:
+        db.query(models.Deal).delete()
+        bulk = []
+        for idx in range(45):
+            bulk.append(
+                models.Deal(
+                    source_community_id=1,
+                    title=f"[지마켓] 고유제품_{idx:03d}호 ({15000 + idx * 100}원/무료)",
+                    post_link=f"https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=880{idx:03d}",
+                    ecommerce_link=f"https://item.gmarket.co.kr/Item?goodscode=880{idx:03d}",
+                    price=str(15000 + idx * 100),
+                    currency="KRW",
+                    base_product_name=f"고유제품_{idx:03d}",
+                    model_code=f"ZNQ{idx:03d}",
+                    honey_score=100 - idx,
+                    like_count=10,
+                    content_html=f"<p>상세 본문 {idx} (무료배송 삼성카드)</p><img src=\"https://cdn.example.com/item_{idx}.jpg\" />",
+                    indexed_at=base_utc - timedelta(minutes=idx),
+                )
+            )
+        db.add_all(bulk)
+        db.commit()
+    finally:
+        db.close()
+
+    community_router.invalidate_feed_api_cache()
+    sql_log: list[str] = []
+
+    def _capture_sql(conn, cursor, statement, parameters, context, executemany):
+        sql_log.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _capture_sql)
+    try:
+        for sort_mode in ("popular", "price_asc"):
+            sql_log.clear()
+            res = client.get("/api/community/hot-deals", params={"sort": sort_mode, "limit": 20, "offset": 0})
+            assert res.status_code == 200
+            items = res.json()["deals"]
+            assert len(items) == 20
+            assert items[0]["content_html"]
+            assert items[0]["body_images"]
+            assert items[0]["ecommerce_url"].startswith("https://")
+            assert items[0]["sources"] and items[0]["sources"][0]["ecommerce_url"].startswith("https://")
+
+            single_lazy_loads = [
+                q for q in sql_log
+                if "deals.content_html" in q and "WHERE deals.id = ?" in q
+            ]
+            assert single_lazy_loads == [], f"{sort_mode} N+1 지연 로딩 SQL 감지: {len(single_lazy_loads)}건"
+
+        # popular-keywords 캐시 히트(SQL 쿼리 감소) 검증
+        sql_log.clear()
+        k1 = client.get("/api/community/popular-keywords", params={"limit": 10})
+        first_queries = len(sql_log)
+        sql_log.clear()
+        k2 = client.get("/api/community/popular-keywords", params={"limit": 10})
+        assert k1.status_code == 200 and k2.status_code == 200
+        assert k1.json()["keywords"] == k2.json()["keywords"]
+        assert len(sql_log) < first_queries
+    finally:
+        event.remove(engine, "before_cursor_execute", _capture_sql)

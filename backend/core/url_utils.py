@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import html
 import ipaddress
 import os
@@ -125,6 +126,78 @@ _AFFILIATE_DEEPLINK_CACHE: dict[str, str] = {}
 _LINKPRICE_APPROVAL_CACHE: dict[tuple[str, str], tuple[bool, float]] = {}
 _INFLIGHT_LINKPRICE_PROBES: set[tuple[str, str]] = set()
 _LINKPRICE_PROBE_LOCK = threading.Lock()
+_LINKPRICE_PROBE_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="lp_probe")
+_LINKPRICE_PROBE_SESSION = None
+_LINKPRICE_SESSION_LOCK = threading.Lock()
+
+
+def _get_linkprice_probe_session():
+    global _LINKPRICE_PROBE_SESSION
+    with _LINKPRICE_SESSION_LOCK:
+        if _LINKPRICE_PROBE_SESSION is None:
+            import requests
+            from requests.adapters import HTTPAdapter
+
+            sess = requests.Session()
+            adapter = HTTPAdapter(pool_connections=4, pool_maxsize=4)
+            sess.mount("https://", adapter)
+            sess.mount("http://", adapter)
+            _LINKPRICE_PROBE_SESSION = sess
+        return _LINKPRICE_PROBE_SESSION
+
+
+def _probe_linkprice_merchant_async(m_id: str, lp_aff_id: str, cache_key: tuple[str, str]) -> None:
+    approved = False
+    try:
+        import requests
+
+        probe_url = f"https://newtip.net/click.php?m={m_id}&a={lp_aff_id}&l=0000"
+        if getattr(requests.get, "__module__", "") != "requests.api":
+            resp = requests.get(probe_url, allow_redirects=False, timeout=1.8)
+        else:
+            sess = _get_linkprice_probe_session()
+            resp = sess.get(probe_url, allow_redirects=False, timeout=1.8)
+        loc = (resp.headers.get("Location") or "").lower()
+        approved = bool(resp.status_code in (301, 302) and "error.php" not in loc)
+    except Exception:
+        approved = False
+    finally:
+        _LINKPRICE_APPROVAL_CACHE[cache_key] = (approved, time.time())
+        with _LINKPRICE_PROBE_LOCK:
+            _INFLIGHT_LINKPRICE_PROBES.discard(cache_key)
+
+
+def is_linkprice_merchant_approved(m_id: str, lp_aff_id: str, ttl_sec: int = 3600) -> bool:
+    """
+    링크프라이스 머천트 승인 여부를 논블로킹으로 확인합니다.
+    - 사전 승인 머천트는 즉시 True를 반환합니다.
+    - 캐시(기본 1시간)가 유효하면 캐시값을 반환합니다.
+    - max_workers=2 스레드풀과 재사용 requests.Session으로 커넥션 오버헤드 없이 백그라운드 갱신합니다.
+    """
+    if not m_id or not lp_aff_id:
+        return False
+    if lp_aff_id == DEFAULT_LINKPRICE_AFFILIATE_ID and m_id in _PREAPPROVED_LINKPRICE_MERCHANTS:
+        return True
+    now = time.time()
+    cache_key = (m_id, lp_aff_id)
+    cached = _LINKPRICE_APPROVAL_CACHE.get(cache_key)
+    if cached and (now - cached[1]) < ttl_sec:
+        return cached[0]
+
+    should_spawn = False
+    with _LINKPRICE_PROBE_LOCK:
+        if cache_key not in _INFLIGHT_LINKPRICE_PROBES:
+            _INFLIGHT_LINKPRICE_PROBES.add(cache_key)
+            should_spawn = True
+
+    if should_spawn:
+        try:
+            _LINKPRICE_PROBE_EXECUTOR.submit(_probe_linkprice_merchant_async, m_id, lp_aff_id, cache_key)
+        except Exception:
+            with _LINKPRICE_PROBE_LOCK:
+                _INFLIGHT_LINKPRICE_PROBES.discard(cache_key)
+
+    return False
 
 DEFAULT_LINKPRICE_AFFILIATE_ID = "A100709825"
 DEFAULT_COUPANG_LPTAG = "AF4452088"
@@ -263,56 +336,6 @@ LINKPRICE_MERCHANTS = {
     "musinsa.com": ("musinsa", "무신사"),
     "kurly.com": ("kurly", "컬리"),
 }
-
-
-def _probe_linkprice_merchant_async(m_id: str, lp_aff_id: str, cache_key: tuple[str, str]) -> None:
-    approved = False
-    try:
-        import requests
-        probe_url = f"https://newtip.net/click.php?m={m_id}&a={lp_aff_id}&l=0000"
-        resp = requests.get(probe_url, allow_redirects=False, timeout=1.8)
-        loc = (resp.headers.get("Location") or "").lower()
-        approved = bool(resp.status_code in (301, 302) and "error.php" not in loc)
-    except Exception:
-        approved = False
-    finally:
-        _LINKPRICE_APPROVAL_CACHE[cache_key] = (approved, time.time())
-        with _LINKPRICE_PROBE_LOCK:
-            _INFLIGHT_LINKPRICE_PROBES.discard(cache_key)
-
-
-def is_linkprice_merchant_approved(m_id: str, lp_aff_id: str, ttl_sec: int = 900) -> bool:
-    """
-    링크프라이스 머천트 승인 여부를 논블로킹으로 확인합니다.
-    - 사전 승인 머천트는 즉시 True를 반환합니다.
-    - 캐시(기본 15분)가 유효하면 캐시값을 반환합니다.
-    - 캐시 미스 시 요청 지연을 막기 위해 즉시 False(원본 URL 폴백)를 반환하고
-      백그라운드 데몬 스레드에서 승인 여부를 조회해 캐시를 갱신합니다.
-    """
-    if not m_id or not lp_aff_id:
-        return False
-    if lp_aff_id == DEFAULT_LINKPRICE_AFFILIATE_ID and m_id in _PREAPPROVED_LINKPRICE_MERCHANTS:
-        return True
-    now = time.time()
-    cache_key = (m_id, lp_aff_id)
-    cached = _LINKPRICE_APPROVAL_CACHE.get(cache_key)
-    if cached and (now - cached[1]) < ttl_sec:
-        return cached[0]
-
-    should_spawn = False
-    with _LINKPRICE_PROBE_LOCK:
-        if cache_key not in _INFLIGHT_LINKPRICE_PROBES:
-            _INFLIGHT_LINKPRICE_PROBES.add(cache_key)
-            should_spawn = True
-
-    if should_spawn:
-        threading.Thread(
-            target=_probe_linkprice_merchant_async,
-            args=(m_id, lp_aff_id, cache_key),
-            daemon=True,
-        ).start()
-
-    return False
 
 
 def unwrap_third_party_affiliate_url(url: str, allow_network: bool = False) -> str:

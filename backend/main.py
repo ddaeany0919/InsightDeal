@@ -757,6 +757,7 @@ async def prewarm_recent_deal_thumbnails(urls: Optional[list[str]] = None, limit
 
     try:
         if urls is None:
+            await asyncio.sleep(2.0)
             candidate_urls = await run_in_threadpool(_query_recent_deal_image_urls_sync, limit)
         else:
             seen: set[str] = set()
@@ -772,7 +773,7 @@ async def prewarm_recent_deal_thumbnails(urls: Optional[list[str]] = None, limit
         if not candidate_urls:
             return
 
-        sem = asyncio.Semaphore(4)
+        sem = asyncio.Semaphore(2)
 
         async def _warm_one(target_u: str) -> None:
             async with sem:
@@ -787,6 +788,50 @@ async def prewarm_recent_deal_thumbnails(urls: Optional[list[str]] = None, limit
         logger.debug("[Prewarm] 썸네일 선적재 스킵: %s", exc)
 
 
+def _warm_default_feeds_sync() -> None:
+    from backend.database.session import SessionLocal
+    from backend.routers import community as community_router
+
+    db = SessionLocal()
+    try:
+        community_router.get_popular_keywords(limit=10, db=db)
+        for sort_key in ("latest", "popular"):
+            community_router.get_hot_deals(
+                limit=20,
+                offset=0,
+                category="전체",
+                keyword=None,
+                platform=None,
+                source=None,
+                sort=sort_key,
+                popular_only=False,
+                cursor_indexed_at=None,
+                cursor_id=None,
+                include_closed=False,
+                only_hot=False,
+                hide_closed=False,
+                db=db,
+            )
+    finally:
+        db.close()
+
+
+async def _prewarm_hot_feeds_and_thumbs() -> None:
+    if (
+        os.getenv("ENV") == "test"
+        or "pytest" in sys.modules
+        or "memory" in os.getenv("DATABASE_URL", "").lower()
+    ):
+        return
+    try:
+        await asyncio.sleep(1.0)
+        await run_in_threadpool(_warm_default_feeds_sync)
+        logger.info("[Prewarm] 기본 피드(latest/popular/popular-keywords) 인메모리 캐시 워밍 완료")
+    except Exception as exc:
+        logger.debug("[Prewarm] 기본 피드 워밍 스킵: %s", exc)
+    await prewarm_recent_deal_thumbnails(urls=None, limit=36)
+
+
 def schedule_thumbnail_prewarm(urls: Optional[list[str]] = None) -> None:
     if (
         os.getenv("ENV") == "test"
@@ -796,7 +841,10 @@ def schedule_thumbnail_prewarm(urls: Optional[list[str]] = None) -> None:
         return
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(prewarm_recent_deal_thumbnails(urls=urls, limit=36))
+        if urls is None:
+            loop.create_task(_prewarm_hot_feeds_and_thumbs())
+        else:
+            loop.create_task(prewarm_recent_deal_thumbnails(urls=urls, limit=36))
     except RuntimeError:
         pass
 

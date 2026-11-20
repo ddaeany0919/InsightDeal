@@ -498,10 +498,15 @@ def _build_direct_mall_search_url(shop_name: str, raw_title: str, post_url: str 
     return apply_affiliate_monetization(target_search_url)
 
 
-def get_deal_sources(deal, comp_name, parsed_price_int, db=None):
+def get_deal_sources(deal, comp_name, parsed_price_int, db=None, content_html_override: Optional[str] = None):
     deal_sources = []
     currency = getattr(deal, 'currency', 'KRW') or 'KRW'
-    content_html = getattr(deal, 'content_html', '') or ''
+    # defer(content_html) 상태인 ORM 객체에서 SQLAlchemy N+1 lazy load가 발동하지 않도록 적재된 값만 읽음
+    content_html = (
+        content_html_override
+        if content_html_override is not None
+        else _safe_loaded_attr(deal, "content_html", "")
+    )
     deal_id = getattr(deal, 'id', None)
     
     # 모음전/다중 딜 여부 판별
@@ -626,7 +631,45 @@ async def proxy_image(
     from backend.main import proxy_image as main_proxy_image
     return await main_proxy_image(url=url, w=w, width=width, v=v)
 
+_CLEAN_ECOM_URL_CACHE: OrderedDict = OrderedDict()
+_CLEAN_ECOM_URL_CACHE_MAX = 4096
+_CLEAN_ECOM_URL_LOCK = threading.Lock()
+
+
+def _ecom_url_cache_env_sig() -> tuple:
+    return (
+        os.getenv("AFFILIATE_COUPANG_LPTAG", ""),
+        os.getenv("COUPANG_PARTNERS_ID", ""),
+        os.getenv("COUPANG_SUB_ID", ""),
+        os.getenv("COUPANG_ACCESS_KEY", ""),
+        os.getenv("AFFILIATE_ALIEXPRESS_ID", ""),
+        os.getenv("ALIEXPRESS_TRACKING_ID", ""),
+        os.getenv("AFFILIATE_LINKPRICE_ID", ""),
+        os.getenv("LINKPRICE_AFFILIATE_ID", ""),
+    )
+
+
 def get_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = None, db = None, is_multi_item: bool = False) -> str:
+    if not url:
+        return ""
+    cache_key = None
+    if not content_html:
+        cache_key = (str(url), bool(is_multi_item), _ecom_url_cache_env_sig())
+        with _CLEAN_ECOM_URL_LOCK:
+            cached = _CLEAN_ECOM_URL_CACHE.get(cache_key)
+            if cached is not None:
+                _CLEAN_ECOM_URL_CACHE.move_to_end(cache_key)
+                return cached
+    res = _compute_clean_ecommerce_url(url, content_html=content_html, deal_id=deal_id, db=db, is_multi_item=is_multi_item)
+    if cache_key is not None:
+        with _CLEAN_ECOM_URL_LOCK:
+            _CLEAN_ECOM_URL_CACHE[cache_key] = res
+            if len(_CLEAN_ECOM_URL_CACHE) > _CLEAN_ECOM_URL_CACHE_MAX:
+                _CLEAN_ECOM_URL_CACHE.popitem(last=False)
+    return res
+
+
+def _compute_clean_ecommerce_url(url: str, content_html: str = "", deal_id: int = None, db = None, is_multi_item: bool = False) -> str:
     if not url:
         return ""
     url = re.split(r'[가-힣\s"\'<>]|(?:\$\d)', str(url).strip())[0].strip().rstrip(".,;)>]")
@@ -1372,12 +1415,16 @@ import time as _feed_time
 _TOP_DEALS_API_CACHE = {"ts": 0.0, "max_id": 0, "bind_id": 0, "data": None}
 _HOT_DEALS_API_CACHE = {}  # key: (bind_id, category, keyword, platform, sort, only_hot, include_closed) -> {"ts": float, "max_id": int, "grouped": list, ...}
 _HOT_DEALS_CACHE_LOCK = threading.Lock()
-_FEED_CACHE_TTL_SEC = 20.0
+_FEED_CACHE_TTL_SEC = 45.0
 
 _DEAL_HISTORY_CACHE: OrderedDict = OrderedDict()
 _DEAL_HISTORY_CACHE_MAX_SIZE = 512
 _DEAL_HISTORY_CACHE_TTL_SEC = 60.0
 _DEAL_HISTORY_CACHE_LOCK = threading.Lock()
+
+_POPULAR_KEYWORDS_CACHE: dict = {}
+_POPULAR_KEYWORDS_LOCK = threading.Lock()
+_POPULAR_KEYWORDS_TTL_SEC = 60.0
 
 
 def invalidate_feed_api_cache():
@@ -1388,6 +1435,10 @@ def invalidate_feed_api_cache():
         _HOT_DEALS_API_CACHE.clear()
     with _DEAL_HISTORY_CACHE_LOCK:
         _DEAL_HISTORY_CACHE.clear()
+    with _POPULAR_KEYWORDS_LOCK:
+        _POPULAR_KEYWORDS_CACHE.clear()
+    with _CLEAN_ECOM_URL_LOCK:
+        _CLEAN_ECOM_URL_CACHE.clear()
     for _alias in ("routers.community", "backend.routers.community"):
         _mod = _sys.modules.get(_alias)
         if _mod is not None and _mod is not _sys.modules.get(__name__):
@@ -1398,6 +1449,10 @@ def invalidate_feed_api_cache():
                 _mod._HOT_DEALS_API_CACHE.clear()
             if hasattr(_mod, "_DEAL_HISTORY_CACHE"):
                 _mod._DEAL_HISTORY_CACHE.clear()
+            if hasattr(_mod, "_POPULAR_KEYWORDS_CACHE"):
+                _mod._POPULAR_KEYWORDS_CACHE.clear()
+            if hasattr(_mod, "_CLEAN_ECOM_URL_CACHE"):
+                _mod._CLEAN_ECOM_URL_CACHE.clear()
 
 
 invalidate_deals_cache = invalidate_feed_api_cache
@@ -1445,7 +1500,9 @@ def _hydrate_content_html_batch(db: Session, deals_list: list) -> set[int]:
 
 
 def _hydrate_suspect_krw_cents_content_html(db: Session, deals_list: list) -> None:
-    """KRW·소액(0 < price < 100000) 외화 센트 오표기 및 본문 폴백 의심 행만 선택 IN 하이드레이션"""
+    """KRW·소액(0 < price < 100000) 중 제목에서 가격/무료를 확정할 수 없는 행만 선택 IN 하이드레이션"""
+    from backend.core.deal_normalizer import parse_title_price_and_shipping
+
     suspects = []
     for d in deals_list:
         if d is None:
@@ -1455,6 +1512,11 @@ def _hydrate_suspect_krw_cents_content_html(db: Session, deals_list: list) -> No
             continue
         p_val = extract_price(getattr(d, "price", 0))
         if 0 < p_val < 100000:
+            if p_val >= 100:
+                title_val = getattr(d, "title", "") or ""
+                tp, _, _, is_free = parse_title_price_and_shipping(title_val) if title_val else (0, "KRW", "", False)
+                if is_free or tp > 0:
+                    continue
             suspects.append(d)
     if suspects:
         _hydrate_content_html_batch(db, suspects)
@@ -1483,6 +1545,19 @@ def _apply_html_fields_to_deal_dict(
     g["body_images"] = merged_imgs
     g["bodyImages"] = merged_imgs
 
+    if not g.get("image_url") and primary_html:
+        fallback_img = merged_imgs[0] if merged_imgs else None
+        if not fallback_img:
+            m = re.search(r'\[첨부된 이미지 링크들\]\s*:?\s*(https?://[^\s,\)\]]+)', primary_html)
+            if m and "no_image" not in m.group(1).lower():
+                fallback_img = m.group(1).strip().rstrip(",)")
+        if not fallback_img:
+            m2 = re.search(r'(https?://[^\s"\'<>\)\]]+?\.(?:jpg|jpeg|png|webp))', primary_html, re.IGNORECASE)
+            if m2 and "dot03.gif" not in m2.group(1).lower():
+                fallback_img = m2.group(1).strip().rstrip(",)")
+        if fallback_img:
+            g["image_url"] = fallback_img
+
     if ecom_html:
         clean_ecom_url = get_clean_ecommerce_url(
             (getattr(ecom_obj, "ecommerce_link", "") or "") or (getattr(ecom_obj, "post_link", "") or ""),
@@ -1506,6 +1581,11 @@ def _apply_html_fields_to_deal_dict(
         new_shop = _resolve_canonical_shop_name(ecom_obj, resolved_ecom_url)
         if new_shop or not g.get("shop_name"):
             g["shop_name"] = new_shop
+        ecom_post = getattr(ecom_obj, "post_link", "") or ""
+        for src in g.get("sources") or ():
+            if isinstance(src, dict) and " - " not in (src.get("site_name") or ""):
+                if not ecom_post or src.get("post_url") == ecom_post:
+                    src["ecommerce_url"] = resolved_ecom_url
 
 def _clean_content_text(raw_text: str, title: str = "") -> str:
     if not raw_text:
@@ -1609,7 +1689,7 @@ def _resolve_best_image_url(deal_obj, base_url: str) -> Optional[str]:
             if not img.startswith("http"):
                 return f"{base_url}/images/{img}"
             return img
-    content = getattr(deal_obj, "content_html", None) or ""
+    content = _safe_loaded_attr(deal_obj, "content_html", "")
     if content:
         m = re.search(r'\[첨부된 이미지 링크들\]\s*:?\s*(https?://[^\s,\)\]]+)', content)
         if m:
@@ -2620,8 +2700,8 @@ def get_hot_deals(
             if not has_more and not db_exhausted:
                 has_more = True
         else:
-            raw_limit = max(2000, offset + limit + 500)
             if sort_mode == "popular":
+                raw_limit = min(2000, max(600, offset + limit + 300))
                 raw_seed_deals = query.order_by(
                     models.Deal.honey_score.desc(),
                     models.Deal.like_count.desc(),
@@ -2629,6 +2709,7 @@ def get_hot_deals(
                     models.Deal.id.desc(),
                 ).limit(raw_limit).all()
             else:
+                raw_limit = min(2000, max(1000, offset + limit + 400))
                 raw_seed_deals = query.order_by(
                     order_ts_expr.desc(),
                     models.Deal.id.desc(),
@@ -2808,10 +2889,33 @@ def get_popular_keywords(
     db: Session = Depends(get_db_session),
 ):
     try:
+        from sqlalchemy import func
         from backend.core.deal_normalizer import (
             is_valid_popular_keyword,
             unescape_and_strip_html_entities,
         )
+
+        data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+        file_path = _FMKOREA_TRENDING_FILE_OVERRIDE or os.path.join(data_dir, "fmkorea_trending.json")
+        file_mtime = round(os.path.getmtime(file_path), 3) if os.path.exists(file_path) else 0.0
+        current_max_id = int(db.query(func.max(models.Deal.id)).scalar() or 0)
+        kw_cache_key = (
+            id(db.get_bind()),
+            int(limit),
+            current_max_id,
+            str(_FMKOREA_TRENDING_FILE_OVERRIDE or ""),
+            file_mtime,
+        )
+        now_kw_ts = _feed_time.time()
+        with _POPULAR_KEYWORDS_LOCK:
+            kw_cached = _POPULAR_KEYWORDS_CACHE.get(kw_cache_key)
+            if kw_cached is not None and (now_kw_ts - kw_cached["ts"]) < _POPULAR_KEYWORDS_TTL_SEC:
+                cd = kw_cached["data"]
+                return {
+                    "keywords": list(cd["keywords"]),
+                    "rankings": [dict(r) for r in cd["rankings"]],
+                    "updated_at": cd["updated_at"],
+                }
 
         extra_noise = {
             "pro", "max", "plus", "mini", "ultra", "usb", "pc", "tv", "led", "유튜버", "링크",
@@ -2865,8 +2969,6 @@ def get_popular_keywords(
         seen_kw_low: set[str] = set()
 
         # 1. 펨코 실시간 급상승 검색어 JSON 확인 (불용어·엔티티·숫자단위 검증 + 실제 DB 매칭 1건 이상 필수)
-        data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-        file_path = _FMKOREA_TRENDING_FILE_OVERRIDE or os.path.join(data_dir, "fmkorea_trending.json")
         if os.path.exists(file_path):
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -2951,11 +3053,16 @@ def get_popular_keywords(
                 "status": status
             })
 
-        return {
+        result_payload = {
             "keywords": final_keywords,
             "rankings": rankings,
             "updated_at": datetime.now(_KST).strftime("%H:%M 기준")
         }
+        with _POPULAR_KEYWORDS_LOCK:
+            if len(_POPULAR_KEYWORDS_CACHE) > 20:
+                _POPULAR_KEYWORDS_CACHE.clear()
+            _POPULAR_KEYWORDS_CACHE[kw_cache_key] = {"ts": now_kw_ts, "data": result_payload}
+        return result_payload
     except Exception as e:
         logger.error(f"Error fetching keywords: {e}", exc_info=True)
         fallback = ["아이폰", "갤럭시", "다이슨", "제로콜라", "노트북", "로봇청소기", "모니터", "에어팟", "스탠리", "보조배터리"][:limit]
