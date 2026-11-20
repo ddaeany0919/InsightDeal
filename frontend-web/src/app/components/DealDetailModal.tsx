@@ -121,6 +121,9 @@ export default function DealDetailModal({
   const [saveCount, setSaveCount] = useState<number>(0);
   const [userVote, setUserVote] = useState<string | null>(null);
   const [commentCount, setCommentCount] = useState<number>(0);
+  const [origRecCount, setOrigRecCount] = useState<number>(0);
+  const [origCommentCount, setOrigCommentCount] = useState<number>(0);
+  const [origViewCount, setOrigViewCount] = useState<number>(0);
   const [historyCount, setHistoryCount] = useState<number>(0);
   const [isSearchFallback, setIsSearchFallback] = useState<boolean>(false);
   const [isFreeDeal, setIsFreeDeal] = useState<boolean>(false);
@@ -150,13 +153,29 @@ export default function DealDetailModal({
   const sheetOffsetYRef = useRef<number>(0);
   const dragStartYRef = useRef<number | null>(null);
   const closedByPopRef = useRef<boolean>(false);
+  const openedWithPushRef = useRef<boolean>(false);
   const reportingClosedRef = useRef<boolean>(false);
   const dealId = deal?.id ?? null;
   const latestDealRef = useRef<Deal | null>(deal);
+  const onCloseRef = useRef(onClose);
 
   useEffect(() => {
     latestDealRef.current = deal;
+    onCloseRef.current = onClose;
   });
+
+  const stripDealIdFromUrl = () => {
+    if (typeof window === "undefined") return;
+    try {
+      const nextUrl = new URL(window.location.href);
+      if (nextUrl.searchParams.has("dealId") || nextUrl.searchParams.has("_og")) {
+        nextUrl.searchParams.delete("dealId");
+        nextUrl.searchParams.delete("_og");
+        const cleanHref = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
+        window.history.replaceState(null, "", cleanHref || "/");
+      }
+    } catch {}
+  };
 
   const handleDismiss = useCallback(() => {
     if (lightboxIndex !== null) {
@@ -169,16 +188,18 @@ export default function DealDetailModal({
     setIsDraggingSheet(false);
     if (
       typeof window !== "undefined" &&
+      openedWithPushRef.current &&
       !closedByPopRef.current &&
-      window.history.state?.insightDealModal
+      window.history.state?.insightDealModal === dealId
     ) {
       closedByPopRef.current = true;
       window.history.back();
-      onClose();
+      onCloseRef.current();
       return;
     }
-    onClose();
-  }, [lightboxIndex, onClose]);
+    stripDealIdFromUrl();
+    onCloseRef.current();
+  }, [lightboxIndex, dealId]);
 
   // WCAG 2.2 다이얼로그 포커스 이동 / 트랩 / Escape / 트리거 포커스 복귀
   useDialogA11y({
@@ -210,6 +231,9 @@ export default function DealDetailModal({
     setSaveCount(currentDeal?.passCount ?? 0);
     setUserVote(currentDeal?.userVote ?? null);
     setCommentCount(currentDeal?.commentCount ?? 0);
+    setOrigRecCount(0);
+    setOrigCommentCount(0);
+    setOrigViewCount(0);
     setHistoryCount(currentDeal?.historyCount ?? 0);
     setIsSearchFallback(Boolean(currentDeal?.isSearchFallback));
     setIsFreeDeal(Boolean(currentDeal?.isFree));
@@ -320,6 +344,16 @@ export default function DealDetailModal({
         const nextCommentCnt = d.comment_count ?? d.commentCount ?? d.comments;
         if (nextCommentCnt !== undefined) setCommentCount(Number(nextCommentCnt) || 0);
 
+        if (d.recommendations !== undefined || d.like_count !== undefined) {
+          setOrigRecCount(Number(d.recommendations ?? d.like_count ?? 0) || 0);
+        }
+        if (d.comments !== undefined) {
+          setOrigCommentCount(Number(d.comments ?? 0) || 0);
+        }
+        if (d.views !== undefined || d.view_count !== undefined) {
+          setOrigViewCount(Number(d.views ?? d.view_count ?? 0) || 0);
+        }
+
         const nextHistoryCnt = d.history_count ?? d.historyCount;
         if (nextHistoryCnt !== undefined) setHistoryCount(Number(nextHistoryCnt) || 0);
 
@@ -381,19 +415,37 @@ export default function DealDetailModal({
     if (dealId === null || typeof window === "undefined") return;
 
     closedByPopRef.current = false;
+    openedWithPushRef.current = false;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    if (!window.history.state?.insightDealModal) {
-      try {
-        window.history.pushState({ insightDealModal: dealId }, "");
-      } catch {}
+    try {
+      const currUrl = new URL(window.location.href);
+      const urlHasSameDeal = currUrl.searchParams.get("dealId") === String(dealId);
+      if (!urlHasSameDeal && window.history.state?.insightDealModal !== dealId) {
+        currUrl.searchParams.set("dealId", String(dealId));
+        currUrl.searchParams.delete("_og");
+        window.history.pushState(
+          { insightDealModal: dealId },
+          "",
+          `${currUrl.pathname}${currUrl.search}${currUrl.hash}`
+        );
+        openedWithPushRef.current = true;
+      }
+    } catch {
+      if (!window.history.state?.insightDealModal) {
+        try {
+          window.history.pushState({ insightDealModal: dealId }, "");
+          openedWithPushRef.current = true;
+        } catch {}
+      }
     }
 
     const handlePopState = () => {
+      if (closedByPopRef.current) return;
       closedByPopRef.current = true;
       sheetOffsetYRef.current = 0;
-      onClose();
+      onCloseRef.current();
     };
 
     window.addEventListener("popstate", handlePopState);
@@ -401,7 +453,7 @@ export default function DealDetailModal({
       document.body.style.overflow = prevOverflow;
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [dealId, onClose]);
+  }, [dealId]);
 
   const effectiveOptionsData =
     detailOptionsData.length > 0 ? detailOptionsData : deal?.options_data;
@@ -1043,16 +1095,22 @@ export default function DealDetailModal({
     return activeSummaryStats?.latestPrice ?? 0;
   })();
 
+  const unitFromOption = activeOptionTitle
+    ? computeUnitPriceBadge(activeOptionTitle, activePrice, activeCurrency, deal.category)
+    : null;
+  const unitFromDealTitle =
+    !unitFromOption &&
+    (!selectedOption ||
+      Math.round(Number(activePrice || 0)) === Math.round(Number(deal.price || 0)) ||
+      /^(?:로켓배송|무료배송|기본|선택\s*\d+|옵션\s*\d+)$/i.test(activeOptionTitle.trim()))
+      ? computeUnitPriceBadge(deal.title, activePrice, activeCurrency, deal.category)
+      : null;
+
   const detailUnitPriceBadge =
     !isClosedState &&
     !showZeroWonPrice &&
     !(deal.has_options && !selectedOption)
-      ? computeUnitPriceBadge(
-          activeOptionTitle || deal.title,
-          activePrice,
-          activeCurrency,
-          deal.category
-        )
+      ? (unitFromOption ?? unitFromDealTitle)
       : null;
 
   const summaryInsight = (() => {
@@ -1435,6 +1493,28 @@ export default function DealDetailModal({
             )}
           </div>
 
+          {(origRecCount > 0 || origCommentCount > 0 || origViewCount > 0) && (
+            <div
+              className="deal-detail-coldstart-stats"
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: "6px 10px",
+                fontSize: "0.75rem",
+                color: "var(--text-sub)",
+                fontWeight: 600,
+              }}
+            >
+              <span>원문 커뮤니티 반응</span>
+              <span style={{ color: "var(--text-main)", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                추천 {origRecCount.toLocaleString("ko-KR")}
+                {origCommentCount > 0 ? ` · 댓글 ${origCommentCount.toLocaleString("ko-KR")}` : ""}
+                {origViewCount > 0 ? ` · 조회 ${origViewCount.toLocaleString("ko-KR")}` : ""}
+              </span>
+            </div>
+          )}
+
           {detailUnitPriceBadge && (
             <div
               className="deal-detail-unit-price-row"
@@ -1545,7 +1625,13 @@ export default function DealDetailModal({
             onClick={() => handleJumpToSection("chart")}
           >
             <BarChart3 size={14} aria-hidden="true" />
-            <span>가격 추이 ({historyCount}건)</span>
+            <span>
+              {historyCount >= 2
+                ? `가격 추이 (${historyCount}건)`
+                : historyCount === 1
+                  ? "가격 추이 (1건·수집중)"
+                  : "가격 추이 (신규)"}
+            </span>
           </button>
           <button
             type="button"

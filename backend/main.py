@@ -616,7 +616,9 @@ async def proxy_image(
         url = "https:" + url
     if ("gmarket.co.kr" in url or "esmplus.com" in url or "auction.co.kr" in url) and "?ver=" in url:
         url = url.split("?ver=")[0]
-    url_hash = hashlib.md5(raw_input_url.encode('utf-8')).hexdigest()
+    from backend.core.deal_normalizer import upgrade_lowres_image_url
+    url = upgrade_lowres_image_url(url)
+    url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
     orig_cache_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}.cache")
     target_w = _quantize_image_width(w, width)
     variant_tag = f"w{target_w}" if target_w is not None else "auto800"

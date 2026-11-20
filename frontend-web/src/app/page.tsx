@@ -111,6 +111,7 @@ export default function Home() {
   const selectedCategoriesRef = useRef<string[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const selectedPlatformsRef = useRef<string[]>([]);
+  const [isPlatformsExpanded, setIsPlatformsExpanded] = useState(false);
   const [isCategoriesExpanded, setIsCategoriesExpanded] = useState(false);
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
@@ -178,10 +179,20 @@ export default function Home() {
   const [showEulaModal, setShowEulaModal] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [isCompactViewport, setIsCompactViewport] = useState(false);
+  const [isUltraCompactViewport, setIsUltraCompactViewport] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const urlSyncReadyRef = useRef(false);
 
   useEffect(() => {
-    const syncViewport = () => setIsCompactViewport(window.innerWidth <= 480);
+    const syncViewport = () => {
+      setIsCompactViewport(window.innerWidth <= 480);
+      const rootFontPx =
+        parseFloat(getComputedStyle(document.documentElement).fontSize || "16") ||
+        16;
+      setIsUltraCompactViewport(
+        window.innerWidth <= 368 || rootFontPx >= 18
+      );
+    };
     syncViewport();
     window.addEventListener("resize", syncViewport);
     return () => window.removeEventListener("resize", syncViewport);
@@ -1702,6 +1713,21 @@ export default function Home() {
     includeClosedDeals ||
     sortBy !== "latest";
 
+  const handleCloseDealModal = useCallback(() => {
+    setSelectedDeal(null);
+  }, []);
+
+  const handleTargetAlertSaved = useCallback(
+    (dealId: number) => {
+      hydrateEpochRef.current += 1;
+      if (!wishlistRef.current.includes(dealId)) {
+        unwishlistedDealIdsRef.current.add(dealId);
+      }
+      applyAlertAdd(dealId);
+    },
+    [applyAlertAdd]
+  );
+
   useEffect(() => {
     setIsMounted(true);
     setCurrentTime(Date.now());
@@ -1712,6 +1738,12 @@ export default function Home() {
     };
 
     let initialSharedKw = "";
+    let initialPlatforms: string[] = [];
+    let initialCategories: string[] = [];
+    let initialSort: "latest" | "popular" | "price_asc" = "latest";
+    let initialOnlyHot = false;
+    let initialHideClosed = false;
+    let initialIncludeClosed = false;
     let initialDealId: number | null = null;
     if (typeof window !== "undefined") {
       window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
@@ -1722,6 +1754,70 @@ export default function Home() {
         initialSharedKw = sharedKw.trim();
         setSearchQuery(initialSharedKw);
         updateAppliedSearch(initialSharedKw);
+      }
+
+      const platformRaw = urlParams.get("platform");
+      if (platformRaw && platformRaw.trim()) {
+        const allowedPlatforms = new Set<string>(
+          PLATFORMS.filter((p) => p !== "전체")
+        );
+        initialPlatforms = Array.from(
+          new Set(
+            platformRaw
+              .split(",")
+              .map((p) => p.trim())
+              .filter((p) => allowedPlatforms.has(p))
+          )
+        );
+        if (initialPlatforms.length > 0) {
+          selectedPlatformsRef.current = initialPlatforms;
+          setSelectedPlatforms(initialPlatforms);
+        }
+      }
+
+      const categoryRaw = urlParams.get("category");
+      if (categoryRaw && categoryRaw.trim()) {
+        initialCategories = Array.from(
+          new Set(
+            categoryRaw
+              .split(",")
+              .map((c) => c.trim())
+              .map((c) => (c.includes("해외핫딜") ? "해외직구" : c))
+              .filter((c) => c && c !== "전체")
+          )
+        );
+        if (initialCategories.length > 0) {
+          selectedCategoriesRef.current = initialCategories;
+          setSelectedCategories(initialCategories);
+        }
+      }
+
+      const sortRaw = urlParams.get("sort");
+      if (sortRaw === "popular" || sortRaw === "price_asc" || sortRaw === "latest") {
+        initialSort = sortRaw;
+        sortByRef.current = sortRaw;
+        setSortBy(sortRaw);
+      }
+
+      const hotRaw = urlParams.get("hot") ?? urlParams.get("onlyHot");
+      if (hotRaw === "1" || hotRaw === "true") {
+        initialOnlyHot = true;
+        onlyHotDealsRef.current = true;
+        setOnlyHotDeals(true);
+      }
+
+      const hideRaw = urlParams.get("hideClosed");
+      if (hideRaw === "1" || hideRaw === "true") {
+        initialHideClosed = true;
+        hideClosedDealsRef.current = true;
+        setHideClosedDeals(true);
+      } else {
+        const incRaw = urlParams.get("includeClosed");
+        if (incRaw === "1" || incRaw === "true") {
+          initialIncludeClosed = true;
+          includeClosedDealsRef.current = true;
+          setIncludeClosedDeals(true);
+        }
       }
 
       const dealIdRaw = urlParams.get("dealId");
@@ -1742,6 +1838,7 @@ export default function Home() {
         setIsTossMiniApp(true);
       }
       logTossScreen("home_feed_view", { tab: "전체" });
+      urlSyncReadyRef.current = true;
     }
 
     // 15종 표준 카테고리 메타데이터 동기화 (구형 원시 키 자동 배제)
@@ -1830,10 +1927,20 @@ export default function Home() {
       })
       .catch(() => {});
 
+    const hasInitialFilter = Boolean(
+      initialSharedKw ||
+        initialCategories.length > 0 ||
+        initialPlatforms.length > 0 ||
+        initialSort !== "latest" ||
+        initialOnlyHot ||
+        initialHideClosed ||
+        initialIncludeClosed
+    );
+
     let cachedDeals: Deal[] = [];
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("insightdeal_cached_deals");
-      if (saved && !initialSharedKw) {
+      if (saved && !hasInitialFilter) {
         try {
           cachedDeals = JSON.parse(saved);
           if (Array.isArray(cachedDeals) && cachedDeals.length > 0) {
@@ -1893,9 +2000,21 @@ export default function Home() {
     }
 
     const initFetch = async () => {
-      const hasCache = cachedDeals.length > 0 && !initialSharedKw;
+      const hasCache = cachedDeals.length > 0 && !hasInitialFilter;
       setIsRefreshing(true);
-      await fetchLiveDeals(!hasCache, 0, [], [], initialSharedKw);
+      await fetchLiveDeals(
+        !hasCache,
+        0,
+        initialCategories,
+        initialPlatforms,
+        initialSharedKw,
+        initialSort,
+        {
+          onlyHot: initialOnlyHot,
+          hideClosed: initialHideClosed,
+          includeClosed: initialIncludeClosed,
+        }
+      );
       setIsRefreshing(false);
     };
 
@@ -1920,6 +2039,67 @@ export default function Home() {
       }
     };
   }, [clearSearchDebounce, fetchLiveDeals, getOrCreateBrowserUserId, hydrateFromServer, updateAppliedSearch]);
+
+  useEffect(() => {
+    if (!isMounted || !urlSyncReadyRef.current || typeof window === "undefined") {
+      return;
+    }
+    try {
+      const nextParams = new URLSearchParams(window.location.search);
+      nextParams.delete("_og");
+      if (appliedSearch.trim()) {
+        nextParams.set("keyword", appliedSearch.trim());
+      } else {
+        nextParams.delete("keyword");
+      }
+      if (selectedPlatforms.length > 0) {
+        nextParams.set("platform", selectedPlatforms.join(","));
+      } else {
+        nextParams.delete("platform");
+      }
+      if (selectedCategories.length > 0) {
+        nextParams.set("category", selectedCategories.join(","));
+      } else {
+        nextParams.delete("category");
+      }
+      if (sortBy !== "latest") {
+        nextParams.set("sort", sortBy);
+      } else {
+        nextParams.delete("sort");
+      }
+      if (onlyHotDeals) {
+        nextParams.set("hot", "1");
+      } else {
+        nextParams.delete("hot");
+        nextParams.delete("onlyHot");
+      }
+      if (hideClosedDeals) {
+        nextParams.set("hideClosed", "1");
+      } else {
+        nextParams.delete("hideClosed");
+      }
+      if (includeClosedDeals && !hideClosedDeals) {
+        nextParams.set("includeClosed", "1");
+      } else {
+        nextParams.delete("includeClosed");
+      }
+      const nextQs = nextParams.toString();
+      const currQs = window.location.search.replace(/^\?/, "");
+      if (nextQs !== currQs) {
+        const nextUrl = `${window.location.pathname}${nextQs ? `?${nextQs}` : ""}${window.location.hash}`;
+        window.history.replaceState(window.history.state, "", nextUrl);
+      }
+    } catch {}
+  }, [
+    isMounted,
+    appliedSearch,
+    selectedPlatforms,
+    selectedCategories,
+    sortBy,
+    onlyHotDeals,
+    hideClosedDeals,
+    includeClosedDeals,
+  ]);
 
   useEffect(() => {
     if (!isMounted || !hasMore || loading || isRefreshing) return;
@@ -2092,12 +2272,24 @@ export default function Home() {
           if (curr === "JPY") return raw * 9.5;
           return raw;
         };
-        const pa = toApproxKrw(a);
-        const pb = toApproxKrw(b);
+        const parseShippingKrw = (sf?: string | null): number => {
+          const clean = (sf || "").trim();
+          if (!clean || /무료|무배|직배무료|직구무배|공짜/.test(clean)) return 0;
+          const digits = clean.replace(/[^0-9]/g, "");
+          const val = digits ? parseInt(digits, 10) : 0;
+          return Number.isFinite(val) && val > 0 && val <= 200000 ? val : 0;
+        };
+        const toTotalApproxKrw = (item: Deal) => {
+          const base = toApproxKrw(item);
+          return base > 0 ? base + parseShippingKrw(item.shipping_fee) : 0;
+        };
+        const pa = toTotalApproxKrw(a);
+        const pb = toTotalApproxKrw(b);
         if (pa <= 0 && pb <= 0) return 0;
         if (pa <= 0) return 1;
         if (pb <= 0) return -1;
-        return pa - pb;
+        if (pa !== pb) return pa - pb;
+        return toApproxKrw(a) - toApproxKrw(b);
       }
       return 0;
     });
@@ -2243,9 +2435,11 @@ export default function Home() {
                   type="text"
                   aria-label="핫딜 검색어 입력"
                   placeholder={
-                    isCompactViewport
-                      ? "핫딜 검색 (맥북 -파우치, :15000)"
-                      : "주요 커뮤니티 10곳 핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
+                    isUltraCompactViewport
+                      ? "핫딜 검색 (-제외, :가격)"
+                      : isCompactViewport
+                        ? "핫딜 검색 (맥북 -파우치, :15000)"
+                        : "주요 커뮤니티 10곳 핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
                   }
                   value={searchQuery}
                   onCompositionStart={() => {
@@ -2463,27 +2657,53 @@ export default function Home() {
           <div className="filter-scope-dock">
             <div className="filter-scope-row">
               <span className="filter-scope-label">출처</span>
-              <div className="platform-chips-row" role="group" aria-label="커뮤니티 필터">
-                {PLATFORMS.map((platform) => {
-                  const isSelected =
-                    platform === "전체"
-                      ? selectedPlatforms.length === 0
-                      : selectedPlatforms.includes(platform);
-                  return (
-                    <button
-                      key={platform}
-                      type="button"
-                      aria-pressed={isSelected}
-                      onClick={() => handlePlatformToggle(platform)}
-                      className={`platform-chip bounce-click ${isSelected ? "active" : ""}`}
-                    >
-                      {isSelected && (
-                        <Check size={13} strokeWidth={2.5} aria-hidden="true" />
-                      )}
-                      <span>{platform === "전체" ? "전체 커뮤니티" : platform}</span>
-                    </button>
-                  );
-                })}
+              <div className="platform-rail-wrapper">
+                <div
+                  id="platform-filter-rail"
+                  className={`platform-chips-row ${isPlatformsExpanded ? "expanded" : ""}`}
+                  role="group"
+                  aria-label="커뮤니티 필터"
+                >
+                  {PLATFORMS.map((platform) => {
+                    const isSelected =
+                      platform === "전체"
+                        ? selectedPlatforms.length === 0
+                        : selectedPlatforms.includes(platform);
+                    return (
+                      <button
+                        key={platform}
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => handlePlatformToggle(platform)}
+                        className={`platform-chip bounce-click ${isSelected ? "active" : ""}`}
+                      >
+                        {isSelected && (
+                          <Check size={13} strokeWidth={2.5} aria-hidden="true" />
+                        )}
+                        <span>{platform === "전체" ? "전체 커뮤니티" : platform}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  className="platform-expand-btn bounce-click"
+                  onClick={() => setIsPlatformsExpanded((prev) => !prev)}
+                  aria-expanded={isPlatformsExpanded}
+                  aria-controls="platform-filter-rail"
+                >
+                  {isPlatformsExpanded ? (
+                    <>
+                      <span>출처 접기</span>
+                      <ChevronUp size={13} aria-hidden="true" />
+                    </>
+                  ) : (
+                    <>
+                      <span>출처 더보기</span>
+                      <ChevronDown size={13} aria-hidden="true" />
+                    </>
+                  )}
+                </button>
               </div>
             </div>
 
@@ -3089,15 +3309,9 @@ export default function Home() {
 
       <DealDetailModal
         deal={selectedDeal}
-        onClose={() => setSelectedDeal(null)}
+        onClose={handleCloseDealModal}
         showToast={showToast}
-        onTargetAlertSaved={(dealId) => {
-          hydrateEpochRef.current += 1;
-          if (!wishlistRef.current.includes(dealId)) {
-            unwishlistedDealIdsRef.current.add(dealId);
-          }
-          applyAlertAdd(dealId);
-        }}
+        onTargetAlertSaved={handleTargetAlertSaved}
         onDealClosed={handleDealClosed}
       />
 

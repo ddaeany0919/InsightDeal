@@ -28,6 +28,21 @@ object ImageUrlResolver {
 
     private val LOCAL_HOSTS = setOf("10.0.2.2", "localhost", "127.0.0.1")
 
+    private val KAKAOCDN_LOWRES_REGEX = Regex(
+        "^(https?://search\\d+\\.kakaocdn\\.net/argon/)(?:130x130(?:_\\d+_[a-zA-Z0-9]+)?|200x200(?:_\\d+_[a-zA-Z0-9]+)?|320x320(?:_\\d+_[a-zA-Z0-9]+)?|600x0(?:_\\d+_[a-zA-Z0-9]+)?)(/[^?\\s]+)",
+        RegexOption.IGNORE_CASE
+    )
+
+    fun upgradeLowresImageUrl(url: String): String {
+        return if (KAKAOCDN_LOWRES_REGEX.containsMatchIn(url)) {
+            KAKAOCDN_LOWRES_REGEX.replace(url) { m ->
+                "${m.groupValues[1]}656x0_80_wr${m.groupValues[2]}"
+            }
+        } else {
+            url
+        }
+    }
+
     fun isBlockedCommunity(url: String): Boolean {
         val lower = url.lowercase()
         return BLOCKED_DOMAINS.any { lower.contains(it) }
@@ -59,14 +74,16 @@ object ImageUrlResolver {
             return trimmed
         }
 
-        // 1. 프로토콜 생략 URL (//cdn.example.com/...) -> https:// 결합
-        val normalizedInput = when {
-            trimmed.startsWith("//") -> "https:$trimmed"
-            trimmed.startsWith("/") -> "$cleanBase$trimmed"
-            trimmed.startsWith("http://", ignoreCase = true) -> "http://${trimmed.substring(7)}"
-            trimmed.startsWith("https://", ignoreCase = true) -> "https://${trimmed.substring(8)}"
-            else -> return trimmed
-        }
+        // 1. 프로토콜 생략 URL (//cdn.example.com/...) -> https:// 결합 + 저해상도 kakaocdn 업그레이드
+        val normalizedInput = upgradeLowresImageUrl(
+            when {
+                trimmed.startsWith("//") -> "https:$trimmed"
+                trimmed.startsWith("/") -> "$cleanBase$trimmed"
+                trimmed.startsWith("http://", ignoreCase = true) -> "http://${trimmed.substring(7)}"
+                trimmed.startsWith("https://", ignoreCase = true) -> "https://${trimmed.substring(8)}"
+                else -> return trimmed
+            }
+        )
 
         val parsedUri = parseUriSafe(normalizedInput)
         val host = extractHost(normalizedInput, parsedUri)
@@ -142,13 +159,15 @@ object ImageUrlResolver {
             return trimmed
         }
 
-        val normalizedInput = when {
-            trimmed.startsWith("//") -> "https:$trimmed"
-            trimmed.startsWith("/") -> "$cleanBase$trimmed"
-            trimmed.startsWith("http://", ignoreCase = true) -> "http://${trimmed.substring(7)}"
-            trimmed.startsWith("https://", ignoreCase = true) -> "https://${trimmed.substring(8)}"
-            else -> return trimmed
-        }
+        val normalizedInput = upgradeLowresImageUrl(
+            when {
+                trimmed.startsWith("//") -> "https:$trimmed"
+                trimmed.startsWith("/") -> "$cleanBase$trimmed"
+                trimmed.startsWith("http://", ignoreCase = true) -> "http://${trimmed.substring(7)}"
+                trimmed.startsWith("https://", ignoreCase = true) -> "https://${trimmed.substring(8)}"
+                else -> return trimmed
+            }
+        )
 
         val parsedUri = parseUriSafe(normalizedInput)
         val host = extractHost(normalizedInput, parsedUri)

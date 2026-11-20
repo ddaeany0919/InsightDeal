@@ -387,6 +387,20 @@ body {
   }
 }
 
+@media (max-width: 420px) {
+  .navbar {
+    width: calc(100% - 14px);
+    padding: 5px 8px;
+    gap: 4px;
+    row-gap: 4px;
+  }
+
+  .nav-logo {
+    font-size: 1rem;
+    gap: 4px;
+  }
+}
+
 /* 절제된 프레스 인터랙션 */
 .bounce-click {
   transition: transform 0.16s ease, box-shadow 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
@@ -836,13 +850,48 @@ mark.search-highlight {
   white-space: nowrap;
 }
 
+.platform-rail-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .platform-chips-row {
+  flex: 1;
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
   margin-bottom: 0;
   min-width: 0;
+}
+
+.platform-expand-btn {
+  display: none;
+  position: relative;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-subtle);
+  color: var(--text-sub);
+  border: 1px solid var(--card-border);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.platform-expand-btn::after {
+  content: "";
+  position: absolute;
+  inset: -5px 0;
+  min-height: var(--touch-target-min);
 }
 
 @media (max-width: 640px) {
@@ -864,6 +913,10 @@ mark.search-highlight {
     font-size: 0.72rem;
   }
 
+  .platform-expand-btn {
+    display: inline-flex;
+  }
+
   .platform-chips-row {
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -872,6 +925,14 @@ mark.search-highlight {
     -ms-overflow-style: none;
     -webkit-mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 32px), transparent 100%);
     mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 32px), transparent 100%);
+  }
+
+  .platform-chips-row.expanded {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    padding: 2px;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   .platform-chips-row::-webkit-scrollbar {
@@ -1363,6 +1424,16 @@ mark.search-highlight {
   opacity: 1;
 }
 
+:root[data-theme="dark"] .deal-image {
+  filter: brightness(0.93) contrast(0.98);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .deal-image {
+    filter: brightness(0.93) contrast(0.98);
+  }
+}
+
 .deal-card:hover .deal-image {
   transform: scale(1.02);
 }
@@ -1851,6 +1922,12 @@ mark.search-highlight {
 .search-input::placeholder {
   color: var(--text-muted);
   font-weight: 500;
+}
+
+@media (max-width: 420px) {
+  .search-input::placeholder {
+    font-size: clamp(12px, 0.78rem, 14px);
+  }
 }
 
 .search-clear-btn {

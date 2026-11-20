@@ -14,6 +14,7 @@ import html as _html
 import httpx
 from backend.database import models
 from backend.core.categories import normalize_category_key
+from backend.core.deal_normalizer import upgrade_lowres_image_url
 from backend.core.device_auth import assert_device_owner, require_device_token
 from backend.core.url_utils import is_safe_external_url, is_search_or_community_url
 from backend.core.utils import to_utc_iso
@@ -1707,6 +1708,19 @@ def clean_deal_title(raw_title: str) -> str:
     return clean_canonical_title(raw_title)
 
 
+def _is_search_fallback_thumbnail_url(url: Optional[str]) -> bool:
+    """검색 폴백/아이콘/아바타 썸네일 여부 판별 (실상품 원본 이미지 보호용)."""
+    if not url:
+        return True
+    low = str(url).lower()
+    return (
+        "ui-avatars.com" in low
+        or "kakaocdn.net/argon" in low
+        or "search.pstatic.net" in low
+        or "cdn-icons-png.flaticon.com" in low
+    )
+
+
 def _resolve_best_image_url(deal_obj, base_url: str) -> Optional[str]:
     img = (getattr(deal_obj, "image_url", None) or "").replace("&amp;", "&").strip().rstrip(",)")
     if img.startswith("//"):
@@ -1735,19 +1749,19 @@ def _resolve_best_image_url(deal_obj, base_url: str) -> Optional[str]:
                 return f"{base_url}{img}"
             if not img.startswith("http"):
                 return f"{base_url}/images/{img}"
-            return img
+            return upgrade_lowres_image_url(img)
     content = _safe_loaded_attr(deal_obj, "content_html", "")
     if content:
         m = re.search(r'\[첨부된 이미지 링크들\]\s*:?\s*(https?://[^\s,\)\]]+)', content)
         if m:
             cand = m.group(1).strip().rstrip(",)")
             if cand and "no_image" not in cand.lower():
-                return cand
+                return upgrade_lowres_image_url(cand)
         m2 = re.search(r'(https?://[^\s"\'<>\)\]]+?\.(?:jpg|jpeg|png|webp))', content, re.IGNORECASE)
         if m2:
             cand2 = m2.group(1).strip().rstrip(",)")
             if cand2 and "dot03.gif" not in cand2.lower():
-                return cand2
+                return upgrade_lowres_image_url(cand2)
     title = getattr(deal_obj, "title", None) or ""
     lower_title = title.lower()
 
@@ -2413,6 +2427,33 @@ def get_hot_deals(
                         clauses.append(models.Deal.base_product_name.ilike(syn_like, escape="\\"))
                         clauses.append(models.Deal.search_keywords.ilike(syn_like, escape="\\"))
 
+                    m_knum = re.fullmatch(r"([가-힣]{2,})([0-9]+[a-zA-Z]*)", pt_compact.lower())
+                    if m_knum:
+                        k_pref, num_suf = m_knum.group(1), m_knum.group(2)
+                        for p_syn in KOR_ENG_SEARCH_SYNONYMS.get(k_pref, ()):
+                            if re.fullmatch(r"[a-z0-9]+", p_syn):
+                                comb_tok = f"{p_syn}{num_suf}"
+                                comb_like = f"%{_escape_like(comb_tok)}%"
+                                clauses.append(models.Deal.title.ilike(comb_like, escape="\\"))
+                                clauses.append(models.Deal.base_product_name.ilike(comb_like, escape="\\"))
+                                clauses.append(models.Deal.search_keywords.ilike(comb_like, escape="\\"))
+                            pref_like = f"%{_escape_like(p_syn)}%"
+                            num_like = f"%{_escape_like(num_suf)}%"
+                            clauses.append(
+                                and_(
+                                    or_(
+                                        models.Deal.title.ilike(pref_like, escape="\\"),
+                                        models.Deal.base_product_name.ilike(pref_like, escape="\\"),
+                                        models.Deal.search_keywords.ilike(pref_like, escape="\\"),
+                                    ),
+                                    or_(
+                                        models.Deal.title.ilike(num_like, escape="\\"),
+                                        models.Deal.base_product_name.ilike(num_like, escape="\\"),
+                                        models.Deal.search_keywords.ilike(num_like, escape="\\"),
+                                    ),
+                                )
+                            )
+
                 return or_(*clauses)
 
             for pt in positive_tokens:
@@ -2566,8 +2607,9 @@ def get_hot_deals(
                             existing["shipping_fee"] = norm_shipping_fee
                             existing["total_price"] = total_price
                             existing["currency"] = resolved_currency
-                            if image_url or not existing.get("image_url") or "ui-avatars.com" in (existing.get("image_url", "") or ""):
-                                existing["image_url"] = image_url or existing.get("image_url")
+                            ex_img = existing.get("image_url") or ""
+                            if image_url and (not ex_img or _is_search_fallback_thumbnail_url(ex_img) or not _is_search_fallback_thumbnail_url(image_url)):
+                                existing["image_url"] = image_url
                             existing["title"] = clean_title
                             clean_new_ecom = get_clean_ecommerce_url(deal.ecommerce_link or deal.post_link or "", loaded_html, deal.id, db, is_multi_item=is_multi)
                             new_ecom_url = clean_new_ecom
@@ -2591,7 +2633,8 @@ def get_hot_deals(
                             existing["site_names"].insert(0, comp_name)
                             existing["site_name"] = ", ".join(existing["site_names"])
                         else:
-                            if image_url and (not existing.get("image_url") or "ui-avatars.com" in (existing.get("image_url", "") or "")):
+                            ex_img = existing.get("image_url") or ""
+                            if image_url and (not ex_img or (_is_search_fallback_thumbnail_url(ex_img) and not _is_search_fallback_thumbnail_url(image_url))):
                                 existing["image_url"] = image_url
                             if serialized_opts and not existing.get("options_data"):
                                 existing["options_data"] = serialized_opts
@@ -2835,8 +2878,8 @@ def get_hot_deals(
                 grouped_result.sort(
                     key=lambda x: (
                         0 if int(x.get("price") or 0) > 0 else 1,
-                        _to_krw_equiv(x.get("price"), x.get("currency")),
                         _to_krw_equiv(x.get("total_price") or x.get("price"), x.get("currency")),
+                        _to_krw_equiv(x.get("price"), x.get("currency")),
                     )
                 )
 
@@ -3470,14 +3513,20 @@ def get_deal(
     initial_history: list = []
     initial_history_period: str = "7d"
     try:
-        hist_points = _compute_deal_history(deal_id, "7d", db)
+        hist_target_id = best_deal.id if (original_price == 0 and min_price > 0) else deal_id
+        hist_points = _compute_deal_history(hist_target_id, "7d", db, target_currency=curr)
         if isinstance(hist_points, list):
             initial_history = hist_points
         if len(initial_history) <= 1:
-            hist_3m = _compute_deal_history(deal_id, "3m", db)
+            hist_3m = _compute_deal_history(hist_target_id, "3m", db, target_currency=curr)
             if isinstance(hist_3m, list) and len(hist_3m) >= 2:
                 initial_history = hist_3m
                 initial_history_period = "3m"
+            else:
+                hist_6m = _compute_deal_history(hist_target_id, "6m", db, target_currency=curr)
+                if isinstance(hist_6m, list) and len(hist_6m) >= 2:
+                    initial_history = hist_6m
+                    initial_history_period = "6m"
         history_count = len(initial_history)
     except Exception as hist_exc:
         logger.debug(f"[get_deal] history_count fallback (deal_id={deal_id}): {hist_exc}")
@@ -3644,6 +3693,9 @@ def get_deal_history(
         res_3m = _compute_deal_history(deal_id, "3m", db, option_name=opt_query, target_currency=currency)
         if len(res_3m) >= 2:
             return res_3m
+        res_6m = _compute_deal_history(deal_id, "6m", db, option_name=opt_query, target_currency=currency)
+        if len(res_6m) >= 2:
+            return res_6m
     return res
 
 def _compute_deal_history(

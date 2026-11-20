@@ -140,7 +140,11 @@ export default function DealDetailSecondarySections({
           </span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
             <span className="deal-accordion-pill">
-              {historyCount > 0 ? `기록 ${historyCount}건` : "시세 확인"}
+              {historyCount >= 2
+                ? `기록 ${historyCount}건`
+                : historyCount === 1
+                  ? "초기 1건 (추이 대기)"
+                  : "첫 핫딜 수집"}
             </span>
             {expandedSections.chart ? (
               <ChevronUp size={16} aria-hidden="true" />

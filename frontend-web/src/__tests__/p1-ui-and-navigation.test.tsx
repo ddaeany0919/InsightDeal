@@ -1,6 +1,6 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import ThemeToggle from "@/app/components/ThemeToggle";
 import DealCard from "@/app/components/DealCard";
 import WishlistDrawer from "@/app/components/WishlistDrawer";
@@ -10,7 +10,7 @@ import DealDetailModal from "@/app/components/DealDetailModal";
 import PriceTrendChart from "@/app/components/PriceTrendChart";
 import ImageLightboxModal from "@/app/components/ImageLightboxModal";
 import Home from "@/app/page";
-import { PLATFORMS, computeUnitPriceBadge } from "@/app/lib/utils";
+import { PLATFORMS, computeUnitPriceBadge, upgradeLowresImageUrl } from "@/app/lib/utils";
 import type { Deal } from "@/app/lib/types";
 
 vi.mock("next/link", () => ({
@@ -45,6 +45,12 @@ function buildDeal(id: number, overrides: Partial<Deal> = {}): Deal {
 }
 
 describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · 인앱 배너 검증", () => {
+  afterEach(() => {
+    try {
+      window.history.replaceState(null, "", "/");
+    } catch {}
+  });
+
   it("ThemeToggle 3단 전환 시 dataset.theme, localStorage, aria-pressed가 동기화된다", () => {
     render(<ThemeToggle />);
 
@@ -957,5 +963,93 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
       Object.defineProperty(window, "scrollY", { configurable: true, writable: true, value: 0 });
       Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: origScrollTo });
     }
+  });
+
+  it("Wave 1: 단위가격 확장 파서(1:1 패리티), kakaocdn 고해상도 변환, URL 쿼리 복원 및 출처 더보기·딥링크 뒤로가기를 검증한다", async () => {
+    // 1. 단위가격 확장 파서 및 오탐 차단 검증
+    expect(computeUnitPriceBadge("삼다수 무라벨 500mlx2개+2개", 4000, "KRW", "음식")).toEqual({
+      label: "100ml당 200원",
+      detail: "총 2,000ml · 개당 1,000원",
+    });
+    expect(computeUnitPriceBadge("종근당 락토핏 (2g x 30포) 2박스", 12900, "KRW", "음식")).toEqual({
+      label: "1포당 215원",
+      detail: "총 60포 · 120g 기준",
+    });
+    expect(computeUnitPriceBadge("피죤 리치퍼퓸 4.2L 본품+2L 리필 2개", 25200, "KRW", "생활용품")).toEqual({
+      label: "100ml당 307원",
+      detail: "총 8,200ml 기준",
+    });
+    expect(computeUnitPriceBadge("김치 900g 3종 세트", 18900, "KRW", "음식")).toEqual({
+      label: "100g당 700원",
+      detail: "총 2,700g · 개당 6,300원",
+    });
+    expect(computeUnitPriceBadge("동물복지 계란 특란 30구 x 2판", 15800, "KRW", "음식")).toEqual({
+      label: "1구당 263원",
+      detail: "총 60구 기준",
+    });
+    expect(computeUnitPriceBadge("[알리] 8구 개별스위치 멀티탭 2M", 12900, "KRW", "생활용품")).toBeNull();
+
+    // 2. kakaocdn 저해상도 썸네일 고해상도 업그레이드
+    expect(
+      upgradeLowresImageUrl("https://search1.kakaocdn.net/argon/130x130_85_c/6W6ac7UeBi1")
+    ).toBe("https://search1.kakaocdn.net/argon/656x0_80_wr/6W6ac7UeBi1");
+
+    // 3. Home URL 쿼리 복원(?platform=뽐뿌&sort=price_asc&hot=1) & 출처 더보기 토글
+    window.history.replaceState(null, "", "/?platform=%EB%BD%90%EB%BF%8C&sort=price_asc&hot=1");
+    const fetchCalls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      fetchCalls.push(url);
+      if (url.includes("/api/meta/categories")) {
+        return new Response(JSON.stringify({ categories: [] }), { status: 200 });
+      }
+      if (url.includes("/api/community/popular-keywords")) {
+        return new Response(JSON.stringify({ keywords: [], rankings: [] }), { status: 200 });
+      }
+      if (url.includes("/api/push/device")) {
+        return new Response(JSON.stringify({ status: "ok", device_uuid: "web_w1", device_token: "tok_w1" }), { status: 200 });
+      }
+      if (url.includes("/api/users/notifications") || url.includes("/api/wishlist/")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.includes("/api/community/hot-deals")) {
+        return new Response(JSON.stringify({ deals: [], has_more: false, next_cursor: null }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+
+    const { container } = render(<Home />);
+    await waitFor(() => {
+      expect(
+        fetchCalls.some(
+          (u) =>
+            u.includes("platform=%EB%BD%90%EB%BF%8C") &&
+            u.includes("sort=price_asc") &&
+            u.includes("only_hot=true")
+        )
+      ).toBe(true);
+    });
+    const platformExpandBtn = screen.getByRole("button", { name: /출처 더보기/ });
+    fireEvent.click(platformExpandBtn);
+    expect(container.querySelector(".platform-chips-row.expanded")).not.toBeNull();
+    expect(screen.getByRole("button", { name: /출처 접기/ })).toHaveAttribute("aria-expanded", "true");
+
+    // 4. DealDetailModal 딥링크 진입 시 history.back() 오발동 차단 & 닫기 시 URL dealId 제거
+    const backSpy = vi.spyOn(window.history, "back").mockImplementation(() => {});
+    window.history.replaceState(null, "", "/?dealId=902");
+    const onCloseDeep = vi.fn();
+    render(
+      <DealDetailModal
+        deal={buildDeal(902)}
+        onClose={onCloseDeep}
+        showToast={vi.fn()}
+      />
+    );
+    const closeBtn = screen.getByRole("button", { name: "상세 모달 닫기" });
+    fireEvent.click(closeBtn);
+    expect(backSpy).not.toHaveBeenCalled();
+    expect(onCloseDeep).toHaveBeenCalledTimes(1);
+    expect(window.location.search).not.toContain("dealId=902");
+    backSpy.mockRestore();
   });
 });

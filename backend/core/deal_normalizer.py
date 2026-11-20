@@ -57,10 +57,11 @@ _SEED_DUMMY_TAIL_RE = re.compile(
     re.IGNORECASE,
 )
 
-# 본문 폴백 시 대표 가격에서 제외할 문맥(정가/배송비/추가금/할인액 등)
+# 본문 폴백 시 대표 가격에서 제외할 문맥(정가/배송비/추가금/할인액/리뷰이벤트 등)
 _BODY_CONTEXT_PREFIX_MASK_RE = re.compile(
     r"(?:기존\s*가(?:격)?|정가|출시\s*가(?:격)?|정상\s*가(?:격)?|출고\s*가(?:격)?|시중\s*가(?:격)?|권장\s*소비자가|"
     r"배송\s*비|택배\s*비|우편\s*비|도서\s*산간|"
+    r"포토\s*리뷰(?:\s*(?:이벤트|작성|적립|포인트))?(?:\s*(?:Npay|네페|네이버\s*페이))?|"
     r"추가\s*(?:금액|금|요금|옵션|선택|구매|비용)?|옵션\s*추가|"
     r"쿠폰(?:\s*할인)?|할인(?:\s*금액|\s*쿠폰|\s*코드|\s*폭)?|"
     r"적립(?:\s*금|\s*포인트|\s*혜택)?|페이백|캐시백|청구\s*할인|카드\s*할인|즉시\s*할인|"
@@ -83,9 +84,25 @@ _BODY_SURCHARGE_PAREN_RE = re.compile(
 )
 
 _EXPLICIT_SHIPPING_KEYWORD_RE = re.compile(
-    r"^(?:무배|무료배송|무료|유배|유료배송|배송비|택배비?|와우무료|와우무배|네멤무료|네멤무배|조건부무료|조건부|free(?:\s*shipping)?|fs)\b",
+    r"^(?:무배|무료배송|무료|유배|유료배송|배송비|택배비?|직배(?:\s*무료|\s*무배|\s*유료)?|직구\s*(?:무료|무배)|와우무료|와우무배|네멤무료|네멤무배|조건부무료|조건부|free(?:\s*shipping)?|fs)\b",
     re.IGNORECASE,
 )
+
+_KAKAOCDN_LOWRES_RE = re.compile(
+    r"(https?://search\d*\.kakaocdn\.net/argon/)(\d+x\d+[^/]*)(/)",
+    re.IGNORECASE,
+)
+
+
+def upgrade_lowres_image_url(raw_url: Optional[str]) -> str:
+    """다음 카카오 CDN 130x130 등 저화질 썸네일 URL을 고화질(656x0_80_wr)로 승격합니다."""
+    if not raw_url:
+        return ""
+    u = str(raw_url).strip()
+    m = _KAKAOCDN_LOWRES_RE.search(u)
+    if m and m.group(2).lower() != "656x0_80_wr":
+        return _KAKAOCDN_LOWRES_RE.sub(r"\g<1>656x0_80_wr\g<3>", u, count=1)
+    return u
 
 # 비쇼핑몰 말머리 및 일반 수식어 집합
 _NON_MALL_EXACT: set[str] = {
@@ -637,10 +654,11 @@ def normalize_shipping_fee(raw_fee: Optional[str], title_hint: str = "") -> str:
 
         if compact in (
             "0", "0원", "무", "무배", "무료", "무료배송", "배송비무료", "택배비무료",
+            "직배무료", "직배무배", "직구무료", "직구무배",
             "배송비포함", "무료(포함)", "포함", "free", "freeshipping", "fs", "臾대즺", "臾대같",
         ):
             return "무료배송"
-        if any(k in low for k in ("무료배송", "무배", "배송비 무료", "택배비 무료", "배송비 포함", "배송비포함", "free shipping", "臾대즺", "臾대같")):
+        if any(k in low for k in ("무료배송", "무배", "배송비 무료", "택배비 무료", "직배무료", "직배 무료", "직구무배", "배송비 포함", "배송비포함", "free shipping", "臾대즺", "臾대같")):
             return "무료배송"
 
         if "$" in low or "달러" in low or "usd" in low:
@@ -670,7 +688,7 @@ def normalize_shipping_fee(raw_fee: Optional[str], title_hint: str = "") -> str:
             return "와우무료"
         if re.search(r"(?:네멤\s*무배|네멤\s*무료|멤버십\s*0?\s*무료)", th, re.IGNORECASE):
             return "네멤무료"
-        if re.search(r"(?:무배|무료배송|/\s*(?:무료|무|0원?|free|fs)\s*(?:[\)\]]|$))", th, re.IGNORECASE):
+        if re.search(r"(?:무배|무료배송|직배\s*무료|직구\s*무배?|/\s*(?:무료|무|0원?|free|fs)\s*(?:[\)\]]|$))", th, re.IGNORECASE):
             return "무료배송"
 
     return res or ""
@@ -1069,6 +1087,21 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
     # 가격 파트 뒤쪽 '외', '부터', '~', '각', '전후' 접미어 정리
     price_part_core = re.sub(r"\s*(?:외(?:\s*\d+\s*종)?|부터|~|각|전후|대)\s*$", "", price_part).strip()
 
+    # 해외직구/해외배송 괄호 내 무기호 소수점 가격 처리 (예: '(89.99/직배무료)', '[amazon] ... (19.99/무배)')
+    if re.fullmatch(r"[0-9]{1,4}\.[0-9]{1,2}", price_part_core):
+        overseas_ctx = f"{context_hint} {ship_part}".lower()
+        overseas_hints = (
+            "amazon", "아마존", "aliexpress", "알리", "ebay", "newegg", "iherb", "bhphotovideo",
+            "직배", "직구", "배대지", "해외", "달러", "usd", "free shipping", "fs",
+        )
+        if (has_valid_ship or any(h in overseas_ctx for h in overseas_hints)) and not re.search(
+            r"(?:인치|inch|mm|cm|kg|g|mg|ml|l|gb|tb|w|v|hz)\b", cleaned, re.IGNORECASE
+        ):
+            usd_dec_val = float(price_part_core)
+            if 0.5 <= usd_dec_val <= 10000:
+                norm_ship = normalize_shipping_fee(ship_part, title_hint=context_hint) if ship_part else ""
+                return round(usd_dec_val * 100), "USD", norm_ship
+
     # 후행 잔여 텍스트 검증: 숫자/통화 뒤에 일반 명사('신형', 'Ti', '모니터' 등)가 붙어 있으면 가격 괄호가 아님!
     valid_price_token_re = re.compile(
         r"^(?:"
@@ -1093,7 +1126,7 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
         ship_part
         and (
             _EXPLICIT_SHIPPING_KEYWORD_RE.search(ship_part)
-            or ship_part.lower() in ("무", "0", "0원", "무배", "무료", "무료배송", "free", "fs", "다양")
+            or ship_part.lower() in ("무", "0", "0원", "무배", "무료", "무료배송", "직배무료", "free", "fs", "다양")
             or re.match(r"^(?:[$€¥]?\s*[0-9,.]+\s*(?:원|달러|위안|엔)?|배송비\s*[0-9,]+원?)$", ship_part, re.IGNORECASE)
         )
     )
@@ -1102,13 +1135,15 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
     if is_unclosed_end and not (has_explicit_unit or has_valid_ship):
         return 0, "KRW", ""
 
-    # 통화 단위가 없는 순수 숫자인 경우: 콤마 포맷(899,000)이거나 배송비 슬래시(46638/무)가 있거나 5자리 이상일 때만 KRW 인정 (2024~2029 연도 배제)
+    # 통화 단위가 없는 순수 숫자인 경우: 콤마 포맷(899,000)이거나 배송비 슬래시(46638/무)가 있거나 5자리 이상일 때만 KRW 인정 (2024~2029 연도 및 GPU 모델명 배제)
     if not has_explicit_unit:
         digits_only = price_part_core.replace(",", "")
         if "." in digits_only or not digits_only.isdigit():
             return 0, "KRW", ""
         num_val = int(digits_only)
         if 1990 <= num_val <= 2035 and not has_valid_ship:
+            return 0, "KRW", ""
+        if num_val in (5050, 5060, 5070, 5080, 5090, 9060, 9070) and not has_valid_ship:
             return 0, "KRW", ""
         if not ("," in price_part_core or has_valid_ship or len(digits_only) >= 5):
             return 0, "KRW", ""
@@ -1118,7 +1153,7 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
             price_part_core, fallback_currency="KRW", allow_bare_number=False, context_hint=context_hint
         )
 
-    norm_ship = normalize_shipping_fee(ship_part) if ship_part else ""
+    norm_ship = normalize_shipping_fee(ship_part, title_hint=context_hint) if ship_part else ""
     return parsed_price, parsed_curr, norm_ship
 
 
@@ -1244,10 +1279,11 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
                     break
 
         if title_price == 0:
-            # 2-a) 외화 기호/단위 ($ 17.97, 17.97달러, ¥189, 189위안, 3,980엔, €49.50)
+            # 2-a) 외화 기호/단위 ($ 17.97, 89.99$, 17.97달러, ¥189, 189위안, 3,980엔, €49.50)
+            # trailing `$`는 숫자 바로 뒤(공백 0칸)에만 허용해 "샤오신 프로 12.7 $164.25" 오인식 차단
             m_usd_all = list(
                 re.finditer(
-                    r"(?:\$\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:달러|USD|불(?!가|량|능|편|안|발|포함|빛)))",
+                    r"(?:\$\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)(?:\s*(?:달러|USD|불(?!가|량|능|편|안|발|포함|빛))|\$(?!\d)))",
                     masked,
                     re.IGNORECASE,
                 )
@@ -1401,9 +1437,9 @@ def extract_body_fallback_price(body_text: Optional[str], title_text: str = "") 
     cleaned = _BODY_CONTEXT_PREFIX_MASK_RE.sub(" ", cleaned)
     cleaned = _BODY_CONTEXT_SUFFIX_MASK_RE.sub(" ", cleaned)
 
-    # 외화 표기 탐색
+    # 외화 표기 탐색 (trailing `$`는 숫자 바로 뒤 공백 없음만 허용)
     m_usd = re.search(
-        r"(?:\$\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:달러|USD|불(?!가|량|능|편|안|발|포함|빛)))",
+        r"(?:\$\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)(?:\s*(?:달러|USD|불(?!가|량|능|편|안|발|포함|빛))|\$(?!\d)))",
         cleaned,
         re.IGNORECASE,
     )
@@ -1516,8 +1552,60 @@ KOR_ENG_SEARCH_SYNONYMS: dict[str, tuple[str, ...]] = {
     "nintendo": ("닌텐도",),
     "스위치": ("switch",),
     "switch": ("스위치",),
-    "플스": ("ps5", "playstation"),
-    "ps5": ("플스", "플레이스테이션"),
+    "플스": ("ps5", "playstation", "플스5"),
+    "플스5": ("ps5", "playstation", "플스", "플레이스테이션"),
+    "ps5": ("플스", "플스5", "플레이스테이션"),
+    "플레이스테이션": ("playstation", "ps5", "플스", "플스5"),
+    "playstation": ("플레이스테이션", "플스", "플스5", "ps5"),
+    "콜옵": ("call", "duty", "cod", "콜오브듀티"),
+    "콜오브듀티": ("call", "duty", "cod", "콜옵"),
+    "cod": ("콜옵", "콜오브듀티"),
+    "다슴살": ("닭가슴살",),
+    "닭가슴살": ("다슴살", "chicken"),
+    "엑박": ("xbox", "엑스박스"),
+    "엑스박스": ("xbox", "엑박"),
+    "xbox": ("엑박", "엑스박스"),
+    "스팀덱": ("steamdeck", "steam"),
+    "steamdeck": ("스팀덱",),
+    "몬헌": ("monster", "hunter", "몬스터헌터"),
+    "몬스터헌터": ("monster", "hunter", "몬헌"),
+    "포켓몬": ("pokemon",),
+    "pokemon": ("포켓몬",),
+    "젤다": ("zelda",),
+    "zelda": ("젤다",),
+    "마리오": ("mario",),
+    "mario": ("마리오",),
+    "사일런트힐": ("silent", "hill"),
+    "라데온": ("radeon", "amd"),
+    "radeon": ("라데온", "amd"),
+    "지포스": ("geforce", "nvidia", "rtx"),
+    "geforce": ("지포스", "nvidia", "rtx"),
+    "엔비디아": ("nvidia", "geforce", "rtx"),
+    "nvidia": ("엔비디아", "지포스"),
+    "라이젠": ("ryzen", "amd"),
+    "ryzen": ("라이젠", "amd"),
+    "인텔": ("intel",),
+    "intel": ("인텔",),
+    "하이닉스": ("hynix", "sk"),
+    "hynix": ("하이닉스",),
+    "마이크론": ("micron", "crucial"),
+    "crucial": ("크루셜", "마이크론"),
+    "크루셜": ("crucial", "마이크론"),
+    "게임서": ("gamesir",),
+    "gamesir": ("게임서",),
+    "키크론": ("keychron",),
+    "keychron": ("키크론",),
+    "스타벅스": ("starbucks", "스벅"),
+    "스벅": ("starbucks", "스타벅스"),
+    "starbucks": ("스타벅스", "스벅"),
+    "나이키": ("nike",),
+    "nike": ("나이키",),
+    "아디다스": ("adidas",),
+    "adidas": ("아디다스",),
+    "뉴발란스": ("newbalance", "뉴발"),
+    "뉴발": ("newbalance", "뉴발란스"),
+    "노스페이스": ("northface", "노페"),
+    "노페": ("northface", "노스페이스"),
     "소니": ("sony",),
     "sony": ("소니",),
     "보스": ("bose",),
@@ -1889,19 +1977,24 @@ def renormalize_existing_deals(db_session: Any, dry_run: bool = False) -> dict[s
             if curr_currency == "USD" and title_c == "KRW" and curr_price == title_p * 100:
                 new_price = title_p
                 new_currency = "KRW"
-            # 3-b) 타오바오/위안화(¥189) 딜이 KRW 189원으로 잘못 저장된 레코드 복구
-            elif curr_currency == "KRW" and title_c in ("CNY", "USD", "EUR") and (
-                curr_price == round(title_p / 100) or curr_price < 500
+            # 3-b) 타오바오/위안화(¥189)·퀘이사존 소수점 USD(145.99 -> 145) 절단 오파싱 복구
+            elif (
+                title_c in ("CNY", "USD", "EUR")
+                and curr_price != title_p
+                and (
+                    (curr_currency == "KRW" and (curr_price in (title_p // 100, round(title_p / 100)) or curr_price < 500))
+                    or (curr_currency == title_c and title_p >= 100 and curr_price in (title_p // 100, round(title_p / 100)))
+                )
             ):
                 new_price = title_p
                 new_currency = title_c
-            # 3-c) 0원·연도·배송비 역전·백만원대 천단위 절단 오파싱을 제목 가격으로 복구
+            # 3-c) 0원·연도·배송비 역전·백만원대 천단위 절단·GPU 모델명 누수 오파싱을 제목 가격으로 복구
             elif curr_price == 0 or (
                 curr_currency == "KRW"
                 and curr_price != title_p
                 and (
                     (curr_price < 500 and not is_micro_point_deal(curr_price, effective_title))
-                    or curr_price in (2024, 2025, 2026, 5060, 5070, 5080, 5090)
+                    or curr_price in (2024, 2025, 2026, 5050, 5060, 5070, 5080, 5090, 9060, 9070)
                     or (
                         not has_options
                         and (
@@ -1970,6 +2063,44 @@ def renormalize_existing_deals(db_session: Any, dry_run: bool = False) -> dict[s
                 fb_p, fb_c = extract_body_fallback_price(body_html, "")
                 new_price = fb_p
                 new_currency = fb_c if fb_p > 0 else "KRW"
+            # GPU 모델명 숫자(5050/5060/5070/5080/5090/9060/9070)가 제목 가격 없는 딜에 가격으로 누수된 케이스 치유
+            elif (
+                curr_currency == "KRW"
+                and curr_price in (5050, 5060, 5070, 5080, 5090, 9060, 9070)
+                and not re.search(rf"(?<!\d){curr_price}\s*원", effective_title)
+                and re.search(rf"(?:rtx|gtx|rx)\s*[-]?\s*{curr_price}\b", effective_title, re.IGNORECASE)
+            ):
+                fb_p, fb_c = extract_body_fallback_price(body_html, effective_title)
+                new_price = fb_p
+                new_currency = fb_c if fb_p > 0 else "KRW"
+            # 퀘이사존 등에서 소수점 이하가 잘린 USD (예: 145.99 USD -> KRW/USD 145) 본문 힌트 복구
+            elif (
+                1 <= curr_price <= 5000
+                and not re.search(rf"(?<!\d){curr_price}\s*원", effective_title)
+                and re.search(
+                    rf"(?:(?:\$|USD|달러)\s*{curr_price}\.(\d{{1,2}})|{curr_price}\.(\d{{1,2}})\s*(?:\$|USD|달러))",
+                    combined_hint,
+                    re.IGNORECASE,
+                )
+            ):
+                m_dec_usd = re.search(
+                    rf"(?:(?:\$|USD|달러)\s*({curr_price}\.\d{{1,2}})|({curr_price}\.\d{{1,2}})\s*(?:\$|USD|달러))",
+                    combined_hint,
+                    re.IGNORECASE,
+                )
+                if m_dec_usd:
+                    usd_f = float(m_dec_usd.group(1) or m_dec_usd.group(2))
+                    new_price = round(usd_f * 100)
+                    new_currency = "USD"
+
+        raw_img = (getattr(deal, "image_url", None) or "").strip()
+        if raw_img:
+            upgraded_img = upgrade_lowres_image_url(raw_img)
+            if upgraded_img != raw_img:
+                if not dry_run:
+                    deal.image_url = upgraded_img
+                stats["image_fixed"] = stats.get("image_fixed", 0) + 1
+                changed = True
 
         new_price_str = str(new_price) if new_price > 0 else "0"
         if str(deal.price or "0") != new_price_str:

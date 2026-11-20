@@ -82,6 +82,9 @@ export interface RawDealApiResponse {
   comment_count?: number;
   commentCount?: number;
   comments?: number;
+  views?: number;
+  view_count?: number;
+  recommendations?: number;
   history_count?: number;
   historyCount?: number;
   is_search_fallback?: boolean;

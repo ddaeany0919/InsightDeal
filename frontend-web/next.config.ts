@@ -36,16 +36,43 @@ const nextConfig: NextConfig = {
     ? {}
     : {
         async rewrites() {
-          return [
-            {
-              source: "/api/:path*",
-              destination: `${backendUrl}/api/:path*`,
-            },
-            {
-              source: "/images/:path*",
-              destination: `${backendUrl}/images/:path*`,
-            },
-          ];
+          return {
+            beforeFiles: [
+              {
+                source: "/",
+                has: [
+                  {
+                    type: "query",
+                    key: "dealId",
+                    value: "(?<dealId>\\d+)",
+                  },
+                ],
+                missing: [
+                  {
+                    type: "header",
+                    key: "x-og-bypass",
+                    value: "1",
+                  },
+                  {
+                    type: "query",
+                    key: "_og",
+                    value: "1",
+                  },
+                ],
+                destination: "/api/og-deal?dealId=:dealId",
+              },
+            ],
+            afterFiles: [
+              {
+                source: "/api/:path*",
+                destination: `${backendUrl}/api/:path*`,
+              },
+              {
+                source: "/images/:path*",
+                destination: `${backendUrl}/images/:path*`,
+              },
+            ],
+          };
         },
       }),
 };

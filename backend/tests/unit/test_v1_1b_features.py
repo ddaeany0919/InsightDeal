@@ -2214,3 +2214,130 @@ def test_regex_normalizer_single_char_boundary_and_pairing_cleanup(unit_v11b_env
         assert remaining == {"111111", "444444"}
     finally:
         db.close()
+
+
+def test_wave1_v11d_normalizer_categories_search_and_price_sort(unit_v11b_env):
+    from backend.core.categories import normalize_category_key
+    from backend.core.deal_normalizer import (
+        build_search_keywords,
+        parse_title_price_and_shipping,
+        renormalize_existing_deals,
+        upgrade_lowres_image_url,
+    )
+    from backend.services.normalizer.regex_normalizer import RegexNormalizer
+
+    # 1. trailing $, 직배무료 및 샤오신 프로 12.7 비회귀 검증
+    p1, c1, sf1, _ = parse_title_price_and_shipping("[아마존] 키보드 (89.99$/직배무료)")
+    assert (p1, c1, sf1) == (8999, "USD", "무료배송")
+
+    p2, c2, sf2, _ = parse_title_price_and_shipping("샤오신 프로 12.7 $164.25")
+    assert (p2, c2) == (16425, "USD")
+
+    p3, c3, _, _ = parse_title_price_and_shipping("[알리] 앤커 충전기 29.50$ 무료")
+    assert (p3, c3) == (2950, "USD")
+
+    # 2. kakaocdn 저해상도 썸네일 고해상도 업그레이드
+    assert (
+        upgrade_lowres_image_url("https://search1.kakaocdn.net/argon/130x130_85_c/6W6ac7UeBi1")
+        == "https://search1.kakaocdn.net/argon/656x0_80_wr/6W6ac7UeBi1"
+    )
+
+    # 3. 오분류 6건 카테고리 정규화 검증
+    norm = RegexNormalizer()
+    assert normalize_category_key(asyncio.run(norm.normalize("[이마트] 하림 닭가슴살 1kg", "상품권")).category) == "음식"
+    assert normalize_category_key(asyncio.run(norm.normalize("[신세계] 노스페이스 구스다운 패딩", "모바일/기프티콘")).category) == "패션"
+    assert normalize_category_key(asyncio.run(norm.normalize("애플티비 플러스 3개월 이용권")).category) == "상품권"
+    assert normalize_category_key(asyncio.run(norm.normalize("[컴퓨존] AMD 라이젠 RTX 5070 완본체")).category) == "PC용품"
+    assert normalize_category_key(asyncio.run(norm.normalize("닌텐도 스위치2 인왕3 일반판")).category) == "SW/게임"
+    assert normalize_category_key(asyncio.run(norm.normalize("포켓몬 레전즈 ZA 스위치 2 호환 패드")).category) == "SW/게임"
+
+    # 4. DB 일괄 치유 + 한/영 동의어 검색(플스5/콜옵/다슴살) + 배송비 포함 price_asc 검증
+    SessionCls = unit_v11b_env.SessionCls
+    db = SessionCls()
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    try:
+        d_ps5 = models.Deal(
+            source_community_id=1,
+            title="[롯데하이마트] PlayStation 5 슬림 디지털 에디션",
+            price="598000",
+            currency="KRW",
+            shipping_fee="무료배송",
+            category="SW/게임",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=88001",
+            image_url="https://search1.kakaocdn.net/argon/130x130_85_c/AbCdEfGh",
+            search_keywords=build_search_keywords("[롯데하이마트] PlayStation 5 슬림 디지털 에디션"),
+            indexed_at=now_naive - timedelta(minutes=2),
+            is_closed=False,
+        )
+        d_chicken = models.Deal(
+            source_community_id=1,
+            title="[이마트] 하림 닭가슴살 오리지널 10팩",
+            price="15900",
+            currency="KRW",
+            shipping_fee="무료배송",
+            category="음식",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=88002",
+            search_keywords=build_search_keywords("[이마트] 하림 닭가슴살 오리지널 10팩"),
+            indexed_at=now_naive - timedelta(minutes=3),
+            is_closed=False,
+        )
+        d_cheap_base_paid_ship = models.Deal(
+            source_community_id=1,
+            title="유료배송 생수 2,500원 (배송비 2,500원)",
+            price="2500",
+            currency="KRW",
+            shipping_fee="2,500원",
+            category="음식",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=88003",
+            indexed_at=now_naive - timedelta(minutes=4),
+            is_closed=False,
+        )
+        d_free_ship = models.Deal(
+            source_community_id=1,
+            title="무배 라면 4,000원 (무료배송)",
+            price="4000",
+            currency="KRW",
+            shipping_fee="무료배송",
+            category="음식",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=88004",
+            indexed_at=now_naive - timedelta(minutes=5),
+            is_closed=False,
+        )
+        d_trunc_usd = models.Deal(
+            source_community_id=2,
+            title="[뉴에그] SSD $145.99",
+            price="145",
+            currency="KRW",
+            shipping_fee="무료배송",
+            category="PC용품",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&no=88005",
+            indexed_at=now_naive - timedelta(minutes=6),
+            is_closed=False,
+        )
+        db.add_all([d_ps5, d_chicken, d_cheap_base_paid_ship, d_free_ship, d_trunc_usd])
+        db.commit()
+
+        renormalize_existing_deals(db, dry_run=False)
+        db.refresh(d_ps5)
+        db.refresh(d_trunc_usd)
+        assert d_ps5.image_url == "https://search1.kakaocdn.net/argon/656x0_80_wr/AbCdEfGh"
+        assert (d_trunc_usd.price, d_trunc_usd.currency) == ("14599", "USD")
+    finally:
+        db.close()
+
+    community_router.invalidate_feed_api_cache()
+
+    r_ps5 = unit_v11b_env.client.get("/api/community/hot-deals?keyword=%ED%94%8C%EC%8A%A45&limit=20")
+    assert r_ps5.status_code == 200
+    assert any("88001" in (d.get("post_url") or "") or "PlayStation 5" in (d.get("title") or "") for d in r_ps5.json()["deals"])
+
+    r_chk = unit_v11b_env.client.get("/api/community/hot-deals?keyword=%EB%8B%A4%EC%8A%B4%EC%82%B4&limit=20")
+    assert r_chk.status_code == 200
+    assert any("닭가슴살" in (d.get("title") or "") for d in r_chk.json()["deals"])
+
+    r_sort = unit_v11b_env.client.get("/api/community/hot-deals?category=%EC%9D%8C%EC%8B%9D&sort=price_asc&limit=20")
+    assert r_sort.status_code == 200
+    totals = [(d["title"], d.get("total_price")) for d in r_sort.json()["deals"]]
+    idx_free = next(i for i, t in enumerate(totals) if "무배 라면" in t[0])
+    idx_ship = next(i for i, t in enumerate(totals) if "유료배송 생수" in t[0])
+    assert idx_free < idx_ship

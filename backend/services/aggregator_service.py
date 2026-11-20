@@ -1781,8 +1781,17 @@ class AggregatorService:
             if price <= 1000:
                 is_event = True
                 
-        if "무료" in check_title and "배송" not in check_title and "무배" not in check_title and "택배" not in check_title:
-            if price == 0:
+        # "직배무료", "다양/무료", "와우무료" 등 배송·옵션 표기 내 '무료'는 이벤트 오분류에서 제외
+        free_check_title = re.sub(
+            r"(?:직배|직구|해외직구|통합|방문|설치|와우|네멤|로켓|반품|교환|무배|다양\s*/?)\s*무료|/\s*무료(?:\)|\s|$)|무료\s*(?:배송|직배|반품|교환|설치)",
+            " ",
+            check_title,
+        )
+        if "무료" in free_check_title and "배송" not in free_check_title and "무배" not in free_check_title and "택배" not in free_check_title:
+            if price == 0 and (
+                final_category in ("기타", "패키지/이용권")
+                or any(kw in free_check_title for kw in ("무료배포", "무료나눔", "무료공유", "무료쿠폰", "무료 다운로드", "0원"))
+            ):
                 is_event = True
             
         # 적립 또는 이벤트(무료 및 추첨·설문·체험단·쿠폰 안내글) 강제 보정 적용 (유료 정상 상품 덮어쓰기 차단)

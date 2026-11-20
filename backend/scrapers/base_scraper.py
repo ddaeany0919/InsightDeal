@@ -480,16 +480,21 @@ class AsyncBaseScraper(ABC):
                                     logger.info(f"🖼️ [Scraper Image Fallback - Naver] 상품명('{q_cand}') 대표 이미지 확보 성공: {chosen_naver[0]}")
                                     return chosen_naver[0]
 
-                            # 3-B. 다음 통합검색 썸네일 (kakaocdn.net argon 320x320 CDN, 희귀 직구/캔디류 폴백)
+                            # 3-B. 다음 통합검색 썸네일 (kakaocdn.net argon 656x0 우선 + 저해상도 130x130 자동 업그레이드)
                             daum_url = f"https://search.daum.net/search?w=tot&q={quote(q_cand)}"
                             rd = await hclient.get(daum_url, headers=req_hdrs)
                             if rd.status_code == 200:
                                 d_imgs = re.findall(r'(https://search\d+\.kakaocdn\.net/argon/[^\s"\'<>]+)', rd.text)
-                                for cand in d_imgs[:6]:
-                                    if '320x320' in cand or '656x0' in cand or d_imgs:
-                                        chosen_d = cand if ('320x320' in cand or '656x0' in cand) else d_imgs[0]
-                                        logger.info(f"🖼️ [Scraper Image Fallback - Daum] 상품명('{q_cand}') 대표 이미지 확보 성공: {chosen_d}")
-                                        return chosen_d
+                                if d_imgs:
+                                    from backend.core.deal_normalizer import upgrade_lowres_image_url
+                                    chosen_d = (
+                                        next((c for c in d_imgs[:12] if "656x0" in c), None)
+                                        or next((c for c in d_imgs[:12] if "320x320" in c), None)
+                                        or d_imgs[0]
+                                    )
+                                    chosen_d = upgrade_lowres_image_url(chosen_d)
+                                    logger.info(f"🖼️ [Scraper Image Fallback - Daum] 상품명('{q_cand}') 대표 이미지 확보 성공: {chosen_d}")
+                                    return chosen_d
 
                         # 3-C. 빙 이미지 검색 폴백
                         search_url = f"https://www.bing.com/images/search?q={quote(query_candidates[-1] + ' 상품')}&FORM=HDRSC2"

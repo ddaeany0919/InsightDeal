@@ -1270,5 +1270,38 @@ class InsightDealV11bUnitTest {
         assertNull(computeUnitPriceBadge("[쿠팡] 27인치 게이밍 모니터 165Hz", 199000L, "KRW", "생활용품"))
         assertNull(computeUnitPriceBadge("스카이 핏 스마트 글래스 S1 블루투스6.0 오디오 안경 2개", 36900L, "KRW", "기타"))
         assertNull(computeUnitPriceBadge("[아마존] 비타민 500g", 2000L, "USD", "음식"))
+
+        // Wave 1 (v1.1d) 확장 케이스 1:1 패리티 검증
+        val noXSpace = computeUnitPriceBadge("삼다수 무라벨 500mlx2개+2개", 4000L, "KRW", "음식")
+        assertNotNull(noXSpace)
+        assertEquals("100ml당 200원", noXSpace?.label)
+        assertEquals("총 2,000ml · 개당 1,000원", noXSpace?.detail)
+
+        val sachetBox = computeUnitPriceBadge("종근당 락토핏 (2g x 30포) 2박스", 12900L, "KRW", "음식")
+        assertNotNull(sachetBox)
+        assertEquals("1포당 215원", sachetBox?.label)
+        assertEquals("총 60포 · 120g 기준", sachetBox?.detail)
+
+        val refillSum = computeUnitPriceBadge("피죤 리치퍼퓸 4.2L 본품+2L 리필 2개", 25200L, "KRW", "생활용품")
+        assertNotNull(refillSum)
+        assertEquals("100ml당 307원", refillSum?.label)
+        assertEquals("총 8,200ml 기준", refillSum?.detail)
+
+        val kimchiSet = computeUnitPriceBadge("김치 900g 3종 세트", 18900L, "KRW", "음식")
+        assertNotNull(kimchiSet)
+        assertEquals("100g당 700원", kimchiSet?.label)
+
+        val eggs = computeUnitPriceBadge("동물복지 계란 특란 30구 x 2판", 15800L, "KRW", "음식")
+        assertNotNull(eggs)
+        assertEquals("1구당 263원", eggs?.label)
+        assertEquals("총 60구 기준", eggs?.detail)
+
+        assertNull(computeUnitPriceBadge("[알리] 8구 개별스위치 멀티탭 2M", 12900L, "KRW", "생활용품"))
+
+        // kakaocdn 저해상도 썸네일 업그레이드 검증
+        assertEquals(
+            "https://search1.kakaocdn.net/argon/656x0_80_wr/6W6ac7UeBi1",
+            ImageUrlResolver.upgradeLowresImageUrl("https://search1.kakaocdn.net/argon/130x130_85_c/6W6ac7UeBi1")
+        )
     }
 }

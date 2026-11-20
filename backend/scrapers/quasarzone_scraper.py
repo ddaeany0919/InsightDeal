@@ -3,6 +3,7 @@ import re
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from backend.scrapers.base_scraper import AsyncBaseScraper
+from backend.core.deal_normalizer import parse_title_price_and_shipping
 
 logger = logging.getLogger(__name__)
 
@@ -430,20 +431,62 @@ class QuasarzoneScraper(AsyncBaseScraper):
 
                         price = 0
                         currency = "KRW"
-                        shipping_fee = "무료배송" if any(k in full_text for k in ["무료", "무배", "무료배송"]) else ""
+                        shipping_fee = ""
+                        if any(k in full_text for k in ["직배무료", "직구무배", "무료배송", "무배", "무료"]):
+                            shipping_fee = "무료배송"
+                        else:
+                            m_ship_fee = re.search(r"(?:🚚|배송비?|택배비?)\s*([0-9,]+)\s*원?", full_text)
+                            if m_ship_fee:
+                                s_digits = re.sub(r"[^0-9]", "", m_ship_fee.group(1))
+                                if s_digits and 0 < int(s_digits) <= 200000:
+                                    shipping_fee = f"{int(s_digits):,}원"
 
-                        # 가격 정규식: 화폐 기호 및 이모지(💰) 우선 탐색
-                        m_price = re.search(r"[￦₩\\💰]\s*([0-9,]+)", full_text)
-                        if m_price:
-                            digits = re.sub(r"[^0-9]", "", m_price.group(1))
-                            if digits:
-                                price = int(digits)
+                        # 가격 정규식: 화폐 기호/이모지(💰) + 소수점 USD/EUR/CNY 완전 보존
+                        m_money = re.search(
+                            r"[￦₩\\💰]\s*(?:([\$€¥￥])\s*)?(\d[\d,]*(?:\.\d+)?)\s*(USD|달러|\$|EUR|유로|€|CNY|위안|RMB|JPY|엔|원)?",
+                            full_text,
+                            re.IGNORECASE,
+                        )
+                        if m_money:
+                            pref_sym = (m_money.group(1) or "").strip()
+                            num_str = m_money.group(2).replace(",", "")
+                            suff_unit = (m_money.group(3) or "").strip().upper()
+                            if pref_sym == "$" or suff_unit in ("USD", "달러", "$"):
+                                price = round(float(num_str) * 100)
+                                currency = "USD"
+                            elif pref_sym == "€" or suff_unit in ("EUR", "유로", "€"):
+                                price = round(float(num_str) * 100)
+                                currency = "EUR"
+                            elif suff_unit in ("CNY", "위안", "RMB"):
+                                price = round(float(num_str) * 100)
+                                currency = "CNY"
+                            elif pref_sym in ("¥", "￥"):
+                                if "." in num_str:
+                                    price = round(float(num_str) * 100)
+                                    currency = "CNY"
+                                else:
+                                    price = int(float(num_str))
+                                    currency = "CNY" if "위안" in full_text or "타오바오" in full_text else "JPY"
+                            elif suff_unit in ("JPY", "엔"):
+                                price = int(round(float(num_str)))
+                                currency = "JPY"
+                            else:
+                                digits = re.sub(r"[^0-9]", "", num_str.split(".")[0])
+                                if digits:
+                                    price = int(digits)
                         else:
                             m_price_num = re.search(r"([0-9,]+)\s*원(?:\s*/|\s*\)|\s*🚚)", full_text)
                             if m_price_num:
                                 digits = re.sub(r"[^0-9]", "", m_price_num.group(1))
                                 if digits:
                                     price = int(digits)
+                            else:
+                                fb_p, fb_c, fb_sf, _ = parse_title_price_and_shipping(full_text)
+                                if fb_p > 0:
+                                    price = fb_p
+                                    currency = fb_c
+                                if fb_sf and not shipping_fee:
+                                    shipping_fee = fb_sf
 
                         clean_title = re.sub(r"[\s/]*[￦₩\\💰].*$", "", clean_text).strip()
                         clean_title = re.sub(r"[\s/]*(?:🚚|퀘이사존/지름|지름&할인정보).*$", "", clean_title).strip()
@@ -510,11 +553,31 @@ class QuasarzoneScraper(AsyncBaseScraper):
                         raw_t = str(row.get("title") or "").strip()
                         full_t = f"[{mall}] {raw_t}" if mall and not raw_t.startswith("[") else raw_t
                         thumb = f"https://d2w999htn2iva3.cloudfront.net/thumbs/3/{pno}.jpg" if row.get("has_thumb", True) else ""
+                        raw_hg_price = float(row.get("price") or 0)
+                        hg_curr = "USD" if row.get("currency_code") == 1 else "KRW"
+                        t_price, t_curr, t_ship, _ = parse_title_price_and_shipping(full_t)
                         if q_url in by_url:
                             ex = by_url[q_url]
                             ex["title"] = full_t or ex["title"]
-                            if int(row.get("price") or 0) > 0:
-                                ex["price"] = int(row["price"])
+                            if t_price > 0:
+                                ex["price"] = t_price
+                                ex["currency"] = t_curr
+                            elif raw_hg_price > 0:
+                                if hg_curr == "USD":
+                                    hg_cents = (
+                                        int(round(raw_hg_price))
+                                        if raw_hg_price >= 5000 and raw_hg_price == int(raw_hg_price)
+                                        else round(raw_hg_price * 100)
+                                    )
+                                    ex_price = int(ex.get("price") or 0)
+                                    if not (ex.get("currency") == "USD" and ex_price > hg_cents and ex_price // 100 == int(raw_hg_price)):
+                                        ex["price"] = hg_cents
+                                        ex["currency"] = "USD"
+                                elif ex.get("currency") != "USD":
+                                    ex["price"] = int(round(raw_hg_price))
+                                    ex["currency"] = "KRW"
+                            if t_ship and not ex.get("shipping_fee"):
+                                ex["shipping_fee"] = t_ship
                             if mall and not ex.get("shop_name"):
                                 ex["shop_name"] = mall
                             if not ex.get("image_url") and thumb:
@@ -526,6 +589,22 @@ class QuasarzoneScraper(AsyncBaseScraper):
                         else:
                             seen_urls.add(q_url)
                             deliv = int(row.get("delivery_price") or 0)
+                            if t_price > 0:
+                                final_hg_price = t_price
+                                final_hg_curr = t_curr
+                            elif raw_hg_price > 0:
+                                if hg_curr == "USD":
+                                    final_hg_price = (
+                                        int(round(raw_hg_price))
+                                        if raw_hg_price >= 5000 and raw_hg_price == int(raw_hg_price)
+                                        else round(raw_hg_price * 100)
+                                    )
+                                else:
+                                    final_hg_price = int(round(raw_hg_price))
+                                final_hg_curr = hg_curr
+                            else:
+                                final_hg_price = 0
+                                final_hg_curr = hg_curr
                             reg_iso = str(row.get("reg_date") or "")
                             if reg_iso:
                                 try:
@@ -538,13 +617,13 @@ class QuasarzoneScraper(AsyncBaseScraper):
                                 "category": None,
                                 "title": full_t,
                                 "url": q_url,
-                                "price": int(row.get("price") or 0),
-                                "currency": "USD" if row.get("currency_code") == 1 else "KRW",
+                                "price": final_hg_price,
+                                "currency": final_hg_curr,
                                 "shop_name": mall,
                                 "image_url": thumb,
                                 "ecommerce_link": "",
                                 "is_closed": bool(row.get("is_end", False)),
-                                "shipping_fee": "무료배송" if deliv == 0 else f"{deliv:,}원",
+                                "shipping_fee": t_ship or ("무료배송" if deliv == 0 else f"{deliv:,}원"),
                                 "is_super_hotdeal": int(row.get("recm_cnt") or 0) >= 8 or int(row.get("view_cnt") or 0) >= 2500,
                                 "posted_at": reg_iso or None,
                                 "view_count": int(row.get("view_cnt") or 100),

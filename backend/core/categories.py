@@ -86,6 +86,10 @@ _CATEGORY_ALIASES: dict[str, str] = {
     # 상품권
     "상품권": "상품권",
     "이용권": "상품권",
+    "패키지/이용권": "상품권",
+    "패키지": "상품권",
+    "여행": "상품권",
+    "숙박": "상품권",
     # 적립
     "적립": "적립",
     "적립/포인트": "적립",
@@ -143,7 +147,7 @@ def normalize_category_key(cat: Optional[str]) -> str:
         return "뷰티"
     if "모바일" in lowered or "기프티콘" in lowered:
         return "모바일/기프티콘"
-    if "상품권" in lowered:
+    if "상품권" in lowered or "이용권" in lowered or "패키지" in lowered:
         return "상품권"
     if "적립" in lowered or "포인트" in lowered:
         return "적립"
