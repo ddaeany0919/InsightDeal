@@ -52,6 +52,7 @@ import {
   isNonMallLabel,
   buildDealWishlistKeyword,
   saveWishlistIdEntry,
+  computeUnitPriceBadge,
 } from "../lib/utils";
 import type { PriceTrendStats } from "./PriceTrendChart";
 import DealDetailSecondarySections, {
@@ -1042,6 +1043,18 @@ export default function DealDetailModal({
     return activeSummaryStats?.latestPrice ?? 0;
   })();
 
+  const detailUnitPriceBadge =
+    !isClosedState &&
+    !showZeroWonPrice &&
+    !(deal.has_options && !selectedOption)
+      ? computeUnitPriceBadge(
+          activeOptionTitle || deal.title,
+          activePrice,
+          activeCurrency,
+          deal.category
+        )
+      : null;
+
   const summaryInsight = (() => {
     if (!activeSummaryStats || showZeroWonPrice || comparePriceForSummary <= 0) {
       return null;
@@ -1421,6 +1434,35 @@ export default function DealDetailModal({
               </button>
             )}
           </div>
+
+          {detailUnitPriceBadge && (
+            <div
+              className="deal-detail-unit-price-row"
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: "6px 8px",
+                minWidth: 0,
+              }}
+            >
+              <span className="badge deal-unit-price-badge">
+                {detailUnitPriceBadge.label}
+              </span>
+              {detailUnitPriceBadge.detail && (
+                <span
+                  style={{
+                    fontSize: "0.78rem",
+                    color: "var(--text-muted)",
+                    fontWeight: 600,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {detailUnitPriceBadge.detail}
+                </span>
+              )}
+            </div>
+          )}
 
           {summaryInsight && (
             <div

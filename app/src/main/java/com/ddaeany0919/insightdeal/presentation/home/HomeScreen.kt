@@ -884,7 +884,11 @@ fun HomeScreen(
                                                                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
                                                             contentScale = ContentScale.Crop,
                                                             onError = {
-                                                                if (fallbackPickUrl != null && activePickUrl != fallbackPickUrl) {
+                                                                if (
+                                                                    fallbackPickUrl != null &&
+                                                                    activePickUrl != fallbackPickUrl &&
+                                                                    !activePickUrl.orEmpty().contains("/api/proxy-image", ignoreCase = true)
+                                                                ) {
                                                                     activePickUrl = fallbackPickUrl
                                                                 }
                                                             },
@@ -1132,7 +1136,7 @@ fun HomeScreen(
                                 Box(modifier = Modifier.weight(1f)) {
                                     if (searchInput.isEmpty()) {
                                         Text(
-                                            text = "상품명이나 브랜드를 검색해 보세요",
+                                            text = "핫딜 검색 (맥북 -파우치, :15000)",
                                             fontSize = 13.5.sp,
                                             color = LocalInsightDealColors.current.textMuted,
                                             maxLines = 1,

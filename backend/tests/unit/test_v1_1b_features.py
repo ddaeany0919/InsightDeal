@@ -2093,6 +2093,17 @@ def test_regex_normalizer_single_char_boundary_and_pairing_cleanup(unit_v11b_env
     assert norm._map_category("코카콜라 190ml 90개+버킷햇+카드지갑 키링") == "음식"
     assert norm._map_category("롯데 칠성 펩시 제로슈거 355ml 48캔+캔쿨러") == "음식"
     assert norm._map_category("농심 신신안너짜 25봉") == "음식"
+    assert norm._map_category("[11번가]끼리 크림치즈 디저트 올인원 세트+장바구니") == "음식"
+    assert norm._map_category("LG 코드제로 오브제컬렉션 올인원타워 무선청소기") == "가전제품"
+    assert norm._map_category("피죤 액츠 파워젤 세탁세제 4.2L 본품+2L 리필 2개") == "생활용품"
+    assert norm._map_category("[스팀] 데드스페이스1 리메이크") == "SW/게임"
+    assert norm._map_category("[롯데온] 올반키친 인생 왕교자 210g 10봉") == "음식"
+    assert norm._map_category("무신사 콜라보 메뉴") == "의류"
+    assert norm._map_category("토니모리 패밀리세일 최대 90% 할인") == "화장품"
+
+    import asyncio
+    gift_norm = asyncio.run(norm.normalize("파스쿠찌 모바일상품권 3만원", "먹거리"))
+    assert gift_norm.category == "모바일/기프티콘"
 
     SessionCls = unit_v11b_env.SessionCls
     now_naive = datetime.now(timezone.utc).replace(tzinfo=None)

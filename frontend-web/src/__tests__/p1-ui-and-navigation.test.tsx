@@ -851,6 +851,10 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
       label: "1롤당 600원",
       detail: "총 30롤 기준",
     });
+    expect(computeUnitPriceBadge("농심 신라면 120g 5봉 x 4팩", 13800, "KRW", "음식")).toEqual({
+      label: "100g당 575원",
+      detail: "총 2,400g · 개당 690원",
+    });
     expect(computeUnitPriceBadge("[알리] Netac NVMe SSD 1TB", 69000, "KRW", "PC용품")).toBeNull();
     expect(computeUnitPriceBadge("[쿠팡] 27인치 게이밍 모니터 165Hz", 199000, "KRW", "생활용품")).toBeNull();
     expect(computeUnitPriceBadge("[아마존] 비타민 500g", 2000, "USD", "음식")).toBeNull();

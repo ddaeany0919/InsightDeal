@@ -2671,7 +2671,7 @@ private fun AIBuyerGuide(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun DealHeader(
     deal: DealItem,
@@ -2918,7 +2918,11 @@ fun DealHeader(
                                         .build(),
                                     contentDescription = null,
                                     onError = {
-                                        if (thumbFallback != null && activeThumb != thumbFallback) {
+                                        if (
+                                            thumbFallback != null &&
+                                            activeThumb != thumbFallback &&
+                                            !activeThumb.orEmpty().contains("/api/proxy-image", ignoreCase = true)
+                                        ) {
                                             activeThumb = thumbFallback
                                         } else {
                                             thumbFailed = true
@@ -3151,6 +3155,67 @@ fun DealHeader(
                         tint = semantic.textMuted,
                         modifier = Modifier.size(20.dp).padding(bottom = 2.dp)
                     )
+                }
+            }
+
+            val detailUnitTitle = selectedOption?.let { cleanOptionTitle(it.siteName) } ?: resolvedShopTitle.cleanTitle
+            val detailUnitPriceBadge = remember(
+                detailUnitTitle,
+                effectivePrice,
+                effectiveCurrency,
+                deal.category,
+                isClosed,
+                isFreeDeal,
+                deal.hasOptions,
+                selectedOption
+            ) {
+                if (!isClosed && !isFreeDeal && !(deal.hasOptions && selectedOption == null)) {
+                    computeUnitPriceBadge(
+                        title = detailUnitTitle,
+                        price = effectivePrice,
+                        currency = effectiveCurrency,
+                        category = deal.category
+                    )
+                } else {
+                    null
+                }
+            }
+            if (detailUnitPriceBadge != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.semantics(mergeDescendants = true) {
+                        contentDescription = "${detailUnitPriceBadge.label}, ${detailUnitPriceBadge.detail}"
+                    }
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = semantic.infoContainer,
+                        border = BorderStroke(0.5.dp, semantic.info.copy(alpha = 0.35f)),
+                        modifier = Modifier.align(Alignment.CenterVertically)
+                    ) {
+                        Text(
+                            text = detailUnitPriceBadge.label,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = semantic.onInfoContainer,
+                            style = PriceTextStyle,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    if (detailUnitPriceBadge.detail.isNotBlank()) {
+                        Text(
+                            text = detailUnitPriceBadge.detail,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFeatureSettings = PriceTextStyle.fontFeatureSettings,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = semantic.textMuted,
+                            modifier = Modifier.align(Alignment.CenterVertically)
+                        )
+                    }
                 }
             }
 
@@ -3526,7 +3591,11 @@ fun DealHeader(
                                                     .crossfade(true)
                                                     .build(),
                                                 onError = {
-                                                    if (fallbackOptImg != null && activeOptImg != fallbackOptImg) {
+                                                    if (
+                                                        fallbackOptImg != null &&
+                                                        activeOptImg != fallbackOptImg &&
+                                                        !activeOptImg.orEmpty().contains("/api/proxy-image", ignoreCase = true)
+                                                    ) {
                                                         activeOptImg = fallbackOptImg
                                                     }
                                                 },
@@ -3843,7 +3912,11 @@ private fun DealImageLightboxDialog(
                                 .build(),
                             contentDescription = "상품 확대 이미지 ${pageIdx + 1}",
                             onError = {
-                                if (fallbackUrl != null && activeUrl != fallbackUrl) {
+                                if (
+                                    fallbackUrl != null &&
+                                    activeUrl != fallbackUrl &&
+                                    !activeUrl.orEmpty().contains("/api/proxy-image", ignoreCase = true)
+                                ) {
                                     activeUrl = fallbackUrl
                                 } else {
                                     loadFailed = true

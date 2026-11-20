@@ -1785,14 +1785,13 @@ class AggregatorService:
             if price == 0:
                 is_event = True
             
-        # 적립 또는 이벤트(특히 선착순 쿠폰/할인코드 안내글) 강제 보정 적용
+        # 적립 또는 이벤트(무료 및 추첨·설문·체험단·쿠폰 안내글) 강제 보정 적용 (유료 정상 상품 덮어쓰기 차단)
         if is_coupon_guide_post:
             final_category = "이벤트"
-        elif community_id in [8, 10] or price == 0:
-            if is_point:
-                final_category = "적립"
-            elif is_event:
-                final_category = "이벤트"
+        elif is_point:
+            final_category = "적립"
+        elif is_event and (price == 0 or any(kw in check_title for kw in ("추첨", "설문", "무료배포", "체험단"))):
+            final_category = "이벤트"
 
         # [Phase 12] 실제 게시글 작성 시간 반영 (스크래핑 시점이 아닌 실제 업로드 시점)
         posted_at_iso = scraped_data.get("posted_at")

@@ -2016,7 +2016,7 @@ def _build_single_category_clause(models, single_cat: str, or_, and_, not_):
         target_keywords = ["생활", "생필품", "주방", "가구", "인테리어"]
     elif cat_token in ("패션", "의류/패션"):
         canonical_cat = "패션"
-        target_keywords = ["패션", "의류", "신발", "잡화", "가방", "화장품"]
+        target_keywords = ["패션", "의류", "신발", "잡화", "가방"]
     elif cat_token == "뷰티":
         canonical_cat = "뷰티"
         target_keywords = ["뷰티", "미용", "화장품"]
@@ -2068,10 +2068,15 @@ def _build_single_category_clause(models, single_cat: str, or_, and_, not_):
             *[models.Deal.title.ilike(f"%{kw}%") for kw in event_title_kws],
         )
     if canonical_cat == "뷰티":
-        beauty_title_kws = ["선크림", "바디워시", "샴푸", "트리트먼트", "클렌징", "토너", "세럼", "로션", "올리브영", "이니스프리", "닥터지", "달바"]
-        return or_(
-            *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
-            *[models.Deal.title.ilike(f"%{kw}%") for kw in beauty_title_kws],
+        beauty_title_kws = ["선크림", "바디워시", "샴푸", "트리트먼트", "클렌징", "토너패드", "스킨토너", "세럼", "로션", "올리브영", "이니스프리", "토니모리", "닥터지", "달바"]
+        return and_(
+            or_(
+                *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
+                *[models.Deal.title.ilike(f"%{kw}%") for kw in beauty_title_kws],
+            ),
+            not_(models.Deal.title.ilike("%프린터%")),
+            not_(models.Deal.title.ilike("%복합기%")),
+            not_(models.Deal.title.ilike("%카트리지%")),
         )
     if canonical_cat == "가전제품":
         appliance_title_kws = [

@@ -2348,15 +2348,26 @@ export const computeUnitPriceBadge = (
     }
   }
 
-  // Helper: 기준 단위 직후 12자 내 수량(+증정분) 추출
+  // Helper: 기준 단위 직후 24자 내 2단 번들(5봉 x 4팩) 또는 수량(+증정분) 추출
   const extractTrailingCount = (afterStr: string, pattern: RegExp): number => {
-    const windowStr = afterStr.slice(0, 14);
+    const windowStr = afterStr.slice(0, 24);
     const m = pattern.exec(windowStr);
     if (!m) return 1;
     const baseCnt = Number(m[1]);
     if (!Number.isFinite(baseCnt) || baseCnt < 1 || baseCnt > 500) return 1;
-    const bonusWindow = windowStr.slice(m.index + m[0].length);
-    const bonusM = /^\s*\+\s*(\d{1,2})\s*(?:개|팩|봉|캔|병|포|통)/.exec(bonusWindow);
+    const tailWindow = windowStr.slice(m.index + m[0].length);
+    const secondM =
+      /^\s*[xX×*]\s*(\d{1,2})\s*(?:개입|개|팩|봉지|봉|박스|세트|묶음|번들|통|곽|입)(?![가-힣])/.exec(
+        tailWindow
+      );
+    if (secondM) {
+      const secondCnt = Number(secondM[1]);
+      const tiered = baseCnt * secondCnt;
+      if (Number.isFinite(tiered) && tiered >= 1 && tiered <= 500) {
+        return tiered;
+      }
+    }
+    const bonusM = /^\s*\+\s*(\d{1,2})\s*(?:개|팩|봉|캔|병|포|통)/.exec(tailWindow);
     const bonusCnt = bonusM ? Number(bonusM[1]) : 0;
     return baseCnt + (Number.isFinite(bonusCnt) ? bonusCnt : 0);
   };

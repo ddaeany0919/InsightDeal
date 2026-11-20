@@ -53,6 +53,9 @@ private val TRAILING_VOLUME_COUNT_REGEX = Regex(
     "^\\s*(?:[xX×*,]|\\s)+\\s*(\\d{1,3})\\s*(?:개입|개|캔|병|팩|페트|pet|포|통|입|박스|세트)(?![a-zA-Z가-힣])",
     RegexOption.IGNORE_CASE
 )
+private val TRAILING_TIERED_COUNT_REGEX = Regex(
+    "^\\s*[xX×*]\\s*(\\d{1,2})\\s*(?:개입|개|팩|봉지|봉|박스|세트|묶음|번들|통|곽|입)(?![가-힣])"
+)
 private val TRAILING_BONUS_COUNT_REGEX = Regex(
     "^\\s*\\+\\s*(\\d{1,2})\\s*(?:개|팩|봉|캔|병|포|통)"
 )
@@ -64,12 +67,17 @@ private fun formatKorComma(value: Long): String =
     String.format(Locale.KOREA, "%,d", value)
 
 private fun extractTrailingCount(afterStr: String, pattern: Regex): Long {
-    val windowStr = afterStr.take(14)
+    val windowStr = afterStr.take(24)
     val match = pattern.find(windowStr) ?: return 1L
     val baseCount = match.groupValues[1].toLongOrNull() ?: return 1L
     if (baseCount !in 1L..500L) return 1L
-    val bonusWindow = windowStr.substring(match.range.last + 1)
-    val bonusMatch = TRAILING_BONUS_COUNT_REGEX.find(bonusWindow)
+    val tailWindow = windowStr.substring(match.range.last + 1)
+    TRAILING_TIERED_COUNT_REGEX.find(tailWindow)?.let { secondMatch ->
+        val secondCount = secondMatch.groupValues[1].toLongOrNull() ?: 0L
+        val tiered = baseCount * secondCount
+        if (tiered in 1L..500L) return tiered
+    }
+    val bonusMatch = TRAILING_BONUS_COUNT_REGEX.find(tailWindow)
     val bonusCount = bonusMatch?.groupValues?.get(1)?.toLongOrNull() ?: 0L
     return baseCount + bonusCount
 }

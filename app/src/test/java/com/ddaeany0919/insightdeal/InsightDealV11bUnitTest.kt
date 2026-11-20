@@ -1261,6 +1261,11 @@ class InsightDealV11bUnitTest {
         assertEquals("1롤당 600원", rolls?.label)
         assertEquals("총 30롤 기준", rolls?.detail)
 
+        val shinRamen = computeUnitPriceBadge("농심 신라면 120g 5봉 x 4팩", 13800L, "KRW", "음식")
+        assertNotNull(shinRamen)
+        assertEquals("100g당 575원", shinRamen?.label)
+        assertEquals("총 2,400g · 개당 690원", shinRamen?.detail)
+
         assertNull(computeUnitPriceBadge("[알리] Netac NVMe SSD 1TB", 69000L, "KRW", "PC용품"))
         assertNull(computeUnitPriceBadge("[쿠팡] 27인치 게이밍 모니터 165Hz", 199000L, "KRW", "생활용품"))
         assertNull(computeUnitPriceBadge("스카이 핏 스마트 글래스 S1 블루투스6.0 오디오 안경 2개", 36900L, "KRW", "기타"))
