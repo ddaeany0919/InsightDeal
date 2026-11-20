@@ -45,7 +45,7 @@ class BbasakBaseScraper(AsyncBaseScraper):
             full_title = title_element.get_text(strip=True)
             
             from backend.core.deal_normalizer import parse_title_price_and_shipping
-            price, extracted_currency, _, _ = parse_title_price_and_shipping(full_title)
+            price, extracted_currency, extracted_ship, _ = parse_title_price_and_shipping(full_title)
             if price == 0:
                 plan_match = re.search(r'(\d{2,3})\s*요금제', full_title)
                 if plan_match:
@@ -114,7 +114,7 @@ class BbasakBaseScraper(AsyncBaseScraper):
                 "image_url": "",
                 "ecommerce_link": "",
                 "is_closed": is_closed,
-                "shipping_fee": "",
+                "shipping_fee": extracted_ship,
                 "is_super_hotdeal": is_super_hotdeal,
                 "posted_at": posted_at_iso,
                 "view_count": view_count,

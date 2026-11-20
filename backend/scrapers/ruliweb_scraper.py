@@ -100,7 +100,7 @@ class RuliwebScraper(AsyncBaseScraper):
                 posted_at_iso = self.parse_time_str(time_td.get_text(strip=True))
 
             from backend.core.deal_normalizer import parse_title_price_and_shipping
-            price, extracted_currency, _, _ = parse_title_price_and_shipping(full_title)
+            price, extracted_currency, extracted_ship, _ = parse_title_price_and_shipping(full_title)
 
             return {
                 "category": category,
@@ -112,7 +112,7 @@ class RuliwebScraper(AsyncBaseScraper):
                 "image_url": image_url,
                 "ecommerce_link": "",
                 "is_closed": is_closed,
-                "shipping_fee": "",
+                "shipping_fee": extracted_ship,
                 "is_super_hotdeal": is_super_hotdeal,
                 "posted_at": posted_at_iso,
                 "view_count": view_count,
@@ -232,12 +232,15 @@ class RuliwebScraper(AsyncBaseScraper):
         else:
             body_text = soup.get_text(separator=' ')
 
-        # 배송비 휴리스틱 추출
+        # 배송비 휴리스틱 추출 (상세 제목 슬래시/괄호 배송비 우선 반영)
+        from backend.core.deal_normalizer import extract_body_fallback_price, parse_title_price_and_shipping
+        _, _, detail_title_ship, _ = parse_title_price_and_shipping(full_title or "")
         search_text = (full_title or "") + " " + body_text
-        if re.search(r'(무료배송|무배|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', search_text):
+        if detail_title_ship:
+            shipping_fee = detail_title_ship
+        elif re.search(r'(무료배송|무배|배송비\s*무료|\(\s*무료\s*\)|/\s*무료|무료\s*/|무료\s*$)', search_text):
             shipping_fee = "무료배송"
 
-        from backend.core.deal_normalizer import extract_body_fallback_price
         price_fallback, extracted_currency = extract_body_fallback_price(body_text, full_title or "")
 
         # 📸 [고화질 썸네일 복구 가드]: 본문에 이미지가 없거나 cache 관련 썸네일인 경우, 아웃링크 og:image 및 상품명 기반 폴백 추출

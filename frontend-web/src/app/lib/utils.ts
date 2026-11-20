@@ -460,8 +460,22 @@ export const extractPriceFromTitle = (
     }
   }
 
+  const priceCleanTitle = cleanTitle.replace(
+    /(?:배송\s*비|택배\s*비|우편\s*비|유료\s*배송|유배)\s*[:：=]?\s*[0-9,]+\s*원?/gi,
+    " "
+  );
+  const slashShipMatch = priceCleanTitle.match(
+    /(?:^|[\s/])([1-9][0-9]{0,2}(?:,[0-9]{3})+|[1-9][0-9]{3,6})\s*원?\s*\/\s*(?:무배|무료배송|무료|[1-9][0-9]{0,1},?[0-9]{3}\s*원?)\s*$/i
+  );
+  if (slashShipMatch && slashShipMatch[1]) {
+    const val = parseInt(slashShipMatch[1].replace(/,/g, ""), 10);
+    if (val >= 1000 && val <= 30000000) {
+      return { price: String(val), currency: "KRW" };
+    }
+  }
+
   const wonMatches = Array.from(
-    cleanTitle.matchAll(
+    priceCleanTitle.matchAll(
       /([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,8})\s*원(?!\s*(?:권|이상|할인|적립|페이백|캐시백|청구|한도|증정))/g
     )
   );

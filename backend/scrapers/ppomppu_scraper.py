@@ -169,10 +169,11 @@ class PpomppuScraper(AsyncBaseScraper):
                 if any(x in img_url_lower for x in ['transparent', 'blank', 'logo', 'icon', 'empty', 'noimage']) or image_url.startswith('data:') or 'base64' in img_url_lower:
                     image_url = ""
 
-            # 제목에서 가격/통화 추출 (단일 진실 공급원 deal_normalizer 위임)
+            # 제목에서 가격/통화/배송비 추출 (단일 진실 공급원 deal_normalizer 위임)
             import re
-            from backend.core.deal_normalizer import parse_title_price_and_shipping
-            extracted_price, extracted_currency, _, _ = parse_title_price_and_shipping(full_title)
+            from backend.core.deal_normalizer import normalize_shipping_fee, parse_title_price_and_shipping
+            extracted_price, extracted_currency, extracted_ship, _ = parse_title_price_and_shipping(full_title)
+            extracted_ship = extracted_ship or normalize_shipping_fee("", title_hint=full_title)
 
             is_closed = False
             if '종료' in full_title or '마감' in full_title or '품절' in full_title:
@@ -259,7 +260,7 @@ class PpomppuScraper(AsyncBaseScraper):
                 "ecommerce_link": "",
                 "content_html": "",
                 "is_closed": is_closed,
-                "shipping_fee": "",
+                "shipping_fee": extracted_ship,
                 "is_super_hotdeal": is_super_hotdeal,
                 "posted_at": posted_at_iso,
                 "view_count": view_count,

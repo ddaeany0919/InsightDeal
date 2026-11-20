@@ -585,6 +585,14 @@ def clean_canonical_title(raw_title: str) -> str:
 
     # 닫는 괄호가 누락된 후행 열린 괄호 제거 (예: '(16,680원/무료')
     t = re.sub(r"\s*\([^)]*$", "", t)
+    # 후행 슬래시 가격/배송비 꼬리표 제거 (예: '/88,900원/2500원', '/22050원/무배')
+    t = re.sub(
+        r"\s*/\s*(?:[1-9][0-9]{0,2}(?:,[0-9]{3})+|[1-9][0-9]{3,6})\s*원?\s*/\s*"
+        r"(?:무배|무료배송|무료|무|0원?|와우무료|와우무배|네멤무료|네멤무배|조건부무료|(?:배송비\s*|택배비?\s*)?[1-9][0-9]{0,1},?[0-9]{3}\s*원?)\s*$",
+        "",
+        t,
+        flags=re.IGNORECASE,
+    )
     t = re.sub(r"[\s\.,\-\/~]+$", "", t)
     t = re.sub(r"\s{2,}", " ", t).strip()
     return t or html.unescape(str(raw_title)).strip()
@@ -990,6 +998,23 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
     if not s:
         return 0, "KRW", ""
 
+    # 정가 전용 괄호 배제
+    if re.match(
+        r"^(?:정가|정상\s*가(?:격)?|기존\s*가(?:격)?|출시\s*가(?:격)?|소비자가|권장\s*소비자가)\b",
+        s,
+        re.IGNORECASE,
+    ):
+        return 0, "KRW", ""
+
+    # 단독 배송비 전용 괄호 추출: (배송비 3,000원), (택배비 2,500원), (유배 3000원)
+    m_only_ship = re.match(
+        r"^(?:배송\s*비|택배\s*비?|우편\s*비|유료\s*배송|유배)\s*[:：=]?\s*([0-9,]+(?:\.[0-9]+)?\s*(?:원|달러|\$)?|무료|무배)$",
+        s,
+        re.IGNORECASE,
+    )
+    if m_only_ship:
+        return 0, "KRW", normalize_shipping_fee(m_only_ship.group(1))
+
     # 순수 스펙/단위/수량 괄호 즉시 배제: (15.6인치), (3.5mm), (500ml x 24페트), (RTX 5070 Ti), (2026 신형)
     if re.search(
         r"^\d+(?:\.\d+)?\s*(?:인치|inch|mm|cm|m|kg|g|mg|ml|l|gb|tb|mb|w|v|hz|mah|개입|개|입|팩|봉|병|캔|구|미|호|일분|개월|년|세대)\b",
@@ -1118,6 +1143,12 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
 
     masked = _UNIT_PRICE_RE.sub(" ", sanitized)
     masked = _DATE_TIME_PAREN_RE.sub(" ", masked)
+    masked = re.sub(
+        r"[\(\[]\s*(?:정가|정상\s*가(?:격)?|기존\s*가(?:격)?|출시\s*가(?:격)?|소비자가)\b[^\)\]]*[\)\]]",
+        " ",
+        masked,
+        flags=re.IGNORECASE,
+    )
 
     has_nonzero_price_in_title = bool(
         re.search(
@@ -1153,107 +1184,184 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
                 title_ship = p_ship
             break
 
-    # 2. 괄호 밖 가격 표기 탐색 (우측 가격 우선)
+    # 1-b. 괄호 안팎 명시적 '배송비/택배비 N원' 구문 선제 추출 및 마스킹 (상품가 역전 원천 차단)
+    _inline_ship_pattern = re.compile(
+        r"(?:[\(\[]\s*[+\-]?\s*(?:배송\s*비|택배\s*비|우편\s*비|유료\s*배송|유배)\s*[:：=]?\s*([1-9][0-9]{0,1},?[0-9]{3}|[1-9][0-9]{2}|0)\s*원?\s*[\)\]]"
+        r"|[+\-]?\s*(?:배송\s*비|택배\s*비|우편\s*비|유료\s*배송|유배)\s*[:：=]?\s*([1-9][0-9]{0,1},?[0-9]{3}|[1-9][0-9]{2}|0)\s*원?)",
+        re.IGNORECASE,
+    )
+    for m_ship_inline in _inline_ship_pattern.finditer(masked):
+        cand_sf = normalize_shipping_fee(m_ship_inline.group(1) or m_ship_inline.group(2))
+        if cand_sf and not title_ship:
+            title_ship = cand_sf
+    masked = _inline_ship_pattern.sub(" ", masked)
+
+    # 2. 괄호 밖 가격 표기 탐색 (우측 슬래시 '상품가/배송비' 우선 -> 외화/만원/원화 -> 천단위 콤마 폴백)
     if title_price == 0 and not is_explicit_free:
-        # 2-a) 외화 기호/단위 ($ 17.97, 17.97달러, ¥189, 189위안, 3,980엔, €49.50)
-        m_usd_all = list(
+        # 2-0) 괄호 밖 슬래시/파이프 '상품가 / 배송비' 패턴 선제 추출 (예: /88,900원/2500원, /22050원/무배)
+        slash_candidates = list(
             re.finditer(
-                r"(?:\$\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:달러|USD|불(?!가|량|능|편|안|발|포함|빛)))",
+                r"(?<![a-zA-Z0-9#.\-])([1-9][0-9]{0,2}(?:,[0-9]{3})+|[1-9][0-9]{3,6})\s*(원)?\s*(?:외|부터|~|대)?\s*"
+                r"[/|]\s*"
+                r"(무배|무료배송|무료|무|0원?|와우무료|와우무배|네멤무료|네멤무배|조건부무료|유배|유료배송|"
+                r"(?:배송비\s*|택배비?\s*)?(?:[1-9][0-9]{0,1},?[0-9]{3}|[1-9][0-9]{2})(?:\s*원(?!\s*권)|(?![0-9,])))"
+                r"(?!\s*원\s*권)",
                 masked,
                 re.IGNORECASE,
             )
         )
-        m_eur_all = list(
-            re.finditer(
-                r"(?:€\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:유로|EUR))",
-                masked,
-                re.IGNORECASE,
+        for sm in reversed(slash_candidates):
+            raw_p_str = sm.group(1)
+            has_won_tok = bool(sm.group(2))
+            raw_sf_str = sm.group(3).strip()
+            cand_sl = int(raw_p_str.replace(",", ""))
+            is_kw_ship = bool(
+                _EXPLICIT_SHIPPING_KEYWORD_RE.search(raw_sf_str)
+                or raw_sf_str.lower() in ("무", "0", "0원", "무배", "무료", "무료배송")
+                or any(k in raw_sf_str for k in ("배송", "택배", "와우", "네멤", "조건부"))
             )
-        )
-        m_cny_all = list(
-            re.finditer(
-                r"(?:[¥￥]\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:위안|CNY|RMB))",
-                masked,
-                re.IGNORECASE,
-            )
-        )
-        m_jpy_all = list(
-            re.finditer(
-                r"(?:JPY\s*(\d(?:[\d,]*\d)?)|(\d(?:[\d,]*\d)?)\s*(?:엔(?!진|터|드|젤)|円|JPY))",
-                masked,
-                re.IGNORECASE,
-            )
-        )
-
-        # 만원 / 원화 패턴
-        m_man_chun = re.search(
-            r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)([0-9]+)\s*만\s*([0-9]+)\s*천\s*원?",
-            masked,
-        )
-        m_man = re.search(
-            r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)(\d(?:[\d,]*\d)?(?:\.[\d]+)?)\s*만(?!\s*(?:원\s*)?(?:할인|적립|쿠폰|캐시백|페이백|이상|권|mAh|mah|암페어|개|명))",
-            masked,
-        )
-        if m_man and ("$" in masked and "만원" not in masked and "만 원" not in masked):
-            m_man = None
-
-        won_matches = list(
-            re.finditer(
-                r"(?<![+\-\d,])(?<!\d\s~\s)(?<!~\s)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7}|[1-9][0-9]?)\s*원"
-                r"(?!\s*(?:할인|적립\s*쿠폰|쿠폰|캐시백|페이백|청구|즉시|추가|이상|권))",
-                masked,
-            )
-        )
-
-        if m_man_chun:
-            title_price = int(m_man_chun.group(1)) * 10000 + int(m_man_chun.group(2)) * 1000
-            title_curr = "KRW"
-        elif m_man:
-            title_price = int(round(float(m_man.group(1).replace(",", "")) * 10000))
-            title_curr = "KRW"
-        elif won_matches:
-            # 우측(최종 할인가) 우선 선택하되 100원 미만은 소액 적립 딜일 때만 허용
-            for wm in reversed(won_matches):
-                cand_w = int(wm.group(1).replace(",", ""))
-                if cand_w >= 100 or is_micro_point_deal(cand_w, sanitized):
-                    title_price = cand_w
-                    title_curr = "KRW"
-                    break
-        elif m_usd_all:
-            val_s = m_usd_all[-1].group(1) or m_usd_all[-1].group(2)
-            title_price = round(float(val_s.replace(",", "")) * 100)
-            title_curr = "USD"
-        elif m_eur_all:
-            val_s = m_eur_all[-1].group(1) or m_eur_all[-1].group(2)
-            title_price = round(float(val_s.replace(",", "")) * 100)
-            title_curr = "EUR"
-        elif m_jpy_all:
-            val_s = m_jpy_all[-1].group(1) or m_jpy_all[-1].group(2)
-            title_price = int(val_s.replace(",", ""))
-            title_curr = "JPY"
-        elif m_cny_all:
-            val_s = m_cny_all[-1].group(1) or m_cny_all[-1].group(2)
-            if any(jp in sanitized.lower() for jp in ("amazon.co.jp", "아마존재팬", "라쿠텐")):
-                title_price = int(round(float(val_s.replace(",", ""))))
-                title_curr = "JPY"
+            if is_kw_ship:
+                if 1990 <= cand_sl <= 2035 and not has_won_tok and "," not in raw_p_str:
+                    continue
+                title_price = cand_sl
+                title_curr = "KRW"
+                norm_sf = normalize_shipping_fee(raw_sf_str)
+                if norm_sf:
+                    title_ship = norm_sf
+                break
             else:
-                title_price = round(float(val_s.replace(",", "")) * 100)
-                title_curr = "CNY"
-        else:
-            m_slash = re.search(
-                r"(?<!\d)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\s*원?\s*(?:외|부터|~)?\s*"
-                r"(?:[/,]\s*(무배|무료|무료배송|무|유배|유료|택배|와우|와우무료|네멤무료|배송비|[0-9,]{3,5}\s*원?)|\s+(무배|무료배송))",
-                masked,
-            )
-            if m_slash:
-                cand_sl = int(m_slash.group(1).replace(",", ""))
-                if not (1990 <= cand_sl <= 2035 and not m_slash.group(2)):
+                sf_digits = re.sub(r"[^0-9]", "", raw_sf_str)
+                sf_val = int(sf_digits) if sf_digits else 0
+                if (
+                    (has_won_tok or "," in raw_p_str)
+                    and 500 <= sf_val <= 6000
+                    and sf_val % 10 == 0
+                    and cand_sl >= max(sf_val * 2, 5000)
+                ):
                     title_price = cand_sl
                     title_curr = "KRW"
-                    raw_sf = m_slash.group(2) or m_slash.group(3) or ""
-                    norm_sf = normalize_shipping_fee(raw_sf)
-                    if norm_sf:
-                        title_ship = norm_sf
+                    title_ship = f"{sf_val:,}원"
+                    break
+
+        if title_price == 0:
+            # 2-a) 외화 기호/단위 ($ 17.97, 17.97달러, ¥189, 189위안, 3,980엔, €49.50)
+            m_usd_all = list(
+                re.finditer(
+                    r"(?:\$\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:달러|USD|불(?!가|량|능|편|안|발|포함|빛)))",
+                    masked,
+                    re.IGNORECASE,
+                )
+            )
+            m_eur_all = list(
+                re.finditer(
+                    r"(?:€\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:유로|EUR))",
+                    masked,
+                    re.IGNORECASE,
+                )
+            )
+            m_cny_all = list(
+                re.finditer(
+                    r"(?:[¥￥]\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:위안|CNY|RMB))",
+                    masked,
+                    re.IGNORECASE,
+                )
+            )
+            m_jpy_all = list(
+                re.finditer(
+                    r"(?:JPY\s*(\d(?:[\d,]*\d)?)|(\d(?:[\d,]*\d)?)\s*(?:엔(?!진|터|드|젤)|円|JPY))",
+                    masked,
+                    re.IGNORECASE,
+                )
+            )
+
+            # 만원 / 원화 패턴
+            m_man_chun = re.search(
+                r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)([0-9]+)\s*만\s*([0-9]+)\s*천\s*원?",
+                masked,
+            )
+            m_man = re.search(
+                r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)(\d(?:[\d,]*\d)?(?:\.[\d]+)?)\s*만(?!\s*(?:원\s*)?(?:할인|적립|쿠폰|캐시백|페이백|이상|권|mAh|mah|암페어|개|명))",
+                masked,
+            )
+            if m_man and ("$" in masked and "만원" not in masked and "만 원" not in masked):
+                m_man = None
+
+            won_matches = list(
+                re.finditer(
+                    r"(?<![+\-\d,])(?<!\d\s~\s)(?<!~\s)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7}|[1-9][0-9]?)\s*원"
+                    r"(?!\s*(?:할인|적립\s*쿠폰|쿠폰|캐시백|페이백|청구|즉시|추가|이상|권))",
+                    masked,
+                )
+            )
+
+            if m_man_chun:
+                title_price = int(m_man_chun.group(1)) * 10000 + int(m_man_chun.group(2)) * 1000
+                title_curr = "KRW"
+            elif m_man:
+                title_price = int(round(float(m_man.group(1).replace(",", "")) * 10000))
+                title_curr = "KRW"
+            elif won_matches:
+                # 우측(최종 할인가) 우선 선택하되 100원 미만은 소액 적립 딜일 때만 허용
+                for wm in reversed(won_matches):
+                    cand_w = int(wm.group(1).replace(",", ""))
+                    if cand_w >= 100 or is_micro_point_deal(cand_w, sanitized):
+                        title_price = cand_w
+                        title_curr = "KRW"
+                        break
+            elif m_usd_all:
+                val_s = m_usd_all[-1].group(1) or m_usd_all[-1].group(2)
+                title_price = round(float(val_s.replace(",", "")) * 100)
+                title_curr = "USD"
+            elif m_eur_all:
+                val_s = m_eur_all[-1].group(1) or m_eur_all[-1].group(2)
+                title_price = round(float(val_s.replace(",", "")) * 100)
+                title_curr = "EUR"
+            elif m_jpy_all:
+                val_s = m_jpy_all[-1].group(1) or m_jpy_all[-1].group(2)
+                title_price = int(val_s.replace(",", ""))
+                title_curr = "JPY"
+            elif m_cny_all:
+                val_s = m_cny_all[-1].group(1) or m_cny_all[-1].group(2)
+                if any(jp in sanitized.lower() for jp in ("amazon.co.jp", "아마존재팬", "라쿠텐")):
+                    title_price = int(round(float(val_s.replace(",", ""))))
+                    title_curr = "JPY"
+                else:
+                    title_price = round(float(val_s.replace(",", "")) * 100)
+                    title_curr = "CNY"
+            else:
+                m_slash = re.search(
+                    r"(?<!\d)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})(?![0-9,])\s*원?\s*(?:외|부터|~)?\s*"
+                    r"(?:(?:/|,(?!\s*[0-9]{3}(?:\D|$)))\s*(무배|무료|무료배송|무|유배|유료|택배|와우|와우무료|네멤무료|배송비|[0-9,]{3,5}\s*원?)|\s+(무배|무료배송))",
+                    masked,
+                )
+                if m_slash:
+                    cand_sl = int(m_slash.group(1).replace(",", ""))
+                    if not (1990 <= cand_sl <= 2035 and not m_slash.group(2)):
+                        title_price = cand_sl
+                        title_curr = "KRW"
+                        raw_sf = m_slash.group(2) or m_slash.group(3) or ""
+                        norm_sf = normalize_shipping_fee(raw_sf)
+                        if norm_sf:
+                            title_ship = norm_sf
+
+        if title_price == 0 and not any(
+            sym in masked.lower()
+            for sym in ("$", "€", "¥", "￥", "달러", "usd", "유로", "eur", "위안", "cny", "엔", "jpy")
+        ):
+            m_comma_fallback = list(
+                re.finditer(
+                    r"(?:(?<![a-zA-Z0-9.])([1-9][0-9]{0,2}(?:,[0-9]{3}){2})(?![0-9a-zA-Z])"
+                    r"|(?:결제가?|체감가?|최종가?|할인가?|혜택가?|쿠폰가?|/)\s*([1-9][0-9]{0,2}(?:,[0-9]{3})+)(?![0-9a-zA-Z]))",
+                    masked,
+                )
+            )
+            for mcf in reversed(m_comma_fallback):
+                tok = mcf.group(1) or mcf.group(2)
+                cand_cf = int(tok.replace(",", ""))
+                if 1000 <= cand_cf <= 15000000:
+                    title_price = cand_cf
+                    title_curr = "KRW"
+                    break
 
     if not title_ship:
         title_ship = normalize_shipping_fee("", title_hint=sanitized)
@@ -1747,11 +1855,17 @@ def renormalize_existing_deals(db_session: Any, dry_run: bool = False) -> dict[s
                 stats["shop_fixed"] += 1
                 changed = True
 
-        # 2) 배송비 재정규화 (닫는 괄호 누락 제목 힌트 포함)
+        # 2) 배송비 재정규화 (닫는 괄호 누락 및 유료 배송비 '무료배송' 오기재 교정)
         title_p, title_c, title_sf, is_free = parse_title_price_and_shipping(effective_title)
         raw_sf = deal.shipping_fee or ""
         norm_sf = normalize_shipping_fee(raw_sf, title_hint=effective_title)
-        if not norm_sf and title_sf:
+        has_title_free_ship = bool(
+            re.search(r"(?:무배|무료배송|무료|와우무료|와우무배|네멤무료|네멤무배)", effective_title)
+        )
+        if title_sf and (
+            not norm_sf
+            or (title_sf.endswith("원") and norm_sf == "무료배송" and not has_title_free_ship)
+        ):
             norm_sf = title_sf
         if norm_sf != raw_sf.strip():
             if not dry_run:
@@ -1762,6 +1876,7 @@ def renormalize_existing_deals(db_session: Any, dry_run: bool = False) -> dict[s
         # 3) 가격 & 통화 오염 치유
         new_price = curr_price
         new_currency = curr_currency
+        has_options = bool(getattr(deal, "has_options", False) or getattr(deal, "options_data", None))
 
         if is_free:
             new_price = 0
@@ -1780,13 +1895,31 @@ def renormalize_existing_deals(db_session: Any, dry_run: bool = False) -> dict[s
             ):
                 new_price = title_p
                 new_currency = title_c
-            # 3-c) 닫는 괄호 누락 등으로 가격이 0이거나 날짜/연도/추가금(<= 500원)으로 잘못 들어간 경우 제목 가격으로 복원
+            # 3-c) 0원·연도·배송비 역전·백만원대 천단위 절단 오파싱을 제목 가격으로 복구
             elif curr_price == 0 or (
                 curr_currency == "KRW"
                 and curr_price != title_p
                 and (
                     (curr_price < 500 and not is_micro_point_deal(curr_price, effective_title))
                     or curr_price in (2024, 2025, 2026, 5060, 5070, 5080, 5090)
+                    or (
+                        not has_options
+                        and (
+                            1990 <= curr_price <= 2035
+                            or title_sf == f"{curr_price:,}원"
+                            or (
+                                500 <= curr_price <= 6000
+                                and title_p >= curr_price * 2
+                                and bool(
+                                    re.search(
+                                        rf"[/\s(](?:배송비\s*|택배비?\s*)?(?:{re.escape(f'{curr_price:,}')}|{curr_price})\s*원?",
+                                        effective_title,
+                                    )
+                                )
+                            )
+                            or (title_p >= 1_000_000 and curr_price == title_p // 1000)
+                        )
+                    )
                 )
             ):
                 new_price = title_p

@@ -5,6 +5,7 @@ import DealDetailModal from "@/app/components/DealDetailModal";
 import NotificationSettingsPage from "@/app/settings/notifications/page";
 import type { Deal, RawDealApiResponse } from "@/app/lib/types";
 import {
+  extractPriceFromTitle,
   getFallbackProxyImageUrl,
   getProxyImageUrl,
   mapRawDealToDeal,
@@ -55,6 +56,14 @@ describe("DTO 1-RTT/이중 키/이미지 전 구간/DND 표준 카피 계약 검
   });
 
   it("getProxyImageUrl, polishDealBodyText, resolveOutboundUrl이 이미지 및 옥션/지마켓 HTTPS 보정을 정확히 수행한다", () => {
+    expect(extractPriceFromTitle("[네이버] PS5 콜오브듀티 모던 워페어4 /88,900원/2500원")).toEqual({
+      price: "88900",
+      currency: "KRW",
+    });
+    expect(extractPriceFromTitle("[루리웹] PS5 콜오브듀티 모던 워페어4 85,900원 택배비 2,500원")).toEqual({
+      price: "85900",
+      currency: "KRW",
+    });
     // 차단 커뮤니티 -> 백엔드 프록시 직행
     expect(getProxyImageUrl("https://cdn.ppomppu.co.kr/img/a.jpg")).toBe(
       `/api/proxy-image?url=${encodeURIComponent("https://cdn.ppomppu.co.kr/img/a.jpg")}`
