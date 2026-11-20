@@ -2105,6 +2105,15 @@ def test_regex_normalizer_single_char_boundary_and_pairing_cleanup(unit_v11b_env
     gift_norm = asyncio.run(norm.normalize("파스쿠찌 모바일상품권 3만원", "먹거리"))
     assert gift_norm.category == "모바일/기프티콘"
 
+    assert norm._map_category("LG 그램 에센스 화이트 14인치 • 코어Ultra5 • 256GB • 16GB • WIN11 Home") == "PC제품"
+    assert norm._map_category("스팀덱 OLED 512GB") == "SW/게임"
+    assert norm._map_category("[카카오] PlayStation5 Pro - 2TB") == "SW/게임"
+    assert norm._map_category("이탈리아산 파로 엠머밀 500g 4봉") == "음식"
+    assert norm._map_category("파로마 패브릭 소파 3인용") == "생활용품"
+    assert norm._map_category("조선미식 쇠고기 무조치 효종갱 3팩") == "음식"
+    cleaner_norm = asyncio.run(norm.normalize("[카카오톡딜] 피죤 무때제로 다용도세정제 500mlx2개+2개", "생활식품"))
+    assert cleaner_norm.category == "생활용품"
+
     SessionCls = unit_v11b_env.SessionCls
     now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
     db = SessionCls()
