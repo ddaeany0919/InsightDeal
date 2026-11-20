@@ -1211,6 +1211,7 @@ def build_dsu(deals, time_window_days=1):
     url_to_deal = {}
     model_to_deal = {}
     name_clusters = []
+    token_to_cluster_idxs: dict[str, list[int]] = {}
 
     unit_or_generic_re = re.compile(
         r'^(?:\d+(?:\.\d+)?(?:kg|g|ml|l|gb|tb|mb|w|v|a|hz|mah|ah|gsm|in1|인치|inch|개입|개|입|캔|병|팩|봉|포|매|판|박스|세트|롤|정|캡슐|구|미|쪽|호|p|ea|pcs|년|개월|일|시간|원|만원|천원)?|국내산|국산|해외|정품|무료|무배|특가|할인|증정|사은품|단품|혼합|선택|외|모음|한정|출시|신제품|신모델|리뉴얼|끌올)$',
@@ -1290,11 +1291,17 @@ def build_dsu(deals, time_window_days=1):
                         break
             model_to_deal.setdefault(code_key, []).append((deal.id, curr_words_set, curr_core_set, curr_price, curr_currency))
 
-        # 3단계: 정규화 상품명 및 핵심 토큰 유사도 기반 매칭
+        # 3단계: 정규화 상품명 및 핵심 토큰 유사도 기반 매칭 (역인덱스로 공통 핵심 토큰 보유 클러스터만 O(1) 후보 추출)
         if n_name and curr_core_set:
             words_set = curr_words_set
             matched = False
-            for cluster in name_clusters:
+            cand_idxs = sorted({
+                idx
+                for cw in curr_core_set
+                for idx in token_to_cluster_idxs.get(cw, ())
+            })
+            for idx in cand_idxs:
+                cluster = name_clusters[idx]
                 if curr_model and cluster.get('model_code') and curr_model != cluster['model_code']:
                     continue
                 time_diff_ok = False
@@ -1343,6 +1350,7 @@ def build_dsu(deals, time_window_days=1):
                         break
 
             if not matched:
+                new_idx = len(name_clusters)
                 name_clusters.append({
                     'id': deal.id,
                     'words': words_set,
@@ -1353,6 +1361,8 @@ def build_dsu(deals, time_window_days=1):
                     'currency': curr_currency,
                     'times': [deal_time] if deal_time else []
                 })
+                for cw in curr_core_set:
+                    token_to_cluster_idxs.setdefault(cw, []).append(new_idx)
 
     return dsu
 
@@ -4329,11 +4339,15 @@ async def ingest_scraped_deals_batch(
 
     aggregator = AggregatorService(db)
     inserted = 0
+    touched_images: list[str] = []
     for item in payload.deals:
         try:
             deal = await aggregator.process_scraped_deal(community.id, item)
             if deal:
                 inserted += 1
+                img_u = getattr(deal, "image_url", None)
+                if img_u:
+                    touched_images.append(img_u)
         except Exception as e:
             db.rollback()
             logger.warning(f"[ingest-batch] item error ({payload.community_name}): {e}")
@@ -4359,6 +4373,13 @@ async def ingest_scraped_deals_batch(
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning(f"[ingest-batch] failed to update scraper_stats.json: {exc}")
 
-    invalidate_feed_api_cache()
+    if inserted > 0:
+        invalidate_feed_api_cache()
+        if touched_images:
+            try:
+                from backend.main import schedule_thumbnail_prewarm
+                schedule_thumbnail_prewarm(touched_images)
+            except Exception as exc:
+                logger.debug("Thumbnail prewarm scheduling skipped: %s", exc)
     return {"status": "ok", "community": payload.display_name, "processed": inserted}
 

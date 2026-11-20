@@ -532,7 +532,7 @@ def _transform_image_to_webp_sync(
             max_w = target_w if target_w is not None else _AUTO_WEBP_MAX_WIDTH
             if max_w > 0 and img.width > max_w and img.height > 0:
                 new_h = max(1, round(img.height * (max_w / img.width)))
-                resample = getattr(Image, "Resampling", Image).LANCZOS
+                resample = getattr(Image, "Resampling", Image).BILINEAR
                 img = img.resize((max_w, new_h), resample)
 
             if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
@@ -541,7 +541,7 @@ def _transform_image_to_webp_sync(
                 img = img.convert("RGB")
 
             out_buf = io.BytesIO()
-            img.save(out_buf, format="WEBP", quality=82, method=4)
+            img.save(out_buf, format="WEBP", quality=80, method=1)
             webp_bytes = out_buf.getvalue()
             if webp_bytes:
                 return webp_bytes, "image/webp", True
@@ -641,7 +641,11 @@ async def proxy_image(
         return Response(
             content=mem_payload,
             media_type=mem_mime,
-            headers={"Cache-Control": "public, max-age=604800, immutable"},
+            headers={
+                "Cache-Control": "public, max-age=604800, immutable",
+                "CDN-Cache-Control": "public, max-age=604800, s-maxage=604800, stale-while-revalidate=86400",
+                "Vercel-CDN-Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400",
+            },
         )
 
     loop = asyncio.get_running_loop()
@@ -678,12 +682,123 @@ async def proxy_image(
         return Response(
             content=payload,
             media_type=detected_mime,
-            headers={"Cache-Control": "public, max-age=604800, immutable"}
+            headers={
+                "Cache-Control": "public, max-age=604800, immutable",
+                "CDN-Cache-Control": "public, max-age=604800, s-maxage=604800, stale-while-revalidate=86400",
+                "Vercel-CDN-Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400",
+            },
         )
     return Response(
         status_code=404,
         headers={"Cache-Control": "no-store"}
     )
+
+
+_PREWARM_BLOCKED_DOMAINS = (
+    "ppomppu.co.kr",
+    "fmkorea.com",
+    "fmkorea.org",
+    "quasarzone.com",
+    "ruliweb.com",
+    "bbasak.com",
+    "clien.net",
+    "coolenjoy.net",
+    "damoang.net",
+)
+
+
+def _is_proxy_prewarm_candidate(raw_url: str | None) -> bool:
+    if not raw_url or not isinstance(raw_url, str):
+        return False
+    u = raw_url.strip()
+    if not (u.startswith("http://") or u.startswith("https://")):
+        return False
+    if u.startswith("http://"):
+        return True
+    low = u.lower()
+    return any(dom in low for dom in _PREWARM_BLOCKED_DOMAINS)
+
+
+def _query_recent_deal_image_urls_sync(limit: int = 36) -> list[str]:
+    from backend.database.session import SessionLocal
+    from backend.database import models
+
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(models.Deal.image_url)
+            .filter(models.Deal.is_closed == False, models.Deal.image_url.isnot(None))
+            .order_by(models.Deal.indexed_at.desc(), models.Deal.id.desc())
+            .limit(limit * 2)
+            .all()
+        )
+        urls: list[str] = []
+        seen: set[str] = set()
+        for (img_u,) in rows:
+            if not img_u or img_u in seen or not _is_proxy_prewarm_candidate(img_u):
+                continue
+            seen.add(img_u)
+            urls.append(img_u)
+            if len(urls) >= limit:
+                break
+        return urls
+    finally:
+        db.close()
+
+
+async def prewarm_recent_deal_thumbnails(urls: Optional[list[str]] = None, limit: int = 36) -> None:
+    """상위 활성 딜의 프록시 썸네일(auto800 WebP 및 원본 디스크 캐시)을 백그라운드에서 선적재하여 첫 화면 이미지 스켈레톤 지연을 제거합니다."""
+    if (
+        os.getenv("ENV") == "test"
+        or "pytest" in sys.modules
+        or "memory" in os.getenv("DATABASE_URL", "").lower()
+    ):
+        return
+
+    try:
+        if urls is None:
+            candidate_urls = await run_in_threadpool(_query_recent_deal_image_urls_sync, limit)
+        else:
+            seen: set[str] = set()
+            candidate_urls = []
+            for raw_u in urls:
+                if not raw_u or raw_u in seen or not _is_proxy_prewarm_candidate(raw_u):
+                    continue
+                seen.add(raw_u)
+                candidate_urls.append(raw_u)
+                if len(candidate_urls) >= limit:
+                    break
+
+        if not candidate_urls:
+            return
+
+        sem = asyncio.Semaphore(4)
+
+        async def _warm_one(target_u: str) -> None:
+            async with sem:
+                try:
+                    await asyncio.wait_for(proxy_image(url=target_u), timeout=8.0)
+                except Exception:
+                    pass
+
+        await asyncio.gather(*[_warm_one(u) for u in candidate_urls], return_exceptions=True)
+        logger.info("[Prewarm] 썸네일 auto800 WebP 선적재 완료 (%d건)", len(candidate_urls))
+    except Exception as exc:
+        logger.debug("[Prewarm] 썸네일 선적재 스킵: %s", exc)
+
+
+def schedule_thumbnail_prewarm(urls: Optional[list[str]] = None) -> None:
+    if (
+        os.getenv("ENV") == "test"
+        or "pytest" in sys.modules
+        or "memory" in os.getenv("DATABASE_URL", "").lower()
+    ):
+        return
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(prewarm_recent_deal_thumbnails(urls=urls, limit=36))
+    except RuntimeError:
+        pass
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request, exc):
@@ -719,3 +834,5 @@ async def startup_event():
             logger.error(f"[Startup] 스케줄러 연동 중 오류 발생: {e}", exc_info=True)
     else:
         logger.info("[Startup] ENABLE_SCHEDULER=false 설정에 따라 내장 스케줄러 기동을 생략합니다 (전용 스케줄러 컨테이너 사용).")
+
+    schedule_thumbnail_prewarm(urls=None)

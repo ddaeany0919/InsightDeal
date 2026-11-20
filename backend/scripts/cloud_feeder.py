@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import sys
+import time
 import urllib.parse
 import httpx
 
@@ -136,12 +137,21 @@ async def _preload_existing_urls(http_client: httpx.AsyncClient):
     if _SEEN_DETAIL_CACHE:
         return
     _load_local_seen_cache()
+    if (
+        len(_SEEN_DETAIL_CACHE) >= 20
+        and os.path.exists(_CACHE_FILE)
+        and (time.time() - os.path.getmtime(_CACHE_FILE)) < 1800
+    ):
+        logger.info(
+            f"📦 로컬 영구 캐시 {len(_SEEN_DETAIL_CACHE)}건 즉시 로드 완료 (원격 API 프리로드 30회 스킵)"
+        )
+        return
     try:
         from backend.core.url_utils import normalize_url, is_search_or_community_url
         platforms = ("펨코", "뽐뿌", "퀘이사존", "알리뽐뿌", "뽐뿌해외", "루리웹", "클리앙", "빠삭국내", "빠삭해외", "빠삭육아")
         for pf in platforms:
-            for off in (0, 100, 200):
-                res = await http_client.get(f"{CLOUD_DEALS_API}?limit=100&offset={off}&platform={pf}")
+            for off in (0,):
+                res = await http_client.get(f"{CLOUD_DEALS_API}?limit=60&offset={off}&platform={pf}")
                 if res.status_code == 200:
                     payload = res.json()
                     deals = payload if isinstance(payload, list) else payload.get("items", payload.get("deals", []))

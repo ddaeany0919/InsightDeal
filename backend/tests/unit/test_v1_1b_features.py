@@ -1437,3 +1437,98 @@ def test_deal_detail_1rtt_initial_history_triggers_and_max_id_cache(unit_v11b_en
     assert new_id not in ids_before
     feed_after = client.get("/api/community/hot-deals", params={"limit": 20}).json()
     assert new_id in {d["id"] for d in feed_after["deals"]}
+
+
+def test_build_dsu_inverted_index_fast_and_consistent():
+    """역인덱스 적용 build_dsu가 400건 이상에서도 0.25초 이내 완료되며 동일 클러스터 병합 정합성을 유지한다."""
+    import time
+    from types import SimpleNamespace
+
+    now = datetime(2026, 11, 20, 2, 0, 0)
+    deals = [
+        SimpleNamespace(
+            id=1,
+            title="[쿠팡] 삼성전자 오디세이 OLED G8 32인치 모니터",
+            base_product_name="삼성전자 오디세이 OLED G8 32인치 모니터",
+            model_code="LS32DG800",
+            ecommerce_link="https://www.coupang.com/vp/products/100001",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=1",
+            price="990000",
+            currency="KRW",
+            indexed_at=now,
+        ),
+        SimpleNamespace(
+            id=2,
+            title="[G마켓] 삼성 오디세이 OLED G8 32인치 모니터 특가",
+            base_product_name="삼성전자 오디세이 OLED G8 32인치 모니터",
+            model_code="LS32DG800",
+            ecommerce_link="https://item.gmarket.co.kr/Item?goodscode=200002",
+            post_link="https://www.fmkorea.com/123456",
+            price="985000",
+            currency="KRW",
+            indexed_at=now - timedelta(minutes=15),
+        ),
+    ]
+    for i in range(3, 450):
+        deals.append(
+            SimpleNamespace(
+                id=i,
+                title=f"[몰{i}] 유니크알파브랜드{i} 제품명{i}모델X{i} ({10000 + i}원)",
+                base_product_name=f"유니크알파브랜드{i} 제품명{i}모델X{i}",
+                model_code=f"UNIQMDL{i:04d}",
+                ecommerce_link=f"https://www.coupang.com/vp/products/{900000 + i}",
+                post_link=f"https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no={i}",
+                price=str(10000 + i),
+                currency="KRW",
+                indexed_at=now - timedelta(minutes=i),
+            )
+        )
+
+    t0 = time.perf_counter()
+    dsu = community_router.build_dsu(deals)
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 0.25, f"build_dsu 역인덱스 지연: {elapsed:.4f}s"
+    assert dsu.find(1) == dsu.find(2)
+    assert dsu.find(1) != dsu.find(3)
+    assert dsu.find(3) != dsu.find(400)
+
+
+@pytest.mark.asyncio
+async def test_cloud_feeder_fresh_cache_skips_remote_preload(tmp_path, monkeypatch):
+    """신선한 로컬 feeder_seen_cache.json(>=20건, <30분) 존재 시 _preload_existing_urls가 원격 API를 0회 호출한다."""
+    import json
+    import backend.scheduler.cloud_feeder as cf
+
+    cache_path = tmp_path / "feeder_seen_cache.json"
+    seed = {
+        f"뽐뿌::https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no={1000 + i}": {
+            "title": f"캐시딜 {i}",
+            "price": 10000 + i,
+            "currency": "KRW",
+            "is_closed": False,
+        }
+        for i in range(25)
+    }
+    cache_path.write_text(json.dumps(seed, ensure_ascii=False), encoding="utf-8")
+
+    monkeypatch.setattr(cf, "_CACHE_FILE", str(cache_path))
+    cf._SEEN_DETAIL_CACHE.clear()
+
+    called_urls: list[str] = []
+
+    class FakeClient:
+        async def get(self, url, *args, **kwargs):
+            called_urls.append(url)
+            return httpx.Response(200, json={"deals": []}, request=httpx.Request("GET", url))
+
+    await cf._preload_existing_urls(FakeClient())
+    assert len(cf._SEEN_DETAIL_CACHE) == 25
+    assert called_urls == []
+
+    # 30분 초과(stale) 캐시일 때도 offset=0&limit=60 경량 조회만 수행
+    old_ts = os.path.getmtime(cache_path) - 3600
+    os.utime(cache_path, (old_ts, old_ts))
+    cf._SEEN_DETAIL_CACHE.clear()
+    await cf._preload_existing_urls(FakeClient())
+    assert len(called_urls) == 10
+    assert all("limit=60&offset=0" in u for u in called_urls)
