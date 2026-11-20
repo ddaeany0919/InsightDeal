@@ -60,8 +60,9 @@ class DatabaseManager:
         else:
             engine_kwargs.update({
                 "poolclass": QueuePool,
-                "pool_size": 10,
-                "max_overflow": 20,
+                "pool_size": 30,
+                "max_overflow": 60,
+                "pool_timeout": 15,
                 "pool_pre_ping": True,
             })
 
@@ -166,6 +167,24 @@ class DatabaseManager:
                     logger.info(f"자동 마이그레이션 컬럼 추가 완료: {table_name}.{col_name}")
                 except Exception as e:
                     logger.warning(f"자동 마이그레이션 컬럼 추가 스킵 ({table_name}.{col_name}): {e}")
+
+        if is_sqlite and "deals" in existing_tables:
+            try:
+                with self.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "UPDATE deals SET indexed_at = indexed_at || '.000000' "
+                            "WHERE typeof(indexed_at) = 'text' AND length(indexed_at) = 19"
+                        )
+                    )
+                    conn.execute(
+                        text(
+                            "CREATE INDEX IF NOT EXISTS idx_deals_closed_indexed_id "
+                            "ON deals (is_closed, indexed_at DESC, id DESC)"
+                        )
+                    )
+            except Exception as e:
+                logger.warning(f"SQLite deals indexed_at 정규화/인덱스 보장 스킵: {e}")
 
     def ensure_performance_indexes(self):
         """6개월 시세 차트, DSU 클러스터링, 피드 필터링 고속화를 위한 복합 인덱스 자동 보장"""

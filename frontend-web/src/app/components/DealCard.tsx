@@ -183,8 +183,8 @@ export default function DealCard({
                 color: "#FFFFFF",
                 border: "1px solid rgba(255, 255, 255, 0.14)",
                 padding: "3px 8px",
-                borderRadius: "6px",
-                fontSize: "0.72rem",
+                borderRadius: "var(--radius-xs)",
+                fontSize: "var(--fs-caption)",
                 fontWeight: 700,
                 display: "inline-flex",
                 alignItems: "center",
@@ -241,13 +241,13 @@ export default function DealCard({
           {shopBadge && (
             <span
               style={{
-                fontSize: "0.72rem",
+                fontSize: "var(--fs-caption)",
                 fontWeight: 700,
                 color: "var(--text-main)",
                 background: "var(--badge-bg)",
                 border: "1px solid var(--card-border)",
                 padding: "3px 8px",
-                borderRadius: "6px",
+                borderRadius: "var(--radius-xs)",
                 display: "inline-flex",
                 alignItems: "center",
                 lineHeight: 1.3,
@@ -277,7 +277,7 @@ export default function DealCard({
                 : formatPrice(deal.price, deal.currency, deal.title)}
             </span>
             {deal.isClosed ? (
-              <span className="badge badge-danger">품절/종료</span>
+              <span className="badge badge-danger">품절·종료</span>
             ) : (
               (deal.honeyScore || 0) >= 100 && (
                 <span className="deal-tag">인기</span>

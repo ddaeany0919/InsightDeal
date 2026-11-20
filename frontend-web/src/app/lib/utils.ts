@@ -1974,7 +1974,7 @@ export function getCommunityName(id?: number): string {
  */
 export function mapRawDealToDeal(
   d: RawDealApiResponse,
-  targetPlatform?: string
+  targetPlatform?: string | string[]
 ): Deal {
   const titleStr = decodeHtmlEntities(d.title || "");
   const cleanEcommerce =
@@ -1987,13 +1987,22 @@ export function mapRawDealToDeal(
     d.post_link && d.post_link.trim() !== "" ? d.post_link.trim() : null;
   const cleanLink = d.link && d.link.trim() !== "" ? d.link.trim() : null;
 
+  const activePlatforms = Array.isArray(targetPlatform)
+    ? targetPlatform.map((p) => p.trim()).filter((p) => p && p !== "전체")
+    : typeof targetPlatform === "string"
+      ? targetPlatform
+          .split(",")
+          .map((p) => p.trim())
+          .filter((p) => p && p !== "전체")
+      : [];
+
   const matchedSource =
-    targetPlatform &&
-    targetPlatform !== "전체" &&
-    Array.isArray(d.sources)
+    activePlatforms.length > 0 && Array.isArray(d.sources)
       ? d.sources.find(
           (s: DealSource) =>
-            String(s.site_name || "").includes(targetPlatform) && s.post_url
+            activePlatforms.some((plat) =>
+              String(s.site_name || "").includes(plat)
+            ) && Boolean(s.post_url)
         )
       : null;
 

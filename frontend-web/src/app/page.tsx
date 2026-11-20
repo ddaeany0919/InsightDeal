@@ -13,6 +13,9 @@ import {
   RotateCcw,
   AlertCircle,
   Smartphone,
+  Check,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -103,8 +106,11 @@ export default function Home() {
   const [categories, setCategories] =
     useState<CategoryMetaItem[]>(DEFAULT_CATEGORIES);
   const [isMounted, setIsMounted] = useState(false);
-  const [activeTab, setActiveTab] = useState("전체");
-  const [activePlatform, setActivePlatform] = useState("전체");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const selectedCategoriesRef = useRef<string[]>([]);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  const selectedPlatformsRef = useRef<string[]>([]);
+  const [isCategoriesExpanded, setIsCategoriesExpanded] = useState(false);
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1005,8 +1011,8 @@ export default function Home() {
     async (
       showLoadingState = true,
       offset = 0,
-      targetTab = "전체",
-      targetPlatform = "전체",
+      targetCategories: string[] = selectedCategoriesRef.current,
+      targetPlatforms: string[] = selectedPlatformsRef.current,
       overrideKeyword?: string,
       overrideSort?: "latest" | "popular" | "price_asc",
       overrides?: {
@@ -1023,6 +1029,13 @@ export default function Home() {
       liveDealsAbortRef.current = controller;
       const { signal } = controller;
 
+      const normalizedCategories = targetCategories
+        .map((c) => c.trim())
+        .filter((c) => c && c !== "전체");
+      const normalizedPlatforms = targetPlatforms
+        .map((p) => p.trim())
+        .filter((p) => p && p !== "전체");
+
       try {
         if (offset === 0) {
           setFetchError(null);
@@ -1033,12 +1046,12 @@ export default function Home() {
         }
 
         const apiCategory =
-          targetTab && targetTab !== "전체" ? targetTab : "";
+          normalizedCategories.length > 0 ? normalizedCategories.join(",") : "";
         const platformParam =
-          targetPlatform && targetPlatform !== "전체"
-            ? `&platform=${encodeURIComponent(targetPlatform)}`
+          normalizedPlatforms.length > 0
+            ? `&platform=${encodeURIComponent(normalizedPlatforms.join(","))}`
             : "";
-        const limit = targetPlatform === "뽐뿌" ? 50 : 20;
+        const limit = normalizedPlatforms.includes("뽐뿌") ? 50 : 20;
 
         const activeKw =
           overrideKeyword !== undefined
@@ -1077,8 +1090,16 @@ export default function Home() {
         let lastStatus = 0;
         for (let attempt = 0; attempt < 3; attempt++) {
           if (signal.aborted) return false;
+          const attemptController = new AbortController();
+          let timedOut = false;
+          const onOuterAbort = () => attemptController.abort();
+          signal.addEventListener("abort", onOuterAbort, { once: true });
+          const timeoutId = setTimeout(() => {
+            timedOut = true;
+            attemptController.abort();
+          }, 8000);
           try {
-            const r = await fetch(url, { signal });
+            const r = await fetch(url, { signal: attemptController.signal });
             lastStatus = r.status;
             if (r.ok) {
               res = r;
@@ -1088,9 +1109,15 @@ export default function Home() {
               break;
             }
           } catch (fetchErr) {
-            if (signal.aborted || isAbortError(fetchErr)) {
+            if (signal.aborted) {
               return false;
             }
+            if (!timedOut && isAbortError(fetchErr)) {
+              return false;
+            }
+          } finally {
+            clearTimeout(timeoutId);
+            signal.removeEventListener("abort", onOuterAbort);
           }
           if (attempt < 2) {
             await new Promise<void>((resolve) => {
@@ -1127,7 +1154,7 @@ export default function Home() {
           : data.deals || data.items || [];
 
         const formatted: Deal[] = dealsArray.map((d: RawDealApiResponse) =>
-          mapRawDealToDeal(d, targetPlatform)
+          mapRawDealToDeal(d, normalizedPlatforms)
         );
 
         if (offset === 0 && activeKw.trim().length >= 2) {
@@ -1162,8 +1189,8 @@ export default function Home() {
             setDeals(mergedDealsForRef);
             if (
               typeof window !== "undefined" &&
-              targetTab === "전체" &&
-              targetPlatform === "전체" &&
+              normalizedCategories.length === 0 &&
+              normalizedPlatforms.length === 0 &&
               !activeKw.trim() &&
               activeSort === "latest" &&
               !activeOnlyHot &&
@@ -1232,8 +1259,8 @@ export default function Home() {
           if (
             typeof window !== "undefined" &&
             !activeKwOnErr.trim() &&
-            targetTab === "전체" &&
-            targetPlatform === "전체" &&
+            normalizedCategories.length === 0 &&
+            normalizedPlatforms.length === 0 &&
             activeSortOnErr === "latest" &&
             !onlyHotDealsRef.current &&
             !hideClosedDealsRef.current &&
@@ -1261,7 +1288,7 @@ export default function Home() {
       } finally {
         if (liveDealsAbortRef.current === controller) {
           liveDealsAbortRef.current = null;
-          if (showLoadingState) {
+          if (showLoadingState || offset === 0) {
             setLoading(false);
           }
         }
@@ -1274,7 +1301,12 @@ export default function Home() {
     if (isRefreshing) return;
     setIsRefreshing(true);
     setNewDealsCount(0);
-    const ok = await fetchLiveDeals(false, 0, activeTab, activePlatform);
+    const ok = await fetchLiveDeals(
+      false,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current
+    );
     setIsRefreshing(false);
     showToast(ok ? "최신 딜을 불러왔어요" : HOT_DEALS_ERROR_COPY);
   };
@@ -1285,31 +1317,76 @@ export default function Home() {
     }
     setNewDealsCount(0);
     setIsRefreshing(true);
-    const ok = await fetchLiveDeals(false, 0, activeTab, activePlatform);
+    const ok = await fetchLiveDeals(
+      false,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current
+    );
     setIsRefreshing(false);
     showToast(ok ? "최신 딜을 반영했어요" : HOT_DEALS_ERROR_COPY);
   };
 
-  const handleTabChange = (tab: string) => {
-    if (tab === activeTab) return;
+  const handleCategoryToggle = (catKey: string) => {
     clearSearchDebounce();
-    setActiveTab(tab);
+    let next: string[];
+    if (catKey === "전체") {
+      if (selectedCategoriesRef.current.length === 0) return;
+      next = [];
+    } else {
+      const current = selectedCategoriesRef.current;
+      if (current.includes(catKey)) {
+        next = current.filter((k) => k !== catKey);
+      } else {
+        const added = [...current, catKey];
+        const individualCatKeys = categories
+          .filter((c) => c.key !== "전체")
+          .map((c) => c.key);
+        next =
+          individualCatKeys.length > 0 &&
+          individualCatKeys.every((k) => added.includes(k))
+            ? []
+            : added;
+      }
+    }
+    selectedCategoriesRef.current = next;
+    setSelectedCategories(next);
     setNewDealsCount(0);
     setIsFetchingMore(false);
+    dealsRef.current = [];
     setDeals([]);
     setHasMore(true);
-    fetchLiveDeals(true, 0, tab, activePlatform);
+    void fetchLiveDeals(true, 0, next, selectedPlatformsRef.current);
   };
 
-  const handlePlatformChange = (platform: string) => {
-    if (platform === activePlatform) return;
+  const handlePlatformToggle = (platform: string) => {
     clearSearchDebounce();
-    setActivePlatform(platform);
+    let next: string[];
+    if (platform === "전체") {
+      if (selectedPlatformsRef.current.length === 0) return;
+      next = [];
+    } else {
+      const current = selectedPlatformsRef.current;
+      if (current.includes(platform)) {
+        next = current.filter((p) => p !== platform);
+      } else {
+        const added = [...current, platform];
+        const individualPlatforms = PLATFORMS.filter((p) => p !== "전체");
+        next =
+          individualPlatforms.length > 0 &&
+          individualPlatforms.every((p) => added.includes(p))
+            ? []
+            : added;
+      }
+    }
+    selectedPlatformsRef.current = next;
+    setSelectedPlatforms(next);
     setNewDealsCount(0);
     setIsFetchingMore(false);
+    dealsRef.current = [];
     setDeals([]);
     setHasMore(true);
-    fetchLiveDeals(true, 0, activeTab, platform);
+    void fetchLiveDeals(true, 0, selectedCategoriesRef.current, next);
   };
 
   const saveRecentSearch = (rawKw: string) => {
@@ -1360,11 +1437,7 @@ export default function Home() {
     return true;
   };
 
-  const scheduleDebouncedSearch = (
-    nextValue: string,
-    targetTab: string,
-    targetPlatform: string
-  ) => {
+  const scheduleDebouncedSearch = (nextValue: string) => {
     clearSearchDebounce();
     if (isComposingRef.current) return;
     if (!isAutoSearchableQuery(nextValue)) return;
@@ -1375,9 +1448,16 @@ export default function Home() {
       if (appliedSearchRef.current === trimmed) return;
       updateAppliedSearch(trimmed);
       setIsFetchingMore(false);
+      dealsRef.current = [];
       setDeals([]);
       setHasMore(true);
-      fetchLiveDeals(true, 0, targetTab, targetPlatform, trimmed);
+      void fetchLiveDeals(
+        true,
+        0,
+        selectedCategoriesRef.current,
+        selectedPlatformsRef.current,
+        trimmed
+      );
     }, 300);
   };
 
@@ -1387,9 +1467,16 @@ export default function Home() {
     setSearchQuery("");
     updateAppliedSearch("");
     setIsFetchingMore(false);
+    dealsRef.current = [];
     setDeals([]);
     setHasMore(true);
-    fetchLiveDeals(true, 0, activeTab, activePlatform, "");
+    void fetchLiveDeals(
+      true,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current,
+      ""
+    );
   };
 
   const handleSortChange = (nextSort: "latest" | "popular" | "price_asc") => {
@@ -1397,9 +1484,17 @@ export default function Home() {
     sortByRef.current = nextSort;
     setSortBy(nextSort);
     setIsFetchingMore(false);
+    dealsRef.current = [];
     setDeals([]);
     setHasMore(true);
-    fetchLiveDeals(true, 0, activeTab, activePlatform, undefined, nextSort);
+    void fetchLiveDeals(
+      true,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current,
+      undefined,
+      nextSort
+    );
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -1412,9 +1507,16 @@ export default function Home() {
     }
     updateAppliedSearch(trimmed);
     setIsFetchingMore(false);
+    dealsRef.current = [];
     setDeals([]);
     setHasMore(true);
-    fetchLiveDeals(true, 0, activeTab, activePlatform, trimmed);
+    void fetchLiveDeals(
+      true,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current,
+      trimmed
+    );
   };
 
   const handleSelectPopularKeyword = (kw: string) => {
@@ -1425,20 +1527,32 @@ export default function Home() {
       setSearchQuery("");
       updateAppliedSearch("");
       setIsFetchingMore(false);
+      dealsRef.current = [];
       setDeals([]);
       setHasMore(true);
-      fetchLiveDeals(true, 0, activeTab, activePlatform, "");
+      void fetchLiveDeals(
+        true,
+        0,
+        selectedCategoriesRef.current,
+        selectedPlatformsRef.current,
+        ""
+      );
       return;
     }
     setSearchQuery(trimmed);
     updateAppliedSearch(trimmed);
     saveRecentSearch(trimmed);
-    setActivePlatform("전체");
-    setActiveTab("전체");
     setIsFetchingMore(false);
+    dealsRef.current = [];
     setDeals([]);
     setHasMore(true);
-    fetchLiveDeals(true, 0, "전체", "전체", trimmed);
+    void fetchLiveDeals(
+      true,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current,
+      trimmed
+    );
   };
 
   const handleToggleOnlyHot = () => {
@@ -1447,9 +1561,17 @@ export default function Home() {
     setOnlyHotDeals(next);
     setIsFetchingMore(false);
     setHasMore(true);
-    fetchLiveDeals(true, 0, activeTab, activePlatform, undefined, undefined, {
-      onlyHot: next,
-    });
+    void fetchLiveDeals(
+      true,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current,
+      undefined,
+      undefined,
+      {
+        onlyHot: next,
+      }
+    );
   };
 
   const handleToggleHideClosed = () => {
@@ -1464,10 +1586,18 @@ export default function Home() {
     }
     setIsFetchingMore(false);
     setHasMore(true);
-    fetchLiveDeals(true, 0, activeTab, activePlatform, undefined, undefined, {
-      hideClosed: next,
-      includeClosed: nextInclude,
-    });
+    void fetchLiveDeals(
+      true,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current,
+      undefined,
+      undefined,
+      {
+        hideClosed: next,
+        includeClosed: nextInclude,
+      }
+    );
   };
 
   const handleToggleIncludeClosed = () => {
@@ -1482,10 +1612,18 @@ export default function Home() {
     }
     setIsFetchingMore(false);
     setHasMore(true);
-    fetchLiveDeals(true, 0, activeTab, activePlatform, undefined, undefined, {
-      includeClosed: next,
-      hideClosed: nextHide,
-    });
+    void fetchLiveDeals(
+      true,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current,
+      undefined,
+      undefined,
+      {
+        includeClosed: next,
+        hideClosed: nextHide,
+      }
+    );
   };
 
   const handleResetAllFilters = () => {
@@ -1493,8 +1631,10 @@ export default function Home() {
     isComposingRef.current = false;
     setSearchQuery("");
     updateAppliedSearch("");
-    setActiveTab("전체");
-    setActivePlatform("전체");
+    selectedCategoriesRef.current = [];
+    setSelectedCategories([]);
+    selectedPlatformsRef.current = [];
+    setSelectedPlatforms([]);
     onlyHotDealsRef.current = false;
     setOnlyHotDeals(false);
     hideClosedDealsRef.current = false;
@@ -1504,9 +1644,10 @@ export default function Home() {
     sortByRef.current = "latest";
     setSortBy("latest");
     setIsFetchingMore(false);
+    dealsRef.current = [];
     setDeals([]);
     setHasMore(true);
-    fetchLiveDeals(true, 0, "전체", "전체", "", "latest", {
+    void fetchLiveDeals(true, 0, [], [], "", "latest", {
       onlyHot: false,
       hideClosed: false,
       includeClosed: false,
@@ -1516,8 +1657,8 @@ export default function Home() {
 
   const hasActiveFilters =
     appliedSearch !== "" ||
-    activePlatform !== "전체" ||
-    activeTab !== "전체" ||
+    selectedPlatforms.length > 0 ||
+    selectedCategories.length > 0 ||
     onlyHotDeals ||
     hideClosedDeals ||
     includeClosedDeals ||
@@ -1716,7 +1857,7 @@ export default function Home() {
     const initFetch = async () => {
       const hasCache = cachedDeals.length > 0 && !initialSharedKw;
       setIsRefreshing(true);
-      await fetchLiveDeals(!hasCache, 0, "전체", "전체", initialSharedKw);
+      await fetchLiveDeals(!hasCache, 0, [], [], initialSharedKw);
       setIsRefreshing(false);
     };
 
@@ -1754,8 +1895,8 @@ export default function Home() {
             await fetchLiveDeals(
               false,
               currentOffset,
-              activeTab,
-              activePlatform,
+              selectedCategoriesRef.current,
+              selectedPlatformsRef.current,
               undefined,
               undefined,
               { cursor: nextCursorRef.current }
@@ -1777,8 +1918,8 @@ export default function Home() {
     isMounted,
     hasMore,
     deals.length,
-    activeTab,
-    activePlatform,
+    selectedCategories,
+    selectedPlatforms,
     loading,
     isRefreshing,
     isFetchingMore,
@@ -1788,15 +1929,26 @@ export default function Home() {
   useEffect(() => {
     if (!isMounted || deals.length === 0) return;
 
+    let activePollController: AbortController | null = null;
     const checkInterval = setInterval(async () => {
       if (document.hidden) return;
+      activePollController?.abort();
+      const pollController = new AbortController();
+      activePollController = pollController;
+      const pollTimeout = setTimeout(() => pollController.abort(), 8000);
 
       try {
+        const activeCategories = selectedCategories.filter(
+          (c) => c && c !== "전체"
+        );
+        const activePlatforms = selectedPlatforms.filter(
+          (p) => p && p !== "전체"
+        );
         const apiCategory =
-          activeTab && activeTab !== "전체" ? activeTab : "";
+          activeCategories.length > 0 ? activeCategories.join(",") : "";
         const platformParam =
-          activePlatform && activePlatform !== "전체"
-            ? `&platform=${encodeURIComponent(activePlatform)}`
+          activePlatforms.length > 0
+            ? `&platform=${encodeURIComponent(activePlatforms.join(","))}`
             : "";
         const queryParam = appliedSearch
           ? `&keyword=${encodeURIComponent(appliedSearch)}`
@@ -1810,7 +1962,7 @@ export default function Home() {
           }${platformParam}${queryParam}${filterParams}`
         );
 
-        const res = await fetch(checkUrl);
+        const res = await fetch(checkUrl, { signal: pollController.signal });
         if (!res.ok) return;
         const data = await res.json();
         const incomingDeals: RawDealApiResponse[] = Array.isArray(data)
@@ -1825,15 +1977,24 @@ export default function Home() {
             setNewDealsCount(freshCount);
           }
         }
-      } catch {}
+      } catch {
+      } finally {
+        clearTimeout(pollTimeout);
+        if (activePollController === pollController) {
+          activePollController = null;
+        }
+      }
     }, 50000);
 
-    return () => clearInterval(checkInterval);
+    return () => {
+      clearInterval(checkInterval);
+      activePollController?.abort();
+    };
   }, [
     isMounted,
     deals,
-    activeTab,
-    activePlatform,
+    selectedCategories,
+    selectedPlatforms,
     appliedSearch,
     onlyHotDeals,
     hideClosedDeals,
@@ -1844,19 +2005,22 @@ export default function Home() {
     .filter((d) => {
       if (hideClosedDeals && d.isClosed) return false;
       if (onlyHotDeals && (d.honeyScore || 0) < 100) return false;
-      if (activePlatform && activePlatform !== "전체") {
+      if (selectedPlatforms.length > 0) {
         const commNames = (d.community_name || "")
           .split(",")
-          .map((s) => s.trim());
-        const srcNames = (d.sources || []).map((s) =>
-          String(s.site_name || "")
-            .replace(/ - .*$/, "")
-            .trim()
-        );
-        if (
-          !commNames.includes(activePlatform) &&
-          !srcNames.includes(activePlatform)
-        ) {
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const srcNames = (d.sources || [])
+          .map((s) =>
+            String(s.site_name || "")
+              .replace(/ - .*$/, "")
+              .trim()
+          )
+          .filter(Boolean);
+        const matched =
+          commNames.some((name) => selectedPlatforms.includes(name)) ||
+          srcNames.some((name) => selectedPlatforms.includes(name));
+        if (!matched) {
           return false;
         }
       }
@@ -2041,14 +2205,14 @@ export default function Home() {
                 className="section-title"
                 style={{
                   textAlign: "left",
-                  fontSize: "1.55rem",
+                  fontSize: "var(--fs-title)",
                   marginBottom: "4px",
                 }}
               >
                 실시간 핫딜 모아보기
               </h1>
-              <p style={{ color: "var(--text-sub)", fontSize: "0.9rem" }}>
-                11개 주요 커뮤니티의 실시간 핫딜을 한곳에서 모아보세요
+              <p style={{ color: "var(--text-sub)", fontSize: "var(--fs-body)" }}>
+                주요 커뮤니티 10곳의 실시간 핫딜을 한눈에 모아보세요
               </p>
             </div>
 
@@ -2094,7 +2258,7 @@ export default function Home() {
                     : "1px solid var(--card-border)",
                 }}
               >
-                품절 숨기기
+                품절 제외
               </button>
 
               <button
@@ -2112,7 +2276,7 @@ export default function Home() {
                     : "1px solid var(--card-border)",
                 }}
               >
-                종료딜 포함
+                종료 포함
               </button>
 
               <div className="sort-segment-group" role="group" aria-label="정렬 기준">
@@ -2143,22 +2307,6 @@ export default function Home() {
                 })}
               </div>
 
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  className="filter-chip-btn bounce-click"
-                  onClick={handleResetAllFilters}
-                  style={{
-                    background: "var(--accent-soft-bg)",
-                    color: "var(--accent)",
-                    border: "1px solid var(--accent-soft-border)",
-                  }}
-                >
-                  <RotateCcw size={13} aria-hidden="true" />
-                  <span>초기화</span>
-                </button>
-              )}
-
               <button
                 type="button"
                 className="filter-chip-btn bounce-click"
@@ -2183,16 +2331,12 @@ export default function Home() {
             </div>
           </div>
 
-          <form
-            onSubmit={handleSearchSubmit}
-            className="search-container"
-            style={{ marginBottom: "12px" }}
-          >
+          <form onSubmit={handleSearchSubmit} className="search-container">
             <div className="search-bar-wrapper">
-              <Search size={18} className="search-icon" />
+              <Search size={18} className="search-icon" aria-hidden="true" />
               <input
                 type="text"
-                placeholder="상품명·조건 검색 (예: 맥북 에어 -파우치 / 제로콜라 :15000)"
+                placeholder="상품명 검색 (예: 맥북 -파우치, 콜라 :15000)"
                 value={searchQuery}
                 onCompositionStart={() => {
                   isComposingRef.current = true;
@@ -2202,7 +2346,7 @@ export default function Home() {
                   isComposingRef.current = false;
                   const composedVal = e.currentTarget.value;
                   setSearchQuery(composedVal);
-                  scheduleDebouncedSearch(composedVal, activeTab, activePlatform);
+                  scheduleDebouncedSearch(composedVal);
                 }}
                 onChange={(e) => {
                   const nextVal = e.target.value;
@@ -2211,7 +2355,7 @@ export default function Home() {
                   if (nativeEvt?.isComposing || isComposingRef.current) {
                     return;
                   }
-                  scheduleDebouncedSearch(nextVal, activeTab, activePlatform);
+                  scheduleDebouncedSearch(nextVal);
                 }}
                 className="search-input"
               />
@@ -2361,7 +2505,7 @@ export default function Home() {
             >
               <span
                 style={{
-                  fontSize: "0.86rem",
+                  fontSize: "var(--fs-control)",
                   color: "var(--text-main)",
                   fontWeight: 600,
                   display: "inline-flex",
@@ -2369,10 +2513,10 @@ export default function Home() {
                   gap: "6px",
                 }}
               >
-                <Bell size={15} color="var(--accent)" />
+                <Bell size={15} color="var(--accent)" aria-hidden="true" />
                 <span>
-                  <strong>&lsquo;{searchQuery.trim()}&rsquo;</strong> 새 딜이
-                  올라오면 바로 알려드릴까요?
+                  <strong>&lsquo;{searchQuery.trim()}&rsquo;</strong> 새 핫딜이
+                  뜨면 바로 알려드릴까요?
                 </span>
               </span>
               <button
@@ -2380,19 +2524,19 @@ export default function Home() {
                 onClick={() => handleQuickSubscribeKeyword(searchQuery)}
                 className="bounce-click"
                 style={{
-                  minHeight: "44px",
-                  minWidth: "44px",
+                  minHeight: "var(--control-h-lg)",
+                  minWidth: "var(--touch-target-min)",
                   padding: "8px 14px",
-                  borderRadius: "10px",
+                  borderRadius: "var(--radius-sm)",
                   background: "var(--accent)",
                   color: "var(--on-accent)",
                   fontWeight: 700,
-                  fontSize: "0.82rem",
+                  fontSize: "var(--fs-control)",
                   border: "none",
                   cursor: "pointer",
                 }}
               >
-                알림 받기
+                키워드 알림 받기
               </button>
             </div>
           )}
@@ -2407,70 +2551,84 @@ export default function Home() {
 
           <div className="platform-chips-row" role="group" aria-label="커뮤니티 필터">
             {PLATFORMS.map((platform) => {
-              const isSelected = activePlatform === platform;
+              const isSelected =
+                platform === "전체"
+                  ? selectedPlatforms.length === 0
+                  : selectedPlatforms.includes(platform);
               return (
                 <button
                   key={platform}
                   type="button"
                   aria-pressed={isSelected}
-                  onClick={() => handlePlatformChange(platform)}
-                  className="platform-chip bounce-click"
-                  style={{
-                    fontWeight: isSelected ? 700 : 600,
-                    background: isSelected ? "var(--accent)" : "var(--card-bg)",
-                    color: isSelected ? "var(--on-accent)" : "var(--text-sub)",
-                    border: isSelected
-                      ? "1px solid var(--accent)"
-                      : "1px solid var(--card-border)",
-                  }}
+                  onClick={() => handlePlatformToggle(platform)}
+                  className={`platform-chip bounce-click ${isSelected ? "active" : ""}`}
                 >
-                  {platform === "전체" ? "전체 커뮤니티" : platform}
+                  {isSelected && (
+                    <Check size={13} strokeWidth={2.5} aria-hidden="true" />
+                  )}
+                  <span>{platform === "전체" ? "전체 커뮤니티" : platform}</span>
                 </button>
               );
             })}
           </div>
 
-          <div className="tabs-container">
-            <div className="tabs" role="group" aria-label="카테고리 필터">
-              {categories.map((cat) => {
-                const isCatActive = activeTab === cat.key;
-                return (
-                  <button
-                    key={cat.key}
-                    type="button"
-                    aria-pressed={isCatActive}
-                    className={`tab bounce-click ${isCatActive ? "active" : ""}`}
-                    onClick={() => handleTabChange(cat.key)}
-                  >
-                    {cat.label}
-                  </button>
-                );
-              })}
+          <div className="category-rail-wrapper">
+            <div
+              id="category-filter-rail"
+              className={`tabs-container ${isCategoriesExpanded ? "expanded" : ""}`}
+            >
+              <div
+                className={`tabs ${isCategoriesExpanded ? "expanded" : ""}`}
+                role="group"
+                aria-label="카테고리 필터"
+              >
+                {categories.map((cat) => {
+                  const isCatActive =
+                    cat.key === "전체"
+                      ? selectedCategories.length === 0
+                      : selectedCategories.includes(cat.key);
+                  return (
+                    <button
+                      key={cat.key}
+                      type="button"
+                      aria-pressed={isCatActive}
+                      className={`tab bounce-click ${isCatActive ? "active" : ""}`}
+                      onClick={() => handleCategoryToggle(cat.key)}
+                    >
+                      {isCatActive && (
+                        <Check size={13} strokeWidth={2.5} aria-hidden="true" />
+                      )}
+                      <span>{cat.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+            <button
+              type="button"
+              className="category-expand-btn bounce-click"
+              aria-expanded={isCategoriesExpanded}
+              aria-controls="category-filter-rail"
+              onClick={() => setIsCategoriesExpanded((prev) => !prev)}
+            >
+              <span>{isCategoriesExpanded ? "접기" : "전체 펼치기"}</span>
+              {isCategoriesExpanded ? (
+                <ChevronUp size={13} aria-hidden="true" />
+              ) : (
+                <ChevronDown size={13} aria-hidden="true" />
+              )}
+            </button>
           </div>
 
           {hasActiveFilters && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: "8px",
-                padding: "8px 14px",
-                marginBottom: "16px",
-                borderRadius: "12px",
-                background: "var(--card-bg)",
-                border: "1px solid var(--card-border)",
-              }}
-            >
+            <div className="applied-filters-bar">
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "6px",
+                  gap: "8px",
                   flexWrap: "wrap",
-                  fontSize: "0.78rem",
+                  fontSize: "var(--fs-caption)",
                 }}
               >
                 <span
@@ -2480,136 +2638,94 @@ export default function Home() {
                     marginRight: "2px",
                   }}
                 >
-                  적용 중인 필터
+                  적용 필터
                 </span>
                 {appliedSearch && (
                   <button
                     type="button"
                     onClick={handleClearSearch}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      minHeight: "44px",
-                      gap: "4px",
-                      padding: "6px 12px",
-                      borderRadius: "999px",
-                      background: "var(--accent-soft-bg)",
-                      color: "var(--accent)",
-                      border: "1px solid var(--accent-soft-border)",
-                      fontSize: "0.76rem",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
+                    className="applied-filter-chip applied-filter-chip--accent"
                   >
                     <span>검색: {appliedSearch}</span>
                     <X size={12} aria-hidden="true" />
                   </button>
                 )}
-                {activePlatform !== "전체" && (
+                {selectedPlatforms.map((platform) => (
+                  <button
+                    key={platform}
+                    type="button"
+                    onClick={() => handlePlatformToggle(platform)}
+                    className="applied-filter-chip"
+                  >
+                    <span>커뮤니티: {platform}</span>
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                ))}
+                {selectedCategories.map((catKey) => {
+                  const catLabel =
+                    categories.find((c) => c.key === catKey)?.label || catKey;
+                  return (
+                    <button
+                      key={catKey}
+                      type="button"
+                      onClick={() => handleCategoryToggle(catKey)}
+                      className="applied-filter-chip"
+                    >
+                      <span>카테고리: {catLabel}</span>
+                      <X size={12} aria-hidden="true" />
+                    </button>
+                  );
+                })}
+                {onlyHotDeals && (
                   <button
                     type="button"
-                    onClick={() => handlePlatformChange("전체")}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      minHeight: "44px",
-                      gap: "4px",
-                      padding: "6px 12px",
-                      borderRadius: "999px",
-                      background: "var(--surface-subtle)",
-                      color: "var(--text-main)",
-                      border: "1px solid var(--card-border)",
-                      fontSize: "0.76rem",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
+                    onClick={handleToggleOnlyHot}
+                    className="applied-filter-chip applied-filter-chip--orange"
                   >
-                    <span>커뮤니티: {activePlatform}</span>
+                    <span>인기 딜만</span>
                     <X size={12} aria-hidden="true" />
                   </button>
                 )}
-                {activeTab !== "전체" && (
+                {hideClosedDeals && (
                   <button
                     type="button"
-                    onClick={() => handleTabChange("전체")}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      minHeight: "44px",
-                      gap: "4px",
-                      padding: "6px 12px",
-                      borderRadius: "999px",
-                      background: "var(--surface-subtle)",
-                      color: "var(--text-main)",
-                      border: "1px solid var(--card-border)",
-                      fontSize: "0.76rem",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
+                    onClick={handleToggleHideClosed}
+                    className="applied-filter-chip applied-filter-chip--accent"
+                  >
+                    <span>품절 제외</span>
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                )}
+                {includeClosedDeals && (
+                  <button
+                    type="button"
+                    onClick={handleToggleIncludeClosed}
+                    className="applied-filter-chip applied-filter-chip--secondary"
+                  >
+                    <span>종료 포함</span>
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                )}
+                {sortBy !== "latest" && (
+                  <button
+                    type="button"
+                    onClick={() => handleSortChange("latest")}
+                    className="applied-filter-chip"
                   >
                     <span>
-                      카테고리:{" "}
-                      {categories.find((c) => c.key === activeTab)?.label ||
-                        activeTab}
+                      정렬: {sortBy === "popular" ? "인기순" : "낮은가격순"}
                     </span>
                     <X size={12} aria-hidden="true" />
                   </button>
-                )}
-                {onlyHotDeals && (
-                  <span
-                    style={{
-                      fontSize: "0.76rem",
-                      fontWeight: 700,
-                      color: "var(--deal-orange)",
-                    }}
-                  >
-                    · 인기 딜만
-                  </span>
-                )}
-                {hideClosedDeals && (
-                  <span
-                    style={{
-                      fontSize: "0.76rem",
-                      fontWeight: 700,
-                      color: "var(--accent)",
-                    }}
-                  >
-                    · 품절 숨김
-                  </span>
-                )}
-                {includeClosedDeals && (
-                  <span
-                    style={{
-                      fontSize: "0.76rem",
-                      fontWeight: 700,
-                      color: "var(--secondary)",
-                    }}
-                  >
-                    · 종료딜 포함
-                  </span>
                 )}
               </div>
               <button
                 type="button"
                 onClick={handleResetAllFilters}
-                className="bounce-click"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  minHeight: "44px",
-                  gap: "5px",
-                  padding: "6px 12px",
-                  borderRadius: "8px",
-                  background: "var(--surface-subtle)",
-                  color: "var(--text-main)",
-                  border: "1px solid var(--card-border)",
-                  fontSize: "0.76rem",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
+                className="applied-filter-reset-btn bounce-click"
               >
                 <RotateCcw size={12} aria-hidden="true" />
-                <span>전체 초기화</span>
+                <span>필터 초기화</span>
               </button>
             </div>
           )}
@@ -2625,11 +2741,11 @@ export default function Home() {
                 gap: "10px",
                 padding: "10px 14px",
                 marginBottom: "16px",
-                borderRadius: "12px",
+                borderRadius: "var(--radius-md)",
                 background: "var(--danger-bg)",
                 border: "1px solid var(--danger-border)",
                 color: "var(--danger-text)",
-                fontSize: "0.84rem",
+                fontSize: "var(--fs-control)",
                 fontWeight: 700,
               }}
             >
@@ -2640,14 +2756,19 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() =>
-                  void fetchLiveDeals(true, 0, activeTab, activePlatform)
+                  void fetchLiveDeals(
+                    true,
+                    0,
+                    selectedCategoriesRef.current,
+                    selectedPlatformsRef.current
+                  )
                 }
                 className="btn-primary bounce-click"
                 style={{
-                  minHeight: "44px",
+                  minHeight: "var(--control-h-lg)",
                   padding: "8px 14px",
-                  borderRadius: "10px",
-                  fontSize: "0.82rem",
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: "var(--fs-control)",
                 }}
               >
                 다시 시도
@@ -2656,14 +2777,43 @@ export default function Home() {
           )}
 
           <div className="deal-list">
-            {filteredDeals.length === 0 ? (
+            {loading && filteredDeals.length === 0 && !fetchError ? (
+              <>
+                <span className="sr-only" role="status">
+                  핫딜을 불러오고 있어요
+                </span>
+                {Array.from({ length: 6 }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="glass-panel deal-card deal-skeleton-card"
+                    aria-hidden="true"
+                  >
+                    <div className="deal-image-wrapper skeleton-shimmer" />
+                    <div className="skeleton-shimmer skeleton-line skeleton-line--title" />
+                    <div className="skeleton-shimmer skeleton-line skeleton-line--title-short" />
+                    <div className="skeleton-row">
+                      <span className="skeleton-shimmer skeleton-pill" />
+                      <span className="skeleton-shimmer skeleton-pill skeleton-pill--sm" />
+                    </div>
+                    <div className="skeleton-price-row">
+                      <div className="skeleton-shimmer skeleton-line skeleton-line--price" />
+                      <div className="skeleton-shimmer skeleton-pill skeleton-pill--sm" />
+                    </div>
+                    <div className="deal-card-footer-actions">
+                      <div className="skeleton-shimmer skeleton-btn" />
+                      <div className="skeleton-shimmer skeleton-btn" />
+                    </div>
+                  </div>
+                ))}
+              </>
+            ) : filteredDeals.length === 0 ? (
               <div
                 className="glass-panel"
                 role={fetchError ? "alert" : undefined}
                 style={{
                   gridColumn: "1 / -1",
                   padding: "48px 24px",
-                  borderRadius: "20px",
+                  borderRadius: "var(--radius-lg)",
                   textAlign: "center",
                   color: "var(--text-sub)",
                   display: "flex",
@@ -2672,71 +2822,95 @@ export default function Home() {
                   gap: "12px",
                 }}
               >
-                {fetchError && !loading && (
+                {fetchError && (
                   <AlertCircle size={28} color="var(--danger-text)" aria-hidden="true" />
                 )}
                 <p
                   style={{
-                    fontSize: "0.98rem",
+                    fontSize: "var(--fs-body)",
                     fontWeight: 700,
                     color: "var(--text-main)",
                     margin: 0,
                   }}
                 >
-                  {loading && deals.length === 0
-                    ? "핫딜을 불러오고 있어요"
-                    : fetchError
-                      ? fetchError
-                      : "찾으시는 조건의 딜이 없어요"}
+                  {fetchError ? fetchError : "조건에 맞는 핫딜이 없어요"}
                 </p>
-                {!loading && fetchError ? (
+                {fetchError ? (
                   <button
                     type="button"
                     onClick={() =>
-                      void fetchLiveDeals(true, 0, activeTab, activePlatform)
+                      void fetchLiveDeals(
+                        true,
+                        0,
+                        selectedCategoriesRef.current,
+                        selectedPlatformsRef.current
+                      )
                     }
                     className="btn-primary bounce-click"
                     style={{
                       marginTop: "4px",
-                      minHeight: "44px",
+                      minHeight: "var(--control-h-lg)",
                       padding: "10px 18px",
-                      borderRadius: "12px",
-                      fontSize: "0.85rem",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: "var(--fs-control)",
                     }}
                   >
                     <RefreshCw size={15} aria-hidden="true" />
                     <span>다시 시도</span>
                   </button>
                 ) : (
-                  !loading &&
-                  hasActiveFilters && (
-                    <>
+                  <>
+                    {hasActiveFilters && (
                       <p
                         style={{
-                          fontSize: "0.84rem",
+                          fontSize: "var(--fs-control)",
                           color: "var(--text-sub)",
                           margin: 0,
                         }}
                       >
-                        검색어나 필터를 초기화하면 전체 딜을 볼 수 있어요
+                        조건을 조금 완화하면 더 많은 핫딜을 찾을 수 있어요
                       </p>
-                      <button
-                        type="button"
-                        onClick={handleResetAllFilters}
-                        className="btn-primary bounce-click"
-                        style={{
-                          marginTop: "4px",
-                          minHeight: "44px",
-                          padding: "10px 18px",
-                          borderRadius: "12px",
-                          fontSize: "0.85rem",
-                        }}
-                      >
-                        <RotateCcw size={15} aria-hidden="true" />
-                        <span>필터 초기화</span>
-                      </button>
-                    </>
-                  )
+                    )}
+                    {(!includeClosedDeals || onlyHotDeals || hasActiveFilters) && (
+                      <div className="empty-quick-actions">
+                        {!includeClosedDeals && (
+                          <button
+                            type="button"
+                            onClick={handleToggleIncludeClosed}
+                            className="empty-quick-btn bounce-click"
+                          >
+                            종료 포함해서 보기
+                          </button>
+                        )}
+                        {onlyHotDeals && (
+                          <button
+                            type="button"
+                            onClick={handleToggleOnlyHot}
+                            className="empty-quick-btn bounce-click"
+                          >
+                            인기 딜만 끄기
+                          </button>
+                        )}
+                        {hasActiveFilters && (
+                          <button
+                            type="button"
+                            onClick={handleResetAllFilters}
+                            className="btn-primary bounce-click"
+                            style={{
+                              minHeight: "var(--control-h)",
+                              height: "var(--control-h)",
+                              padding: "0 16px",
+                              borderRadius: "var(--radius-sm)",
+                              fontSize: "var(--fs-control)",
+                            }}
+                          >
+                            <RotateCcw size={14} aria-hidden="true" />
+                            <span>필터 초기화</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ) : (
@@ -2779,15 +2953,15 @@ export default function Home() {
                 <div
                   style={{
                     color: "var(--text-sub)",
-                    fontSize: "0.84rem",
+                    fontSize: "var(--fs-control)",
                     fontWeight: 600,
                     background: "var(--card-bg)",
                     padding: "8px 18px",
-                    borderRadius: "99px",
+                    borderRadius: "var(--radius-pill)",
                     border: "1px solid var(--card-border)",
                   }}
                 >
-                  스크롤하면 다음 딜을 불러와요
+                  아래로 내리면 핫딜을 더 불러와요
                 </div>
               )}
             </div>

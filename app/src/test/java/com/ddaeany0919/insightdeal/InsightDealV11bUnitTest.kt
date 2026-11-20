@@ -21,6 +21,7 @@ import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.presentation.DealDetailViewModel
 import com.ddaeany0919.insightdeal.presentation.formatDetailPriceText
 import com.ddaeany0919.insightdeal.presentation.formatPrice
+import com.ddaeany0919.insightdeal.presentation.home.HomeViewModel
 import com.ddaeany0919.insightdeal.presentation.home.HotDealsPagingSource
 import com.ddaeany0919.insightdeal.presentation.home.HotDealsRemoteMediator
 import com.ddaeany0919.insightdeal.presentation.mypage.DeviceSyncViewModel
@@ -51,6 +52,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.BufferedInputStream
 import java.io.Closeable
+import java.io.File
 import java.lang.reflect.Proxy
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -956,7 +958,129 @@ class InsightDealV11bUnitTest {
             "빠삭육아"
         )
         assertEquals(expected, CategoryCatalog.STANDARD_SOURCES)
-        assertEquals(CategoryCatalog.STANDARD_SOURCES, com.ddaeany0919.insightdeal.presentation.home.HomeViewModel.COMMUNITY_FILTER_CHIPS)
-        assertEquals(11, com.ddaeany0919.insightdeal.presentation.home.HomeViewModel.COMMUNITY_FILTER_CHIPS.size)
+        assertEquals(CategoryCatalog.STANDARD_SOURCES, HomeViewModel.COMMUNITY_FILTER_CHIPS)
+        assertEquals(11, HomeViewModel.COMMUNITY_FILTER_CHIPS.size)
+    }
+
+    // -----------------------------------------------------------------------
+    // 14. Track 3: HomeViewModel 커뮤니티 다중 선택 · 재클릭 해제 · 전체 초기화
+    // -----------------------------------------------------------------------
+    @Test
+    fun homeViewModel_toggleCommunityChip_supportsMultiSelectReclickRemoveAndResetAll() {
+        val server = LocalStubHttpServer { _ ->
+            200 to """{"deals":[],"has_more":false}"""
+        }.also { resourcesToClose += it }
+
+        val vm = HomeViewModel(
+            apiService = createApiService(server.baseUrl),
+            coroutineScopeOverride = newUnconfinedScope()
+        )
+
+        // 초기 상태: 전체
+        assertTrue(vm.filterState.value.selectedCommunityChips.isEmpty())
+        assertEquals("전체", vm.filterState.value.communityChip)
+        assertNull(vm.filterState.value.resolvedPlatformQuery())
+
+        // 2개 추가: 뽐뿌 + 펨코 -> 정렬된 쉼표 조인 "뽐뿌,펨코"
+        vm.toggleCommunityChip("뽐뿌")
+        assertEquals(setOf("뽐뿌"), vm.filterState.value.selectedCommunityChips)
+        assertEquals("뽐뿌", vm.filterState.value.communityChip)
+        assertEquals("뽐뿌", vm.filterState.value.resolvedPlatformQuery())
+
+        vm.toggleCommunityChip("펨코")
+        assertEquals(setOf("뽐뿌", "펨코"), vm.filterState.value.selectedCommunityChips)
+        assertEquals("뽐뿌,펨코", vm.filterState.value.communityChip)
+        assertEquals("뽐뿌,펨코", vm.filterState.value.resolvedPlatformQuery())
+
+        // 1개 재클릭 제거: 뽐뿌 해제 -> "펨코"만 유지
+        vm.toggleCommunityChip("뽐뿌")
+        assertEquals(setOf("펨코"), vm.filterState.value.selectedCommunityChips)
+        assertEquals("펨코", vm.filterState.value.communityChip)
+        assertEquals("펨코", vm.filterState.value.resolvedPlatformQuery())
+
+        // 추가 선택 후 "전체" 클릭 시 전체 초기화
+        vm.toggleCommunityChip("루리웹")
+        assertEquals(setOf("펨코", "루리웹"), vm.filterState.value.selectedCommunityChips)
+        vm.toggleCommunityChip("전체")
+        assertTrue(vm.filterState.value.selectedCommunityChips.isEmpty())
+        assertEquals("전체", vm.filterState.value.communityChip)
+        assertNull(vm.filterState.value.resolvedPlatformQuery())
+
+        // 레거시 selectCommunityChip 호환 (첫 호출 시 추가, 재호출 시 토글 해제)
+        vm.selectCommunityChip("퀘이사존")
+        assertEquals("퀘이사존", vm.filterState.value.resolvedPlatformQuery())
+        vm.selectCommunityChip("퀘이사존")
+        assertEquals("전체", vm.filterState.value.communityChip)
+        assertNull(vm.filterState.value.resolvedPlatformQuery())
+    }
+
+    // -----------------------------------------------------------------------
+    // 15. Track 3: HomeViewModel 카테고리 다중 선택 · 조인 · 해제 & DealDao 다중 SQL 정합
+    // -----------------------------------------------------------------------
+    @Test
+    fun homeViewModel_toggleCategory_supportsMultiSelectJoinRemoveAndDealDaoSqlContract() {
+        val server = LocalStubHttpServer { _ ->
+            200 to """{"deals":[],"has_more":false}"""
+        }.also { resourcesToClose += it }
+
+        val vm = HomeViewModel(
+            apiService = createApiService(server.baseUrl),
+            coroutineScopeOverride = newUnconfinedScope()
+        )
+
+        assertTrue(vm.filterState.value.selectedCategories.isEmpty())
+        assertEquals("전체", vm.filterState.value.category)
+        assertEquals("전체", vm.filterState.value.resolvedCategoryQuery())
+
+        // 다중 추가 + 레거시 별칭 정규화("PC/하드웨어" -> "PC용품")
+        vm.toggleCategory("가전제품")
+        assertEquals(setOf("가전제품"), vm.filterState.value.selectedCategories)
+        assertEquals("가전제품", vm.filterState.value.category)
+
+        vm.toggleCategory("PC/하드웨어")
+        assertEquals(setOf("가전제품", "PC용품"), vm.filterState.value.selectedCategories)
+        assertEquals("PC용품,가전제품", vm.filterState.value.category)
+        assertEquals("PC용품,가전제품", vm.filterState.value.resolvedCategoryQuery())
+
+        // 재클릭 1개 제거 -> "PC용품"만 유지
+        vm.toggleCategory("가전제품")
+        assertEquals(setOf("PC용품"), vm.filterState.value.selectedCategories)
+        assertEquals("PC용품", vm.filterState.value.category)
+
+        // 마지막 1개 재클릭 제거 -> "전체" 복귀
+        vm.toggleCategory("PC용품")
+        assertTrue(vm.filterState.value.selectedCategories.isEmpty())
+        assertEquals("전체", vm.filterState.value.category)
+
+        // 복합 필터 설정 후 resetHomeFilters() 일괄 초기화 검증
+        vm.toggleCategory("음식")
+        vm.toggleCategory("뷰티")
+        vm.toggleCommunityChip("뽐뿌")
+        vm.searchDeals("선크림")
+        vm.toggleHideClosed()
+        vm.toggleFreeShippingOnly()
+        vm.selectSort("popular")
+        vm.resetHomeFilters()
+
+        assertTrue(vm.filterState.value.selectedCategories.isEmpty())
+        assertEquals("전체", vm.filterState.value.category)
+        assertTrue(vm.filterState.value.selectedCommunityChips.isEmpty())
+        assertEquals("전체", vm.filterState.value.communityChip)
+        assertNull(vm.filterState.value.keyword)
+        assertEquals("latest", vm.filterState.value.sortBy)
+        assertFalse(vm.filterState.value.hideClosed)
+        assertFalse(vm.filterState.value.freeShippingOnly)
+
+        // DealDao.kt가 모든 표준 카테고리에 대해 단일 값과 쉼표 다중 값 경계 매칭을 포함하는지 확인
+        val sourceRoot = listOf(File("src/main/java"), File("app/src/main/java")).firstOrNull { it.exists() }
+        assertNotNull(sourceRoot)
+        val daoText = File(sourceRoot, "com/ddaeany0919/insightdeal/local/db/DealDao.kt").readText()
+        for (cat in CategoryCatalog.STANDARD_CATEGORIES) {
+            val key = cat.key
+            assertTrue("DealDao.kt에 '$key' 단일/다중 경계 매칭 SQL이 포함되어야 합니다.", daoText.contains(":category = '$key'"))
+            assertTrue("DealDao.kt에 '$key,%' 접두 다중 매칭 SQL이 포함되어야 합니다.", daoText.contains(":category LIKE '$key,%'"))
+            assertTrue("DealDao.kt에 '%,$key' 접미 다중 매칭 SQL이 포함되어야 합니다.", daoText.contains(":category LIKE '%,$key'"))
+            assertTrue("DealDao.kt에 '%,$key,%' 중간 다중 매칭 SQL이 포함되어야 합니다.", daoText.contains(":category LIKE '%,$key,%'"))
+        }
     }
 }

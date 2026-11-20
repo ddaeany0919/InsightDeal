@@ -171,6 +171,20 @@ object CategoryCatalog {
     }
 
     /**
+     * 쉼표로 구분된 다중 카테고리 쿼리 문자열("PC용품,가전제품")을 각 항목별로 정규화해 조인합니다.
+     * 비어 있거나 "전체"만 포함된 경우 null을 반환합니다.
+     */
+    fun normalizeCategoryQuery(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val normalized = raw.split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it != "전체" }
+            .map { normalizeCategoryKey(it) }
+            .distinct()
+        return normalized.joinToString(",").ifEmpty { null }
+    }
+
+    /**
      * 카테고리 키 또는 레거시 키를 사용자에게 노출할 표준 한글 라벨로 변환합니다.
      */
     fun getDisplayLabel(rawOrKey: String?): String {
@@ -194,6 +208,22 @@ object CategoryCatalog {
         targetCategory: String?
     ): Boolean {
         if (targetCategory.isNullOrBlank() || targetCategory == "전체") return true
+        if (targetCategory.contains(",")) {
+            val tokens = targetCategory.split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && it != "전체" }
+            if (tokens.isEmpty()) return true
+            return tokens.any { token ->
+                matchesDealCategory(
+                    title = title,
+                    category = category,
+                    siteName = siteName,
+                    siteNames = siteNames,
+                    honeyScore = honeyScore,
+                    targetCategory = token
+                )
+            }
+        }
         val normalizedTarget = normalizeCategoryKey(targetCategory)
         if (normalizedTarget == "핫딜모음") {
             return honeyScore >= 100 || category?.trim() == "핫딜모음"

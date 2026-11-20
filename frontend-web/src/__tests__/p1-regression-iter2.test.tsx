@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
 import DealCard from "@/app/components/DealCard";
@@ -174,7 +174,8 @@ describe("M2 Iteration 2 회귀 테스트 (Major 3 + Medium 2 + Minor)", () => {
     // 품절 제보 클릭 -> 부모 onDealClosed로 selectedDeal 갱신
     fireEvent.click(reportBtn);
     await waitFor(() => {
-      expect(screen.getAllByText("품절/종료").length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText("품절/종료")).toBeInTheDocument();
+      expect(screen.getByText("품절·종료")).toBeInTheDocument();
     });
 
     // 상태 유지 & 상세 1-RTT 재호출 없음 검증
@@ -316,7 +317,7 @@ describe("M2 Iteration 2 회귀 테스트 (Major 3 + Medium 2 + Minor)", () => {
     ) as HTMLImageElement;
     expect(thumbImg.style.filter).toBe("grayscale(0.85)");
     expect(thumbImg.style.opacity).toBe("0.72");
-    expect(screen.getByText("품절/종료")).toBeInTheDocument();
+    expect(screen.getByText("품절·종료")).toBeInTheDocument();
   });
 
   it("isSafeHttpUrl 및 extractBodyImagesFromHtml이 SSRF/트래킹픽셀/제어문자/userinfo를 차단하고 대소문자 중복 제거 및 /api/proxy-image를 허용한다", () => {
@@ -1425,6 +1426,130 @@ describe("M2 Iteration 4 회귀 테스트 (Challenger 1·2 Iter3 지적 전량)"
         configurable: true,
         value: originalClipboard,
       });
+    }
+  });
+
+  it("다중 칩 연속 클릭 시 선행 요청 AbortSignal을 취소하고 에러 문구를 노출하지 않으며 8초 타임아웃 시 무한 로딩을 차단한다", async () => {
+    const signals: Array<{ url: string; signal?: AbortSignal | null }> = [];
+    let hangMode = false;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.includes("/api/meta/categories")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ categories: [] }), { status: 200 })
+        );
+      }
+      if (url.includes("/api/community/popular-keywords")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ keywords: [], rankings: [] }), {
+            status: 200,
+          })
+        );
+      }
+      if (url.includes("/api/push/device")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              status: "ok",
+              device_uuid: "web_abort_test",
+              device_token: "tok_abort_test",
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.includes("/api/users/notifications") || url.includes("/api/wishlist/")) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      if (url.includes("/api/community/hot-deals")) {
+        signals.push({ url, signal: init?.signal });
+        if (hangMode) {
+          return new Promise<Response>((_, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true }
+            );
+          });
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              deals: [
+                {
+                  id: 9991,
+                  title: "[쿠팡] 정상 응답 딜",
+                  price: 15000,
+                  currency: "KRW",
+                  site_name: "뽐뿌",
+                  is_closed: false,
+                },
+              ],
+              has_more: false,
+              next_cursor: null,
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    });
+
+    render(<Home />);
+    await waitFor(() => {
+      expect(screen.getByText("정상 응답 딜")).toBeInTheDocument();
+    });
+
+    // 연속 클릭 시 첫 번째(hang) 요청은 AbortController로 즉시 취소되고 에러 문구가 뜨지 않음
+    hangMode = true;
+    const ppomBtn = screen.getByRole("button", { name: "뽐뿌" });
+    const fmBtn = screen.getByRole("button", { name: "펨코" });
+
+    fireEvent.click(ppomBtn);
+    const firstFilterReq = signals[signals.length - 1];
+    expect(firstFilterReq.signal?.aborted).toBe(false);
+
+    hangMode = false;
+    fireEvent.click(fmBtn);
+    expect(firstFilterReq.signal?.aborted).toBe(true);
+    expect(
+      screen.queryByText("핫딜 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.")
+    ).toBeNull();
+
+    await waitFor(() => {
+      expect(
+        signals.some((s) => s.url.includes(`platform=${encodeURIComponent("뽐뿌,펨코")}`))
+      ).toBe(true);
+    });
+
+    // 8초 타임아웃 검증 (가상 타이머로 3회 시도 x 8000ms + 백오프 진행 -> 무한 로딩 대신 표준 에러 노출)
+    vi.useFakeTimers();
+    try {
+      hangMode = true;
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "루리웹" }));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8500);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(9000);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10000);
+      });
+      expect(
+        screen.getByText("핫딜 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.")
+      ).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

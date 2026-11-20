@@ -96,11 +96,7 @@ class HotDealsRemoteMediator(
 
             val limit = state.config.pageSize
             val resolvedPlatform = normalizePlatformQuery(platform)
-            val resolvedCategory = if (category.isNullOrBlank() || category == "전체") {
-                null
-            } else {
-                CategoryCatalog.normalizeCategoryKey(category)
-            }
+            val resolvedCategory = CategoryCatalog.normalizeCategoryQuery(category)
 
             val response = apiService.getCommunityHotDeals(
                 limit = limit,
@@ -214,8 +210,10 @@ class HotDealsRemoteMediator(
             )
             return if (alreadyMatchedByLocalSql) {
                 baseEntity
-            } else {
+            } else if (!resolvedCategory.contains(",")) {
                 baseEntity.copy(category = resolvedCategory)
+            } else {
+                baseEntity
             }
         }
     }

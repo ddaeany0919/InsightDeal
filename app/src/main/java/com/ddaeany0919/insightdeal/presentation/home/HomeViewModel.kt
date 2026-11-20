@@ -18,6 +18,7 @@ import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.network.PopularKeywordRankingItem
 import com.ddaeany0919.insightdeal.network.TrackClickRequest
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -30,9 +31,14 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-class HomeViewModel : ViewModel() {
+class HomeViewModel @JvmOverloads constructor(
+    private val apiService: ApiService = NetworkModule.createService<ApiService>(),
+    private val coroutineScopeOverride: CoroutineScope? = null,
+    autoInitialize: Boolean = (coroutineScopeOverride == null)
+) : ViewModel() {
 
-    private val apiService = NetworkModule.createService<ApiService>()
+    private val vmScope: CoroutineScope
+        get() = coroutineScopeOverride ?: viewModelScope
 
     private val _popularKeywords = MutableStateFlow<List<String>>(emptyList())
     val popularKeywords: StateFlow<List<String>> = _popularKeywords.asStateFlow()
@@ -56,17 +62,19 @@ class HomeViewModel : ViewModel() {
     private var dealWatcherJob: Job? = null
 
     init {
-        fetchPopularKeywords()
-        fetchTopHotDeals()
-        startRealtimeDealWatcher()
-        viewModelScope.launch {
-            CategoryCatalog.syncWithServer(apiService)
+        if (autoInitialize) {
+            fetchPopularKeywords()
+            fetchTopHotDeals()
+            startRealtimeDealWatcher()
+            vmScope.launch {
+                CategoryCatalog.syncWithServer(apiService)
+            }
         }
     }
 
     private fun startRealtimeDealWatcher() {
         dealWatcherJob?.cancel()
-        dealWatcherJob = viewModelScope.launch {
+        dealWatcherJob = vmScope.launch {
             while (true) {
                 delay(50_000L)
                 try {
@@ -95,7 +103,7 @@ class HomeViewModel : ViewModel() {
     fun onRefreshNewDeals() {
         _hasNewDeals.value = false
         _newDealsCount.value = 0
-        viewModelScope.launch {
+        vmScope.launch {
             try {
                 val response = apiService.getCommunityHotDeals(limit = 5, offset = 0)
                 if (response.isSuccessful) {
@@ -112,7 +120,7 @@ class HomeViewModel : ViewModel() {
     }
 
     fun fetchPopularKeywords() {
-        viewModelScope.launch {
+        vmScope.launch {
             try {
                 val response = apiService.getPopularKeywords()
                 if (response.isSuccessful) {
@@ -129,7 +137,7 @@ class HomeViewModel : ViewModel() {
     }
 
     fun fetchTopHotDeals() {
-        viewModelScope.launch {
+        vmScope.launch {
             try {
                 val response = apiService.getTopHotDeals()
                 if (response.isSuccessful) {
@@ -139,12 +147,12 @@ class HomeViewModel : ViewModel() {
                         latestKnownDealId = deals.first().id
                     }
                 } else {
-                    Log.e("HomeViewModel", "getTopHotDeals failed: ${response.code()}")
+                    runCatching { Log.e("HomeViewModel", "getTopHotDeals failed: ${response.code()}") }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("HomeViewModel", "getTopHotDeals error", e)
+                runCatching { Log.e("HomeViewModel", "getTopHotDeals error", e) }
             }
         }
     }
@@ -155,7 +163,7 @@ class HomeViewModel : ViewModel() {
         currency: String? = "KRW"
     ) {
         if (url.isBlank()) return
-        viewModelScope.launch {
+        vmScope.launch {
             try {
                 apiService.trackOutboundClick(
                     TrackClickRequest(
@@ -177,15 +185,53 @@ class HomeViewModel : ViewModel() {
         val keyword: String? = null,
         val platform: String? = null,
         val communityChip: String = "전체",
+        val selectedCategories: Set<String> = emptySet(),
+        val selectedCommunityChips: Set<String> = emptySet(),
         val disabledPlatforms: Set<String> = emptySet(),
         val sortBy: String = "latest",
         val hideClosed: Boolean = false,
         val popularOnly: Boolean = false,
         val freeShippingOnly: Boolean = false
     ) {
-        fun resolvedPlatformQuery(): String? {
+        fun effectiveCommunityChips(): Set<String> {
+            if (selectedCommunityChips.isNotEmpty()) {
+                return selectedCommunityChips.map { it.trim() }.filter { it.isNotEmpty() && it != "전체" }.toSet()
+            }
             if (communityChip.isNotBlank() && communityChip != "전체") {
-                return communityChip
+                return communityChip.split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() && it != "전체" }
+                    .toSet()
+            }
+            return emptySet()
+        }
+
+        fun effectiveCategories(): Set<String> {
+            if (selectedCategories.isNotEmpty()) {
+                return selectedCategories.map { it.trim() }
+                    .filter { it.isNotEmpty() && it != "전체" }
+                    .map { CategoryCatalog.normalizeCategoryKey(it) }
+                    .toSet()
+            }
+            if (category.isNotBlank() && category != "전체") {
+                return category.split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() && it != "전체" }
+                    .map { CategoryCatalog.normalizeCategoryKey(it) }
+                    .toSet()
+            }
+            return emptySet()
+        }
+
+        fun resolvedCategoryQuery(): String {
+            val active = effectiveCategories()
+            return if (active.isEmpty()) "전체" else active.sorted().joinToString(",")
+        }
+
+        fun resolvedPlatformQuery(): String? {
+            val activeChips = effectiveCommunityChips()
+            if (activeChips.isNotEmpty()) {
+                return activeChips.sorted().joinToString(",")
             }
             if (!platform.isNullOrBlank() && platform != "전체") {
                 return platform
@@ -214,7 +260,7 @@ class HomeViewModel : ViewModel() {
     private val basePagingData: Flow<PagingData<DealItem>> = _filterState
         .map {
             PagerQueryKey(
-                category = it.category,
+                category = it.resolvedCategoryQuery(),
                 keyword = it.keyword,
                 platform = it.resolvedPlatformQuery(),
                 sortBy = it.sortBy,
@@ -254,7 +300,7 @@ class HomeViewModel : ViewModel() {
                 pagingData.map { it.toDealItem() }
             }
         }
-        .cachedIn(viewModelScope)
+        .cachedIn(vmScope)
 
     val dealsPagingData: Flow<PagingData<DealItem>> = combine(
         basePagingData,
@@ -270,17 +316,52 @@ class HomeViewModel : ViewModel() {
                 passClosed && passPopular && passFreeShip
             }
         }
-    }.cachedIn(viewModelScope)
+    }.cachedIn(vmScope)
 
     fun selectCategory(category: String) {
-        val normalized = if (category.isBlank() || category == "전체") {
-            "전체"
-        } else {
-            CategoryCatalog.normalizeCategoryKey(category)
+        val trimmed = category.trim()
+        if (trimmed.isBlank() || trimmed == "전체") {
+            if (_filterState.value.category != "전체" || _filterState.value.selectedCategories.isNotEmpty()) {
+                _filterState.value = _filterState.value.copy(
+                    category = "전체",
+                    selectedCategories = emptySet()
+                )
+            }
+            return
         }
-        if (_filterState.value.category != normalized) {
-            _filterState.value = _filterState.value.copy(category = normalized)
+        val tokens = trimmed.split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it != "전체" }
+            .map { CategoryCatalog.normalizeCategoryKey(it) }
+            .toSet()
+        val nextJoined = if (tokens.isEmpty()) "전체" else tokens.sorted().joinToString(",")
+        if (_filterState.value.category != nextJoined || _filterState.value.selectedCategories != tokens) {
+            _filterState.value = _filterState.value.copy(
+                category = nextJoined,
+                selectedCategories = tokens
+            )
         }
+    }
+
+    fun toggleCategory(cat: String) {
+        val trimmed = cat.trim()
+        if (trimmed.isBlank() || trimmed == "전체") {
+            if (_filterState.value.category != "전체" || _filterState.value.selectedCategories.isNotEmpty()) {
+                _filterState.value = _filterState.value.copy(
+                    category = "전체",
+                    selectedCategories = emptySet()
+                )
+            }
+            return
+        }
+        val normalized = CategoryCatalog.normalizeCategoryKey(trimmed)
+        val current = _filterState.value.effectiveCategories()
+        val next = if (normalized in current) current - normalized else current + normalized
+        val nextJoined = if (next.isEmpty()) "전체" else next.sorted().joinToString(",")
+        _filterState.value = _filterState.value.copy(
+            selectedCategories = next,
+            category = nextJoined
+        )
     }
 
     fun searchDeals(keyword: String) {
@@ -298,10 +379,27 @@ class HomeViewModel : ViewModel() {
     }
 
     fun selectCommunityChip(chip: String) {
-        val normalized = if (chip.isBlank()) "전체" else chip
-        if (_filterState.value.communityChip != normalized) {
-            _filterState.value = _filterState.value.copy(communityChip = normalized)
+        toggleCommunityChip(chip)
+    }
+
+    fun toggleCommunityChip(chip: String) {
+        val trimmed = chip.trim()
+        if (trimmed.isBlank() || trimmed == "전체") {
+            if (_filterState.value.communityChip != "전체" || _filterState.value.selectedCommunityChips.isNotEmpty()) {
+                _filterState.value = _filterState.value.copy(
+                    communityChip = "전체",
+                    selectedCommunityChips = emptySet()
+                )
+            }
+            return
         }
+        val current = _filterState.value.effectiveCommunityChips()
+        val next = if (trimmed in current) current - trimmed else current + trimmed
+        val nextJoined = if (next.isEmpty()) "전체" else next.sorted().joinToString(",")
+        _filterState.value = _filterState.value.copy(
+            selectedCommunityChips = next,
+            communityChip = nextJoined
+        )
     }
 
     fun updateDisabledPlatforms(disabled: Set<String>) {
@@ -332,9 +430,15 @@ class HomeViewModel : ViewModel() {
     fun resetHomeFilters() {
         _filterState.value = _filterState.value.copy(
             category = "전체",
+            selectedCategories = emptySet(),
             keyword = null,
+            platform = null,
             communityChip = "전체",
-            sortBy = "latest"
+            selectedCommunityChips = emptySet(),
+            sortBy = "latest",
+            hideClosed = false,
+            popularOnly = false,
+            freeShippingOnly = false
         )
     }
 

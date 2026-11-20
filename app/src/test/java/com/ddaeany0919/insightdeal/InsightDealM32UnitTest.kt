@@ -36,6 +36,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class InsightDealM32UnitTest {
@@ -119,6 +120,7 @@ class InsightDealM32UnitTest {
                     val client = serverSocket.accept()
                     Thread {
                         client.use { socket ->
+                            socket.soTimeout = 5000
                             val input = BufferedInputStream(socket.getInputStream())
                             val rawBytes = StringBuilder()
                             val headerEndMarker = "\r\n\r\n"
@@ -198,6 +200,7 @@ class InsightDealM32UnitTest {
             running = false
             runCatching { serverSocket.close() }
             runCatching { acceptThread.interrupt() }
+            runCatching { acceptThread.join(500) }
         }
     }
 
@@ -219,7 +222,7 @@ class InsightDealM32UnitTest {
             .create(ApiService::class.java)
     }
 
-    private fun waitUntil(timeoutMs: Long = 5000L, condition: () -> Boolean) {
+    private fun waitUntil(timeoutMs: Long = 10000L, condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (condition()) return
@@ -512,7 +515,7 @@ class InsightDealM32UnitTest {
             initialUuid = "device_m32_vote_03",
             initialToken = "tok_vote_03"
         )
-        var shouldFailVote = false
+        val shouldFailVote = AtomicBoolean(false)
 
         val server = LocalStubHttpServer { req ->
             when {
@@ -520,7 +523,7 @@ class InsightDealM32UnitTest {
                     200 to """{"id":99,"title":"투표 롤백 테스트","price":29000,"site_name":"퀘이사존","buy_count":5,"pass_count":2,"user_vote":null,"history_count":0}"""
                 }
                 req.method == "POST" && req.path == "/api/community/deals/99/votes" -> {
-                    if (shouldFailVote) {
+                    if (shouldFailVote.get()) {
                         500 to """{"detail":"Database unavailable"}"""
                     } else if (req.body.contains("\"vote_type\":\"save\"")) {
                         200 to """{"buy_count":5,"pass_count":3,"user_vote":"save"}"""
@@ -555,7 +558,7 @@ class InsightDealM32UnitTest {
             assertTrue(sentVoteReq.body.contains("\"vote_type\":\"save\""))
 
             // 서버 500 장애 시 직전 상태(buy=5, pass=3, userVote="save")로 롤백 및 에러 노출
-            shouldFailVote = true
+            shouldFailVote.set(true)
             vm.vote("buy")
             waitUntil { !vm.uiState.value.isVoting && vm.uiState.value.voteError != null }
 
@@ -651,7 +654,7 @@ class InsightDealM32UnitTest {
             initialUuid = "device_m32_retry_05",
             initialToken = "tok_retry_05"
         )
-        var shouldFailComment = true
+        val shouldFailComment = AtomicBoolean(true)
 
         val server = LocalStubHttpServer { req ->
             when {
@@ -659,7 +662,7 @@ class InsightDealM32UnitTest {
                     200 to """{"id":110,"title":"한줄평 실패 시 입력 보존 테스트","price":15000,"site_name":"뽐뿌","comment_count":0,"history_count":0}"""
                 }
                 req.method == "POST" && req.path == "/api/community/deals/110/comments" -> {
-                    if (shouldFailComment) {
+                    if (shouldFailComment.get()) {
                         500 to """{"detail":"Temporary write error"}"""
                     } else {
                         200 to """{"id":301,"deal_id":110,"user_id":"device_m32_retry_05","nickname":"회원_y_05","content":"재시도 성공 테스트","created_at":"2026-11-19T11:20:00Z"}"""
@@ -690,7 +693,7 @@ class InsightDealM32UnitTest {
             assertEquals(0, vm.uiState.value.comments.size)
 
             // 2차 재시도 성공: 이때만 commentSubmitSuccessSeq가 1로 증가해야 함
-            shouldFailComment = false
+            shouldFailComment.set(false)
             vm.addComment("재시도 성공 테스트")
             waitUntil { !vm.uiState.value.isSubmittingComment && vm.uiState.value.commentSubmitSuccessSeq == 1 }
             assertEquals(1, vm.uiState.value.commentSubmitSuccessSeq)
@@ -708,7 +711,8 @@ class InsightDealM32UnitTest {
             initialUuid = "device_m32_recover_06",
             initialToken = "tok_recover_06"
         )
-        var failCommentsGet = true
+        val failCommentsGet = AtomicBoolean(true)
+        val commentsGetCount = AtomicInteger(0)
 
         val server = LocalStubHttpServer { req ->
             when {
@@ -716,7 +720,8 @@ class InsightDealM32UnitTest {
                     200 to """{"id":112,"title":"미로드 댓글 은폐 방지 테스트","price":22000,"site_name":"루리웹","comment_count":2,"history_count":0}"""
                 }
                 req.method == "GET" && req.path == "/api/community/deals/112/comments" -> {
-                    if (failCommentsGet) {
+                    commentsGetCount.incrementAndGet()
+                    if (failCommentsGet.get()) {
                         500 to """{"detail":"Comments temporarily unavailable"}"""
                     } else {
                         200 to """[
@@ -748,20 +753,32 @@ class InsightDealM32UnitTest {
 
             // 초기 댓글 조회 실패 -> commentsLoaded=false 유지
             vm.loadCommentsIfNeeded()
-            waitUntil { !vm.uiState.value.isCommentsLoading && vm.uiState.value.commentsError != null }
+            waitUntil { !vm.uiState.value.isCommentsLoading && vm.uiState.value.commentsError != null && commentsGetCount.get() >= 1 }
             assertFalse(vm.uiState.value.commentsLoaded)
             assertEquals(2, vm.uiState.value.commentCount)
 
             // 1) 재조회도 여전히 실패하는 상태에서는 commentsLoaded=true로 덮어쓰지 않고 commentCount=3(2+1)을 유지
+            //    (내부 recovery GET까지 완전히 종료된 후 다음 단계로 진행해 레이스 컨디션 차단)
             vm.addComment("추가 의견")
-            waitUntil { !vm.uiState.value.isSubmittingComment && vm.uiState.value.commentSubmitSuccessSeq == 1 }
+            waitUntil {
+                !vm.uiState.value.isSubmittingComment &&
+                    vm.uiState.value.commentSubmitSuccessSeq == 1 &&
+                    !vm.uiState.value.isCommentsLoading &&
+                    commentsGetCount.get() >= 2
+            }
             assertFalse(vm.uiState.value.commentsLoaded)
             assertEquals(3, vm.uiState.value.commentCount)
 
             // 2) 재조회가 복구된 상태에서 등록 시 기존 2개+신규 1개 전체 3개 복구
-            failCommentsGet = false
+            failCommentsGet.set(false)
             vm.addComment("추가 의견")
-            waitUntil { vm.uiState.value.commentsLoaded && vm.uiState.value.comments.size == 3 }
+            waitUntil {
+                !vm.uiState.value.isSubmittingComment &&
+                    !vm.uiState.value.isCommentsLoading &&
+                    vm.uiState.value.commentsLoaded &&
+                    vm.uiState.value.comments.size == 3 &&
+                    vm.uiState.value.commentSubmitSuccessSeq == 2
+            }
             assertTrue(vm.uiState.value.commentsLoaded)
             assertEquals(3, vm.uiState.value.commentCount)
             assertNull(vm.uiState.value.commentsError)
@@ -785,11 +802,18 @@ class InsightDealM32UnitTest {
             initialUuid = "device_m32_cancel_07",
             initialToken = "tok_cancel_07"
         )
+        val slowRequestStarted = AtomicBoolean(false)
+        val slowResponseDone = AtomicBoolean(false)
         val server = LocalStubHttpServer { req ->
             when {
                 req.method == "GET" && req.path.startsWith("/api/community/deals/201") -> {
-                    Thread.sleep(150)
-                    200 to """{"id":201,"title":"느린 이전 딜","price":10000,"site_name":"뽐뿌","history_count":0}"""
+                    slowRequestStarted.set(true)
+                    try {
+                        Thread.sleep(150)
+                        200 to """{"id":201,"title":"느린 이전 딜","price":10000,"site_name":"뽐뿌","history_count":0}"""
+                    } finally {
+                        slowResponseDone.set(true)
+                    }
                 }
                 req.method == "GET" && req.path.startsWith("/api/community/deals/202") -> {
                     200 to """{"id":202,"title":"최신 빠른 딜","price":20000,"site_name":"퀘이사존","history_count":0}"""
@@ -813,7 +837,10 @@ class InsightDealM32UnitTest {
             vm.loadDealData(201)
             vm.loadDealData(202)
             waitUntil { !vm.uiState.value.isLoading && vm.uiState.value.deal?.id == 202 }
-            Thread.sleep(200)
+            if (slowRequestStarted.get()) {
+                waitUntil { slowResponseDone.get() }
+                Thread.sleep(50)
+            }
             assertEquals(202, vm.uiState.value.deal?.id)
             assertEquals("최신 빠른 딜", vm.uiState.value.deal?.title)
         } finally {

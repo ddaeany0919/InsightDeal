@@ -1492,6 +1492,29 @@ POPULAR_KEYWORD_STOPWORDS: frozenset[str] = frozenset(
         "선물세트", "메가", "추가", "가격", "결제", "구매", "전용가", "회원", "멤버십",
         # 깨진 HTML 엔티티 잔재 및 URL 파편
         "amp", "nbsp", "quot", "apos", "lt", "gt", "039", "http", "https", "www", "com", "kr", "html", "php",
+        # 영문 기능어 / 관사 / 전치사 / 접속사 / 대명사 / 일반 수식어
+        "the", "of", "in", "on", "at", "to", "for", "with", "from", "by",
+        "and", "or", "but", "not", "no", "as", "is", "are", "was", "were",
+        "be", "been", "into", "onto", "out", "off", "up", "down", "over", "under",
+        "all", "one", "two", "new", "hot", "best", "top", "free", "sale", "deal",
+        "deals", "via", "vs", "per",
+        # 게임 / 앱 상투어 및 일반 영단어 노이즈
+        "mark", "deep", "dark", "light", "edition", "deluxe", "ultimate", "complete", "remastered",
+        "epic", "gog", "pack", "bundle", "pass", "watch", "face", "bridge",
+        "hybrid", "steel", "app", "store", "global", "official", "version", "ver", "vol",
+        "part", "episode", "story", "world", "quest", "online",
+    }
+)
+
+ALLOWED_PURE_ALPHA_ENGLISH_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "lg", "ssd", "nvme", "hdd", "rtx", "gtx", "amd", "intel", "cpu", "gpu", "ram", "nas",
+        "asus", "msi", "dell", "hp", "aoc", "benq", "jbl", "bose", "sony", "anker", "baseus",
+        "ugreen", "qcy", "nike", "adidas", "puma", "crocs", "zara", "cos", "uniqlo", "byd",
+        "wd", "sandisk", "kioxia", "crucial", "corsair", "razer", "logitech", "apple", "iphone",
+        "ipad", "macbook", "airpods", "samsung", "galaxy", "lenovo", "xiaomi", "dyson", "braun",
+        "philips", "lego", "stanley", "starbucks", "oled", "qled", "hd", "uhd", "hdr", "tv",
+        "sw", "pc", "usb", "gan", "pd", "wifi", "vpn", "ott",
     }
 )
 
@@ -1508,7 +1531,8 @@ def unescape_and_strip_html_entities(text: str) -> str:
 def is_valid_popular_keyword(raw_kw: str) -> bool:
     """
     인기 검색어로 노출 가능한 순수 브랜드/상품 키워드인지 검증합니다.
-    쇼핑몰명, 할인/배송 상투어, 보관 수식어(냉장/냉동), 깨진 HTML 엔티티, 숫자/단위/비율(100g, 2026, 1+1, 50%)을 차단합니다.
+    쇼핑몰명, 할인/배송 상투어, 보관 수식어(냉장/냉동), 깨진 HTML 엔티티, 숫자/단위/비율(100g, 2026, 1+1, 50%) 및
+    미허용 순수 영문 알파벳 일반 단어(게임/문장 파편)를 차단합니다.
     """
     if not raw_kw or not isinstance(raw_kw, str):
         return False
@@ -1527,6 +1551,9 @@ def is_valid_popular_keyword(raw_kw: str) -> bool:
         return False
     kw_low = kw.lower()
     if kw_low in POPULAR_KEYWORD_STOPWORDS:
+        return False
+    # 단일 순수 영문 알파벳 토큰은 허용된 브랜드/IT 약어 화이트리스트만 통과 (영숫자 결합형·한글/한영혼합은 유지)
+    if re.fullmatch(r"[A-Za-z]+", kw) and kw_low not in ALLOWED_PURE_ALPHA_ENGLISH_KEYWORDS:
         return False
     # 숫자+단위 접미 결합형(예: g500 등 비정상 패턴 포함) 및 가격 표기 잔재 배제
     if re.search(r"\d+(?:원|만원|천원|달러|불|위안|개|입|팩|봉|병|캔|박스|세트|종|kg|g|mg|ml|l|gb|tb|mb|mah|w|hz|mm|cm|인치)$", kw_low):

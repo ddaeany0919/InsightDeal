@@ -1740,6 +1740,99 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
         logger.error(f"Error fetching top hot deals: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
+def _build_single_category_clause(models, single_cat: str, or_, and_, not_):
+    """단일 카테고리 토큰을 DB 필터 SQLAlchemy 조건절로 변환합니다."""
+    cat_token = single_cat.strip()
+    cat_lower = cat_token.lower()
+    target_keywords: list[str] = []
+    if cat_token in ("음식", "식품/건강"):
+        canonical_cat = "음식"
+        target_keywords = ["음식", "식품", "먹거리", "간식", "음료수", "건강"]
+    elif cat_lower in ("sw/게임",):
+        canonical_cat = "SW/게임"
+        target_keywords = ["게임", "sw", "소프트웨어", "콘솔"]
+    elif cat_lower in ("pc용품", "pc/하드웨어"):
+        canonical_cat = "PC용품"
+        target_keywords = ["pc", "하드웨어", "노트북", "컴퓨터", "데스크탑", "모니터"]
+    elif cat_lower in ("가전제품", "가전/tv", "가전", "가전/디지털"):
+        canonical_cat = "가전제품"
+        target_keywords = ["가전제품", "가전", "냉장고", "tv", "음향", "가전/tv", "디지털"]
+    elif cat_token == "생활용품":
+        canonical_cat = "생활용품"
+        target_keywords = ["생활", "생필품", "주방", "가구", "인테리어"]
+    elif cat_token in ("패션", "의류/패션"):
+        canonical_cat = "패션"
+        target_keywords = ["패션", "의류", "신발", "잡화", "가방", "화장품"]
+    elif cat_token == "뷰티":
+        canonical_cat = "뷰티"
+        target_keywords = ["뷰티", "미용", "화장품"]
+    elif cat_token == "모바일/기프티콘":
+        canonical_cat = "모바일/기프티콘"
+        target_keywords = ["모바일", "스마트폰", "태블릿", "기프티콘", "쿠폰", "e쿠폰", "e-쿠폰"]
+    elif cat_token == "상품권":
+        canonical_cat = "상품권"
+        target_keywords = ["상품권", "이용권", "패키지", "기프티콘", "커피", "이커머스"]
+    elif cat_token in ("적립", "적립/포인트"):
+        canonical_cat = "적립"
+        target_keywords = ["적립", "사인업", "하이패스", "리퀘스트"]
+    elif cat_token == "이벤트":
+        canonical_cat = "이벤트"
+        target_keywords = ["이벤트", "추석", "명절", "무료증정", "리뷰", "체험단", "선착순", "무료배포"]
+    elif cat_token == "육아/유아용품":
+        canonical_cat = "육아/유아용품"
+        target_keywords = ["유아용품", "육아"]
+    elif cat_token in ("해외직구", "여행.해외핫딜", "해외핫딜", "여행/해외핫딜", "여행/해외"):
+        canonical_cat = "해외직구"
+        target_keywords = ["해외직구", "해외핫딜", "여행.해외핫딜", "여행", "해외", "호텔", "프리미엄", "항공", "직구"]
+    elif cat_token == "핫딜모음":
+        canonical_cat = "핫딜모음"
+        target_keywords = []  # 핫딜모음은 아래에서 별도로 필터링 (honey_score >= 100)
+    else:
+        canonical_cat = cat_token
+        target_keywords = [cat_token]
+
+    if canonical_cat == "핫딜모음":
+        return models.Deal.honey_score >= 100
+    if canonical_cat == "육아/유아용품":
+        parenting_title_kws = ["기저귀", "분유", "아기", "유아", "키즈", "하기스", "팸퍼스", "젖병", "카시트", "유모차", "베베", "아동"]
+        return or_(
+            models.Community.name == "bbasak_parenting",
+            models.Deal.category.ilike("%육아%"),
+            models.Deal.category.ilike("%유아%"),
+            *[models.Deal.title.ilike(f"%{kw}%") for kw in parenting_title_kws],
+        )
+    if canonical_cat == "적립":
+        point_title_kws = ["네이버페이", "적립", "네이버포인트", "페이포인트", "라방", "클릭", "출석"]
+        return or_(
+            *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
+            *[models.Deal.title.ilike(f"%{kw}%") for kw in point_title_kws],
+        )
+    if canonical_cat == "이벤트":
+        event_title_kws = ["이벤트", "선착순", "무료배포", "일시무료", "프로모션", "체험단", "응모"]
+        return or_(
+            *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
+            *[models.Deal.title.ilike(f"%{kw}%") for kw in event_title_kws],
+        )
+    if canonical_cat == "뷰티":
+        beauty_title_kws = ["선크림", "바디워시", "샴푸", "트리트먼트", "클렌징", "토너", "세럼", "로션", "올리브영", "이니스프리", "닥터지", "달바"]
+        return or_(
+            *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
+            *[models.Deal.title.ilike(f"%{kw}%") for kw in beauty_title_kws],
+        )
+    if canonical_cat == "가전제품":
+        appliance_title_kws = [
+            "선풍기", "에어컨", "청소기", "로봇청소기", "냉장고", "세탁기", "건조기", "공기청정기",
+            "제습기", "가습기", "전자레인지", "오븐", "에어프라이어", "밥솥", "식기세척기", "블렌더",
+            "믹서기", "다리미", "안마", "드라이기", "면도기", "전동칫솔", "이어폰", "헤드폰", "스피커",
+            "사운드바", "버즈", "에어팟", "빔프로젝터", "TV", "티비",
+        ]
+        return or_(
+            *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
+            *[models.Deal.title.ilike(f"%{kw}%") for kw in appliance_title_kws],
+        )
+    return or_(*[models.Deal.category.ilike(f"%{_escape_like(kw)}%", escape="\\") for kw in target_keywords])
+
+
 @router.get("/hot-deals")
 def get_hot_deals(
     limit: int = 20,
@@ -1787,11 +1880,17 @@ def get_hot_deals(
         db_bind_id = id(db.get_bind())
         sort_mode = (sort or "latest").strip().lower()
         cat_raw = (category or "").strip()
+        normalized_cat_key = ",".join(
+            sorted({c.strip() for c in cat_raw.split(",") if c.strip() and c.strip() != "전체"})
+        )
+        normalized_platform_key = ",".join(
+            sorted({p.strip() for p in (target_platform or "").split(",") if p.strip() and p.strip() != "전체"})
+        )
         cache_key = (
             db_bind_id,
-            cat_raw,
+            normalized_cat_key,
             (keyword or "").strip(),
-            (target_platform or "").strip(),
+            normalized_platform_key,
             sort_mode,
             effective_only_hot,
             effective_include_closed,
@@ -1836,111 +1935,18 @@ def get_hot_deals(
                 )
             )
         
-        if cat_raw and cat_raw != "전체":
-            cat_lower = cat_raw.lower()
-            # 탭 카테고리명을 스크래퍼 카테고리/키워드 배열로 매핑
-            target_keywords = []
-            if cat_raw in ("음식", "식품/건강"):
-                canonical_cat = "음식"
-                target_keywords = ["음식", "식품", "먹거리", "간식", "음료수", "건강"]
-            elif cat_lower in ("sw/게임",):
-                canonical_cat = "SW/게임"
-                target_keywords = ["게임", "sw", "소프트웨어", "콘솔"]
-            elif cat_lower in ("pc용품", "pc/하드웨어"):
-                canonical_cat = "PC용품"
-                target_keywords = ["pc", "하드웨어", "노트북", "컴퓨터", "데스크탑", "모니터"]
-            elif cat_lower in ("가전제품", "가전/tv", "가전", "가전/디지털"):
-                canonical_cat = "가전제품"
-                target_keywords = ["가전제품", "가전", "냉장고", "tv", "음향", "가전/tv", "디지털"]
-            elif cat_raw == "생활용품":
-                canonical_cat = "생활용품"
-                target_keywords = ["생활", "생필품", "주방", "가구", "인테리어"]
-            elif cat_raw in ("패션", "의류/패션"):
-                canonical_cat = "패션"
-                target_keywords = ["패션", "의류", "신발", "잡화", "가방", "화장품"]
-            elif cat_raw == "뷰티":
-                canonical_cat = "뷰티"
-                target_keywords = ["뷰티", "미용", "화장품"]
-            elif cat_raw == "모바일/기프티콘":
-                canonical_cat = "모바일/기프티콘"
-                target_keywords = ["모바일", "스마트폰", "태블릿", "기프티콘", "쿠폰", "e쿠폰", "e-쿠폰"]
-            elif cat_raw == "상품권":
-                canonical_cat = "상품권"
-                target_keywords = ["상품권", "이용권", "패키지", "기프티콘", "커피", "이커머스"]
-            elif cat_raw in ("적립", "적립/포인트"):
-                canonical_cat = "적립"
-                target_keywords = ["적립", "사인업", "하이패스", "리퀘스트"]
-            elif cat_raw == "이벤트":
-                canonical_cat = "이벤트"
-                target_keywords = ["이벤트", "추석", "명절", "무료증정", "리뷰", "체험단", "선착순", "무료배포"]
-            elif cat_raw == "육아/유아용품":
-                canonical_cat = "육아/유아용품"
-                target_keywords = ["유아용품", "육아"]
-            elif cat_raw in ("해외직구", "여행.해외핫딜", "해외핫딜", "여행/해외핫딜", "여행/해외"):
-                canonical_cat = "해외직구"
-                target_keywords = ["해외직구", "해외핫딜", "여행.해외핫딜", "여행", "해외", "호텔", "프리미엄", "항공", "직구"]
-            elif cat_raw == "핫딜모음":
-                canonical_cat = "핫딜모음"
-                target_keywords = []  # 핫딜모음은 아래에서 별도로 필터링 (honey_score >= 100)
-            else:
-                canonical_cat = cat_raw
-                target_keywords = [cat_raw]
-
-            from sqlalchemy import or_, and_
-            if canonical_cat == "핫딜모음":
-                query = query.filter(models.Deal.honey_score >= 100)
-            elif canonical_cat == "육아/유아용품":
-                parenting_title_kws = ["기저귀", "분유", "아기", "유아", "키즈", "하기스", "팸퍼스", "젖병", "카시트", "유모차", "베베", "아동"]
-                query = query.filter(
-                    or_(
-                        models.Community.name == "bbasak_parenting",
-                        models.Deal.category.ilike("%육아%"),
-                        models.Deal.category.ilike("%유아%"),
-                        *[models.Deal.title.ilike(f"%{kw}%") for kw in parenting_title_kws]
-                    )
-                )
-            elif canonical_cat == "적립":
-                point_title_kws = ["네이버페이", "적립", "네이버포인트", "페이포인트", "라방", "클릭", "출석"]
-                query = query.filter(
-                    or_(
-                        *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
-                        *[models.Deal.title.ilike(f"%{kw}%") for kw in point_title_kws]
-                    )
-                )
-            elif canonical_cat == "이벤트":
-                event_title_kws = ["이벤트", "선착순", "무료배포", "일시무료", "프로모션", "체험단", "응모"]
-                query = query.filter(
-                    or_(
-                        *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
-                        *[models.Deal.title.ilike(f"%{kw}%") for kw in event_title_kws]
-                    )
-                )
-            elif canonical_cat == "뷰티":
-                beauty_title_kws = ["선크림", "바디워시", "샴푸", "트리트먼트", "클렌징", "토너", "세럼", "로션", "올리브영", "이니스프리", "닥터지", "달바"]
-                query = query.filter(
-                    or_(
-                        *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
-                        *[models.Deal.title.ilike(f"%{kw}%") for kw in beauty_title_kws]
-                    )
-                )
-            elif canonical_cat == "가전제품":
-                appliance_title_kws = [
-                    "선풍기", "에어컨", "청소기", "로봇청소기", "냉장고", "세탁기", "건조기", "공기청정기",
-                    "제습기", "가습기", "전자레인지", "오븐", "에어프라이어", "밥솥", "식기세척기", "블렌더",
-                    "믹서기", "다리미", "안마", "드라이기", "면도기", "전동칫솔", "이어폰", "헤드폰", "스피커",
-                    "사운드바", "버즈", "에어팟", "빔프로젝터", "TV", "티비"
-                ]
-                query = query.filter(
-                    or_(
-                        *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
-                        *[models.Deal.title.ilike(f"%{kw}%") for kw in appliance_title_kws]
-                    )
-                )
-            else:
-                filter_conditions = [models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords]
-                query = query.filter(or_(*filter_conditions))
+        cat_tokens = list(
+            dict.fromkeys(
+                c.strip() for c in cat_raw.split(",") if c.strip() and c.strip() != "전체"
+            )
+        )
+        if cat_tokens:
+            cat_clauses = [
+                _build_single_category_clause(models, tok, or_, and_, not_)
+                for tok in cat_tokens
+            ]
+            query = query.filter(or_(*cat_clauses))
         else:
-            from sqlalchemy import and_, not_
             # 전체 탭일 경우 순수 포인트 클릭형 '적립' 및 공지성 '정보 안내'만 제외하고, [슈퍼적립]/[즉시적립]/무료배포 핫딜은 모두 정상 노출
             query = query.filter(
                 and_(
@@ -1955,7 +1961,7 @@ def get_hot_deals(
         search_max_price: Optional[int] = None
         has_search_or_platform_filter = bool(
             (keyword and keyword.strip())
-            or (target_platform and target_platform not in ["전체", ""])
+            or normalized_platform_key
         )
         if keyword and keyword.strip():
             from sqlalchemy import and_, func, not_, or_
@@ -2052,7 +2058,14 @@ def get_hot_deals(
                 et_like = f"%{_escape_like(et)}%"
                 query = query.filter(not_(models.Deal.title.ilike(et_like, escape="\\")))
             
-        if target_platform and target_platform not in ["전체", ""]:
+        platforms = list(
+            dict.fromkeys(
+                p.strip()
+                for p in (target_platform or "").split(",")
+                if p.strip() and p.strip() != "전체"
+            )
+        )
+        if platforms:
             # DB의 communities.name / display_name 정확 매칭 + 다중 출처 병합(merged_communities) 포함
             REVERSE_COMMUNITY_MAP = {
                 "펨코": "fmkorea", "에펨": "fmkorea", "뽐뿌": "ppomppu", "루리웹": "ruliweb",
@@ -2060,7 +2073,6 @@ def get_hot_deals(
                 "빠삭국내": "bbasak_domestic", "빠삭해외": "bbasak_overseas",
                 "빠삭육아": "bbasak_parenting", "뽐뿌해외": "ppomppu_overseas"
             }
-            platforms = [p.strip() for p in target_platform.split(',') if p.strip()]
             from sqlalchemy import or_
             platform_conditions = []
             target_names = set()
@@ -2653,6 +2665,7 @@ def get_popular_keywords(
         for unescaped_title, idx_utc in prepared_deals:
             stripped_title = clean_deal_title(unescaped_title)
             stripped_title = re.sub(r"\[[^\]]*\]|\([^\)]*\)?", " ", stripped_title)
+            stripped_title = re.sub(r"\b[A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){2,}\b", " ", stripped_title)
             words = re.findall(r"[가-힣a-zA-Z0-9]{2,}", stripped_title)
             is_recent = bool(idx_utc and idx_utc >= recent_cutoff)
             for w in words:

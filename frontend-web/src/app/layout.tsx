@@ -7,7 +7,7 @@ const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('insightde
 
 export const metadata: Metadata = {
   title: "얼만데 - 실시간 핫딜 모아보기",
-  description: "11개 주요 커뮤니티 실시간 핫딜 및 다중 옵션 실구매가 판독 — 얼만데",
+  description: "주요 커뮤니티 10곳의 실시간 핫딜을 한눈에 모아보세요 — 얼만데",
   keywords: [
     "얼만데",
     "핫딜",
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "얼만데 - 실시간 핫딜 모아보기",
-    description: "11개 주요 커뮤니티 실시간 핫딜 및 다중 옵션 실구매가 판독 — 얼만데",
+    description: "주요 커뮤니티 10곳의 실시간 핫딜을 한눈에 모아보세요 — 얼만데",
     type: "website",
     locale: "ko_KR",
   },

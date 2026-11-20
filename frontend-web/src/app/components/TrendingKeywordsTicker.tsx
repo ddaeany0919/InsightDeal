@@ -48,15 +48,31 @@ export default function TrendingKeywordsTicker({
 
   const renderStatusBadge = (status: string) => {
     if (status === "HOT") {
-      return <span className="trending-status-tag hot">HOT</span>;
+      return (
+        <span className="trending-status-tag hot" aria-label="인기 급상승">
+          인기
+        </span>
+      );
     }
     if (status === "UP") {
-      return <span className="trending-status-tag up">▲</span>;
+      return (
+        <span className="trending-status-tag up" aria-label="순위 상승">
+          ▲
+        </span>
+      );
     }
     if (status === "NEW") {
-      return <span className="trending-status-tag new">NEW</span>;
+      return (
+        <span className="trending-status-tag new" aria-label="신규 진입">
+          신규
+        </span>
+      );
     }
-    return <span className="trending-status-tag same">-</span>;
+    return (
+      <span className="trending-status-tag same" aria-label="순위 유지">
+        -
+      </span>
+    );
   };
 
   return (
@@ -69,13 +85,16 @@ export default function TrendingKeywordsTicker({
           title={`'${currentItem.keyword}' 검색하기`}
         >
           <span className="trending-badge-pill">
-            <TrendingUp size={13} strokeWidth={2.5} />
+            <TrendingUp size={13} strokeWidth={2.5} aria-hidden="true" />
             <span>급상승</span>
           </span>
           <span className={`trending-rank-num ${currentItem.rank <= 3 ? "top-rank" : ""}`}>
             {currentItem.rank}
           </span>
           <span className="trending-keyword-text">{currentItem.keyword}</span>
+          {currentItem.deal_count > 0 && (
+            <span className="trending-deal-count">{currentItem.deal_count}건</span>
+          )}
           {renderStatusBadge(currentItem.status)}
         </button>
 
@@ -95,7 +114,7 @@ export default function TrendingKeywordsTicker({
         <div id={boardId} className="trending-board-card">
           <div className="trending-board-header">
             <span className="trending-board-title">
-              <TrendingUp size={15} color="var(--accent)" />
+              <TrendingUp size={15} color="var(--accent)" aria-hidden="true" />
               <span>실시간 인기 검색어 TOP 10</span>
             </span>
             {updatedAt && <span className="trending-board-time">{updatedAt}</span>}
@@ -118,13 +137,17 @@ export default function TrendingKeywordsTicker({
                       {item.rank}
                     </span>
                     <span
-                      className="trending-keyword-text"
-                      style={isSelected ? { color: "var(--accent)", fontWeight: 800 } : undefined}
+                      className={`trending-keyword-text ${isSelected ? "is-selected" : ""}`}
                     >
                       {item.keyword}
                     </span>
                   </span>
-                  {renderStatusBadge(item.status)}
+                  <span className="trending-board-row-right">
+                    {item.deal_count > 0 && (
+                      <span className="trending-deal-count">{item.deal_count}건</span>
+                    )}
+                    {renderStatusBadge(item.status)}
+                  </span>
                 </button>
               );
             })}

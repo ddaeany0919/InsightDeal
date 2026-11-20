@@ -1061,3 +1061,188 @@ def test_iter4_security_ipv6_idna_and_body_image_false_positives(unit_v11b_env, 
     det = client.get(f"/api/community/deals/{deal_id}")
     assert det.status_code == 200
     assert det.json()["body_images"] == expected_extracted
+
+
+def test_multi_category_and_multi_platform_cross_filter_and_cache_normalization(unit_v11b_env):
+    """[과제 B] GET /api/community/hot-deals 다중 커뮤니티 + 다중 카테고리 교차 필터 및 순서 무관 캐시 정규화 검증"""
+    client = unit_v11b_env.client
+    SessionCls = unit_v11b_env.SessionCls
+    base_dt = datetime(2026, 11, 20, 9, 0, 0)
+
+    db = SessionCls()
+    try:
+        db.add_all([
+            models.Community(id=6, name="quasarzone", display_name="퀘이사존", base_url="https://quasarzone.com"),
+            models.Community(id=7, name="fmkorea", display_name="펨코", base_url="https://www.fmkorea.com"),
+        ])
+        db.flush()
+
+        # 매칭 대상 3건 + 배제 대조군 4건
+        d_match_ppomppu_app = models.Deal(
+            source_community_id=1,
+            title="[하이마트] LG 휘센 제습기 20L (399,000원)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=880001",
+            ecommerce_link="https://www.e-himart.co.kr/app/goods/goodsDetail?goodsNo=880001",
+            price="399000",
+            category="가전제품",
+            base_product_name="LG휘센제습기880001",
+            model_code="DQ2008801",
+            indexed_at=base_dt - timedelta(minutes=1),
+        )
+        d_match_fm_pc = models.Deal(
+            source_community_id=7,
+            title="[컴퓨존] 삼성 990 PRO NVMe SSD 2TB (219,000원)",
+            post_link="https://www.fmkorea.com/880002",
+            ecommerce_link="https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=880002",
+            price="219000",
+            category="PC용품",
+            base_product_name="삼성990PRO880002",
+            model_code="MZ880002",
+            indexed_at=base_dt - timedelta(minutes=2),
+        )
+        d_match_merged_fm_pc_label = models.Deal(
+            source_community_id=3,
+            merged_communities="7::https://www.fmkorea.com/880003",
+            title="[지마켓] AMD 라이젠 7800X3D 정품 (459,000원)",
+            post_link="https://bbs.ruliweb.com/market/board/1020/read/880003",
+            ecommerce_link="https://item.gmarket.co.kr/Item?goodscode=880003",
+            price="459000",
+            category="PC/하드웨어",
+            base_product_name="라이젠7800X3D880003",
+            model_code="RYZ880003",
+            indexed_at=base_dt - timedelta(minutes=3),
+        )
+        d_excl_wrong_cat = models.Deal(
+            source_community_id=1,
+            title="[쿠팡] 제주 삼다수 2L 12병 (12,000원)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=880004",
+            ecommerce_link="https://www.coupang.com/vp/products/880004",
+            price="12000",
+            category="음식",
+            base_product_name="삼다수880004",
+            model_code="WTR880004",
+            indexed_at=base_dt - timedelta(minutes=4),
+        )
+        d_excl_wrong_comm_app = models.Deal(
+            source_community_id=3,
+            title="[쿠팡] 필립스 전기면도기 (89,000원)",
+            post_link="https://bbs.ruliweb.com/market/board/1020/read/880005",
+            ecommerce_link="https://www.coupang.com/vp/products/880005",
+            price="89000",
+            category="가전제품",
+            base_product_name="필립스면도기880005",
+            model_code="SHV880005",
+            indexed_at=base_dt - timedelta(minutes=5),
+        )
+        d_excl_wrong_comm_pc = models.Deal(
+            source_community_id=6,
+            title="[알리] 퀘이사존 전용 그래픽카드 RTX 5070 (799,000원)",
+            post_link="https://quasarzone.com/bbs/qb_saleinfo/views/880006",
+            ecommerce_link="https://ko.aliexpress.com/item/880006.html",
+            price="799000",
+            category="PC/하드웨어",
+            base_product_name="RTX5070_880006",
+            model_code="GPU880006",
+            indexed_at=base_dt - timedelta(minutes=6),
+        )
+        d_hot_ppomppu = models.Deal(
+            source_community_id=1,
+            title="[네이버] 인기 핫딜모음 특가 상품 (25,000원)",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=880007",
+            ecommerce_link="https://smartstore.naver.com/shop/products/880007",
+            price="25000",
+            category="기타",
+            honey_score=130,
+            base_product_name="인기핫딜모음880007",
+            model_code="HOT880007",
+            indexed_at=base_dt - timedelta(minutes=7),
+        )
+        db.add_all([
+            d_match_ppomppu_app,
+            d_match_fm_pc,
+            d_match_merged_fm_pc_label,
+            d_excl_wrong_cat,
+            d_excl_wrong_comm_app,
+            d_excl_wrong_comm_pc,
+            d_hot_ppomppu,
+        ])
+        db.commit()
+        expected_ids = {
+            d_match_ppomppu_app.id,
+            d_match_fm_pc.id,
+            d_match_merged_fm_pc_label.id,
+        }
+        hot_ppomppu_id = d_hot_ppomppu.id
+    finally:
+        db.close()
+
+    community_router.invalidate_feed_api_cache()
+    res1 = client.get(
+        "/api/community/hot-deals",
+        params={"platform": "뽐뿌,펨코", "category": "가전제품,PC/하드웨어"},
+    )
+    assert res1.status_code == 200
+    got_ids_1 = {d["id"] for d in res1.json()["deals"]}
+    assert got_ids_1 == expected_ids
+    cache_size_after_first = len(community_router._HOT_DEALS_API_CACHE)
+
+    # 순서가 뒤집힌 동일 필터 조합 호출 시 캐시 키 정규화로 캐시 히트 및 동일 결과 반환
+    res2 = client.get(
+        "/api/community/hot-deals",
+        params={"platform": "펨코,뽐뿌", "category": "PC/하드웨어,가전제품"},
+    )
+    assert res2.status_code == 200
+    assert {d["id"] for d in res2.json()["deals"]} == expected_ids
+    assert len(community_router._HOT_DEALS_API_CACHE) == cache_size_after_first
+
+    # 핫딜모음 단일 및 다중 카테고리 결합 호환성 검증
+    res_hot_combo = client.get(
+        "/api/community/hot-deals",
+        params={"platform": "뽐뿌", "category": "가전제품,핫딜모음"},
+    )
+    assert res_hot_combo.status_code == 200
+    assert {d["id"] for d in res_hot_combo.json()["deals"]} == {d_match_ppomppu_app.id, hot_ppomppu_id}
+
+
+def test_db_pool_config_and_sqlite_indexed_at_normalization_migration(monkeypatch, tmp_path):
+    """[과제 C] QueuePool 풀 한도(30/60/15) 및 SQLite 19자 indexed_at 정규화·인덱스 생성 멱등성 검증"""
+    from sqlalchemy.pool import QueuePool, StaticPool
+
+    db_file = tmp_path / "pool_and_mig.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_file}")
+    mgr = db_session_mod.DatabaseManager()
+    try:
+        assert isinstance(mgr.engine.pool, QueuePool)
+        assert mgr.engine.pool.size() == 30
+        assert mgr.engine.pool._max_overflow == 60
+        assert mgr.engine.pool._timeout == 15
+
+        with mgr.engine.begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE deals ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "indexed_at TIMESTAMP, "
+                "is_closed BOOLEAN NOT NULL DEFAULT 0)"
+            ))
+            conn.execute(text("INSERT INTO deals (indexed_at, is_closed) VALUES ('2026-11-19 18:14:02', 0)"))
+            conn.execute(text("INSERT INTO deals (indexed_at, is_closed) VALUES ('2026-11-19 18:14:03.123456', 0)"))
+
+        mgr.ensure_schema_migrations()
+        mgr.ensure_schema_migrations()  # 2회 반복 호출 시에도 멱등 유지
+
+        with mgr.engine.connect() as conn:
+            rows = conn.execute(text("SELECT id, indexed_at FROM deals ORDER BY id ASC")).fetchall()
+            idx_list = [r[1] for r in conn.execute(text("PRAGMA index_list('deals')")).fetchall()]
+
+        assert rows[0][1] == "2026-11-19 18:14:02.000000"
+        assert rows[1][1] == "2026-11-19 18:14:03.123456"
+        assert "idx_deals_closed_indexed_id" in idx_list
+    finally:
+        mgr.close_all_connections()
+
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    mem_mgr = db_session_mod.DatabaseManager()
+    try:
+        assert isinstance(mem_mgr.engine.pool, StaticPool)
+    finally:
+        mem_mgr.close_all_connections()

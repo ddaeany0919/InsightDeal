@@ -2777,3 +2777,76 @@ def test_t4_legacy_user_migration_to_multi_device_and_large_feed_cursor_browse(v
         params={"keyword": target_kw, "include_closed": True},
     ).json()["deals"]
     assert any(d["id"] == target_close_id and d["is_closed"] is True for d in closed_search)
+
+
+def test_t4_multi_category_source_cross_filter_and_popular_keywords_hygiene(v11b_env, monkeypatch, tmp_path):
+    """[T4-03 / 과제 A·B E2E] 다중 커뮤니티+다중 카테고리 교차 필터 및 영문 게임명 인기검색어 오염 차단 E2E 검증"""
+    client = v11b_env.client
+    base_utc = datetime(2026, 11, 20, 10, 0, 0)
+
+    # 1. 다중 커뮤니티 + 다중 카테고리 E2E 시드
+    id_ppomppu_app = _seed_deal(
+        v11b_env.SessionCls,
+        source_community_id=1,
+        title="[하이마트] LG 올레드 TV 55인치 특가 (1,290,000원/무배)",
+        category="가전제품",
+        indexed_at=base_utc - timedelta(minutes=1),
+    )
+    id_fm_pc = _seed_deal(
+        v11b_env.SessionCls,
+        source_community_id=7,
+        title="[컴퓨존] 삼성 990 PRO SSD 2TB (219,000원/무배)",
+        category="PC/하드웨어",
+        indexed_at=base_utc - timedelta(minutes=2),
+    )
+    _seed_deal(
+        v11b_env.SessionCls,
+        source_community_id=1,
+        title="[쿠팡] 삼다수 2L 12병 생수 (12,000원/무배)",
+        category="음식",
+        indexed_at=base_utc - timedelta(minutes=3),
+    )
+    _seed_deal(
+        v11b_env.SessionCls,
+        source_community_id=3,
+        title="[알리] 소니 WH-1000XM5 헤드폰 (249,000원/무배)",
+        category="가전제품",
+        indexed_at=base_utc - timedelta(minutes=4),
+    )
+
+    # 2. 영문 게임명 오염 후보 5건 + 허용 브랜드 딜 시드
+    for idx in range(5):
+        _seed_deal(
+            v11b_env.SessionCls,
+            source_community_id=7,
+            title="[에픽게임즈] Mark of the Deep (무료/무료)",
+            price="0",
+            category="SW/게임",
+            indexed_at=base_utc - timedelta(minutes=10 + idx),
+        )
+    _seed_deal(
+        v11b_env.SessionCls,
+        source_community_id=1,
+        title="[지마켓] 로보락 로봇청소기 특가 (990,000원/무배)",
+        category="가전제품",
+        indexed_at=base_utc - timedelta(minutes=5),
+    )
+
+    cross_res = client.get(
+        "/api/community/hot-deals",
+        params={"platform": "뽐뿌,펨코", "category": "가전제품,PC/하드웨어"},
+    )
+    assert cross_res.status_code == 200
+    cross_ids = {d["id"] for d in cross_res.json()["deals"]}
+    assert {id_ppomppu_app, id_fm_pc}.issubset(cross_ids)
+    assert len(cross_ids) == 3  # 뽐뿌 가전(LG올레드, 로보락) + 펨코 PC/하드웨어(삼성 SSD)
+
+    fake_trending = tmp_path / "fmkorea_trending.json"
+    fake_trending.write_text(json.dumps({"keywords": ["Mark", "of", "the", "Deep", "LG"]}), encoding="utf-8")
+    monkeypatch.setattr(community_router, "_FMKOREA_TRENDING_FILE_OVERRIDE", str(fake_trending), raising=False)
+
+    pop_res = client.get("/api/community/popular-keywords", params={"limit": 10})
+    assert pop_res.status_code == 200
+    pop_low = {k.lower() for k in pop_res.json()["keywords"]}
+    assert {"mark", "of", "the", "deep"}.isdisjoint(pop_low)
+    assert {"lg", "삼성", "로보락"}.issubset(pop_low)

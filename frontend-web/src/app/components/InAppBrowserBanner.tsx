@@ -61,8 +61,8 @@ export default function InAppBrowserBanner({
     const copied = await copyTextSafe(window.location.href);
     onShowToast?.(
       copied
-        ? "주소를 복사했어요. Safari에서 붙여넣어 열면 푸시 알림을 받을 수 있어요"
-        : "우측 상단 ··· 메뉴에서 'Safari로 열기'를 선택해 주세요"
+        ? "주소를 복사했어요. Safari 주소창에 붙여넣어 열어주세요"
+        : "오른쪽 위 ··· 메뉴에서 'Safari로 열기'를 눌러주세요"
     );
   };
 
@@ -83,31 +83,31 @@ export default function InAppBrowserBanner({
       >
         <Compass size={18} aria-hidden="true" style={{ flexShrink: 0 }} />
         <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-          <span style={{ fontSize: "0.84rem", fontWeight: 800 }}>
-            인앱 브라우저에서는 알림·구매 이동이 제한될 수 있어요
+          <span style={{ fontSize: "var(--fs-control)", fontWeight: 800 }}>
+            외부 브라우저로 열면 알림과 결제 이동이 더 원활해요
           </span>
-          <span style={{ fontSize: "0.76rem", fontWeight: 600 }}>
+          <span style={{ fontSize: "var(--fs-caption)", fontWeight: 600 }}>
             {isIos
-              ? "Safari로 열면 실시간 키워드 푸시 알림을 받을 수 있어요."
-              : "Chrome 등 외부 브라우저로 열면 모든 기능을 안정적으로 쓸 수 있어요."}
+              ? "Safari에서 홈 화면에 추가하면 실시간 키워드 알림도 받을 수 있어요"
+              : "Chrome으로 열면 실시간 푸시 알림과 구매처 연결이 안정적이에요"}
           </span>
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
         {intentUrl ? (
           <a
             href={intentUrl}
             className="btn-primary bounce-click"
             style={{
-              minHeight: "44px",
+              minHeight: "var(--control-h-lg)",
               padding: "8px 14px",
-              borderRadius: "10px",
-              fontSize: "0.8rem",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "var(--fs-control)",
               whiteSpace: "nowrap",
             }}
           >
-            <span>외부 브라우저로 열기</span>
+            <span>Chrome으로 열기</span>
             <ExternalLink size={14} aria-hidden="true" />
           </a>
         ) : (
@@ -116,14 +116,14 @@ export default function InAppBrowserBanner({
             onClick={() => void handleCopyAndGuideIos()}
             className="btn-primary bounce-click"
             style={{
-              minHeight: "44px",
+              minHeight: "var(--control-h-lg)",
               padding: "8px 14px",
-              borderRadius: "10px",
-              fontSize: "0.8rem",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "var(--fs-control)",
               whiteSpace: "nowrap",
             }}
           >
-            <span>{isIos ? "Safari용 주소 복사" : "외부 브라우저로 열기"}</span>
+            <span>{isIos ? "주소 복사하기" : "Chrome으로 열기"}</span>
             <ExternalLink size={14} aria-hidden="true" />
           </button>
         )}

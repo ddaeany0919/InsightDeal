@@ -393,6 +393,126 @@ def test_popular_keywords_blocks_malls_cliches_html_entities_units_and_storage_m
         app.dependency_overrides.clear()
 
 
+def test_popular_keywords_blocks_english_game_title_fragments_and_allows_whitelisted_brands(
+    audit_db, monkeypatch, tmp_path
+):
+    """[과제 A] 'Mark of the Deep' 등 영문 게임/문장 파편은 원천 차단하고 허용 브랜드/모델명만 노출해야 한다."""
+    from backend.core.deal_normalizer import is_valid_popular_keyword
+
+    # 1. 단위 검증: 일반 영문 기능어/게임 상투어는 차단, 화이트리스트 브랜드/영숫자 모델·한글은 허용
+    for blocked_kw in (
+        "Mark", "of", "the", "Deep", "Steel", "Bridge", "Hybrid", "Watch",
+        "Edition", "Deluxe", "Ultimate", "Complete", "Remastered",
+        "Steam", "Epic", "GOG", "Bundle", "Store", "Global", "Version", "Quest", "Online",
+        "Mark of the Deep",
+    ):
+        assert is_valid_popular_keyword(blocked_kw) is False, f"미차단 영문 노이즈: {blocked_kw}"
+
+    for allowed_kw in (
+        "LG", "SSD", "NVMe", "RTX", "Apple", "Sony", "Samsung", "Galaxy",
+        "PS5", "M4", "S25", "RTX5070", "삼성", "갤럭시", "로보락", "갤럭시S25",
+    ):
+        assert is_valid_popular_keyword(allowed_kw) is True, f"허용 브랜드/모델 오탐 차단: {allowed_kw}"
+
+    # 2. API 통합 검증: [에픽게임즈] Mark of the Deep (무료/무료) 5건 + 허용 브랜드 딜 시드
+    comm = models.Community(id=1, name="fmkorea", display_name="펨코", base_url="https://fmkorea.com")
+    audit_db.add(comm)
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    fake_trending = tmp_path / "fmkorea_trending.json"
+    fake_trending.write_text(
+        json.dumps(
+            {
+                "updated_at": "2026-11-20T09:00:00+09:00",
+                "keywords": ["Mark", "of", "the", "Deep", "Steel", "Watch", "LG"],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    deals_to_seed = []
+    for idx in range(5):
+        deals_to_seed.append(
+            models.Deal(
+                id=400 + idx,
+                source_community_id=1,
+                title="[에픽게임즈] Mark of the Deep (무료/무료)",
+                price="0",
+                currency="KRW",
+                post_link=f"https://fmkorea.com/mark_{idx}",
+                ecommerce_link=f"https://store.epicgames.com/p/mark-of-the-deep-{idx}",
+                indexed_at=now_utc - timedelta(minutes=idx),
+            )
+        )
+    for idx in range(3):
+        deals_to_seed.append(
+            models.Deal(
+                id=410 + idx,
+                source_community_id=1,
+                title="[스팀] Steel Bridge Hybrid Watch 무료배포",
+                price="0",
+                currency="KRW",
+                post_link=f"https://fmkorea.com/steel_{idx}",
+                ecommerce_link=f"https://store.steampowered.com/app/{idx}",
+                indexed_at=now_utc - timedelta(minutes=10 + idx),
+            )
+        )
+
+    deals_to_seed.extend(
+        [
+            models.Deal(
+                id=420,
+                source_community_id=1,
+                title="[쿠팡] 삼성 갤럭시 S25 자급제 256GB (1,150,000원/무배)",
+                price="1150000",
+                currency="KRW",
+                post_link="https://fmkorea.com/galaxy_s25",
+                ecommerce_link="https://www.coupang.com/vp/products/420",
+                indexed_at=now_utc - timedelta(minutes=1),
+            ),
+            models.Deal(
+                id=421,
+                source_community_id=1,
+                title="[하이마트] LG 올레드 TV 65인치 (1,890,000원/무배)",
+                price="1890000",
+                currency="KRW",
+                post_link="https://fmkorea.com/lg_oled",
+                ecommerce_link="https://www.e-himart.co.kr/app/goods/goodsDetail?goodsNo=421",
+                indexed_at=now_utc - timedelta(minutes=2),
+            ),
+            models.Deal(
+                id=422,
+                source_community_id=1,
+                title="[지마켓] 로보락 로봇청소기 특가 (1,490,000원/무배)",
+                price="1490000",
+                currency="KRW",
+                post_link="https://fmkorea.com/roborock",
+                ecommerce_link="https://item.gmarket.co.kr/Item?goodscode=422",
+                indexed_at=now_utc - timedelta(minutes=3),
+            ),
+        ]
+    )
+    audit_db.add_all(deals_to_seed)
+    audit_db.commit()
+
+    import backend.routers.community as comm_mod
+    monkeypatch.setattr(comm_mod, "_FMKOREA_TRENDING_FILE_OVERRIDE", str(fake_trending), raising=False)
+
+    try:
+        client = _make_client(audit_db)
+        res = client.get("/api/community/popular-keywords", params={"limit": 10}).json()
+        kws_low = {k.lower() for k in res["keywords"]}
+        ranking_kws_low = {r["keyword"].lower() for r in res["rankings"]}
+
+        blocked_fragments = {"mark", "of", "the", "deep", "steel", "bridge", "hybrid", "watch"}
+        assert blocked_fragments.isdisjoint(kws_low), f"영문 게임명 파편 노출: {res['keywords']}"
+        assert blocked_fragments.isdisjoint(ranking_kws_low), f"rankings 내 영문 게임명 파편 노출: {res['rankings']}"
+        assert {"lg", "삼성", "갤럭시", "로보락"}.issubset(kws_low), f"허용 브랜드 누락: {res['keywords']}"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_history_api_heals_pollution_supports_period_all_kst_iso_and_currency(audit_db):
     """
     1) 0원 딜(ID=19533 모음전 777원 잔재, ID=16 10원 잔재, ID=100 타 단품 노이즈)에서 빈 배열 반환 및 renormalize 치유 검증
