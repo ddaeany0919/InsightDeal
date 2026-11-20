@@ -2078,6 +2078,21 @@ def test_regex_normalizer_single_char_boundary_and_pairing_cleanup(unit_v11b_env
     assert norm._map_category("보성 녹차 500ml 20병") == "음식"
     assert norm._map_category("전통 유자 차 1kg") == "음식"
     assert norm._map_category("고당도 신고 배 5kg 1박스") == "음식"
+    assert norm._map_category("하림 오븐구이 치킨 3팩") == "음식"
+    assert norm._map_category("하겐다즈 파인트 아이스크림 3개") == "음식"
+    assert norm._map_category("오리온 도도한나쵸 사워크림 앤 어니언맛 92g 12개") == "음식"
+    assert norm._map_category("크라운산도 딸기크림치즈 323g 3개") == "음식"
+    assert norm._map_category("이니스프리 그린티 씨드 히알루론산 크림 50mL 2개") == "화장품"
+    assert norm._map_category("[카카오톡선물하기] 백미당 우유/초코 아이스크림 1+1 교환권 (e쿠폰)") == "모바일/기프티콘"
+    assert norm._map_category("가정용 철판 아이스크림메이커") == "가전제품"
+    assert norm._map_category("트윅스 탑 스니커즈, 21g, 40개") == "음식"
+    assert norm._map_category("나이키 에어맥스 런닝화 스니커즈") == "의류"
+    assert norm._map_category("사조 로하이 전자레인지 팝콘 달콤한맛 70g x 12입") == "음식"
+    assert norm._map_category("네네치킨 네꼬닭 저당소스 순살 닭다리살 30팩 (+전자레인지용 플레이트 증정)") == "음식"
+    assert norm._map_category("소문난오부자 재래 도시락김5g 54봉") == "음식"
+    assert norm._map_category("코카콜라 190ml 90개+버킷햇+카드지갑 키링") == "음식"
+    assert norm._map_category("롯데 칠성 펩시 제로슈거 355ml 48캔+캔쿨러") == "음식"
+    assert norm._map_category("농심 신신안너짜 25봉") == "음식"
 
     SessionCls = unit_v11b_env.SessionCls
     now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
