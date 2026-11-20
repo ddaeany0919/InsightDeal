@@ -2665,5 +2665,22 @@ export const computeUnitPriceBadge = (
     }
   }
 
+  // 식품 맛 조합 수량 (예: '애슐리 딥디쉬 피자 시카고2+고구마2')
+  if ((category || "").trim() === "음식" && !cleanedTitle.includes("/")) {
+    const comboMatch =
+      /([가-힣]{2,10})\s*(\d{1,2})\s*\+\s*([가-힣]{2,10})\s*(\d{1,2})(?![가-힣0-9]|\s*(?:만|천|원|%|개월|년|일|시|분))/.exec(
+        cleanedTitle
+      );
+    if (comboMatch) {
+      const c1 = Number(comboMatch[2]);
+      const c2 = Number(comboMatch[4]);
+      const totalCombo = c1 + c2;
+      if (c1 >= 1 && c1 <= 20 && c2 >= 1 && c2 <= 20 && totalCombo >= 2 && totalCombo <= 40) {
+        const res = formatBundleBadge(totalCombo, "개");
+        if (res) return res;
+      }
+    }
+  }
+
   return null;
 };

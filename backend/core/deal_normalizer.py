@@ -1087,6 +1087,15 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
     # 가격 파트 뒤쪽 '외', '부터', '~', '각', '전후' 접미어 정리
     price_part_core = re.sub(r"\s*(?:외(?:\s*\d+\s*종)?|부터|~|각|전후|대)\s*$", "", price_part).strip()
 
+    has_valid_ship = bool(
+        ship_part
+        and (
+            _EXPLICIT_SHIPPING_KEYWORD_RE.search(ship_part)
+            or ship_part.lower() in ("무", "0", "0원", "무배", "무료", "무료배송", "직배무료", "직구무배", "free", "fs", "다양")
+            or re.match(r"^(?:[$€¥]?\s*[0-9,.]+\s*(?:원|달러|위안|엔)?|배송비\s*[0-9,]+원?)$", ship_part, re.IGNORECASE)
+        )
+    )
+
     # 해외직구/해외배송 괄호 내 무기호 소수점 가격 처리 (예: '(89.99/직배무료)', '[amazon] ... (19.99/무배)')
     if re.fullmatch(r"[0-9]{1,4}\.[0-9]{1,2}", price_part_core):
         overseas_ctx = f"{context_hint} {ship_part}".lower()
@@ -1094,7 +1103,9 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
             "amazon", "아마존", "aliexpress", "알리", "ebay", "newegg", "iherb", "bhphotovideo",
             "직배", "직구", "배대지", "해외", "달러", "usd", "free shipping", "fs",
         )
-        if (has_valid_ship or any(h in overseas_ctx for h in overseas_hints)) and not re.search(
+        if any(h in overseas_ctx for h in overseas_hints) and (
+            has_valid_ship or any(u in overseas_ctx for u in ("usd", "달러", "직배"))
+        ) and not re.search(
             r"(?:인치|inch|mm|cm|kg|g|mg|ml|l|gb|tb|w|v|hz)\b", cleaned, re.IGNORECASE
         ):
             usd_dec_val = float(price_part_core)
@@ -1120,14 +1131,6 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
             r"(?:원|만|천\s*원|달러|\d\s*불(?!가|량|능)|유로|위안|엔|円|\$|€|¥|￥|\b(?:USD|EUR|CNY|RMB|JPY)\b)",
             price_part_core,
             re.IGNORECASE,
-        )
-    )
-    has_valid_ship = bool(
-        ship_part
-        and (
-            _EXPLICIT_SHIPPING_KEYWORD_RE.search(ship_part)
-            or ship_part.lower() in ("무", "0", "0원", "무배", "무료", "무료배송", "직배무료", "free", "fs", "다양")
-            or re.match(r"^(?:[$€¥]?\s*[0-9,.]+\s*(?:원|달러|위안|엔)?|배송비\s*[0-9,]+원?)$", ship_part, re.IGNORECASE)
         )
     )
 
@@ -1595,6 +1598,8 @@ KOR_ENG_SEARCH_SYNONYMS: dict[str, tuple[str, ...]] = {
     "gamesir": ("게임서",),
     "키크론": ("keychron",),
     "keychron": ("키크론",),
+    "독거미": ("aula",),
+    "aula": ("독거미",),
     "스타벅스": ("starbucks", "스벅"),
     "스벅": ("starbucks", "스타벅스"),
     "starbucks": ("스타벅스", "스벅"),
@@ -2048,6 +2053,34 @@ def renormalize_existing_deals(db_session: Any, dry_run: bool = False) -> dict[s
                 elif canon_shop == "타오바오" and curr_price < 1000:
                     new_price = curr_price * 100
                     new_currency = "CNY"
+            # 해외직구 몰(아마존·뉴에그·베스트바이·이베이) 무표기 가격의 센트 미변환 / KRW 오저장 복구 (< 500원 0원 소거 전 선행)
+            elif (
+                (
+                    canon_shop in ("아마존", "뉴에그", "베스트바이", "이베이")
+                    or bool(
+                        re.match(
+                            r"^\s*\[[^\]]*(?:아마존|뉴에그|베스트바이|amazon|newegg|bestbuy)",
+                            effective_title,
+                            re.IGNORECASE,
+                        )
+                    )
+                )
+                and not re.search(rf"(?<!\d){curr_price}\s*원", effective_title)
+                and title_sf != f"{curr_price:,}원"
+                and (
+                    (curr_currency == "KRW" and 10 <= curr_price <= 2000 and not is_micro_point_deal(curr_price, effective_title))
+                    or (
+                        curr_currency == "USD"
+                        and 10 <= curr_price <= 499
+                        and any(
+                            hw in effective_title.lower()
+                            for hw in ("코어", "울트라", "라이젠", "인텔", "스냅드래곤", "ssd", "그래픽카드", "rtx", "노트북", "모니터", "태블릿", "cpu")
+                        )
+                    )
+                )
+            ):
+                new_price = curr_price * 100
+                new_currency = "USD"
             # 날짜 괄호(10원) / 소스 추가금(200원) 등 비정상 소액 KRW (< 500원, 소액 적립 딜 제외) 치유 (ID=16, ID=19394)
             elif curr_currency == "KRW" and 0 < curr_price < 500 and not is_micro_point_deal(curr_price, effective_title):
                 fb_p, fb_c = extract_body_fallback_price(body_html, effective_title)

@@ -2226,9 +2226,15 @@ def test_wave1_v11d_normalizer_categories_search_and_price_sort(unit_v11b_env):
     )
     from backend.services.normalizer.regex_normalizer import RegexNormalizer
 
-    # 1. trailing $, 직배무료 및 샤오신 프로 12.7 비회귀 검증
+    # 1. trailing $, 무기호 (89.99/직배무료), 직배무료 및 샤오신 프로 12.7 비회귀 검증
     p1, c1, sf1, _ = parse_title_price_and_shipping("[아마존] 키보드 (89.99$/직배무료)")
     assert (p1, c1, sf1) == (8999, "USD", "무료배송")
+
+    p1b, c1b, sf1b, _ = parse_title_price_and_shipping("[아마존] 키보드 (89.99/직배무료)")
+    assert (p1b, c1b, sf1b) == (8999, "USD", "무료배송")
+
+    p1c, _, _, _ = parse_title_price_and_shipping("[쿠팡] 참기름 (1.5/무료배송)")
+    assert p1c == 0
 
     p2, c2, sf2, _ = parse_title_price_and_shipping("샤오신 프로 12.7 $164.25")
     assert (p2, c2) == (16425, "USD")
@@ -2314,14 +2320,40 @@ def test_wave1_v11d_normalizer_categories_search_and_price_sort(unit_v11b_env):
             indexed_at=now_naive - timedelta(minutes=6),
             is_closed=False,
         )
-        db.add_all([d_ps5, d_chicken, d_cheap_base_paid_ship, d_free_ship, d_trunc_usd])
+        d_amazon_unmarked = models.Deal(
+            source_community_id=2,
+            title="[아마존] 인텔 코어 울트라5 250K Plus",
+            shop_name="아마존",
+            price="145",
+            currency="KRW",
+            shipping_fee="무료배송",
+            category="PC용품",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&no=88006",
+            indexed_at=now_naive - timedelta(minutes=7),
+            is_closed=False,
+        )
+        d_aula_mouse = models.Deal(
+            source_community_id=1,
+            title="[지마켓] 독거미 AULA F87 Pro 유무선 기계식 키보드 & 무선 마우스",
+            price="42900",
+            currency="KRW",
+            shipping_fee="무료배송",
+            category="PC용품",
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=88007",
+            search_keywords=build_search_keywords("[지마켓] 독거미 AULA F87 Pro 유무선 기계식 키보드 & 무선 마우스"),
+            indexed_at=now_naive - timedelta(minutes=8),
+            is_closed=False,
+        )
+        db.add_all([d_ps5, d_chicken, d_cheap_base_paid_ship, d_free_ship, d_trunc_usd, d_amazon_unmarked, d_aula_mouse])
         db.commit()
 
         renormalize_existing_deals(db, dry_run=False)
         db.refresh(d_ps5)
         db.refresh(d_trunc_usd)
+        db.refresh(d_amazon_unmarked)
         assert d_ps5.image_url == "https://search1.kakaocdn.net/argon/656x0_80_wr/AbCdEfGh"
         assert (d_trunc_usd.price, d_trunc_usd.currency) == ("14599", "USD")
+        assert (d_amazon_unmarked.price, d_amazon_unmarked.currency) == ("14500", "USD")
     finally:
         db.close()
 
@@ -2330,6 +2362,14 @@ def test_wave1_v11d_normalizer_categories_search_and_price_sort(unit_v11b_env):
     r_ps5 = unit_v11b_env.client.get("/api/community/hot-deals?keyword=%ED%94%8C%EC%8A%A45&limit=20")
     assert r_ps5.status_code == 200
     assert any("88001" in (d.get("post_url") or "") or "PlayStation 5" in (d.get("title") or "") for d in r_ps5.json()["deals"])
+
+    r_aula = unit_v11b_env.client.get("/api/community/hot-deals?keyword=aula&limit=20")
+    assert r_aula.status_code == 200
+    assert any("독거미" in (d.get("title") or "") for d in r_aula.json()["deals"])
+
+    r_mouse = unit_v11b_env.client.get("/api/community/hot-deals?keyword=%EB%AC%B4%EC%84%A0%EB%A7%88%EC%9A%B0%EC%8A%A4&limit=20")
+    assert r_mouse.status_code == 200
+    assert any("무선 마우스" in (d.get("title") or "") for d in r_mouse.json()["deals"])
 
     r_chk = unit_v11b_env.client.get("/api/community/hot-deals?keyword=%EB%8B%A4%EC%8A%B4%EC%82%B4&limit=20")
     assert r_chk.status_code == 200

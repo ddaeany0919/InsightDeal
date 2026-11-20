@@ -154,6 +154,9 @@ export default function DealDetailModal({
   const dragStartYRef = useRef<number | null>(null);
   const closedByPopRef = useRef<boolean>(false);
   const openedWithPushRef = useRef<boolean>(false);
+  const lightboxIndexRef = useRef<number | null>(lightboxIndex);
+  const lightboxPushedRef = useRef<boolean>(false);
+  const suppressNextPopRef = useRef<boolean>(false);
   const reportingClosedRef = useRef<boolean>(false);
   const dealId = deal?.id ?? null;
   const latestDealRef = useRef<Deal | null>(deal);
@@ -162,7 +165,28 @@ export default function DealDetailModal({
   useEffect(() => {
     latestDealRef.current = deal;
     onCloseRef.current = onClose;
+    lightboxIndexRef.current = lightboxIndex;
   });
+
+  const closeLightbox = useCallback(() => {
+    setLightboxIndex(null);
+    if (
+      typeof window !== "undefined" &&
+      lightboxPushedRef.current &&
+      window.history.state?.insightDealLightbox
+    ) {
+      lightboxPushedRef.current = false;
+      suppressNextPopRef.current = true;
+      window.setTimeout(() => {
+        suppressNextPopRef.current = false;
+      }, 150);
+      try {
+        window.history.back();
+      } catch {}
+    } else {
+      lightboxPushedRef.current = false;
+    }
+  }, []);
 
   const stripDealIdFromUrl = () => {
     if (typeof window === "undefined") return;
@@ -179,7 +203,7 @@ export default function DealDetailModal({
 
   const handleDismiss = useCallback(() => {
     if (lightboxIndex !== null) {
-      setLightboxIndex(null);
+      closeLightbox();
       return;
     }
     sheetOffsetYRef.current = 0;
@@ -199,7 +223,7 @@ export default function DealDetailModal({
     }
     stripDealIdFromUrl();
     onCloseRef.current();
-  }, [lightboxIndex, dealId]);
+  }, [lightboxIndex, dealId, closeLightbox]);
 
   // WCAG 2.2 다이얼로그 포커스 이동 / 트랩 / Escape / 트리거 포커스 복귀
   useDialogA11y({
@@ -442,6 +466,15 @@ export default function DealDetailModal({
     }
 
     const handlePopState = () => {
+      if (suppressNextPopRef.current) {
+        suppressNextPopRef.current = false;
+        return;
+      }
+      if (lightboxIndexRef.current !== null) {
+        lightboxPushedRef.current = false;
+        setLightboxIndex(null);
+        return;
+      }
       if (closedByPopRef.current) return;
       closedByPopRef.current = true;
       sheetOffsetYRef.current = 0;
@@ -454,6 +487,24 @@ export default function DealDetailModal({
       window.removeEventListener("popstate", handlePopState);
     };
   }, [dealId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (dealId !== null && lightboxIndex !== null) {
+      if (!lightboxPushedRef.current && !window.history.state?.insightDealLightbox) {
+        try {
+          window.history.pushState(
+            { insightDealModal: dealId, insightDealLightbox: true },
+            "",
+            window.location.href
+          );
+          lightboxPushedRef.current = true;
+        } catch {}
+      }
+    } else if (lightboxIndex === null || dealId === null) {
+      lightboxPushedRef.current = false;
+    }
+  }, [dealId, lightboxIndex]);
 
   const effectiveOptionsData =
     detailOptionsData.length > 0 ? detailOptionsData : deal?.options_data;
@@ -2362,7 +2413,7 @@ export default function DealDetailModal({
         images={galleryImages}
         initialIndex={lightboxIndex ?? 0}
         title={displayTitle}
-        onClose={() => setLightboxIndex(null)}
+        onClose={closeLightbox}
       />
     </div>
   );

@@ -988,6 +988,10 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
       detail: "총 60구 기준",
     });
     expect(computeUnitPriceBadge("[알리] 8구 개별스위치 멀티탭 2M", 12900, "KRW", "생활용품")).toBeNull();
+    expect(computeUnitPriceBadge("애슐리 딥디쉬 피자 시카고2+고구마2", 19900, "KRW", "음식")).toEqual({
+      label: "개당 4,975원",
+      detail: "총 4개 기준",
+    });
 
     // 2. kakaocdn 저해상도 썸네일 고해상도 업그레이드
     expect(
@@ -1038,7 +1042,7 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     const backSpy = vi.spyOn(window.history, "back").mockImplementation(() => {});
     window.history.replaceState(null, "", "/?dealId=902");
     const onCloseDeep = vi.fn();
-    render(
+    const { unmount: unmountDeep } = render(
       <DealDetailModal
         deal={buildDeal(902)}
         onClose={onCloseDeep}
@@ -1050,6 +1054,27 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     expect(backSpy).not.toHaveBeenCalled();
     expect(onCloseDeep).toHaveBeenCalledTimes(1);
     expect(window.location.search).not.toContain("dealId=902");
+    unmountDeep();
     backSpy.mockRestore();
+
+    // 5. 라이트박스 오픈 후 브라우저 뒤로가기(popstate) 1회는 모달을 닫지 않고 라이트박스만 닫는다
+    window.history.replaceState(null, "", "/");
+    const onCloseModal = vi.fn();
+    render(
+      <DealDetailModal
+        deal={buildDeal(903, { image_url: "https://cdn.example.com/p-903.jpg" })}
+        onClose={onCloseModal}
+        showToast={vi.fn()}
+      />
+    );
+    const zoomBtn = screen.getByRole("button", { name: /상품 이미지 확대 보기/ });
+    fireEvent.click(zoomBtn);
+    await waitFor(() => {
+      expect(window.history.state?.insightDealLightbox).toBe(true);
+    });
+    fireEvent(window, new PopStateEvent("popstate", { state: { insightDealModal: 903 } }));
+    expect(onCloseModal).not.toHaveBeenCalled();
+    fireEvent(window, new PopStateEvent("popstate", { state: null }));
+    expect(onCloseModal).toHaveBeenCalledTimes(1);
   });
 });

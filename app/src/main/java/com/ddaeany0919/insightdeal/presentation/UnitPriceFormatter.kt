@@ -88,6 +88,9 @@ private val EGG_COUNT_REGEX = Regex(
 private val EGG_TIER_MULTIPLIER_REGEX = Regex(
     "^\\s*(?:[xX×*]|\\s)\\s*(\\d{1,2})\\s*(?:판|박스|세트|팩)(?![가-힣])"
 )
+private val FOOD_COMBO_COUNT_REGEX = Regex(
+    "([가-힣]{2,10})\\s*(\\d{1,2})\\s*\\+\\s*([가-힣]{2,10})\\s*(\\d{1,2})(?![가-힣0-9]|\\s*(?:만|천|원|%|개월|년|일|시|분))"
+)
 
 private data class TrailingCountMeta(
     val count: Long,
@@ -356,6 +359,18 @@ fun computeUnitPriceBadge(
                 val tierMult = tierMatch?.groupValues?.get(1)?.toLongOrNull() ?: 1L
                 val totalEggs = if (tierMult > 1L && baseEgg * tierMult <= 500L) baseEgg * tierMult else baseEgg
                 formatBundleBadge(price, totalEggs, "구")?.let { return it }
+            }
+        }
+    }
+
+    // 식품 맛 조합 수량 (예: '애슐리 딥디쉬 피자 시카고2+고구마2')
+    if ((category ?: "").trim() == "음식" && !cleanedTitle.contains("/")) {
+        FOOD_COMBO_COUNT_REGEX.find(cleanedTitle)?.let { comboMatch ->
+            val c1 = comboMatch.groupValues[2].toLongOrNull() ?: 0L
+            val c2 = comboMatch.groupValues[4].toLongOrNull() ?: 0L
+            val totalCombo = c1 + c2
+            if (c1 in 1L..20L && c2 in 1L..20L && totalCombo in 2L..40L) {
+                formatBundleBadge(price, totalCombo, "개")?.let { return it }
             }
         }
     }

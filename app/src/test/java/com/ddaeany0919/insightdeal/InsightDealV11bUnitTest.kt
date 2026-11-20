@@ -1298,6 +1298,11 @@ class InsightDealV11bUnitTest {
 
         assertNull(computeUnitPriceBadge("[알리] 8구 개별스위치 멀티탭 2M", 12900L, "KRW", "생활용품"))
 
+        val pizzaCombo = computeUnitPriceBadge("애슐리 딥디쉬 피자 시카고2+고구마2", 19900L, "KRW", "음식")
+        assertNotNull(pizzaCombo)
+        assertEquals("개당 4,975원", pizzaCombo?.label)
+        assertEquals("총 4개 기준", pizzaCombo?.detail)
+
         // kakaocdn 저해상도 썸네일 업그레이드 검증
         assertEquals(
             "https://search1.kakaocdn.net/argon/656x0_80_wr/6W6ac7UeBi1",
