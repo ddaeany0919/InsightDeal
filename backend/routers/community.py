@@ -2298,6 +2298,7 @@ def get_hot_deals(
             joinedload(models.Deal.community),
             joinedload(models.Deal.deal_reactions),
             defer(models.Deal.content_html),
+            defer(models.Deal.search_keywords),
         )
 
         # 블라인드 처리된 게시글 제외 + include_closed/hide_closed 반영
@@ -2549,6 +2550,7 @@ def get_hot_deals(
                         joinedload(models.Deal.community),
                         joinedload(models.Deal.deal_reactions),
                         defer(models.Deal.content_html),
+                        defer(models.Deal.search_keywords),
                     ).filter(
                         models.Deal.ecommerce_link.in_(ecom_links),
                         ~models.Deal.id.in_(existing_ids),
@@ -3390,6 +3392,7 @@ def get_deal(
         joinedload(models.Deal.community),
         joinedload(models.Deal.deal_reactions),
         defer(models.Deal.content_html),
+        defer(models.Deal.search_keywords),
     ).filter(
         models.Deal.indexed_at >= time_limit,
         models.Deal.indexed_at <= end_time,
@@ -3523,11 +3526,6 @@ def get_deal(
             if isinstance(hist_3m, list) and len(hist_3m) >= 2:
                 initial_history = hist_3m
                 initial_history_period = "3m"
-            else:
-                hist_6m = _compute_deal_history(hist_target_id, "6m", db, target_currency=curr)
-                if isinstance(hist_6m, list) and len(hist_6m) >= 2:
-                    initial_history = hist_6m
-                    initial_history_period = "6m"
         history_count = len(initial_history)
     except Exception as hist_exc:
         logger.debug(f"[get_deal] history_count fallback (deal_id={deal_id}): {hist_exc}")
@@ -3807,7 +3805,7 @@ def _compute_deal_history(
 
     query = (
         db.query(models.Deal)
-        .options(defer(models.Deal.content_html))
+        .options(defer(models.Deal.content_html), defer(models.Deal.search_keywords))
         .filter(models.Deal.indexed_at <= end_time_utc)
     )
     if time_limit_utc is not None:
@@ -4802,7 +4800,7 @@ async def ingest_scraped_deals_batch(
     has_feed_change = False
     new_inserted_images: list[str] = []
     for item in payload.deals:
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.01)
         try:
             deal = await aggregator.process_scraped_deal(community.id, item)
             if deal:

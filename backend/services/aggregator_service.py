@@ -1,7 +1,7 @@
 import os
 import asyncio
 import logging
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 from sqlalchemy.sql import func
 from datetime import datetime, timezone
 from starlette.concurrency import run_in_threadpool
@@ -1294,6 +1294,15 @@ class AggregatorService:
         self.db = db_session
         self.normalizer = LlmNormalizer()
 
+    async def _run_db_sync(self, fn, *args, **kwargs):
+        """프로덕션 스레드 안전 DB 풀(QueuePool/StaticPool)에서는 워커 스레드풀로 오프로딩한다."""
+        bind = self.db.get_bind() if self.db is not None else None
+        is_sqlite = bool(bind is not None and getattr(getattr(bind, "dialect", None), "name", "") == "sqlite")
+        pool_cls = bind.pool.__class__.__name__ if (bind is not None and getattr(bind, "pool", None) is not None) else ""
+        if is_sqlite and pool_cls not in ("QueuePool", "StaticPool"):
+            return fn(*args, **kwargs)
+        return await run_in_threadpool(fn, *args, **kwargs)
+
     @staticmethod
     async def _enrich_option_images_safely(options: list[dict], max_concurrency: int = 4) -> None:
         """
@@ -1560,7 +1569,9 @@ class AggregatorService:
         scraped_data["image_url"] = raw_img
         image_url = raw_img
         
-        community = self.db.query(Community).filter(Community.id == community_id).first()
+        community = await self._run_db_sync(
+            lambda: self.db.query(Community).filter(Community.id == community_id).first()
+        )
         community_name = community.name if community else ""
         
         # 0. 단일 진실 공급원(deal_normalizer)을 통한 1차 가격/통화/배송비 정밀 추출
@@ -1826,11 +1837,16 @@ class AggregatorService:
         from backend.core.url_utils import extract_canonical_product_key
         if ecommerce_url and len(ecommerce_url) > 15 and extract_canonical_product_key(ecommerce_url):
             from datetime import timedelta
-            recent_duplicate = self.db.query(Deal).filter(
-                Deal.ecommerce_link == ecommerce_url,
-                Deal.title == raw_title,
-                Deal.indexed_at >= datetime.utcnow() - timedelta(days=2)
-            ).first()
+            recent_duplicate = await self._run_db_sync(
+                lambda: self.db.query(Deal)
+                .options(defer(Deal.content_html), defer(Deal.search_keywords))
+                .filter(
+                    Deal.ecommerce_link == ecommerce_url,
+                    Deal.title == raw_title,
+                    Deal.indexed_at >= datetime.utcnow() - timedelta(days=2)
+                )
+                .first()
+            )
             
             if recent_duplicate and recent_duplicate.ai_summary:
                 logger.info(f"[Global Cache Hit] 중복 핫딜의 AI 분석을 복사합니다: {ecommerce_url}")
@@ -1909,124 +1925,133 @@ class AggregatorService:
                 logger.debug(f"Aggregator image fallback error: {_img_err}")
 
         # 2. 중복 및 롤링 윈도우 클러스터링 체크 (Upsert 로직의 핵심)
-        existing_deals = self.db.query(Deal).filter(Deal.post_link == url).all()
-        
-        # [이중 중복 방어 가드]
-        # 1) 일반 게시글: 최근 72시간 이내 동일 커뮤니티 또는 알리뽐뿌(4)/뽐뿌해외(11) 간 완전히 동일한 제목이면 중복으로 간주하여 Upsert 처리
-        # 2) 다중 옵션/모음전 게시글(예: [원두모음], [미니PC 8종]): 최근 14일 이내 동일 제목이면 재등록(끌올) 시 신규 행을 늘리지 않고 기존 행을 최신화
-        if not existing_deals and raw_title:
-            from datetime import timedelta
-            is_multi_or_promo = bool(scraped_data.get("options_data")) or bool(re.search(r'^\s*\[(?:원두모음|광군제|특가|미니PC|보배)[^\]]*\]|^특가\)', raw_title))
-            lookback_hours = 336 if is_multi_or_promo else 72
-            from sqlalchemy import or_
-            comm_candidates = [community_id, 4, 11] if community_id in (1, 4, 11) else [community_id]
-            existing_deals = self.db.query(Deal).filter(
-                Deal.source_community_id.in_(comm_candidates),
-                Deal.title == raw_title,
-                or_(
-                    Deal.is_closed == False,
-                    Deal.indexed_at >= datetime.utcnow() - timedelta(hours=lookback_hours)
-                )
-            ).all()
-            
+        def _find_exact_or_title_duplicates_sync() -> list[Deal]:
+            found = self.db.query(Deal).filter(Deal.post_link == url).all()
+            if not found and raw_title:
+                from datetime import timedelta
+                from sqlalchemy import or_
+                is_multi_or_promo = bool(scraped_data.get("options_data")) or bool(re.search(r'^\s*\[(?:원두모음|광군제|특가|미니PC|보배)[^\]]*\]|^특가\)', raw_title))
+                lookback_hours = 336 if is_multi_or_promo else 72
+                comm_candidates = [community_id, 4, 11] if community_id in (1, 4, 11) else [community_id]
+                found = self.db.query(Deal).filter(
+                    Deal.source_community_id.in_(comm_candidates),
+                    Deal.title == raw_title,
+                    or_(
+                        Deal.is_closed == False,
+                        Deal.indexed_at >= datetime.utcnow() - timedelta(hours=lookback_hours)
+                    )
+                ).all()
+            return found
+
+        existing_deals = await self._run_db_sync(_find_exact_or_title_duplicates_sync)
         
         # [24시간 롤링 윈도우 클러스터링]: 동일 URL이 아니더라도 24시간 내 동일 단일 상품이면 병합 시도
         # ⚠️ 다중 옵션/모음전 게시글(options_data >= 2)은 서로 다른 post_link 간 이종 상품 합성(Chimera) 오염을 막기 위해 클러스터링에서 제외!
         if not existing_deals and len(scraped_data.get("options_data") or []) < 2:
-            from datetime import timedelta
-            from backend.core.url_utils import normalize_url, extract_canonical_product_key
-            from backend.routers.community import (
-                has_quantity_conflict,
-                has_model_conflict,
-                has_brand_or_keyword_conflict,
-                has_price_conflict,
-            )
+            def _match_rolling_window_deals_sync() -> list[Deal]:
+                from datetime import timedelta
+                from backend.core.url_utils import normalize_url, extract_canonical_product_key
+                from backend.routers.community import (
+                    has_quantity_conflict,
+                    has_model_conflict,
+                    has_brand_or_keyword_conflict,
+                    has_price_conflict,
+                )
 
-            recent_deals = self.db.query(Deal).filter(
-                Deal.source_community_id == community_id,
-                Deal.indexed_at >= datetime.utcnow() - timedelta(hours=24)
-            ).all()
-            target_deals = []
+                recent_deals = (
+                    self.db.query(Deal)
+                    .options(defer(Deal.content_html), defer(Deal.search_keywords))
+                    .filter(
+                        Deal.source_community_id == community_id,
+                        Deal.indexed_at >= datetime.utcnow() - timedelta(hours=24)
+                    )
+                    .all()
+                )
+                target_deals = []
 
-            def get_clean_tokens(text: str) -> set:
-                cleaned = re.sub(r'[^a-zA-Z0-9가-힣\s]', ' ', (text or "").lower())
-                return {
-                    token for token in cleaned.split()
-                    if len(token) >= 2 and token not in ["to", "and", "or", "for", "pcs", "무료", "무배", "무료배송", "특가", "할인"]
-                }
+                def get_clean_tokens(text: str) -> set:
+                    cleaned = re.sub(r'[^a-zA-Z0-9가-힣\s]', ' ', (text or "").lower())
+                    return {
+                        token for token in cleaned.split()
+                        if len(token) >= 2 and token not in ["to", "and", "or", "for", "pcs", "무료", "무배", "무료배송", "특가", "할인"]
+                    }
 
-            input_tokens = get_clean_tokens(raw_title)
+                input_tokens = get_clean_tokens(raw_title)
 
-            def is_safe_to_merge(candidate: Deal) -> bool:
-                if getattr(candidate, "has_options", False) or getattr(candidate, "options_data", None):
-                    return False
-                cand_tokens = get_clean_tokens(candidate.title)
-                cand_price = int(candidate.price) if str(candidate.price or "").isdigit() else 0
-                cand_curr = (getattr(candidate, "currency", "KRW") or "KRW").strip().upper()
-                if cand_curr != (currency or "KRW").strip().upper():
-                    return False
-                if has_quantity_conflict(input_tokens, cand_tokens):
-                    return False
-                if has_model_conflict(input_tokens, cand_tokens):
-                    return False
-                if has_brand_or_keyword_conflict(input_tokens, cand_tokens):
-                    return False
-                if has_price_conflict(price, cand_price, currency, cand_curr):
-                    return False
-                return True
+                def is_safe_to_merge(candidate: Deal) -> bool:
+                    if getattr(candidate, "has_options", False) or getattr(candidate, "options_data", None):
+                        return False
+                    cand_tokens = get_clean_tokens(candidate.title)
+                    cand_price = int(candidate.price) if str(candidate.price or "").isdigit() else 0
+                    cand_curr = (getattr(candidate, "currency", "KRW") or "KRW").strip().upper()
+                    if cand_curr != (currency or "KRW").strip().upper():
+                        return False
+                    if has_quantity_conflict(input_tokens, cand_tokens):
+                        return False
+                    if has_model_conflict(input_tokens, cand_tokens):
+                        return False
+                    if has_brand_or_keyword_conflict(input_tokens, cand_tokens):
+                        return False
+                    if has_price_conflict(price, cand_price, currency, cand_curr):
+                        return False
+                    return True
 
-            # 1. 쇼핑몰 고유 상품 키(Canonical Product Key) 및 정규화 링크 기준 매칭 (쿠팡, 네이버, 11번가, 지마켓 등 모두 지원)
-            # ⚠️ 뽐뿌 제휴글 등에서 상단 관련링크(dummy AliExpress URL)만 재활용하고 실제로는 전혀 다른 상품인 경우를 차단하기 위해
-            #    제목 핵심 토큰 최소 2개 이상 일치(len(input_tokens.intersection(...)) >= 2)를 필수 조건으로 강제!
-            target_url = scraped_data.get("ecommerce_link")
-            if target_url and len(target_url) > 12:
-                normalized_target_url = normalize_url(target_url)
-                target_canon_key = extract_canonical_product_key(target_url)
-                for d in recent_deals:
-                    if not d.ecommerce_link:
-                        continue
-                    d_canon = extract_canonical_product_key(d.ecommerce_link)
-                    if (
-                        (target_canon_key and d_canon == target_canon_key)
-                        or d.ecommerce_link in (target_url, normalized_target_url)
-                    ) and len(input_tokens.intersection(get_clean_tokens(d.title))) >= 2:
-                        if is_safe_to_merge(d):
-                            target_deals.append(d)
-
-            # 2. 정규화된 상품명(base_product_name) 기준 매칭 (용량/모델/가격 충돌 방어 + 핵심 명사 최소 2개 일치 필수)
-            if not target_deals and normalized.name and len(normalized.name) >= 8:
-                non_num_input = {tk for tk in input_tokens if not tk.isdigit() and not _PURE_QTY_OPTION_RE.match(tk)}
-                for d in recent_deals:
-                    if d.base_product_name == normalized.name and is_safe_to_merge(d):
-                        d_non_num = {tk for tk in get_clean_tokens(d.title) if not tk.isdigit() and not _PURE_QTY_OPTION_RE.match(tk)}
-                        if len(non_num_input.intersection(d_non_num)) >= 2:
-                            target_deals.append(d)
-
-            # 3. 핵심 토큰 교차 매칭 (단순 숫자/수량 토큰이 아닌 진짜 영문+숫자 모델코드 또는 4글자 이상 영문 브랜드/모델명 일치 필수!)
-            if not target_deals:
-                unit_suffix_re = re.compile(r'^\d+(?:kg|g|mg|ml|l|gb|tb|mb|mah|w|v|hz|mm|cm|m|ea|p|pc|pcs|입|개|팩|봉|병|캔|미|구|포|장|매)$', re.IGNORECASE)
-                core_keywords = {
-                    tk for tk in input_tokens
-                    if not unit_suffix_re.match(tk)
-                    and (re.search(r'(?:[a-zA-Z]+[0-9]+|[0-9]+[a-zA-Z]+)[a-zA-Z0-9-]*', tk) or re.search(r'^[a-zA-Z]{4,}$', tk))
-                }
-                if len(core_keywords) >= 2:
+                # 1. 쇼핑몰 고유 상품 키(Canonical Product Key) 및 정규화 링크 기준 매칭 (쿠팡, 네이버, 11번가, 지마켓 등 모두 지원)
+                # ⚠️ 뽐뿌 제휴글 등에서 상단 관련링크(dummy AliExpress URL)만 재활용하고 실제로는 전혀 다른 상품인 경우를 차단하기 위해
+                #    제목 핵심 토큰 최소 2개 이상 일치(len(input_tokens.intersection(...)) >= 2)를 필수 조건으로 강제!
+                target_url = scraped_data.get("ecommerce_link")
+                if target_url and len(target_url) > 12:
+                    normalized_target_url = normalize_url(target_url)
+                    target_canon_key = extract_canonical_product_key(target_url)
                     for d in recent_deals:
-                        d_tokens = get_clean_tokens(d.title)
-                        overlap_core = core_keywords.intersection(d_tokens)
-                        if len(overlap_core) >= 2 and len(input_tokens.intersection(d_tokens)) >= 3:
+                        if not d.ecommerce_link:
+                            continue
+                        d_canon = extract_canonical_product_key(d.ecommerce_link)
+                        if (
+                            (target_canon_key and d_canon == target_canon_key)
+                            or d.ecommerce_link in (target_url, normalized_target_url)
+                        ) and len(input_tokens.intersection(get_clean_tokens(d.title))) >= 2:
                             if is_safe_to_merge(d):
-                                logger.info(f"[Token Merge Hit] 동일 핫딜 병합: '{raw_title}' ➔ '{d.title}'")
-                                target_deals = [d]
-                                break
+                                target_deals.append(d)
 
-            if target_deals:
-                logger.info(f"[Rolling Window Clustering] 타 게시글({url})이지만 동일 상품으로 판단하여 병합: {normalized.name}")
-                existing_deals = [max(target_deals, key=lambda d: d.indexed_at if d.indexed_at else datetime.min)]
+                # 2. 정규화된 상품명(base_product_name) 기준 매칭 (용량/모델/가격 충돌 방어 + 핵심 명사 최소 2개 일치 필수)
+                if not target_deals and normalized.name and len(normalized.name) >= 8:
+                    non_num_input = {tk for tk in input_tokens if not tk.isdigit() and not _PURE_QTY_OPTION_RE.match(tk)}
+                    for d in recent_deals:
+                        if d.base_product_name == normalized.name and is_safe_to_merge(d):
+                            d_non_num = {tk for tk in get_clean_tokens(d.title) if not tk.isdigit() and not _PURE_QTY_OPTION_RE.match(tk)}
+                            if len(non_num_input.intersection(d_non_num)) >= 2:
+                                target_deals.append(d)
+
+                # 3. 핵심 토큰 교차 매칭 (단순 숫자/수량 토큰이 아닌 진짜 영문+숫자 모델코드 또는 4글자 이상 영문 브랜드/모델명 일치 필수!)
+                if not target_deals:
+                    unit_suffix_re = re.compile(r'^\d+(?:kg|g|mg|ml|l|gb|tb|mb|mah|w|v|hz|mm|cm|m|ea|p|pc|pcs|입|개|팩|봉|병|캔|미|구|포|장|매)$', re.IGNORECASE)
+                    core_keywords = {
+                        tk for tk in input_tokens
+                        if not unit_suffix_re.match(tk)
+                        and (re.search(r'(?:[a-zA-Z]+[0-9]+|[0-9]+[a-zA-Z]+)[a-zA-Z0-9-]*', tk) or re.search(r'^[a-zA-Z]{4,}$', tk))
+                    }
+                    if len(core_keywords) >= 2:
+                        for d in recent_deals:
+                            d_tokens = get_clean_tokens(d.title)
+                            overlap_core = core_keywords.intersection(d_tokens)
+                            if len(overlap_core) >= 2 and len(input_tokens.intersection(d_tokens)) >= 3:
+                                if is_safe_to_merge(d):
+                                    logger.info(f"[Token Merge Hit] 동일 핫딜 병합: '{raw_title}' ➔ '{d.title}'")
+                                    target_deals = [d]
+                                    break
+
+                if target_deals:
+                    logger.info(f"[Rolling Window Clustering] 타 게시글({url})이지만 동일 상품으로 판단하여 병합: {normalized.name}")
+                    return [max(target_deals, key=lambda d: d.indexed_at if d.indexed_at else datetime.min)]
+                return []
+
+            existing_deals = await self._run_db_sync(_match_rolling_window_deals_sync)
         if existing_deals:
              # 이미 수집했던 글이거나, 클러스터링으로 묶인 글이라면 가격 등 메타정보 갱신 (Upsert)
              # 만약 AI가 다중 분할한 상품들이라면, 모든 split deal에 대해 종료 상태 등을 일괄 갱신합니다.
              upsert_push_deal_ids: list[int] = []
+             pending_price_history_ids: list[int] = []
              for idx_d, existing_deal in enumerate(existing_deals):
                  # 새로 수집된 진짜 작성 시간 정보(posted_dt)가 존재하면, 기존의 잘못된 수집 시간을 진짜 시간으로 강제 갱신/보정
                  if posted_dt:
@@ -2170,9 +2195,12 @@ class AggregatorService:
                          existing_deal.ai_summary = None
 
                      # PriceHistory: 과거 이종 상품의 가격 시세 오염 방지를 위해 기존 이력 삭제 후 새 가격 기준점 등록
-                     self.db.query(PriceHistory).filter(PriceHistory.deal_id == existing_deal.id).delete(synchronize_session=False)
-                     if price > 0:
-                         self._insert_price_history(existing_deal.id, price)
+                     def _reset_recycled_price_history_sync(did: int = existing_deal.id):
+                         self.db.query(PriceHistory).filter(PriceHistory.deal_id == did).delete(synchronize_session=False)
+                         if price > 0:
+                             self._insert_price_history(did, price)
+
+                     await self._run_db_sync(_reset_recycled_price_history_sync)
 
                      # 과거 split 딜이 여러 개였을 경우 첫 번째 딜 외 나머지는 닫힘 처리
                      if idx_d > 0:
@@ -2246,9 +2274,11 @@ class AggregatorService:
                      elif price != old_price:
                          # 단순 다른 글 병합 시 가격이 다르다고 해서 무조건 price_changed를 켜지 않고,
                          # 해당 딜의 직전 PriceHistory와 실제 다른 가격일 때만 플래그 활성화
-                         last_ph_check = self.db.query(PriceHistory).filter(
-                             PriceHistory.deal_id == existing_deal.id
-                         ).order_by(PriceHistory.checked_at.desc(), PriceHistory.id.desc()).first()
+                         last_ph_check = await self._run_db_sync(
+                             lambda did=existing_deal.id: self.db.query(PriceHistory).filter(
+                                 PriceHistory.deal_id == did
+                             ).order_by(PriceHistory.checked_at.desc(), PriceHistory.id.desc()).first()
+                         )
                          if not last_ph_check or str(last_ph_check.price) != str(price):
                              price_changed = True
                      
@@ -2347,7 +2377,9 @@ class AggregatorService:
                  new_curr_norm = (currency or 'KRW').strip().upper()
                  if is_same_post_url and old_curr_norm != new_curr_norm:
                      existing_deal.currency = new_curr_norm
-                     self.db.query(PriceHistory).filter(PriceHistory.deal_id == existing_deal.id).delete(synchronize_session=False)
+                     await self._run_db_sync(
+                         lambda did=existing_deal.id: self.db.query(PriceHistory).filter(PriceHistory.deal_id == did).delete(synchronize_session=False)
+                     )
                      if price > 0:
                          price_changed = True
 
@@ -2473,13 +2505,18 @@ class AggregatorService:
                  existing_deal.is_super_hotdeal = is_promoted_hotdeal
                  
                  if price_changed and price > 0:
-                     self._insert_price_history(existing_deal.id, price)
+                     pending_price_history_ids.append(existing_deal.id)
 
                  if lowest_price_dropped and price > 0 and existing_deal.id not in upsert_push_deal_ids:
                      upsert_push_deal_ids.append(existing_deal.id)
 
+             def _commit_upsert_sync():
+                 for hist_id in pending_price_history_ids:
+                     self._insert_price_history(hist_id, price)
+                 self.db.commit()
+
              logger.debug(f"🔄 기존 Deal 가격/상태 업데이트 (Upsert) - 총 {len(existing_deals)}개 항목: {url}")
-             self.db.commit()
+             await self._run_db_sync(_commit_upsert_sync)
              if upsert_push_deal_ids:
                  self._schedule_push_for_deal_ids(upsert_push_deal_ids)
              
@@ -2514,7 +2551,7 @@ class AggregatorService:
                     cast(Deal.price, Integer) > 0
                 )
                 
-                avg_price = query.scalar()
+                avg_price = await self._run_db_sync(query.scalar)
                 
                 if avg_price:
                     avg_price = float(avg_price)
@@ -2722,10 +2759,14 @@ class AggregatorService:
                         ),
                         indexed_at=posted_dt if posted_dt else datetime.now(timezone.utc).replace(tzinfo=None)
                     )
-                    self.db.add(new_deal)
-                    self.db.commit()
-                    self.db.refresh(new_deal)
-                    if item_price > 0: self._insert_price_history(new_deal.id, item_price)
+                    def _persist_split_deal_sync():
+                        self.db.add(new_deal)
+                        self.db.commit()
+                        self.db.refresh(new_deal)
+                        if item_price > 0:
+                            self._insert_price_history(new_deal.id, item_price)
+
+                    await self._run_db_sync(_persist_split_deal_sync)
                     inserted_deals.append(new_deal)
                     deals_to_push.append({
                         "id": new_deal.id,
@@ -2808,10 +2849,14 @@ class AggregatorService:
                     ),
                     indexed_at=posted_dt if posted_dt else datetime.now(timezone.utc).replace(tzinfo=None)
                 )
-                self.db.add(new_deal)
-                self.db.commit()
-                self.db.refresh(new_deal)
-                if final_price > 0: self._insert_price_history(new_deal.id, final_price)
+                def _persist_single_deal_sync():
+                    self.db.add(new_deal)
+                    self.db.commit()
+                    self.db.refresh(new_deal)
+                    if final_price > 0:
+                        self._insert_price_history(new_deal.id, final_price)
+
+                await self._run_db_sync(_persist_single_deal_sync)
             except Exception as e:
                 self.db.rollback()
                 logger.error(f"Error inserting deal '{raw_title}': {e}")
