@@ -1009,10 +1009,13 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     expect(extractPaymentConditionBadge("[컴퓨존] 스위치2 포켓몬 레전드 ZA (우리카드)", "")).toBe("우리카드 조건");
     expect(extractPaymentConditionBadge("퍼실 세탁세제", "네멤무료")).toBe("네멤 조건");
 
-    // 2. kakaocdn 저해상도 썸네일 고해상도 업그레이드
+    // 2. kakaocdn 저해상도·656x0 썸네일 고해상도(600x0_65_wr) 업그레이드·치유
     expect(
       upgradeLowresImageUrl("https://search1.kakaocdn.net/argon/130x130_85_c/6W6ac7UeBi1")
-    ).toBe("https://search1.kakaocdn.net/argon/656x0_80_wr/6W6ac7UeBi1");
+    ).toBe("https://search1.kakaocdn.net/argon/600x0_65_wr/6W6ac7UeBi1");
+    expect(
+      upgradeLowresImageUrl("https://search2.kakaocdn.net/argon/656x0_80_wr/Ij9QZhtv6N0")
+    ).toBe("https://search2.kakaocdn.net/argon/600x0_65_wr/Ij9QZhtv6N0");
 
     // 3. Home URL 쿼리 복원(?platform=뽐뿌&sort=price_asc&hot=1) & 출처 더보기 토글
     window.history.replaceState(null, "", "/?platform=%EB%BD%90%EB%BF%8C&sort=price_asc&hot=1");

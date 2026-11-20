@@ -877,13 +877,13 @@ export const isBlockedCommunityUrl = (url: string): boolean => {
 };
 
 const _KAKAOCDN_LOWRES_RE =
-  /^(https?:\/\/search\d+\.kakaocdn\.net\/argon\/)(?:130x130(?:_\d+_[a-zA-Z0-9]+)?|200x200(?:_\d+_[a-zA-Z0-9]+)?|320x320(?:_\d+_[a-zA-Z0-9]+)?|600x0(?:_\d+_[a-zA-Z0-9]+)?)(\/[^?\s]+)/i;
+  /^(https?:\/\/search\d*\.kakaocdn\.net\/argon\/)(?:130x130(?:_\d+_[a-zA-Z0-9]+)?|200x200(?:_\d+_[a-zA-Z0-9]+)?|320x320(?:_\d+_[a-zA-Z0-9]+)?|0x\d+(?:_\d+_[a-zA-Z0-9]+)?|656x0(?:_\d+_[a-zA-Z0-9]+)?)(\/[^?\s]+)/i;
 
 export const upgradeLowresImageUrl = (url: string): string => {
   if (!url) return url;
   return url.replace(
     _KAKAOCDN_LOWRES_RE,
-    (_m, prefix: string, suffix: string) => `${prefix}656x0_80_wr${suffix}`
+    (_m, prefix: string, suffix: string) => `${prefix}600x0_65_wr${suffix}`
   );
 };
 

@@ -472,6 +472,17 @@ async def _fetch_and_cache_image_leader(
                 alt = re.sub(r"cdn\d\.ppomppu\.co\.kr", cdn, no_900w)
                 if alt not in candidates:
                     candidates.append(alt)
+        elif "kakaocdn.net/argon/" in url:
+            for spec in ("600x0_65_wr", "320x320_85_c", "0x200_85_hr", "130x130_85_c"):
+                alt = re.sub(
+                    r"(https?://search\d*\.kakaocdn\.net/argon/)([^/]+)(/)",
+                    rf"\g<1>{spec}\g<3>",
+                    url,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
+                if alt not in candidates:
+                    candidates.append(alt)
 
         last_err = None
         for cand in candidates:

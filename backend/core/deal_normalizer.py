@@ -95,13 +95,13 @@ _KAKAOCDN_LOWRES_RE = re.compile(
 
 
 def upgrade_lowres_image_url(raw_url: Optional[str]) -> str:
-    """다음 카카오 CDN 130x130 등 저화질 썸네일 URL을 고화질(656x0_80_wr)로 승격합니다."""
+    """다음 카카오 CDN 130x130 및 404 빈발 656x0_80_wr URL을 안정적인 고화질(600x0_65_wr)로 승격·치유합니다."""
     if not raw_url:
         return ""
     u = str(raw_url).strip()
     m = _KAKAOCDN_LOWRES_RE.search(u)
-    if m and m.group(2).lower() != "656x0_80_wr":
-        return _KAKAOCDN_LOWRES_RE.sub(r"\g<1>656x0_80_wr\g<3>", u, count=1)
+    if m and m.group(2).lower() != "600x0_65_wr":
+        return _KAKAOCDN_LOWRES_RE.sub(r"\g<1>600x0_65_wr\g<3>", u, count=1)
     return u
 
 # 비쇼핑몰 말머리 및 일반 수식어 집합

@@ -716,8 +716,23 @@ async def scrape_and_push_once():
                             for r in detail_results:
                                 if isinstance(r, dict):
                                     enriched.append(r)
-                            for it in items_needing_detail[len(target_details):]:
-                                enriched.append(it)
+                            overflow_items = items_needing_detail[len(target_details):]
+                            if overflow_items:
+                                async def fill_overflow_image(it):
+                                    if not it.get("image_url"):
+                                        async with detail_sem:
+                                            try:
+                                                img_fb = await sc.fetch_og_image(it.get("ecommerce_link", ""), it.get("title", ""))
+                                                if img_fb:
+                                                    it["image_url"] = img_fb
+                                            except Exception:
+                                                pass
+                                    return it
+
+                                overflow_results = await asyncio.gather(*[fill_overflow_image(it) for it in overflow_items], return_exceptions=True)
+                                for r in overflow_results:
+                                    if isinstance(r, dict):
+                                        enriched.append(r)
 
                         # 4. 내용 및 메타데이터 정규화, 캐시 등록
                         final_enriched = []

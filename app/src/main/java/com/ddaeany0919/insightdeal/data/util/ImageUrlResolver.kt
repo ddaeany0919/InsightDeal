@@ -29,14 +29,14 @@ object ImageUrlResolver {
     private val LOCAL_HOSTS = setOf("10.0.2.2", "localhost", "127.0.0.1")
 
     private val KAKAOCDN_LOWRES_REGEX = Regex(
-        "^(https?://search\\d+\\.kakaocdn\\.net/argon/)(?:130x130(?:_\\d+_[a-zA-Z0-9]+)?|200x200(?:_\\d+_[a-zA-Z0-9]+)?|320x320(?:_\\d+_[a-zA-Z0-9]+)?|600x0(?:_\\d+_[a-zA-Z0-9]+)?)(/[^?\\s]+)",
+        "^(https?://search\\d*\\.kakaocdn\\.net/argon/)(?:130x130(?:_\\d+_[a-zA-Z0-9]+)?|200x200(?:_\\d+_[a-zA-Z0-9]+)?|320x320(?:_\\d+_[a-zA-Z0-9]+)?|0x\\d+(?:_\\d+_[a-zA-Z0-9]+)?|656x0(?:_\\d+_[a-zA-Z0-9]+)?)(/[^?\\s]+)",
         RegexOption.IGNORE_CASE
     )
 
     fun upgradeLowresImageUrl(url: String): String {
         return if (KAKAOCDN_LOWRES_REGEX.containsMatchIn(url)) {
             KAKAOCDN_LOWRES_REGEX.replace(url) { m ->
-                "${m.groupValues[1]}656x0_80_wr${m.groupValues[2]}"
+                "${m.groupValues[1]}600x0_65_wr${m.groupValues[2]}"
             }
         } else {
             url

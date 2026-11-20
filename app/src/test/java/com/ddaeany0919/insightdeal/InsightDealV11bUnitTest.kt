@@ -1318,10 +1318,14 @@ class InsightDealV11bUnitTest {
         assertEquals("우리카드 조건", extractPaymentConditionBadge("[컴퓨존] 스위치2 포켓몬 레전드 ZA (우리카드)", ""))
         assertEquals("네멤 조건", extractPaymentConditionBadge("퍼실 세탁세제", "네멤무료"))
 
-        // kakaocdn 저해상도 썸네일 업그레이드 검증
+        // kakaocdn 저해상도 및 404 빈발 656x0_80_wr 썸네일 치유 검증
         assertEquals(
-            "https://search1.kakaocdn.net/argon/656x0_80_wr/6W6ac7UeBi1",
+            "https://search1.kakaocdn.net/argon/600x0_65_wr/6W6ac7UeBi1",
             ImageUrlResolver.upgradeLowresImageUrl("https://search1.kakaocdn.net/argon/130x130_85_c/6W6ac7UeBi1")
+        )
+        assertEquals(
+            "https://search2.kakaocdn.net/argon/600x0_65_wr/Ij9QZhtv6N0",
+            ImageUrlResolver.upgradeLowresImageUrl("https://search2.kakaocdn.net/argon/656x0_80_wr/Ij9QZhtv6N0")
         )
     }
 }

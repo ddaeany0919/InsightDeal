@@ -2242,10 +2242,14 @@ def test_wave1_v11d_normalizer_categories_search_and_price_sort(unit_v11b_env):
     p3, c3, _, _ = parse_title_price_and_shipping("[알리] 앤커 충전기 29.50$ 무료")
     assert (p3, c3) == (2950, "USD")
 
-    # 2. kakaocdn 저해상도 썸네일 고해상도 업그레이드
+    # 2. kakaocdn 저해상도 및 404 빈발 656x0_80_wr 썸네일 안정적 고해상도(600x0_65_wr) 업그레이드
     assert (
         upgrade_lowres_image_url("https://search1.kakaocdn.net/argon/130x130_85_c/6W6ac7UeBi1")
-        == "https://search1.kakaocdn.net/argon/656x0_80_wr/6W6ac7UeBi1"
+        == "https://search1.kakaocdn.net/argon/600x0_65_wr/6W6ac7UeBi1"
+    )
+    assert (
+        upgrade_lowres_image_url("https://search2.kakaocdn.net/argon/656x0_80_wr/Ij9QZhtv6N0")
+        == "https://search2.kakaocdn.net/argon/600x0_65_wr/Ij9QZhtv6N0"
     )
 
     # 3. 오분류 6건 카테고리 정규화 검증
@@ -2351,7 +2355,7 @@ def test_wave1_v11d_normalizer_categories_search_and_price_sort(unit_v11b_env):
         db.refresh(d_ps5)
         db.refresh(d_trunc_usd)
         db.refresh(d_amazon_unmarked)
-        assert d_ps5.image_url == "https://search1.kakaocdn.net/argon/656x0_80_wr/AbCdEfGh"
+        assert d_ps5.image_url == "https://search1.kakaocdn.net/argon/600x0_65_wr/AbCdEfGh"
         assert (d_trunc_usd.price, d_trunc_usd.currency) == ("14599", "USD")
         assert (d_amazon_unmarked.price, d_amazon_unmarked.currency) == ("14500", "USD")
     finally:
@@ -2478,3 +2482,48 @@ def test_v11d_wave2_category_synonyms_and_filtering(unit_v11b_env):
     r_sw2 = unit_v11b_env.client.get("/api/community/hot-deals", params={"keyword": "switch2", "limit": 20})
     assert r_sw2.status_code == 200
     assert any("스위치 2" in d["title"] for d in r_sw2.json()["deals"])
+
+
+def test_v11d_img_kakaocdn_600x0_fallback_and_naver_shopping(unit_v11b_env, monkeypatch):
+    """v1.1d-img: kakaocdn 404 대체 규격 폴백 및 네이버 쇼핑 직접 shopping-phinf ?type=f640 추출 검증."""
+    from backend.scrapers.base_scraper import AsyncBaseScraper
+
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))])
+    seen_proxy_urls = []
+
+    async def fake_proxy_get(url, **kwargs):
+        seen_proxy_urls.append(url)
+        if "320x320_85_c" in url:
+            return httpx.Response(200, content=VALID_PNG, request=httpx.Request("GET", url))
+        return httpx.Response(404, content=b"", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(main_mod.proxy_client, "get", fake_proxy_get)
+    r_kakao = unit_v11b_env.client.get(
+        "/api/proxy-image",
+        params={"url": "https://search2.kakaocdn.net/argon/656x0_80_wr/UniqueTestHash991"},
+    )
+    assert r_kakao.status_code == 200
+    assert r_kakao.headers["content-type"].startswith("image/png")
+    assert any("600x0_65_wr" in u for u in seen_proxy_urls)
+    assert any("320x320_85_c" in u for u in seen_proxy_urls)
+
+    class DummyImgScraper(AsyncBaseScraper):
+        async def parse_list(self, html):
+            return []
+
+        async def get_detail(self, url, title=""):
+            return {}
+
+    async def fake_search_get(self, url, **kwargs):
+        if "search.naver.com" in url:
+            html = (
+                '<img src="https://search.pstatic.net/common/?src=https%3A%2F%2Fblogpfthumb-phinf.pstatic.net%2Favatar.jpg">'
+                '<img src="https://shopping-phinf.pstatic.net/main_8295776/82957760434.12.jpg?type=f200">'
+            )
+            return httpx.Response(200, text=html, request=httpx.Request("GET", url))
+        return httpx.Response(404, text="", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_search_get)
+    scraper = DummyImgScraper("뽐뿌")
+    found_img = asyncio.run(scraper.fetch_og_image("", "[오뚜기] 가뿐한끼 현미밥 150g x 30개"))
+    assert found_img == "https://shopping-phinf.pstatic.net/main_8295776/82957760434.12.jpg?type=f640"

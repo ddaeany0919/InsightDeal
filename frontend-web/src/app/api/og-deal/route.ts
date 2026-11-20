@@ -9,7 +9,7 @@ const BACKEND_URL = (
 ).replace(/\/+$/, "");
 
 const KAKAOCDN_LOWRES_RE =
-  /^(https?:\/\/search\d+\.kakaocdn\.net\/argon\/)(?:130x130(?:_\d+_[a-zA-Z0-9]+)?|200x200(?:_\d+_[a-zA-Z0-9]+)?|320x320(?:_\d+_[a-zA-Z0-9]+)?|600x0(?:_\d+_[a-zA-Z0-9]+)?)(\/[^?\s]+)/i;
+  /^(https?:\/\/search\d*\.kakaocdn\.net\/argon\/)(?:130x130(?:_\d+_[a-zA-Z0-9]+)?|200x200(?:_\d+_[a-zA-Z0-9]+)?|320x320(?:_\d+_[a-zA-Z0-9]+)?|0x\d+(?:_\d+_[a-zA-Z0-9]+)?|656x0(?:_\d+_[a-zA-Z0-9]+)?)(\/[^?\s]+)/i;
 
 function escapeHtml(value: string): string {
   return value
@@ -31,7 +31,7 @@ function upgradeOgImage(rawUrl: string | null | undefined, origin: string): stri
   if (KAKAOCDN_LOWRES_RE.test(normalized)) {
     normalized = normalized.replace(
       KAKAOCDN_LOWRES_RE,
-      (_m, prefix: string, suffix: string) => `${prefix}656x0_80_wr${suffix}`
+      (_m, prefix: string, suffix: string) => `${prefix}600x0_65_wr${suffix}`
     );
   }
   if (!/^https?:\/\//i.test(normalized)) {

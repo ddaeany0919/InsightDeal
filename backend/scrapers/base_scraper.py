@@ -452,10 +452,26 @@ class AsyncBaseScraper(ABC):
                     }
                     async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as hclient:
                         for q_cand in query_candidates:
-                            # 3-A. 네이버 통합검색 썸네일 (search.pstatic.net 프록시 CDN, GCP 서울/미국 모두 0.2s 내 응답)
+                            # 3-A. 네이버 통합검색 썸네일 (직접 shopping-phinf 우선 -> search.pstatic.net/common 폴백)
                             naver_url = f"https://search.naver.com/search.naver?where=nexearch&query={quote(q_cand)}"
                             rn = await hclient.get(naver_url, headers=req_hdrs)
                             if rn.status_code == 200:
+                                shop_direct_imgs = re.findall(
+                                    r'(https://shopping-phinf\.pstatic\.net/[^\s"\'&<>\\]+)',
+                                    rn.text,
+                                )
+                                for raw_s_img in shop_direct_imgs[:12]:
+                                    base_s_img = raw_s_img.split("?")[0].strip().rstrip(",)")
+                                    if _is_valid_product_img(base_s_img) and any(
+                                        base_s_img.lower().endswith(ext)
+                                        for ext in (".jpg", ".jpeg", ".png", ".webp")
+                                    ):
+                                        hi_s_img = f"{base_s_img}?type=f640"
+                                        logger.info(
+                                            f"🖼️ [Scraper Image Fallback - Naver Shopping] 상품명('{q_cand}') 고화질 이미지 확보: {hi_s_img}"
+                                        )
+                                        return hi_s_img
+
                                 n_imgs = re.findall(r'(https://search\.pstatic\.net/common/\?src=[^\s"\'&<>]+)', rn.text)
                                 naver_bad = (
                                     'blogpfthumb', 'kinimage', 'musicmeta', 'profile', 'icon', 'logo',
@@ -467,7 +483,7 @@ class AsyncBaseScraper(ABC):
                                 )
                                 preferred_naver = []
                                 fallback_naver = []
-                                for cand in n_imgs[:25]:
+                                for cand in n_imgs[:60]:
                                     low_dec = unquote(unquote(cand)).lower()
                                     if any(b.lower() in low_dec for b in naver_bad):
                                         continue
@@ -480,7 +496,7 @@ class AsyncBaseScraper(ABC):
                                     logger.info(f"🖼️ [Scraper Image Fallback - Naver] 상품명('{q_cand}') 대표 이미지 확보 성공: {chosen_naver[0]}")
                                     return chosen_naver[0]
 
-                            # 3-B. 다음 통합검색 썸네일 (kakaocdn.net argon 656x0 우선 + 저해상도 130x130 자동 업그레이드)
+                            # 3-B. 다음 통합검색 썸네일 (안정적 600x0 우선 + 저해상도 130x130 자동 업그레이드)
                             daum_url = f"https://search.daum.net/search?w=tot&q={quote(q_cand)}"
                             rd = await hclient.get(daum_url, headers=req_hdrs)
                             if rd.status_code == 200:
@@ -488,7 +504,7 @@ class AsyncBaseScraper(ABC):
                                 if d_imgs:
                                     from backend.core.deal_normalizer import upgrade_lowres_image_url
                                     chosen_d = (
-                                        next((c for c in d_imgs[:12] if "656x0" in c), None)
+                                        next((c for c in d_imgs[:12] if "600x0" in c), None)
                                         or next((c for c in d_imgs[:12] if "320x320" in c), None)
                                         or d_imgs[0]
                                     )
