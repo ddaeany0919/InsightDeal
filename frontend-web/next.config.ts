@@ -61,6 +61,29 @@ const nextConfig: NextConfig = {
                 ],
                 destination: "/api/og-deal?dealId=:dealId",
               },
+              {
+                source: "/",
+                has: [
+                  {
+                    type: "query",
+                    key: "deal",
+                    value: "(?<dealId>\\d+)",
+                  },
+                ],
+                missing: [
+                  {
+                    type: "header",
+                    key: "x-og-bypass",
+                    value: "1",
+                  },
+                  {
+                    type: "query",
+                    key: "_og",
+                    value: "1",
+                  },
+                ],
+                destination: "/api/og-deal?dealId=:dealId",
+              },
             ],
             afterFiles: [
               {

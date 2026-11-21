@@ -26,11 +26,14 @@ _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _DEVICE_ISSUE_MAX_PER_WINDOW = 120
 _DEVICE_ISSUE_WINDOW_SECONDS = 60
 _device_issue_rate_limit: dict[str, list[float]] = {}
+_TEST_PUSH_MAX_PER_WINDOW = 6
+_test_push_rate_limit: dict[str, list[float]] = {}
 
 
 def reset_rate_limits() -> None:
     """테스트 및 런타임 격리를 위한 기기 등록 레이트리밋 초기화 훅"""
     _device_issue_rate_limit.clear()
+    _test_push_rate_limit.clear()
 
 
 clear_rate_limits = reset_rate_limits
@@ -419,3 +422,102 @@ def delete_web_push(
         device.web_push_subscription = None
         db.commit()
     return {"success": True, "message": "Web Push subscription removed"}
+
+
+class TestPushReq(BaseModel):
+    device_uuid: Optional[str] = None
+
+
+@router.post("/test")
+def send_test_push(
+    req: Optional[TestPushReq] = Body(default=None),
+    auth_uuid: str = Depends(require_device_token),
+    db: Session = Depends(get_db_session),
+):
+    """사용자 설정 화면에서 현재 기기의 웹/앱 푸시 수신 여부를 즉시 점검하는 테스트 푸시 발송"""
+    target_uuid = (req.device_uuid if req and req.device_uuid else "").strip() or auth_uuid
+    assert_device_owner(auth_uuid, target_uuid)
+
+    now_ts = time.time()
+    recent = [
+        ts for ts in _test_push_rate_limit.get(target_uuid, [])
+        if (now_ts - ts) < _DEVICE_ISSUE_WINDOW_SECONDS
+    ]
+    if len(recent) >= _TEST_PUSH_MAX_PER_WINDOW:
+        _test_push_rate_limit[target_uuid] = recent
+        raise HTTPException(status_code=429, detail="테스트 알림은 1분에 최대 6회까지 보낼 수 있어요.")
+    recent.append(now_ts)
+    _test_push_rate_limit[target_uuid] = recent
+
+    device = db.query(models.DeviceToken).filter(
+        models.DeviceToken.device_uuid == target_uuid,
+        models.DeviceToken.is_active == True,
+    ).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="등록된 알림 기기를 찾지 못했어요.")
+
+    test_title = "얼만데 테스트 알림"
+    test_body = "얼만데 테스트 알림이에요! 실시간 특가 알림이 정상 작동 중입니다."
+    sent_web = False
+    sent_fcm = False
+
+    db.add(
+        models.NotificationAlert(
+            user_id=target_uuid,
+            title=test_body,
+            keyword="테스트 알림",
+            deal_url="",
+            dnd_suppressed=False,
+        )
+    )
+    db.commit()
+
+    if device.web_push_subscription:
+        try:
+            from backend.services.notification_service import NotificationService
+
+            sent_web = bool(
+                NotificationService.send_web_push_notification(
+                    subscription_json=device.web_push_subscription,
+                    keyword="테스트 알림",
+                    title=test_title,
+                    price=0,
+                    site_name="얼만데",
+                    deal_id=0,
+                    deal_url="",
+                    is_night_time=False,
+                    db=db,
+                    device=device,
+                    custom_title=test_title,
+                    custom_body=test_body,
+                )
+            )
+        except Exception as exc:
+            logger.warning(f"테스트 웹 푸시 발송 실패 ({target_uuid}): {exc}")
+
+    if device.fcm_token:
+        try:
+            from firebase_admin import messaging
+
+            messaging.send(
+                messaging.Message(
+                    notification=messaging.Notification(title=test_title, body=test_body),
+                    data={"navigate_to": "notifications", "deal_id": "0"},
+                    token=device.fcm_token,
+                )
+            )
+            sent_fcm = True
+        except Exception as exc:
+            logger.warning(f"테스트 FCM 푸시 발송 실패 ({target_uuid}): {exc}")
+
+    return {
+        "success": True,
+        "sent_web": sent_web,
+        "sent_fcm": sent_fcm,
+        "has_subscription": bool(device.web_push_subscription or device.fcm_token),
+        "message": (
+            "테스트 푸시 알림을 발송했어요!"
+            if (sent_web or sent_fcm)
+            else "인앱 알림함에 테스트 알림을 기록했어요. (푸시 권한이 꺼져 있으면 브라우저 알림은 울리지 않을 수 있어요)"
+        ),
+    }

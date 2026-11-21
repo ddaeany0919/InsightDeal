@@ -16,6 +16,7 @@ import com.ddaeany0919.insightdeal.network.ApiService
 import kotlinx.coroutines.CancellationException
 import retrofit2.HttpException
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Paging 3 RemoteMediator
@@ -35,7 +36,8 @@ class HotDealsRemoteMediator(
     private val sort: String = "latest",
     private val onlyHot: Boolean = false,
     private val hideClosed: Boolean = false,
-    private val includeClosed: Boolean = false
+    private val includeClosed: Boolean = false,
+    private val clockMs: () -> Long = { System.currentTimeMillis() }
 ) : RemoteMediator<Int, DealEntity>() {
 
     constructor(
@@ -61,6 +63,30 @@ class HotDealsRemoteMediator(
         hideClosed = hideClosed,
         includeClosed = includeClosed
     )
+
+    private fun buildCacheKey(): String = listOf(
+        CategoryCatalog.normalizeCategoryQuery(category).orEmpty(),
+        normalizePlatformQuery(platform).orEmpty(),
+        keyword?.trim().orEmpty(),
+        sort,
+        onlyHot.toString(),
+        hideClosed.toString(),
+        includeClosed.toString()
+    ).joinToString("|")
+
+    override suspend fun initialize(): InitializeAction {
+        val lastSuccessMs = lastRefreshSuccessMsByKey[buildCacheKey()] ?: return InitializeAction.LAUNCH_INITIAL_REFRESH
+        val elapsedMs = clockMs() - lastSuccessMs
+        if (elapsedMs !in 0L until REFRESH_TTL_MS) {
+            return InitializeAction.LAUNCH_INITIAL_REFRESH
+        }
+        val hasSentinel = dealRemoteKeysDao.getRemoteKeysForDealId(STREAM_CURSOR_SENTINEL_ID) != null
+        return if (hasSentinel) {
+            InitializeAction.SKIP_INITIAL_REFRESH
+        } else {
+            InitializeAction.LAUNCH_INITIAL_REFRESH
+        }
+    }
 
     override suspend fun load(
         loadType: LoadType,
@@ -179,6 +205,10 @@ class HotDealsRemoteMediator(
                     }
                 }
 
+                if (loadType == LoadType.REFRESH) {
+                    lastRefreshSuccessMsByKey[buildCacheKey()] = clockMs()
+                }
+
                 MediatorResult.Success(endOfPaginationReached = endOfPaginationReached)
             } else {
                 MediatorResult.Error(HttpException(response))
@@ -194,6 +224,12 @@ class HotDealsRemoteMediator(
 
     companion object {
         const val STREAM_CURSOR_SENTINEL_ID = -1
+        internal const val REFRESH_TTL_MS = 5 * 60 * 1000L
+        private val lastRefreshSuccessMsByKey = ConcurrentHashMap<String, Long>()
+
+        internal fun clearRefreshCache() {
+            lastRefreshSuccessMsByKey.clear()
+        }
 
         internal fun toCachedEntityForCategory(deal: DealItem, resolvedCategory: String?): DealEntity {
             val baseEntity = DealEntity.fromDealItem(deal)

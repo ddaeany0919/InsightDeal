@@ -296,6 +296,35 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
             val rawDealId = intent.getStringExtra("deal_id")?.trim()
             val validDealId = rawDealId?.toIntOrNull()?.takeIf { it > 0 }
             when {
+                intent.action == android.content.Intent.ACTION_SEND &&
+                    intent.type?.startsWith("text/plain") == true -> {
+                    val sharedText = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)?.trim().orEmpty()
+                    intent.removeExtra(android.content.Intent.EXTRA_TEXT)
+                    intent.action = android.content.Intent.ACTION_MAIN
+                    if (sharedText.isNotBlank()) {
+                        val withoutUrl = sharedText
+                            .replace(Regex("https?://\\S+"), " ")
+                            .replace(Regex("\\s+"), " ")
+                            .trim()
+                        val query = if (withoutUrl.length >= 2) {
+                            withoutUrl.take(40)
+                        } else {
+                            Regex("https?://([^/\\s]+)").find(sharedText)
+                                ?.groupValues
+                                ?.getOrNull(1)
+                                .orEmpty()
+                                .removePrefix("www.")
+                                .removePrefix("m.")
+                                .substringBefore(".")
+                        }.trim()
+                        if (query.isNotBlank()) {
+                            Log.d(TAG_UI, "📥 Shared text search -> $query")
+                            navController.navigate("advanced_search?query=${android.net.Uri.encode(query)}") {
+                                launchSingleTop = true
+                            }
+                        }
+                    }
+                }
                 navigateTo == "hotdeal" && validDealId != null -> {
                     Log.d(TAG_UI, "🚀 Deep Linking to deal_detail/$validDealId")
                     intent.removeExtra("navigate_to")

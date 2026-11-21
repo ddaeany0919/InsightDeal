@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware.gzip import GZipMiddleware
 import sys
 import os
 import json
@@ -116,6 +117,8 @@ app.add_middleware(
         "X-Feeder-Token",
     ],
 )
+
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # 라우터 등록
 app.include_router(wishlist.router, prefix="/api/wishlist", tags=["wishlist"])
@@ -801,6 +804,12 @@ async def prewarm_recent_deal_thumbnails(urls: Optional[list[str]] = None, limit
         logger.debug("[Prewarm] 썸네일 선적재 스킵: %s", exc)
 
 
+_FEED_PREWARM_LOCK = threading.Lock()
+_FEED_PREWARM_RUNNING = False
+_LAST_FEED_PREWARM_TS = 0.0
+_FEED_PREWARM_COOLDOWN_SEC = 15.0
+
+
 def _warm_default_feeds_sync() -> None:
     from backend.database.session import SessionLocal
     from backend.routers import community as community_router
@@ -808,7 +817,7 @@ def _warm_default_feeds_sync() -> None:
     db = SessionLocal()
     try:
         community_router.get_popular_keywords(limit=10, db=db)
-        for sort_key in ("latest", "popular"):
+        for sort_key in ("latest", "popular", "price_asc"):
             community_router.get_hot_deals(
                 limit=20,
                 offset=0,
@@ -825,8 +834,60 @@ def _warm_default_feeds_sync() -> None:
                 hide_closed=False,
                 db=db,
             )
+        for hot_cat in ("음식", "PC용품", "가전제품", "생활용품"):
+            community_router.get_hot_deals(
+                limit=20,
+                offset=0,
+                category=hot_cat,
+                keyword=None,
+                platform=None,
+                source=None,
+                sort="latest",
+                popular_only=False,
+                cursor_indexed_at=None,
+                cursor_id=None,
+                include_closed=False,
+                only_hot=False,
+                hide_closed=False,
+                db=db,
+            )
     finally:
         db.close()
+
+
+async def _run_feed_prewarm_task() -> None:
+    global _FEED_PREWARM_RUNNING, _LAST_FEED_PREWARM_TS
+    try:
+        await run_in_threadpool(_warm_default_feeds_sync)
+        _LAST_FEED_PREWARM_TS = asyncio.get_running_loop().time()
+        logger.info("[Prewarm] 기본 피드(latest/popular/price_asc/주요카테고리/popular-keywords) 인메모리 캐시 워밍 완료")
+    except Exception as exc:
+        logger.debug("[Prewarm] 기본 피드 워밍 스킵: %s", exc)
+    finally:
+        with _FEED_PREWARM_LOCK:
+            _FEED_PREWARM_RUNNING = False
+
+
+def schedule_feed_prewarm(force: bool = False) -> None:
+    global _FEED_PREWARM_RUNNING
+    if (
+        os.getenv("ENV") == "test"
+        or "pytest" in sys.modules
+        or "memory" in os.getenv("DATABASE_URL", "").lower()
+    ):
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    now_mono = loop.time()
+    with _FEED_PREWARM_LOCK:
+        if _FEED_PREWARM_RUNNING:
+            return
+        if not force and _LAST_FEED_PREWARM_TS > 0 and (now_mono - _LAST_FEED_PREWARM_TS) < _FEED_PREWARM_COOLDOWN_SEC:
+            return
+        _FEED_PREWARM_RUNNING = True
+    loop.create_task(_run_feed_prewarm_task())
 
 
 async def _prewarm_hot_feeds_and_thumbs() -> None:
@@ -838,8 +899,7 @@ async def _prewarm_hot_feeds_and_thumbs() -> None:
         return
     try:
         await asyncio.sleep(1.0)
-        await run_in_threadpool(_warm_default_feeds_sync)
-        logger.info("[Prewarm] 기본 피드(latest/popular/popular-keywords) 인메모리 캐시 워밍 완료")
+        await _run_feed_prewarm_task()
     except Exception as exc:
         logger.debug("[Prewarm] 기본 피드 워밍 스킵: %s", exc)
     await prewarm_recent_deal_thumbnails(urls=None, limit=36)

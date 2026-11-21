@@ -3,9 +3,10 @@ import "./globals.css";
 
 const isTossMiniApp = process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true";
 
-const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('insightdeal_theme');var r=document.documentElement;if(t==='light'||t==='dark'){r.dataset.theme=t;r.style.colorScheme=t;}else{delete r.dataset.theme;r.style.colorScheme=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}}catch(e){}})();`;
+const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('insightdeal_theme');var r=document.documentElement;if(t==='light'||t==='dark'||t==='amoled'){r.dataset.theme=t;r.style.colorScheme=(t==='light'?'light':'dark');}else{delete r.dataset.theme;r.style.colorScheme=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}}catch(e){}})();`;
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://insightdeal.vercel.app"),
   title: "얼만데 - 실시간 핫딜 모아보기",
   description: "주요 커뮤니티 10곳의 실시간 핫딜을 한눈에 모아보세요 — 얼만데",
   keywords: [
@@ -40,13 +41,21 @@ export const metadata: Metadata = {
     description: "주요 커뮤니티 10곳의 실시간 핫딜을 한눈에 모아보세요 — 얼만데",
     type: "website",
     locale: "ko_KR",
+    images: [
+      {
+        url: "/icon-512x512.png",
+        width: 512,
+        height: 512,
+        alt: "얼만데 - 실시간 핫딜 모아보기",
+      },
+    ],
   },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  ...(isTossMiniApp ? { maximumScale: 1, userScalable: false } : {}),
+  ...(isTossMiniApp ? { maximumScale: 2 } : {}),
   viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#F2F4F6" },

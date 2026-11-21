@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import os
+import re
 from typing import Any, Optional
 
 from firebase_admin import messaging
@@ -26,11 +27,23 @@ def reset_rate_limits() -> None:
 clear_rate_limits = reset_rate_limits
 
 
+def _get_daily_push_limit() -> int:
+    raw = os.getenv("INSIGHTDEAL_DAILY_PUSH_LIMIT", "").strip()
+    if raw:
+        try:
+            val = int(raw)
+            if val > 0:
+                return val
+        except ValueError:
+            pass
+    return int(_DAILY_PUSH_LIMIT)
+
+
 def _is_push_rate_limited(device_id: int, current_date_str: str) -> bool:
     rate_info = _push_rate_limit.get(device_id)
     if not rate_info or rate_info.get("date") != current_date_str:
         return False
-    return int(rate_info.get("count", 0)) >= _DAILY_PUSH_LIMIT
+    return int(rate_info.get("count", 0)) >= _get_daily_push_limit()
 
 
 def _consume_push_rate_limit(device_id: int, current_date_str: str) -> None:
@@ -126,19 +139,75 @@ def _build_affiliate_url(deal: Deal) -> str:
     return final_url
 
 
+def _estimate_krw_price(price_int: int, currency: Optional[str]) -> int:
+    """저장 단위(KRW 원, USD/EUR/CNY 센트·전, JPY 엔)를 원화 환산 정수로 변환합니다."""
+    if not price_int or price_int <= 0:
+        return 0
+    curr = (currency or "KRW").strip().upper()
+    if curr == "USD":
+        return int(round((price_int / 100.0) * 1450))
+    if curr == "EUR":
+        return int(round((price_int / 100.0) * 1550))
+    if curr == "CNY":
+        return int(round((price_int / 100.0) * 200))
+    if curr == "JPY":
+        return int(round(price_int * 9.5))
+    return int(price_int)
+
+
+def _format_push_price(price_int: int, currency: Optional[str]) -> str:
+    """알림 본문용 통화 표기 생성 (USD $59.00 -> '$59.00 (약 85,550원)')."""
+    if not price_int or price_int <= 0:
+        return ""
+    curr = (currency or "KRW").strip().upper()
+    krw_est = _estimate_krw_price(price_int, curr)
+    if curr == "USD":
+        return f"${price_int / 100.0:,.2f} (약 {krw_est:,}원)"
+    if curr == "EUR":
+        return f"€{price_int / 100.0:,.2f} (약 {krw_est:,}원)"
+    if curr == "CNY":
+        return f"¥{price_int / 100.0:,.2f} (약 {krw_est:,}원)"
+    if curr == "JPY":
+        return f"{price_int:,}엔 (약 {krw_est:,}원)"
+    return f"{price_int:,}원"
+
+
+def _extract_options_searchable(options_raw: Any) -> str:
+    if not options_raw:
+        return ""
+    try:
+        opts = json.loads(options_raw) if isinstance(options_raw, str) else options_raw
+        if isinstance(opts, list):
+            parts = []
+            for o in opts[:30]:
+                if isinstance(o, dict):
+                    nm = str(o.get("name") or o.get("title") or "").strip()
+                    if nm:
+                        parts.append(nm)
+            return " ".join(parts)
+    except Exception:
+        pass
+    return ""
+
+
 def _match_smart_keyword(raw_keyword: str, deal: Deal, deal_price_int: int) -> tuple[bool, str]:
     """키워드 조건 문법 파싱 및 매칭
     지원 문법:
-      - 기본 단어: 공백 구분 AND 매칭 (예: '맥북 에어')
+      - 기본 단어: 공백 구분 AND 매칭 (예: '맥북 에어', 한영 동의어 및 공백 무시 지원)
       - 제외 단어: '-단어' 또는 '!단어' (예: '아이폰 -케이스 !필름')
-      - 상한 금액: ':금액' 또는 '<=금액' (예: '제로콜라 :15,000', '제로콜라 <=15000')
+      - 상한 금액: ':금액' 또는 '<=금액' (예: '제로콜라 :15,000', '제로콜라 <=15000', 외화는 원화 환산 기준 비교)
+      - 쇼핑몰/카테고리 한정: '@쇼핑몰' / '#카테고리' (예: '물티슈 @쿠팡', 'SSD #PC용품')
     """
     if not raw_keyword or not raw_keyword.strip():
         return False, ""
 
+    from backend.core.deal_normalizer import KOR_ENG_SEARCH_SYNONYMS
+
     tokens = raw_keyword.strip().split()
     positive_terms: list[str] = []
     exclude_terms: list[str] = []
+    shop_filters: list[str] = []
+    cat_filters: list[str] = []
     max_price: int | None = None
 
     for token in tokens:
@@ -162,26 +231,60 @@ def _match_smart_keyword(raw_keyword: str, deal: Deal, deal_price_int: int) -> t
                     pass
         elif (token.startswith("-") or token.startswith("!")) and len(token) > 1:
             exclude_terms.append(token[1:].lower())
+        elif token.startswith("@") and len(token) > 1:
+            shop_filters.append(token[1:].strip().lower())
+        elif token.startswith("#") and len(token) > 1:
+            cat_filters.append(token[1:].strip().lower())
         else:
             positive_terms.append(token.lower())
 
     if not positive_terms:
         return False, raw_keyword
 
-    searchable = " ".join([
-        (deal.title or ""),
-        (deal.category or ""),
-        (deal.base_product_name or ""),
-    ]).lower()
+    deal_shop_low = re.sub(r"\s+", "", (getattr(deal, "shop_name", None) or "").lower())
+    deal_title_low = (getattr(deal, "title", None) or "").lower()
+    deal_cat_low = re.sub(r"\s+", "", (getattr(deal, "category", None) or "").lower())
+    if shop_filters:
+        if not any(
+            re.sub(r"\s+", "", sf) in deal_shop_low or sf in deal_title_low
+            for sf in shop_filters
+        ):
+            return False, raw_keyword
+    if cat_filters:
+        if not any(re.sub(r"\s+", "", cf) in deal_cat_low for cf in cat_filters):
+            return False, raw_keyword
 
-    if not all(term in searchable for term in positive_terms):
+    searchable = " ".join([
+        (getattr(deal, "title", None) or ""),
+        (getattr(deal, "category", None) or ""),
+        (getattr(deal, "base_product_name", None) or ""),
+        (getattr(deal, "search_keywords", None) or ""),
+        _extract_options_searchable(getattr(deal, "options_data", None)),
+    ]).lower()
+    searchable_compact = re.sub(r"\s+", "", searchable)
+
+    def _term_matches(term: str) -> bool:
+        t_compact = re.sub(r"\s+", "", term)
+        if term in searchable or (t_compact and t_compact in searchable_compact):
+            return True
+        syns = KOR_ENG_SEARCH_SYNONYMS.get(term) or KOR_ENG_SEARCH_SYNONYMS.get(t_compact) or ()
+        for syn in syns:
+            syn_low = syn.lower()
+            syn_compact = re.sub(r"\s+", "", syn_low)
+            if syn_low in searchable or (syn_compact and syn_compact in searchable_compact):
+                return True
+        return False
+
+    if not all(_term_matches(term) for term in positive_terms):
         return False, raw_keyword
 
     if any(ex_term in searchable for ex_term in exclude_terms):
         return False, raw_keyword
 
+    deal_currency = (getattr(deal, "currency", None) or "KRW").strip().upper()
+    effective_krw_price = _estimate_krw_price(deal_price_int, deal_currency)
     if max_price is not None:
-        if deal_price_int <= 0 or deal_price_int > max_price:
+        if effective_krw_price <= 0 or effective_krw_price > max_price:
             return False, raw_keyword
 
     display_name = " ".join(positive_terms)
@@ -241,7 +344,8 @@ def match_existing_deals_for_keyword(db, user_id: str, raw_keyword: str) -> int:
                 p_int = 0
             ok, disp_kw = _match_smart_keyword(raw_keyword, d, p_int)
             if ok:
-                alert_title = f"{d.title} · {p_int:,}원" if p_int > 0 else d.title
+                price_txt = _format_push_price(p_int, getattr(d, "currency", "KRW"))
+                alert_title = f"{d.title} · {price_txt}" if price_txt else d.title
                 _record_notification_alert(
                     db=db,
                     user_id=user_id,
@@ -289,6 +393,9 @@ def background_trigger_keyword_alarms(
             deal_price_int = int(float(deal.price)) if deal.price else 0
         except Exception:
             deal_price_int = 0
+        deal_currency = (getattr(deal, "currency", None) or "KRW").strip().upper()
+        formatted_deal_price = _format_push_price(deal_price_int, deal_currency)
+        deal_krw_est = _estimate_krw_price(deal_price_int, deal_currency)
 
         from backend.services.notification_service import NotificationService
 
@@ -306,7 +413,7 @@ def background_trigger_keyword_alarms(
                 continue
 
             stats["matched_keywords"] += 1
-            alert_body = f"{deal.title} · {deal_price_int:,}원" if deal_price_int > 0 else deal.title
+            alert_body = f"{deal.title} · {formatted_deal_price}" if formatted_deal_price else deal.title
 
             # ① 공통 DND/야간 차단 판별 (DND 억제 여부를 NotificationAlert에 반영)
             suppressed, reason = should_suppress_push(device, now)
@@ -374,14 +481,14 @@ def background_trigger_keyword_alarms(
             if dispatched_channel:
                 _consume_push_rate_limit(device.id, current_date_str)
 
-        # 2. 목표가 알림 (Wishlist) 매칭
-        if deal_price_int > 0:
+        # 2. 목표가 알림 (Wishlist) 매칭 (외화는 원화 환산가로 비교)
+        if deal_krw_est > 0:
             wishlists_db = []
             try:
                 wishlists_db = db.query(Wishlist).filter(
                     Wishlist.is_active == True,
                     Wishlist.alert_enabled == True,
-                    Wishlist.target_price >= deal_price_int,
+                    Wishlist.target_price >= deal_krw_est,
                 ).all()
             except Exception as wl_query_err:
                 logger.debug(f"Wishlist 조회 건너뜀 (테이블 미존재 또는 조회 오류): {wl_query_err}")
@@ -390,9 +497,14 @@ def background_trigger_keyword_alarms(
                 wl_key = (wl.keyword or "").lower().strip()
                 if not wl_key:
                     continue
+                wl_searchable = " ".join([
+                    (deal.title or ""),
+                    (deal.base_product_name or ""),
+                    (deal.search_keywords or ""),
+                ]).lower()
                 is_wl_match = (
-                    wl_key in (deal.title or "").lower()
-                    or (deal.base_product_name and wl_key in deal.base_product_name.lower())
+                    wl_key in wl_searchable
+                    or (wl_key.replace(" ", "") in re.sub(r"\s+", "", wl_searchable))
                     or (deal.ecommerce_link and wl_key == deal.ecommerce_link.lower())
                     or (deal.post_link and wl_key == deal.post_link.lower())
                 )
@@ -400,7 +512,8 @@ def background_trigger_keyword_alarms(
                     continue
 
                 stats["matched_wishlists"] += 1
-                wl_alert_title = f"[목표가 {wl.target_price:,}원 이하] {deal.title} · 현재 {deal_price_int:,}원"
+                wl_curr_price_txt = formatted_deal_price or f"{deal_price_int:,}원"
+                wl_alert_title = f"[목표가 {wl.target_price:,}원 이하] {deal.title} · 현재 {wl_curr_price_txt}"
 
                 device = db.query(DeviceToken).filter(
                     DeviceToken.device_uuid == wl.user_id,
@@ -439,7 +552,7 @@ def background_trigger_keyword_alarms(
                         msg = messaging.Message(
                             notification=messaging.Notification(
                                 title=f"설정한 목표가({wl.target_price:,}원) 이하로 내려갔어요",
-                                body=f"{deal.title} · 현재 {deal_price_int:,}원",
+                                body=f"{deal.title} · 현재 {wl_curr_price_txt}",
                                 image=deal.image_url if deal.image_url else None,
                             ),
                             data={
@@ -468,7 +581,7 @@ def background_trigger_keyword_alarms(
                         db=db,
                         device=device,
                         custom_title=f"설정한 목표가({wl.target_price:,}원) 이하로 내려갔어요",
-                        custom_body=f"{deal.title} · 현재 {deal_price_int:,}원",
+                        custom_body=f"{deal.title} · 현재 {wl_curr_price_txt}",
                     )
                     if sent_web:
                         stats["web_push_sent"] += 1

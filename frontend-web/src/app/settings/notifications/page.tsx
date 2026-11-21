@@ -39,6 +39,76 @@ const STANDARD_DND_COPY =
 const STANDARD_DND_DIGEST_COPY =
   '방해금지 해제 시각(기본 아침 08:00)에 "밤사이 놓친 핫딜 N건" 요약 푸시를 1회 보내드려요.';
 
+const WEEKDAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri'] as const;
+const WEEKEND_KEYS = ['sat', 'sun'] as const;
+
+interface DayDndCfg {
+  enabled: boolean;
+  start: string;
+  end: string;
+}
+
+function parseWeekdayWeekendDnd(
+  rawJson: unknown,
+  fallbackEnabled: boolean,
+  fallbackStart: string,
+  fallbackEnd: string
+): {
+  weekday: DayDndCfg;
+  weekend: DayDndCfg;
+} {
+  const defaultCfg: DayDndCfg = {
+    enabled: fallbackEnabled,
+    start: fallbackStart,
+    end: fallbackEnd,
+  };
+  if (!rawJson) {
+    return { weekday: { ...defaultCfg }, weekend: { ...defaultCfg } };
+  }
+  try {
+    const parsed =
+      typeof rawJson === 'string'
+        ? (JSON.parse(rawJson) as Record<string, Partial<DayDndCfg>>)
+        : (rawJson as Record<string, Partial<DayDndCfg>>);
+    const mon = parsed?.mon;
+    const sat = parsed?.sat;
+    return {
+      weekday:
+        mon && typeof mon === 'object'
+          ? {
+              enabled: mon.enabled !== undefined ? Boolean(mon.enabled) : fallbackEnabled,
+              start: typeof mon.start === 'string' && mon.start ? mon.start : fallbackStart,
+              end: typeof mon.end === 'string' && mon.end ? mon.end : fallbackEnd,
+            }
+          : { ...defaultCfg },
+      weekend:
+        sat && typeof sat === 'object'
+          ? {
+              enabled: sat.enabled !== undefined ? Boolean(sat.enabled) : fallbackEnabled,
+              start: typeof sat.start === 'string' && sat.start ? sat.start : fallbackStart,
+              end: typeof sat.end === 'string' && sat.end ? sat.end : fallbackEnd,
+            }
+          : { ...defaultCfg },
+    };
+  } catch {
+    return { weekday: { ...defaultCfg }, weekend: { ...defaultCfg } };
+  }
+}
+
+function serializeWeekdayWeekendDnd(
+  weekday: DayDndCfg,
+  weekend: DayDndCfg
+): string {
+  const map: Record<string, DayDndCfg> = {};
+  for (const k of WEEKDAY_KEYS) {
+    map[k] = { ...weekday };
+  }
+  for (const k of WEEKEND_KEYS) {
+    map[k] = { ...weekend };
+  }
+  return JSON.stringify(map);
+}
+
 export default function NotificationSettingsPage() {
   const [supportStatus, setSupportStatus] =
     useState<WebPushSupportStatus>('unsupported');
@@ -47,9 +117,20 @@ export default function NotificationSettingsPage() {
   const [isPushEnabled, setIsPushEnabled] = useState(false);
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [keywordInput, setKeywordInput] = useState('');
+  const [excludeInput, setExcludeInput] = useState('');
+  const [maxPriceInput, setMaxPriceInput] = useState('');
+  const [shopFilterInput, setShopFilterInput] = useState('');
+  const [editingKeywordOrig, setEditingKeywordOrig] = useState<string | null>(null);
+  const [editingKeywordVal, setEditingKeywordVal] = useState('');
   const [isDndEnabled, setIsDndEnabled] = useState(false);
   const [dndStart, setDndStart] = useState('21:00');
   const [dndEnd, setDndEnd] = useState('08:00');
+  const [useSeparateWeekendDnd, setUseSeparateWeekendDnd] = useState(false);
+  const [weekendDndEnabled, setWeekendDndEnabled] = useState(true);
+  const [weekendDndStart, setWeekendDndStart] = useState('22:00');
+  const [weekendDndEnd, setWeekendDndEnd] = useState('09:00');
+  const [testPushMsg, setTestPushMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [isSendingTest, setIsSendingTest] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
@@ -95,6 +176,26 @@ export default function NotificationSettingsPage() {
         setIsDndEnabled(Boolean(data.dnd_enabled));
         setDndStart(data.dnd_start_time || '21:00');
         setDndEnd(data.dnd_end_time || '08:00');
+        if (data.dnd_settings_json) {
+          const parsedWeek = parseWeekdayWeekendDnd(
+            data.dnd_settings_json,
+            Boolean(data.dnd_enabled),
+            data.dnd_start_time || '21:00',
+            data.dnd_end_time || '08:00'
+          );
+          const differs =
+            parsedWeek.weekday.enabled !== parsedWeek.weekend.enabled ||
+            parsedWeek.weekday.start !== parsedWeek.weekend.start ||
+            parsedWeek.weekday.end !== parsedWeek.weekend.end;
+          setUseSeparateWeekendDnd(differs);
+          setWeekendDndEnabled(parsedWeek.weekend.enabled);
+          setWeekendDndStart(parsedWeek.weekend.start);
+          setWeekendDndEnd(parsedWeek.weekend.end);
+          if (differs) {
+            setDndStart(parsedWeek.weekday.start);
+            setDndEnd(parsedWeek.weekday.end);
+          }
+        }
         if (typeof window !== 'undefined') {
           localStorage.setItem(
             'insightdeal_web_keywords',
@@ -276,13 +377,38 @@ export default function NotificationSettingsPage() {
     }
   };
 
+  const buildStructuredKeyword = (): string => {
+    const base = keywordInput.trim();
+    if (!base) return '';
+    const tokens: string[] = [base];
+    const ex = excludeInput.trim();
+    if (ex) {
+      ex.split(/[\s,]+/)
+        .map((t) => t.trim().replace(/^-+/, ''))
+        .filter(Boolean)
+        .forEach((t) => tokens.push(`-${t}`));
+    }
+    const maxP = maxPriceInput.replace(/[^0-9]/g, '');
+    if (maxP && Number(maxP) > 0 && !base.includes(':')) {
+      tokens.push(`:${maxP}`);
+    }
+    const sh = shopFilterInput.trim().replace(/^@+/, '');
+    if (sh && !base.includes('@')) {
+      tokens.push(`@${sh}`);
+    }
+    return tokens.join(' ').trim();
+  };
+
   const handleAddKeyword = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newKeywordStr = keywordInput.trim();
+    const newKeywordStr = buildStructuredKeyword();
     if (!newKeywordStr) return;
 
     if (keywords.some((k) => k.keyword === newKeywordStr)) {
       setKeywordInput('');
+      setExcludeInput('');
+      setMaxPriceInput('');
+      setShopFilterInput('');
       return;
     }
 
@@ -337,10 +463,89 @@ export default function NotificationSettingsPage() {
       maybeRequestTossReview();
       setLiveAnnouncement(`'${newKeywordStr}' 알림 키워드를 등록했어요.`);
       setKeywordInput('');
+      setExcludeInput('');
+      setMaxPriceInput('');
+      setShopFilterInput('');
     } catch {
       setErrorMsg('네트워크 오류로 키워드를 등록하지 못했어요.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSaveEditKeyword = async (oldKw: string) => {
+    const nextKw = editingKeywordVal.trim();
+    if (!nextKw || nextKw === oldKw) {
+      setEditingKeywordOrig(null);
+      setEditingKeywordVal('');
+      return;
+    }
+    setErrorMsg(null);
+    setIsLoading(true);
+    try {
+      await ensureWebDeviceAuth();
+      const addRes = await authFetch((latestAuth) => ({
+        pathOrUrl: '/api/push/keywords',
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_uuid: latestAuth.deviceUuid, keyword: nextKw }),
+        },
+      }));
+      if (!addRes.ok) {
+        setErrorMsg('키워드를 수정하지 못했어요. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
+      const created = (await addRes.json().catch(() => null)) as { id?: string | number; keyword?: string } | null;
+      await authFetch((latestAuth) => ({
+        pathOrUrl: '/api/push/keywords',
+        init: {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_uuid: latestAuth.deviceUuid, keyword: oldKw }),
+        },
+      }));
+      const updated = keywords
+        .filter((k) => k.keyword !== oldKw)
+        .concat({ id: String(created?.id ?? Date.now()), keyword: created?.keyword || nextKw, is_active: true });
+      setKeywords(updated);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('insightdeal_web_keywords', JSON.stringify(updated));
+      }
+      setEditingKeywordOrig(null);
+      setEditingKeywordVal('');
+      setLiveAnnouncement(`'${oldKw}' 키워드를 '${nextKw}'로 수정했어요.`);
+    } catch {
+      setErrorMsg('네트워크 오류로 키워드를 수정하지 못했어요.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSendTestPush = async () => {
+    if (isSendingTest) return;
+    setIsSendingTest(true);
+    setTestPushMsg(null);
+    try {
+      await ensureWebDeviceAuth();
+      const res = await authFetch('/api/push/test', { method: 'POST' });
+      const data = (await res.json().catch(() => null)) as { message?: string; detail?: string; delivered?: boolean } | null;
+      if (res.status === 429) {
+        setTestPushMsg({ ok: false, text: '잠시 후 다시 테스트해 주세요. (요청 제한)' });
+        return;
+      }
+      if (!res.ok) {
+        setTestPushMsg({ ok: false, text: data?.detail || '테스트 알림 전송에 실패했어요.' });
+        return;
+      }
+      setTestPushMsg({
+        ok: true,
+        text: data?.message || '테스트 알림을 보냈어요. 알림함과 푸시를 확인해 주세요.',
+      });
+    } catch {
+      setTestPushMsg({ ok: false, text: '네트워크 오류로 테스트 알림을 보내지 못했어요.' });
+    } finally {
+      setIsSendingTest(false);
     }
   };
 
@@ -434,9 +639,29 @@ export default function NotificationSettingsPage() {
     nextEnabled: boolean,
     startStr: string,
     endStr: string,
-    prevSnapshot: { enabled: boolean; start: string; end: string }
+    prevSnapshot: { enabled: boolean; start: string; end: string },
+    extra?: {
+      separateWeekend?: boolean;
+      weekendEnabled?: boolean;
+      weekendStart?: string;
+      weekendEnd?: string;
+    }
   ) => {
     setErrorMsg(null);
+    const sep = extra?.separateWeekend ?? useSeparateWeekendDnd;
+    const wkEnabled = extra?.weekendEnabled ?? weekendDndEnabled;
+    const wkStart = extra?.weekendStart ?? weekendDndStart;
+    const wkEnd = extra?.weekendEnd ?? weekendDndEnd;
+    const dndJsonPayload = sep
+      ? serializeWeekdayWeekendDnd(
+          { enabled: nextEnabled, start: startStr, end: endStr },
+          { enabled: nextEnabled && wkEnabled, start: wkStart, end: wkEnd }
+        )
+      : serializeWeekdayWeekendDnd(
+          { enabled: nextEnabled, start: startStr, end: endStr },
+          { enabled: nextEnabled, start: startStr, end: endStr }
+        );
+
     try {
       await ensureWebDeviceAuth();
       const res = await authFetch((latestAuth) => ({
@@ -449,6 +674,7 @@ export default function NotificationSettingsPage() {
             dnd_enabled: nextEnabled,
             dnd_start_time: startStr,
             dnd_end_time: endStr,
+            dnd_settings_json: dndJsonPayload,
           }),
         },
       }));
@@ -619,24 +845,45 @@ export default function NotificationSettingsPage() {
                 </p>
               </div>
               {isPushEnabled ? (
-                <button
-                  type="button"
-                  onClick={unsubscribePush}
-                  disabled={isLoading}
-                  className="bounce-click"
-                  style={{
-                    minHeight: '44px',
-                    background: 'var(--danger-bg)',
-                    color: 'var(--danger-text)',
-                    padding: '10px 20px',
-                    borderRadius: '12px',
-                    fontWeight: 700,
-                    border: '1px solid var(--danger-border)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  알림 끄기
-                </button>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={handleSendTestPush}
+                    disabled={isLoading || isSendingTest}
+                    className="bounce-click"
+                    style={{
+                      minHeight: '44px',
+                      background: 'var(--bg-subtle, rgba(16, 185, 129, 0.12))',
+                      color: 'var(--accent-primary, #059669)',
+                      padding: '10px 16px',
+                      borderRadius: '12px',
+                      fontWeight: 700,
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                      cursor: isSendingTest ? 'not-allowed' : 'pointer',
+                      opacity: isSendingTest ? 0.65 : 1,
+                    }}
+                  >
+                    {isSendingTest ? '전송 중...' : '테스트 알림 보내기'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={unsubscribePush}
+                    disabled={isLoading}
+                    className="bounce-click"
+                    style={{
+                      minHeight: '44px',
+                      background: 'var(--danger-bg)',
+                      color: 'var(--danger-text)',
+                      padding: '10px 20px',
+                      borderRadius: '12px',
+                      fontWeight: 700,
+                      border: '1px solid var(--danger-border)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    알림 끄기
+                  </button>
+                </div>
               ) : (
                 <button
                   type="button"
@@ -657,6 +904,25 @@ export default function NotificationSettingsPage() {
                 </button>
               )}
             </div>
+
+            {testPushMsg && (
+              <div
+                role="status"
+                style={{
+                  background: testPushMsg.ok ? 'var(--accent-soft-bg)' : 'var(--danger-bg)',
+                  border: testPushMsg.ok
+                    ? '1px solid var(--accent-soft-border)'
+                    : '1px solid var(--danger-border)',
+                  color: testPushMsg.ok ? 'var(--accent)' : 'var(--danger-text)',
+                  padding: '10px 14px',
+                  borderRadius: '12px',
+                  fontSize: '0.86rem',
+                  fontWeight: 700,
+                }}
+              >
+                {testPushMsg.text}
+              </div>
+            )}
 
             {supportStatus === 'in_app_webview' && (
               <div
@@ -823,34 +1089,94 @@ export default function NotificationSettingsPage() {
               </p>
             </div>
 
-            <form onSubmit={handleAddKeyword} style={{ display: 'flex', gap: '10px' }}>
-              <input
-                type="text"
-                value={keywordInput}
-                onChange={(e) => setKeywordInput(e.target.value)}
-                placeholder="예: 제로콜라 :15000 / 아이폰 -케이스 -필름"
-                aria-label="알림 키워드 입력"
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  minHeight: '46px',
-                  background: 'var(--surface-subtle)',
-                  border: '1px solid var(--card-border)',
-                  borderRadius: '12px',
-                  padding: '12px 16px',
-                  color: 'var(--text-main)',
-                  fontSize: '0.95rem',
-                  fontWeight: 600,
-                }}
-              />
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="btn-primary"
-                style={{ minHeight: '46px', padding: '0 22px', flexShrink: 0 }}
-              >
-                추가
-              </button>
+            <form onSubmit={handleAddKeyword} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input
+                  type="text"
+                  value={keywordInput}
+                  onChange={(e) => setKeywordInput(e.target.value)}
+                  placeholder="예: 제로콜라 :15000 / 아이폰 -케이스 -필름"
+                  aria-label="알림 키워드 입력"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    minHeight: '46px',
+                    background: 'var(--surface-subtle)',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '12px',
+                    padding: '12px 16px',
+                    color: 'var(--text-main)',
+                    fontSize: '0.95rem',
+                    fontWeight: 600,
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="btn-primary"
+                  style={{ minHeight: '46px', padding: '0 22px', flexShrink: 0 }}
+                >
+                  추가
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  value={excludeInput}
+                  onChange={(e) => setExcludeInput(e.target.value)}
+                  placeholder="제외어 (예: 케이스 필름)"
+                  aria-label="제외 키워드 입력"
+                  style={{
+                    flex: '1 1 140px',
+                    minWidth: 0,
+                    minHeight: '40px',
+                    background: 'var(--surface-subtle)',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '10px',
+                    padding: '8px 12px',
+                    color: 'var(--text-main)',
+                    fontSize: '0.84rem',
+                  }}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  value={maxPriceInput}
+                  onChange={(e) => setMaxPriceInput(e.target.value)}
+                  placeholder="상한 금액 (원)"
+                  aria-label="상한 가격 입력"
+                  style={{
+                    flex: '1 1 120px',
+                    minWidth: 0,
+                    minHeight: '40px',
+                    background: 'var(--surface-subtle)',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '10px',
+                    padding: '8px 12px',
+                    color: 'var(--text-main)',
+                    fontSize: '0.84rem',
+                  }}
+                />
+                <input
+                  type="text"
+                  value={shopFilterInput}
+                  onChange={(e) => setShopFilterInput(e.target.value)}
+                  placeholder="쇼핑몰 (예: 쿠팡)"
+                  aria-label="쇼핑몰 필터 입력"
+                  style={{
+                    flex: '1 1 120px',
+                    minWidth: 0,
+                    minHeight: '40px',
+                    background: 'var(--surface-subtle)',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '10px',
+                    padding: '8px 12px',
+                    color: 'var(--text-main)',
+                    fontSize: '0.84rem',
+                  }}
+                />
+              </div>
             </form>
 
             <div
@@ -865,8 +1191,9 @@ export default function NotificationSettingsPage() {
               }}
             >
               <strong style={{ color: 'var(--text-main)' }}>조건 검색 팁:</strong> 제외할 단어
-              앞에는 <code>-</code>를, 상한 금액 앞에는 <code>:</code>를 붙여 보세요 (예:{' '}
-              <code>아이폰 -케이스</code>, <code>삼다수 :12000</code>).
+              앞에는 <code>-</code>를, 상한 금액 앞에는 <code>:</code>를, 쇼핑몰 지정은{' '}
+              <code>@</code>를 붙여 보세요 (예: <code>아이폰 -케이스</code>,{' '}
+              <code>삼다수 :12000 @쿠팡</code>).
             </div>
 
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -926,7 +1253,7 @@ export default function NotificationSettingsPage() {
                   등록한 키워드 ({keywords.length})
                 </h3>
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: 500 }}>
-                  키워드를 누르면 알림을 잠시 멈출 수 있어요
+                  키워드를 누르면 일시정지, 수정 버튼으로 조건을 바로 고칠 수 있어요
                 </span>
               </div>
 
@@ -945,6 +1272,89 @@ export default function NotificationSettingsPage() {
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {keywords.map((kw) => {
                     const isActive = kw.is_active !== false;
+                    const isEditing = editingKeywordOrig === kw.keyword;
+                    if (isEditing) {
+                      return (
+                        <div
+                          key={kw.id}
+                          className="glass-panel"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            minHeight: '44px',
+                            padding: '4px 8px',
+                            borderRadius: '14px',
+                            border: '1px solid var(--accent-soft-border)',
+                            background: 'var(--surface-subtle)',
+                          }}
+                        >
+                          <input
+                            type="text"
+                            value={editingKeywordVal}
+                            onChange={(e) => setEditingKeywordVal(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                void handleSaveEditKeyword(kw.keyword);
+                              } else if (e.key === 'Escape') {
+                                setEditingKeywordOrig(null);
+                                setEditingKeywordVal('');
+                              }
+                            }}
+                            aria-label={`${kw.keyword} 키워드 수정 입력`}
+                            style={{
+                              minHeight: '34px',
+                              padding: '4px 8px',
+                              borderRadius: '8px',
+                              border: '1px solid var(--card-border)',
+                              background: 'var(--card-bg)',
+                              color: 'var(--text-main)',
+                              fontSize: '0.84rem',
+                              fontWeight: 600,
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveEditKeyword(kw.keyword)}
+                            disabled={isLoading}
+                            style={{
+                              minHeight: '36px',
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              background: 'var(--accent)',
+                              color: '#ffffff',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              border: 'none',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            저장
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingKeywordOrig(null);
+                              setEditingKeywordVal('');
+                            }}
+                            style={{
+                              minHeight: '36px',
+                              padding: '4px 8px',
+                              borderRadius: '8px',
+                              background: 'transparent',
+                              color: 'var(--text-sub)',
+                              fontSize: '0.78rem',
+                              fontWeight: 600,
+                              border: '1px solid var(--card-border)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            취소
+                          </button>
+                        </div>
+                      );
+                    }
                     return (
                       <div
                         key={kw.id}
@@ -984,6 +1394,31 @@ export default function NotificationSettingsPage() {
                         >
                           {kw.keyword}
                           {!isActive ? ' (일시정지)' : ''}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`${kw.keyword} 키워드 수정`}
+                          title="키워드 수정"
+                          onClick={() => {
+                            setEditingKeywordOrig(kw.keyword);
+                            setEditingKeywordVal(kw.keyword);
+                          }}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            minWidth: '34px',
+                            height: '38px',
+                            borderRadius: '50%',
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text-sub)',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          수정
                         </button>
                         <button
                           type="button"
@@ -1107,83 +1542,232 @@ export default function NotificationSettingsPage() {
               <div
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexWrap: 'wrap',
-                  gap: '10px',
+                  flexDirection: 'column',
+                  gap: '12px',
                   padding: '16px',
                   borderRadius: '12px',
                   background: 'var(--surface-subtle)',
                   border: '1px solid var(--card-border)',
                 }}
               >
-                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-sub)' }}>
-                  매일
-                </span>
-                <input
-                  type="time"
-                  aria-label="방해금지 시작 시간"
-                  value={dndStart}
-                  onChange={(e) => {
-                    const prevSnapshot = {
-                      enabled: isDndEnabled,
-                      start: dndStart,
-                      end: dndEnd,
-                    };
-                    const nextStart = e.target.value;
-                    setDndStart(nextStart);
-                    void syncDndToBackend(
-                      isDndEnabled,
-                      nextStart,
-                      dndEnd,
-                      prevSnapshot
-                    );
-                  }}
+                <div
                   style={{
-                    minHeight: '44px',
-                    background: 'var(--card-bg)',
-                    border: '1px solid var(--card-border)',
-                    borderRadius: '10px',
-                    padding: '8px 12px',
-                    color: 'var(--text-main)',
-                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexWrap: 'wrap',
+                    gap: '10px',
                   }}
-                />
-                <span style={{ fontSize: '0.88rem', color: 'var(--text-sub)', fontWeight: 700 }}>
-                  부터
-                </span>
-                <input
-                  type="time"
-                  aria-label="방해금지 종료 시간"
-                  value={dndEnd}
-                  onChange={(e) => {
-                    const prevSnapshot = {
-                      enabled: isDndEnabled,
-                      start: dndStart,
-                      end: dndEnd,
-                    };
-                    const nextEnd = e.target.value;
-                    setDndEnd(nextEnd);
-                    void syncDndToBackend(
-                      isDndEnabled,
-                      dndStart,
-                      nextEnd,
-                      prevSnapshot
-                    );
-                  }}
+                >
+                  <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-sub)' }}>
+                    {useSeparateWeekendDnd ? '평일 (월~금)' : '매일'}
+                  </span>
+                  <input
+                    type="time"
+                    aria-label="방해금지 시작 시간"
+                    value={dndStart}
+                    onChange={(e) => {
+                      const prevSnapshot = {
+                        enabled: isDndEnabled,
+                        start: dndStart,
+                        end: dndEnd,
+                      };
+                      const nextStart = e.target.value;
+                      setDndStart(nextStart);
+                      void syncDndToBackend(
+                        isDndEnabled,
+                        nextStart,
+                        dndEnd,
+                        prevSnapshot
+                      );
+                    }}
+                    style={{
+                      minHeight: '44px',
+                      background: 'var(--card-bg)',
+                      border: '1px solid var(--card-border)',
+                      borderRadius: '10px',
+                      padding: '8px 12px',
+                      color: 'var(--text-main)',
+                      fontWeight: 700,
+                    }}
+                  />
+                  <span style={{ fontSize: '0.88rem', color: 'var(--text-sub)', fontWeight: 700 }}>
+                    부터
+                  </span>
+                  <input
+                    type="time"
+                    aria-label="방해금지 종료 시간"
+                    value={dndEnd}
+                    onChange={(e) => {
+                      const prevSnapshot = {
+                        enabled: isDndEnabled,
+                        start: dndStart,
+                        end: dndEnd,
+                      };
+                      const nextEnd = e.target.value;
+                      setDndEnd(nextEnd);
+                      void syncDndToBackend(
+                        isDndEnabled,
+                        dndStart,
+                        nextEnd,
+                        prevSnapshot
+                      );
+                    }}
+                    style={{
+                      minHeight: '44px',
+                      background: 'var(--card-bg)',
+                      border: '1px solid var(--card-border)',
+                      borderRadius: '10px',
+                      padding: '8px 12px',
+                      color: 'var(--text-main)',
+                      fontWeight: 700,
+                    }}
+                  />
+                  <span style={{ fontSize: '0.88rem', color: 'var(--text-sub)', fontWeight: 700 }}>
+                    까지
+                  </span>
+                </div>
+
+                <div
                   style={{
-                    minHeight: '44px',
-                    background: 'var(--card-bg)',
-                    border: '1px solid var(--card-border)',
-                    borderRadius: '10px',
-                    padding: '8px 12px',
-                    color: 'var(--text-main)',
-                    fontWeight: 700,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '10px',
+                    borderTop: '1px solid var(--card-border)',
+                    paddingTop: '10px',
                   }}
-                />
-                <span style={{ fontSize: '0.88rem', color: 'var(--text-sub)', fontWeight: 700 }}>
-                  까지
-                </span>
+                >
+                  <label
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '0.84rem',
+                      fontWeight: 600,
+                      color: 'var(--text-main)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={useSeparateWeekendDnd}
+                      onChange={(e) => {
+                        const nextSep = e.target.checked;
+                        setUseSeparateWeekendDnd(nextSep);
+                        void syncDndToBackend(
+                          isDndEnabled,
+                          dndStart,
+                          dndEnd,
+                          { enabled: isDndEnabled, start: dndStart, end: dndEnd },
+                          { separateWeekend: nextSep }
+                        );
+                      }}
+                    />
+                    <span>평일·주말 다르게 설정</span>
+                  </label>
+
+                  {useSeparateWeekendDnd && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexWrap: 'wrap',
+                        gap: '10px',
+                      }}
+                    >
+                      <label
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontSize: '0.84rem',
+                          fontWeight: 700,
+                          color: 'var(--text-sub)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={weekendDndEnabled}
+                          onChange={(e) => {
+                            const nextWk = e.target.checked;
+                            setWeekendDndEnabled(nextWk);
+                            void syncDndToBackend(
+                              isDndEnabled,
+                              dndStart,
+                              dndEnd,
+                              { enabled: isDndEnabled, start: dndStart, end: dndEnd },
+                              { separateWeekend: true, weekendEnabled: nextWk }
+                            );
+                          }}
+                        />
+                        <span>주말 (토·일)</span>
+                      </label>
+                      {weekendDndEnabled && (
+                        <>
+                          <input
+                            type="time"
+                            aria-label="주말 방해금지 시작 시간"
+                            value={weekendDndStart}
+                            onChange={(e) => {
+                              const nextWkStart = e.target.value;
+                              setWeekendDndStart(nextWkStart);
+                              void syncDndToBackend(
+                                isDndEnabled,
+                                dndStart,
+                                dndEnd,
+                                { enabled: isDndEnabled, start: dndStart, end: dndEnd },
+                                { separateWeekend: true, weekendStart: nextWkStart }
+                              );
+                            }}
+                            style={{
+                              minHeight: '42px',
+                              background: 'var(--card-bg)',
+                              border: '1px solid var(--card-border)',
+                              borderRadius: '10px',
+                              padding: '6px 10px',
+                              color: 'var(--text-main)',
+                              fontWeight: 700,
+                            }}
+                          />
+                          <span style={{ fontSize: '0.84rem', color: 'var(--text-sub)', fontWeight: 700 }}>
+                            부터
+                          </span>
+                          <input
+                            type="time"
+                            aria-label="주말 방해금지 종료 시간"
+                            value={weekendDndEnd}
+                            onChange={(e) => {
+                              const nextWkEnd = e.target.value;
+                              setWeekendDndEnd(nextWkEnd);
+                              void syncDndToBackend(
+                                isDndEnabled,
+                                dndStart,
+                                dndEnd,
+                                { enabled: isDndEnabled, start: dndStart, end: dndEnd },
+                                { separateWeekend: true, weekendEnd: nextWkEnd }
+                              );
+                            }}
+                            style={{
+                              minHeight: '42px',
+                              background: 'var(--card-bg)',
+                              border: '1px solid var(--card-border)',
+                              borderRadius: '10px',
+                              padding: '6px 10px',
+                              color: 'var(--text-main)',
+                              fontWeight: 700,
+                            }}
+                          />
+                          <span style={{ fontSize: '0.84rem', color: 'var(--text-sub)', fontWeight: 700 }}>
+                            까지
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </section>

@@ -15,6 +15,9 @@ import {
   ZoomIn,
   Flag,
   Images,
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import type {
   Deal,
@@ -54,6 +57,14 @@ import {
   saveWishlistIdEntry,
   computeUnitPriceBadge,
   extractPaymentConditionBadge,
+  getCachedDealDetail,
+  setCachedDealDetail,
+  estimateKrwFromForeign,
+  isCustomsDutyRisk,
+  computeShippingTotal,
+  getDealAgeDays,
+  mapRawDealToDeal,
+  formatRelativeTimeKo,
 } from "../lib/utils";
 import type { PriceTrendStats } from "./PriceTrendChart";
 import DealDetailSecondarySections, {
@@ -76,6 +87,8 @@ interface DealDetailModalProps {
   showToast: (message: string) => void;
   onTargetAlertSaved?: (dealId: number) => void;
   onDealClosed?: (dealId: number, isClosed: boolean, reportCount: number) => void;
+  onNavigateDeal?: (delta: -1 | 1) => void;
+  onSelectRelatedDeal?: (deal: Deal) => void;
 }
 
 const INITIAL_ACCORDION_STATE: Record<AccordionSectionKey, boolean> = {
@@ -91,6 +104,8 @@ export default function DealDetailModal({
   showToast,
   onTargetAlertSaved,
   onDealClosed,
+  onNavigateDeal,
+  onSelectRelatedDeal,
 }: DealDetailModalProps) {
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number>(0);
   const [chartStats, setChartStats] = useState<PriceTrendStats | null>(null);
@@ -109,6 +124,7 @@ export default function DealDetailModal({
   const [detailOptionsData, setDetailOptionsData] = useState<DealOptionItem[]>([]);
   const [detailShopName, setDetailShopName] = useState<string>("");
   const [detailBodyImages, setDetailBodyImages] = useState<string[]>([]);
+  const [similarDeals, setSimilarDeals] = useState<Deal[]>([]);
   const [isClosedState, setIsClosedState] = useState<boolean>(false);
   const [reportCount, setReportCount] = useState<number>(0);
   const [hasReportedClosed, setHasReportedClosed] = useState<boolean>(false);
@@ -245,6 +261,7 @@ export default function DealDetailModal({
     setDetailOptionsData(currentDeal?.options_data || []);
     setDetailShopName(currentDeal?.shop_name || "");
     setDetailBodyImages(currentDeal?.bodyImages || []);
+    setSimilarDeals([]);
     setIsClosedState(Boolean(currentDeal?.isClosed));
     setReportCount(currentDeal?.reportCount ?? 0);
     reportingClosedRef.current = false;
@@ -328,6 +345,96 @@ export default function DealDetailModal({
       setTargetPriceInput(defaultTarget > 0 ? String(defaultTarget) : "");
     }
 
+    const applyDetailPayload = (d: RawDealApiResponse) => {
+      const htmlBody = d.content_html ?? d.contentHtml;
+      if (htmlBody) setDetailHtml(htmlBody);
+      if (Array.isArray(d.sources) && d.sources.length > 0) {
+        setDetailSources(d.sources);
+      }
+      if (Array.isArray(d.options_data) && d.options_data.length > 0) {
+        setDetailOptionsData(d.options_data);
+      } else if (Array.isArray(d.optionsData) && d.optionsData.length > 0) {
+        setDetailOptionsData(d.optionsData);
+      }
+      if (d.shop_name || d.shopName) {
+        setDetailShopName(String(d.shop_name || d.shopName));
+      }
+
+      const nextBuy = d.buy_count ?? d.buyCount ?? d.like_count;
+      if (nextBuy !== undefined) setBuyCount(Number(nextBuy) || 0);
+
+      const nextPass =
+        d.pass_count ?? d.passCount ?? d.save_count ?? d.saveCount ?? d.dislike_count;
+      if (nextPass !== undefined) setSaveCount(Number(nextPass) || 0);
+
+      const nextVote = d.user_vote ?? d.userVote;
+      if (nextVote !== undefined) setUserVote(nextVote ?? null);
+
+      const nextCommentCnt = d.comment_count ?? d.commentCount ?? d.comments;
+      if (nextCommentCnt !== undefined) setCommentCount(Number(nextCommentCnt) || 0);
+
+      if (d.recommendations !== undefined || d.like_count !== undefined) {
+        setOrigRecCount(Number(d.recommendations ?? d.like_count ?? 0) || 0);
+      }
+      if (d.comments !== undefined) {
+        setOrigCommentCount(Number(d.comments ?? 0) || 0);
+      }
+      if (d.views !== undefined || d.view_count !== undefined) {
+        setOrigViewCount(Number(d.views ?? d.view_count ?? 0) || 0);
+      }
+
+      const nextHistoryCnt = d.history_count ?? d.historyCount;
+      if (nextHistoryCnt !== undefined) setHistoryCount(Number(nextHistoryCnt) || 0);
+
+      const nextInitialHistory = d.initial_history ?? d.initialHistory;
+      if (Array.isArray(nextInitialHistory)) {
+        setDetailInitialHistory(nextInitialHistory);
+        if (nextHistoryCnt === undefined) {
+          setHistoryCount(nextInitialHistory.length);
+        }
+      }
+      const nextInitialHistoryPeriod =
+        d.initial_history_period ?? d.initialHistoryPeriod;
+      if (
+        typeof nextInitialHistoryPeriod === "string" &&
+        nextInitialHistoryPeriod.trim()
+      ) {
+        setDetailInitialHistoryPeriod(nextInitialHistoryPeriod.trim());
+      }
+
+      const nextFallback = d.is_search_fallback ?? d.isSearchFallback;
+      if (nextFallback !== undefined) setIsSearchFallback(Boolean(nextFallback));
+
+      const nextFree = d.is_free ?? d.isFree;
+      if (nextFree !== undefined) setIsFreeDeal(Boolean(nextFree));
+
+      const nextBodyImgs = d.body_images ?? d.bodyImages;
+      if (Array.isArray(nextBodyImgs)) {
+        setDetailBodyImages(nextBodyImgs.filter((img) => isSafeHttpUrl(img)));
+      }
+
+      const nextClosed = d.is_closed ?? d.isClosed;
+      if (nextClosed !== undefined) setIsClosedState(Boolean(nextClosed));
+
+      const nextReportCnt = d.report_count ?? d.reportCount;
+      if (nextReportCnt !== undefined) setReportCount(Number(nextReportCnt) || 0);
+
+      const rawSimilar = d.similar_deals ?? d.similarDeals;
+      if (Array.isArray(rawSimilar)) {
+        setSimilarDeals(rawSimilar.slice(0, 4).map((item) => mapRawDealToDeal(item)));
+      }
+    };
+
+    const cachedDetail = getCachedDealDetail(dealId);
+    if (cachedDetail) {
+      applyDetailPayload(cachedDetail.data);
+      if (Date.now() - cachedDetail.cachedAt < 15_000) {
+        return () => {
+          controller.abort();
+        };
+      }
+    }
+
     const storedToken = getStoredWebDeviceToken();
     const detailHeaders: Record<string, string> = {};
     if (storedToken) {
@@ -342,78 +449,8 @@ export default function DealDetailModal({
       .then((r) => (r.ok ? (r.json() as Promise<RawDealApiResponse>) : null))
       .then((d) => {
         if (signal.aborted || !d) return;
-        const htmlBody = d.content_html ?? d.contentHtml;
-        if (htmlBody) setDetailHtml(htmlBody);
-        if (Array.isArray(d.sources) && d.sources.length > 0) {
-          setDetailSources(d.sources);
-        }
-        if (Array.isArray(d.options_data) && d.options_data.length > 0) {
-          setDetailOptionsData(d.options_data);
-        } else if (Array.isArray(d.optionsData) && d.optionsData.length > 0) {
-          setDetailOptionsData(d.optionsData);
-        }
-        if (d.shop_name || d.shopName) {
-          setDetailShopName(String(d.shop_name || d.shopName));
-        }
-
-        const nextBuy = d.buy_count ?? d.buyCount ?? d.like_count;
-        if (nextBuy !== undefined) setBuyCount(Number(nextBuy) || 0);
-
-        const nextPass =
-          d.pass_count ?? d.passCount ?? d.save_count ?? d.saveCount ?? d.dislike_count;
-        if (nextPass !== undefined) setSaveCount(Number(nextPass) || 0);
-
-        const nextVote = d.user_vote ?? d.userVote;
-        if (nextVote !== undefined) setUserVote(nextVote ?? null);
-
-        const nextCommentCnt = d.comment_count ?? d.commentCount ?? d.comments;
-        if (nextCommentCnt !== undefined) setCommentCount(Number(nextCommentCnt) || 0);
-
-        if (d.recommendations !== undefined || d.like_count !== undefined) {
-          setOrigRecCount(Number(d.recommendations ?? d.like_count ?? 0) || 0);
-        }
-        if (d.comments !== undefined) {
-          setOrigCommentCount(Number(d.comments ?? 0) || 0);
-        }
-        if (d.views !== undefined || d.view_count !== undefined) {
-          setOrigViewCount(Number(d.views ?? d.view_count ?? 0) || 0);
-        }
-
-        const nextHistoryCnt = d.history_count ?? d.historyCount;
-        if (nextHistoryCnt !== undefined) setHistoryCount(Number(nextHistoryCnt) || 0);
-
-        const nextInitialHistory = d.initial_history ?? d.initialHistory;
-        if (Array.isArray(nextInitialHistory)) {
-          setDetailInitialHistory(nextInitialHistory);
-          if (nextHistoryCnt === undefined) {
-            setHistoryCount(nextInitialHistory.length);
-          }
-        }
-        const nextInitialHistoryPeriod =
-          d.initial_history_period ?? d.initialHistoryPeriod;
-        if (
-          typeof nextInitialHistoryPeriod === "string" &&
-          nextInitialHistoryPeriod.trim()
-        ) {
-          setDetailInitialHistoryPeriod(nextInitialHistoryPeriod.trim());
-        }
-
-        const nextFallback = d.is_search_fallback ?? d.isSearchFallback;
-        if (nextFallback !== undefined) setIsSearchFallback(Boolean(nextFallback));
-
-        const nextFree = d.is_free ?? d.isFree;
-        if (nextFree !== undefined) setIsFreeDeal(Boolean(nextFree));
-
-        const nextBodyImgs = d.body_images ?? d.bodyImages;
-        if (Array.isArray(nextBodyImgs)) {
-          setDetailBodyImages(nextBodyImgs.filter((img) => isSafeHttpUrl(img)));
-        }
-
-        const nextClosed = d.is_closed ?? d.isClosed;
-        if (nextClosed !== undefined) setIsClosedState(Boolean(nextClosed));
-
-        const nextReportCnt = d.report_count ?? d.reportCount;
-        if (nextReportCnt !== undefined) setReportCount(Number(nextReportCnt) || 0);
+        setCachedDealDetail(dealId, d);
+        applyDetailPayload(d);
       })
       .catch(() => {});
 
@@ -488,6 +525,29 @@ export default function DealDetailModal({
       window.removeEventListener("popstate", handlePopState);
     };
   }, [dealId]);
+
+  useEffect(() => {
+    if (dealId === null || lightboxIndex !== null || !onNavigateDeal || typeof window === "undefined") {
+      return;
+    }
+    const handleArrowNav = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      onNavigateDeal(e.key === "ArrowLeft" ? -1 : 1);
+    };
+    window.addEventListener("keydown", handleArrowNav);
+    return () => window.removeEventListener("keydown", handleArrowNav);
+  }, [dealId, lightboxIndex, onNavigateDeal]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -677,7 +737,7 @@ export default function DealDetailModal({
 
   if (!deal) return null;
 
-  const cleanBodyText = polishDealBodyText(detailHtml);
+  const cleanBodyText = polishDealBodyText(detailHtml, deal.title);
   const promoCodes = extractPromoCodes(cleanBodyText, deal.title);
   const optionSources = getOptionSources(detailSources, effectiveOptionsData);
 
@@ -1217,6 +1277,18 @@ export default function DealDetailModal({
     };
   })();
 
+  const krwEstimate = !showZeroWonPrice
+    ? estimateKrwFromForeign(activePrice, activeCurrency)
+    : null;
+  const dutyRisk = !showZeroWonPrice
+    ? isCustomsDutyRisk(activePrice, activeCurrency, shopBadge, displayTitle)
+    : { atRisk: false, thresholdUsd: 150, usdApprox: 0 };
+  const shippingTotalInfo =
+    !showZeroWonPrice && !isClosedState
+      ? computeShippingTotal(activePrice, activeCurrency, displayShipping)
+      : null;
+  const dealAgeDays = getDealAgeDays(deal.originalDate);
+
   return (
     <div className="deal-modal-overlay" onClick={handleDismiss}>
       <div
@@ -1444,7 +1516,41 @@ export default function DealDetailModal({
                 </h3>
               </div>
             </div>
-            <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+            <div style={{ display: "flex", gap: "6px", flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {onNavigateDeal && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onNavigateDeal(-1)}
+                    title="이전 핫딜 (←)"
+                    aria-label="이전 핫딜"
+                    className="deal-modal-icon-btn bounce-click"
+                  >
+                    <ChevronLeft size={16} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onNavigateDeal(1)}
+                    title="다음 핫딜 (→)"
+                    aria-label="다음 핫딜"
+                    className="deal-modal-icon-btn bounce-click"
+                  >
+                    <ChevronRight size={16} aria-hidden="true" />
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await copyTextSafe(displayTitle);
+                  showToast(ok ? "상품명을 복사했어요" : "상품명을 복사하지 못했어요");
+                }}
+                title="상품명 복사"
+                aria-label="상품명 복사"
+                className="deal-modal-icon-btn bounce-click"
+              >
+                <Copy size={14} aria-hidden="true" />
+              </button>
               <button
                 type="button"
                 onClick={handleShare}
@@ -1466,6 +1572,29 @@ export default function DealDetailModal({
             </div>
           </div>
         </div>
+
+        {dealAgeDays >= 3 && (
+          <div
+            role="note"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "9px 12px",
+              borderRadius: "10px",
+              background: "var(--warning-bg)",
+              border: "1px solid var(--warning-border)",
+              color: "var(--warning-text)",
+              fontSize: "0.78rem",
+              fontWeight: 700,
+            }}
+          >
+            <AlertTriangle size={14} aria-hidden="true" style={{ flexShrink: 0 }} />
+            <span>
+              등록된 지 {dealAgeDays}일 지난 핫딜입니다. 품절·가격 변동 여부를 확인하세요.
+            </span>
+          </div>
+        )}
 
         {/* 1급 영역 ①: 가격 요약 & 검색 폴백 배지 */}
         <div
@@ -1514,15 +1643,54 @@ export default function DealDetailModal({
                   fontWeight: 900,
                   marginTop: "2px",
                   fontVariantNumeric: "tabular-nums",
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: "8px",
+                  flexWrap: "wrap",
                 }}
               >
-                {showZeroWonPrice
-                  ? "0원 (무료)"
-                  : formatPrice(activePrice, activeCurrency, activeOptionTitle || deal.title)}
+                <span>
+                  {showZeroWonPrice
+                    ? "0원 (무료)"
+                    : formatPrice(activePrice, activeCurrency, activeOptionTitle || deal.title)}
+                </span>
+                {krwEstimate && (
+                  <span style={{ fontSize: "0.86rem", fontWeight: 700, color: "var(--text-sub)" }}>
+                    ({krwEstimate.formatted})
+                  </span>
+                )}
               </div>
               {displayShipping && (
                 <div style={{ fontSize: "0.8rem", color: "var(--accent)", marginTop: "2px", fontWeight: 700 }}>
                   배송비: {displayShipping}
+                  {shippingTotalInfo && (
+                    <span style={{ color: "var(--text-sub)", marginLeft: "6px" }}>
+                      ({shippingTotalInfo.label})
+                    </span>
+                  )}
+                </div>
+              )}
+              {dutyRisk.atRisk && (
+                <div
+                  role="note"
+                  style={{
+                    marginTop: "6px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    padding: "4px 8px",
+                    borderRadius: "6px",
+                    background: "var(--warning-bg)",
+                    border: "1px solid var(--warning-border)",
+                    color: "var(--warning-text)",
+                    fontSize: "0.74rem",
+                    fontWeight: 700,
+                  }}
+                >
+                  <AlertTriangle size={12} aria-hidden="true" />
+                  <span>
+                    미화 약 ${dutyRisk.usdApprox} · 면세 한도(${dutyRisk.thresholdUsd}) 초과 관부가세 주의
+                  </span>
                 </div>
               )}
             </div>
@@ -1863,20 +2031,77 @@ export default function DealDetailModal({
             </div>
           )}
 
-          <div
-            style={{
-              fontSize: "0.9rem",
-              lineHeight: 1.65,
-              color: "var(--text-main)",
-              whiteSpace: "pre-line",
-              wordBreak: "break-word",
-            }}
-          >
-            {cleanBodyText
-              ? cleanBodyText.slice(0, 3500)
-              : deal.aiSummary ||
+          {cleanBodyText.length < 40 && (
+            <div
+              aria-label="핫딜 핵심 요약 카드"
+              style={{
+                background: "var(--card-bg)",
+                border: "1px solid var(--card-border)",
+                borderRadius: "12px",
+                padding: "12px 14px",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                gap: "8px 12px",
+                fontSize: "0.8rem",
+              }}
+            >
+              <div>
+                <div style={{ color: "var(--text-muted)", fontSize: "0.72rem", fontWeight: 700 }}>판매처 · 출처</div>
+                <div style={{ color: "var(--text-main)", fontWeight: 800, marginTop: "2px" }}>
+                  {shopBadge || deal.community_name} · {deal.community_name}
+                </div>
+              </div>
+              <div>
+                <div style={{ color: "var(--text-muted)", fontSize: "0.72rem", fontWeight: 700 }}>가격</div>
+                <div style={{ color: "var(--deal-orange)", fontWeight: 800, marginTop: "2px", fontVariantNumeric: "tabular-nums" }}>
+                  {showZeroWonPrice
+                    ? "0원 (무료)"
+                    : formatPrice(activePrice, activeCurrency, activeOptionTitle || deal.title)}
+                  {krwEstimate ? ` (${krwEstimate.formatted})` : ""}
+                </div>
+              </div>
+              <div>
+                <div style={{ color: "var(--text-muted)", fontSize: "0.72rem", fontWeight: 700 }}>배송 · 조건</div>
+                <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: "2px" }}>
+                  {displayShipping || "판매처 확인"}
+                  {detailPaymentCondBadge ? ` · ${detailPaymentCondBadge}` : ""}
+                </div>
+              </div>
+              <div>
+                <div style={{ color: "var(--text-muted)", fontSize: "0.72rem", fontWeight: 700 }}>등록 시점</div>
+                <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: "2px" }}>
+                  {formatRelativeTimeKo(deal.originalDate, undefined, deal.scraped_at || "최근")}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {cleanBodyText ? (
+            <div
+              style={{
+                fontSize: "0.9rem",
+                lineHeight: 1.65,
+                color: "var(--text-main)",
+                whiteSpace: "pre-line",
+                wordBreak: "break-word",
+              }}
+            >
+              {cleanBodyText.slice(0, 3500)}
+            </div>
+          ) : (
+            <div
+              style={{
+                fontSize: "0.86rem",
+                lineHeight: 1.6,
+                color: "var(--text-sub)",
+                whiteSpace: "pre-line",
+                wordBreak: "break-word",
+              }}
+            >
+              {deal.aiSummary ||
                 `[${deal.community_name}]에서 등록된 핫딜입니다. 쿠폰 및 카드 할인 조건은 아래 쇼핑몰 또는 원본 게시글에서 확인해 주세요.`}
-          </div>
+            </div>
+          )}
 
           {galleryImages.length > 0 && (
             <div
@@ -2318,6 +2543,100 @@ export default function DealDetailModal({
         </div>
           }
         />
+
+        {similarDeals.length > 0 && (
+          <section
+            className="deal-similar-section"
+            aria-label="유사한 핫딜 추천"
+            style={{
+              padding: '12px 20px 14px',
+              borderTop: '1px solid var(--border-subtle, rgba(148,163,184,0.18))',
+              background: 'var(--bg-subtle, rgba(148,163,184,0.06))',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '13px',
+                fontWeight: 700,
+                marginBottom: '8px',
+                color: 'var(--text-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span>비슷한 커뮤니티 핫딜</span>
+              <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                {similarDeals.length}건
+              </span>
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '8px',
+              }}
+            >
+              {similarDeals.slice(0, 4).map((sd) => {
+                const priceLabel = sd.isFree
+                  ? '무료'
+                  : formatPrice(sd.price, sd.currency, sd.title) || '옵션 확인';
+                return (
+                  <button
+                    key={sd.id}
+                    type="button"
+                    onClick={() => onSelectRelatedDeal?.(sd)}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-start',
+                      gap: '4px',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: '1px solid var(--border-subtle, rgba(148,163,184,0.22))',
+                      background: 'var(--bg-card, var(--surface-card, #ffffff))',
+                      textAlign: 'left',
+                      cursor: onSelectRelatedDeal ? 'pointer' : 'default',
+                      opacity: sd.isClosed ? 0.65 : 1,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        lineHeight: 1.35,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        width: '100%',
+                      }}
+                    >
+                      {sd.title}
+                    </span>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: '11px',
+                        color: 'var(--text-secondary)',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <strong style={{ color: 'var(--accent-primary, #059669)', fontSize: '12px' }}>
+                        {priceLabel}
+                      </strong>
+                      <span>· {sd.shop_name || sd.community_name}</span>
+                      {sd.isClosed && <span>(종료)</span>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* 하단 Sticky 2버튼 액션 바 (닫기 버튼은 상단 X로 일원화하여 360px 압착 해소) */}
         <div className="deal-modal-footer">

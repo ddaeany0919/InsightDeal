@@ -206,7 +206,8 @@ private val WOW_MEMBERSHIP_TITLE_REGEX = Regex("(?:와우\\s*(?:할인|회원|�
 private val WOW_SHIP_REGEX = Regex("와우", RegexOption.IGNORE_CASE)
 private val NMEM_MEMBERSHIP_TITLE_REGEX = Regex("(?:네멤\\s*(?:할인|특가|전용)|네이버\\s*멤버십)", RegexOption.IGNORE_CASE)
 private val NMEM_SHIP_REGEX = Regex("네멤", RegexOption.IGNORE_CASE)
-private val UNIVERSE_CLUB_REGEX = Regex("유니버스\\s*클럽", RegexOption.IGNORE_CASE)
+private val UNIVERSE_CLUB_REGEX = Regex("유니버스\\s*클럽|유클", RegexOption.IGNORE_CASE)
+private val SMILE_CLUB_REGEX = Regex("스마일\\s*클럽|스클", RegexOption.IGNORE_CASE)
 private val SUPER_REWARD_REGEX = Regex("슈퍼\\s*적립", RegexOption.IGNORE_CASE)
 
 /**
@@ -240,8 +241,11 @@ fun extractPaymentConditionBadge(
     if (NMEM_MEMBERSHIP_TITLE_REGEX.containsMatchIn(cleanTitle) || NMEM_SHIP_REGEX.containsMatchIn(cleanShip)) {
         return "네멤 조건"
     }
-    if (UNIVERSE_CLUB_REGEX.containsMatchIn(cleanTitle)) {
+    if (UNIVERSE_CLUB_REGEX.containsMatchIn(cleanTitle) || UNIVERSE_CLUB_REGEX.containsMatchIn(cleanShip)) {
         return "유니버스클럽 조건"
+    }
+    if (SMILE_CLUB_REGEX.containsMatchIn(cleanTitle) || SMILE_CLUB_REGEX.containsMatchIn(cleanShip)) {
+        return "스마일클럽 조건"
     }
     if (SUPER_REWARD_REGEX.containsMatchIn(cleanTitle)) {
         return "슈퍼적립 조건"

@@ -17,6 +17,10 @@ import {
   ChevronDown,
   ChevronUp,
   ArrowUp,
+  Clock,
+  EyeOff,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -100,6 +104,33 @@ function isAbortError(err: unknown): boolean {
   );
 }
 
+type FeedSortKey =
+  | "latest"
+  | "popular"
+  | "price_asc"
+  | "price_desc"
+  | "comments"
+  | "recommendations";
+
+interface FeedCacheEntry {
+  deals: Deal[];
+  hasMore: boolean;
+  nextCursor: NextCursor | null;
+  cachedAt: number;
+}
+
+const FEED_SWR_FRESH_MS = 15_000;
+const FEED_SWR_STALE_MS = 45_000;
+const RECENT_DEALS_STORAGE_KEY = "insightdeal_recent_deals";
+const HIDDEN_DEALS_STORAGE_KEY = "insightdeal_hidden_deal_ids";
+const MUTED_KEYWORDS_STORAGE_KEY = "insightdeal_muted_keywords";
+
+function formatCompactPriceLabel(rawNum: string): string {
+  const num = parseInt(rawNum.replace(/[^0-9]/g, ""), 10);
+  if (!Number.isFinite(num) || num <= 0) return "";
+  return `${num.toLocaleString("ko-KR")}원`;
+}
+
 export default function Home() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,6 +158,8 @@ export default function Home() {
   const [serverWishlists, setServerWishlists] = useState<WishlistApiItem[]>([]);
   const serverWishlistsRef = useRef<WishlistApiItem[]>([]);
   const dealsRef = useRef<Deal[]>([]);
+  const feedCacheRef = useRef<Map<string, FeedCacheEntry>>(new Map());
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const wishlistRef = useRef<number[]>([]);
   const wishlistItemsMapRef = useRef<Record<number, Deal>>({});
   const alertsRef = useRef<number[]>([]);
@@ -142,6 +175,21 @@ export default function Home() {
   const [appliedSearch, setAppliedSearch] = useState("");
   const appliedSearchRef = useRef("");
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [recentDeals, setRecentDeals] = useState<Deal[]>([]);
+  const [showRecentDealsPanel, setShowRecentDealsPanel] = useState(false);
+  const [hiddenDealIds, setHiddenDealIds] = useState<number[]>([]);
+  const [mutedKeywords, setMutedKeywords] = useState<string[]>([]);
+  const [muteKeywordInput, setMuteKeywordInput] = useState("");
+  const [showHiddenManagePanel, setShowHiddenManagePanel] = useState(false);
+  const [freeShippingOnly, setFreeShippingOnly] = useState(false);
+  const freeShippingOnlyRef = useRef(false);
+  const [shopFilter, setShopFilter] = useState("");
+  const shopFilterRef = useRef("");
+  const [minPriceInput, setMinPriceInput] = useState("");
+  const [maxPriceInput, setMaxPriceInput] = useState("");
+  const minPriceRef = useRef("");
+  const maxPriceRef = useRef("");
+  const [viewMode, setViewMode] = useState<"card" | "compact">("card");
   const [popularKeywords, setPopularKeywords] = useState<string[]>([
     "제로콜라",
     "로봇청소기",
@@ -163,10 +211,8 @@ export default function Home() {
   const hideClosedDealsRef = useRef(false);
   const includeClosedDealsRef = useRef(false);
   const nextCursorRef = useRef<NextCursor | null>(null);
-  const [sortBy, setSortBy] = useState<"latest" | "popular" | "price_asc">(
-    "latest"
-  );
-  const sortByRef = useRef<"latest" | "popular" | "price_asc">("latest");
+  const [sortBy, setSortBy] = useState<FeedSortKey>("latest");
+  const sortByRef = useRef<FeedSortKey>("latest");
   const [isTossMiniApp, setIsTossMiniApp] = useState(
     process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true"
   );
@@ -1030,6 +1076,7 @@ export default function Home() {
 
   const handleDealClosed = useCallback(
     (dealId: number, isClosed: boolean, reportCount: number) => {
+      feedCacheRef.current.clear();
       setDeals((prev) =>
         prev.map((d) =>
           d.id === dealId ? { ...d, isClosed, reportCount } : d
@@ -1042,6 +1089,82 @@ export default function Home() {
     []
   );
 
+  const openDealWithHistory = useCallback((deal: Deal) => {
+    setSelectedDeal(deal);
+    setRecentDeals((prev) => {
+      const next = [deal, ...prev.filter((item) => item.id !== deal.id)].slice(0, 30);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(RECENT_DEALS_STORAGE_KEY, JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
+  const handleHideDeal = useCallback(
+    (dealId: number) => {
+      setHiddenDealIds((prev) => {
+        if (prev.includes(dealId)) return prev;
+        const next = [...prev, dealId].slice(-200);
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem(HIDDEN_DEALS_STORAGE_KEY, JSON.stringify(next));
+          } catch {}
+        }
+        return next;
+      });
+      showToast("해당 핫딜을 피드에서 숨겼어요");
+    },
+    [showToast]
+  );
+
+  const handleUnhideDeal = useCallback((dealId: number) => {
+    setHiddenDealIds((prev) => {
+      const next = prev.filter((id) => id !== dealId);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(HIDDEN_DEALS_STORAGE_KEY, JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
+  const handleAddMutedKeyword = useCallback(
+    (kw: string) => {
+      const trimmed = kw.trim();
+      if (!trimmed) return;
+      setMutedKeywords((prev) => {
+        if (prev.some((item) => item.toLowerCase() === trimmed.toLowerCase())) {
+          return prev;
+        }
+        const next = [trimmed, ...prev].slice(0, 50);
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem(MUTED_KEYWORDS_STORAGE_KEY, JSON.stringify(next));
+          } catch {}
+        }
+        return next;
+      });
+      setMuteKeywordInput("");
+      showToast(`'${trimmed}' 포함 핫딜을 숨겼어요`);
+    },
+    [showToast]
+  );
+
+  const handleRemoveMutedKeyword = useCallback((kw: string) => {
+    setMutedKeywords((prev) => {
+      const next = prev.filter((item) => item !== kw);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(MUTED_KEYWORDS_STORAGE_KEY, JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
   const fetchLiveDeals = useCallback(
     async (
       showLoadingState = true,
@@ -1049,11 +1172,16 @@ export default function Home() {
       targetCategories: string[] = selectedCategoriesRef.current,
       targetPlatforms: string[] = selectedPlatformsRef.current,
       overrideKeyword?: string,
-      overrideSort?: "latest" | "popular" | "price_asc",
+      overrideSort?: FeedSortKey,
       overrides?: {
         includeClosed?: boolean;
         onlyHot?: boolean;
         hideClosed?: boolean;
+        freeShipping?: boolean;
+        shop?: string;
+        minPrice?: string;
+        maxPrice?: string;
+        bypassCache?: boolean;
         cursor?: NextCursor | null;
       }
     ): Promise<boolean> => {
@@ -1076,9 +1204,6 @@ export default function Home() {
           setFetchError(null);
           nextCursorRef.current = null;
         }
-        if (showLoadingState) {
-          setLoading(true);
-        }
 
         const apiCategory =
           normalizedCategories.length > 0 ? normalizedCategories.join(",") : "";
@@ -1098,8 +1223,44 @@ export default function Home() {
           overrides?.hideClosed ?? hideClosedDealsRef.current;
         const activeIncludeClosed =
           overrides?.includeClosed ?? includeClosedDealsRef.current;
+        const activeFreeShip =
+          overrides?.freeShipping ?? freeShippingOnlyRef.current;
+        const activeShop = (overrides?.shop ?? shopFilterRef.current).trim();
+        const activeMinPrice = (overrides?.minPrice ?? minPriceRef.current).replace(/[^0-9]/g, "");
+        const activeMaxPrice = (overrides?.maxPrice ?? maxPriceRef.current).replace(/[^0-9]/g, "");
         const activeCursor =
           offset > 0 ? (overrides?.cursor ?? nextCursorRef.current) : null;
+
+        const cacheKey = `${apiCategory}|${normalizedPlatforms.join(",")}|${activeKw.trim()}|${activeSort}|${activeOnlyHot ? 1 : 0}|${activeHideClosed ? 1 : 0}|${activeIncludeClosed ? 1 : 0}|${activeFreeShip ? 1 : 0}|${activeShop}|${activeMinPrice}|${activeMaxPrice}`;
+
+        let servedStaleCache = false;
+        if (offset === 0 && !overrides?.bypassCache) {
+          const cached = feedCacheRef.current.get(cacheKey);
+          if (cached) {
+            const ageMs = Date.now() - cached.cachedAt;
+            if (ageMs <= FEED_SWR_FRESH_MS) {
+              dealsRef.current = cached.deals;
+              setDeals(cached.deals);
+              setHasMore(cached.hasMore);
+              nextCursorRef.current = cached.nextCursor;
+              setLoading(false);
+              setFetchError(null);
+              return true;
+            }
+            if (ageMs <= FEED_SWR_STALE_MS && cached.deals.length > 0) {
+              dealsRef.current = cached.deals;
+              setDeals(cached.deals);
+              setHasMore(cached.hasMore);
+              nextCursorRef.current = cached.nextCursor;
+              setLoading(false);
+              servedStaleCache = true;
+            }
+          }
+        }
+
+        if (showLoadingState && !servedStaleCache) {
+          setLoading(true);
+        }
 
         const queryParam = activeKw.trim()
           ? `&keyword=${encodeURIComponent(activeKw.trim())}`
@@ -1107,7 +1268,11 @@ export default function Home() {
         const sortParam = `&sort=${encodeURIComponent(activeSort)}`;
         const filterParams = `${activeOnlyHot ? "&only_hot=true" : ""}${
           activeHideClosed ? "&hide_closed=true" : ""
-        }${activeIncludeClosed ? "&include_closed=true" : ""}`;
+        }${activeIncludeClosed ? "&include_closed=true" : ""}${
+          activeFreeShip ? "&free_shipping=true" : ""
+        }${activeShop ? `&shop=${encodeURIComponent(activeShop)}` : ""}${
+          activeMinPrice ? `&min_price=${encodeURIComponent(activeMinPrice)}` : ""
+        }${activeMaxPrice ? `&max_price=${encodeURIComponent(activeMaxPrice)}` : ""}`;
         const cursorParams =
           activeCursor && activeCursor.indexed_at && Number.isFinite(activeCursor.id)
             ? `&cursor_indexed_at=${encodeURIComponent(
@@ -1222,6 +1387,20 @@ export default function Home() {
             mergedDealsForRef = [...formatted];
             dealsRef.current = mergedDealsForRef;
             setDeals(mergedDealsForRef);
+            const resolvedHasMore =
+              explicitHasMore !== undefined
+                ? explicitHasMore
+                : formatted.length >= limit;
+            if (feedCacheRef.current.size >= 24) {
+              const oldest = feedCacheRef.current.keys().next().value;
+              if (oldest !== undefined) feedCacheRef.current.delete(oldest);
+            }
+            feedCacheRef.current.set(cacheKey, {
+              deals: mergedDealsForRef,
+              hasMore: resolvedHasMore,
+              nextCursor: nextCursorRef.current,
+              cachedAt: Date.now(),
+            });
             if (
               typeof window !== "undefined" &&
               normalizedCategories.length === 0 &&
@@ -1230,7 +1409,11 @@ export default function Home() {
               activeSort === "latest" &&
               !activeOnlyHot &&
               !activeHideClosed &&
-              !activeIncludeClosed
+              !activeIncludeClosed &&
+              !activeFreeShip &&
+              !activeShop &&
+              !activeMinPrice &&
+              !activeMaxPrice
             ) {
               localStorage.setItem(
                 "insightdeal_cached_deals",
@@ -1299,7 +1482,11 @@ export default function Home() {
             activeSortOnErr === "latest" &&
             !onlyHotDealsRef.current &&
             !hideClosedDealsRef.current &&
-            !includeClosedDealsRef.current
+            !includeClosedDealsRef.current &&
+            !freeShippingOnlyRef.current &&
+            !shopFilterRef.current &&
+            !minPriceRef.current &&
+            !maxPriceRef.current
           ) {
             try {
               const cached = localStorage.getItem("insightdeal_cached_deals");
@@ -1336,11 +1523,15 @@ export default function Home() {
     if (isRefreshing) return;
     setIsRefreshing(true);
     setNewDealsCount(0);
+    feedCacheRef.current.clear();
     const ok = await fetchLiveDeals(
       false,
       0,
       selectedCategoriesRef.current,
-      selectedPlatformsRef.current
+      selectedPlatformsRef.current,
+      undefined,
+      undefined,
+      { bypassCache: true }
     );
     setIsRefreshing(false);
     showToast(ok ? "최신 딜을 불러왔어요" : HOT_DEALS_ERROR_COPY);
@@ -1352,11 +1543,15 @@ export default function Home() {
     }
     setNewDealsCount(0);
     setIsRefreshing(true);
+    feedCacheRef.current.clear();
     const ok = await fetchLiveDeals(
       false,
       0,
       selectedCategoriesRef.current,
-      selectedPlatformsRef.current
+      selectedPlatformsRef.current,
+      undefined,
+      undefined,
+      { bypassCache: true }
     );
     setIsRefreshing(false);
     showToast(ok ? "최신 딜을 반영했어요" : HOT_DEALS_ERROR_COPY);
@@ -1514,7 +1709,7 @@ export default function Home() {
     );
   };
 
-  const handleSortChange = (nextSort: "latest" | "popular" | "price_asc") => {
+  const handleSortChange = (nextSort: FeedSortKey) => {
     if (sortByRef.current === nextSort) return;
     sortByRef.current = nextSort;
     setSortBy(nextSort);
@@ -1682,6 +1877,75 @@ export default function Home() {
     );
   };
 
+  const handleToggleFreeShipping = () => {
+    const next = !freeShippingOnlyRef.current;
+    freeShippingOnlyRef.current = next;
+    setFreeShippingOnly(next);
+    setIsFetchingMore(false);
+    dealsRef.current = [];
+    setDeals([]);
+    setHasMore(true);
+    void fetchLiveDeals(
+      true,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current,
+      undefined,
+      undefined,
+      { freeShipping: next }
+    );
+  };
+
+  const handleShopFilterChange = (nextShop: string) => {
+    const clean = nextShop.trim();
+    shopFilterRef.current = clean;
+    setShopFilter(clean);
+    setIsFetchingMore(false);
+    dealsRef.current = [];
+    setDeals([]);
+    setHasMore(true);
+    void fetchLiveDeals(
+      true,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current,
+      undefined,
+      undefined,
+      { shop: clean }
+    );
+  };
+
+  const handleApplyPriceRange = (rawMin: string, rawMax: string) => {
+    const cleanMin = rawMin.replace(/[^0-9]/g, "");
+    const cleanMax = rawMax.replace(/[^0-9]/g, "");
+    minPriceRef.current = cleanMin;
+    maxPriceRef.current = cleanMax;
+    setMinPriceInput(cleanMin);
+    setMaxPriceInput(cleanMax);
+    setIsFetchingMore(false);
+    dealsRef.current = [];
+    setDeals([]);
+    setHasMore(true);
+    void fetchLiveDeals(
+      true,
+      0,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current,
+      undefined,
+      undefined,
+      { minPrice: cleanMin, maxPrice: cleanMax }
+    );
+  };
+
+  const handleViewModeChange = (nextMode: "card" | "compact") => {
+    setViewMode(nextMode);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("insightdeal_view_mode", nextMode);
+      } catch {}
+    }
+  };
+
   const handleResetAllFilters = () => {
     clearSearchDebounce();
     isComposingRef.current = false;
@@ -1697,8 +1961,17 @@ export default function Home() {
     setHideClosedDeals(false);
     includeClosedDealsRef.current = false;
     setIncludeClosedDeals(false);
+    freeShippingOnlyRef.current = false;
+    setFreeShippingOnly(false);
+    shopFilterRef.current = "";
+    setShopFilter("");
+    minPriceRef.current = "";
+    maxPriceRef.current = "";
+    setMinPriceInput("");
+    setMaxPriceInput("");
     sortByRef.current = "latest";
     setSortBy("latest");
+    feedCacheRef.current.clear();
     setIsFetchingMore(false);
     dealsRef.current = [];
     setDeals([]);
@@ -1707,6 +1980,11 @@ export default function Home() {
       onlyHot: false,
       hideClosed: false,
       includeClosed: false,
+      freeShipping: false,
+      shop: "",
+      minPrice: "",
+      maxPrice: "",
+      bypassCache: true,
     });
     showToast("필터를 초기화했어요");
   };
@@ -1718,6 +1996,10 @@ export default function Home() {
     onlyHotDeals ||
     hideClosedDeals ||
     includeClosedDeals ||
+    freeShippingOnly ||
+    shopFilter !== "" ||
+    minPriceInput !== "" ||
+    maxPriceInput !== "" ||
     sortBy !== "latest";
 
   const handleCloseDealModal = useCallback(() => {
@@ -1744,16 +2026,39 @@ export default function Home() {
       setDeferredPrompt(e as BeforeInstallPromptEvent);
     };
 
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const tgt = e.target as HTMLElement | null;
+      const tag = tgt?.tagName?.toLowerCase();
+      if (
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        tgt?.isContentEditable
+      ) {
+        return;
+      }
+      if (searchInputRef.current) {
+        e.preventDefault();
+        searchInputRef.current.focus();
+      }
+    };
+
     let initialSharedKw = "";
     let initialPlatforms: string[] = [];
     let initialCategories: string[] = [];
-    let initialSort: "latest" | "popular" | "price_asc" = "latest";
+    let initialSort: FeedSortKey = "latest";
     let initialOnlyHot = false;
     let initialHideClosed = false;
     let initialIncludeClosed = false;
+    let initialFreeShipping = false;
+    let initialShop = "";
+    let initialMinPrice = "";
+    let initialMaxPrice = "";
     let initialDealId: number | null = null;
     if (typeof window !== "undefined") {
       window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.addEventListener("keydown", handleGlobalKeyDown);
 
       const urlParams = new URLSearchParams(window.location.search);
       const sharedKw = urlParams.get("keyword");
@@ -1800,10 +2105,45 @@ export default function Home() {
       }
 
       const sortRaw = urlParams.get("sort");
-      if (sortRaw === "popular" || sortRaw === "price_asc" || sortRaw === "latest") {
+      if (
+        sortRaw === "popular" ||
+        sortRaw === "price_asc" ||
+        sortRaw === "price_desc" ||
+        sortRaw === "comments" ||
+        sortRaw === "recommendations" ||
+        sortRaw === "latest"
+      ) {
         initialSort = sortRaw;
         sortByRef.current = sortRaw;
         setSortBy(sortRaw);
+      }
+
+      const freeShipRaw = urlParams.get("freeShipping");
+      if (freeShipRaw === "1" || freeShipRaw === "true") {
+        initialFreeShipping = true;
+        freeShippingOnlyRef.current = true;
+        setFreeShippingOnly(true);
+      }
+
+      const shopRaw = urlParams.get("shop");
+      if (shopRaw && shopRaw.trim()) {
+        initialShop = shopRaw.trim();
+        shopFilterRef.current = initialShop;
+        setShopFilter(initialShop);
+      }
+
+      const minPRaw = (urlParams.get("minPrice") || "").replace(/[^0-9]/g, "");
+      if (minPRaw) {
+        initialMinPrice = minPRaw;
+        minPriceRef.current = minPRaw;
+        setMinPriceInput(minPRaw);
+      }
+
+      const maxPRaw = (urlParams.get("maxPrice") || "").replace(/[^0-9]/g, "");
+      if (maxPRaw) {
+        initialMaxPrice = maxPRaw;
+        maxPriceRef.current = maxPRaw;
+        setMaxPriceInput(maxPRaw);
       }
 
       const hotRaw = urlParams.get("hot") ?? urlParams.get("onlyHot");
@@ -1827,7 +2167,7 @@ export default function Home() {
         }
       }
 
-      const dealIdRaw = urlParams.get("dealId");
+      const dealIdRaw = urlParams.get("dealId") ?? urlParams.get("deal");
       if (dealIdRaw && /^\d+$/.test(dealIdRaw.trim())) {
         const parsedId = Number(dealIdRaw.trim());
         if (Number.isSafeInteger(parsedId) && parsedId > 0) {
@@ -1941,7 +2281,11 @@ export default function Home() {
         initialSort !== "latest" ||
         initialOnlyHot ||
         initialHideClosed ||
-        initialIncludeClosed
+        initialIncludeClosed ||
+        initialFreeShipping ||
+        initialShop ||
+        initialMinPrice ||
+        initialMaxPrice
     );
 
     let cachedDeals: Deal[] = [];
@@ -2001,6 +2345,35 @@ export default function Home() {
           if (Array.isArray(parsed)) setRecentSearches(parsed.slice(0, 5));
         } catch {}
       }
+      try {
+        const savedRecentDeals = localStorage.getItem(RECENT_DEALS_STORAGE_KEY);
+        if (savedRecentDeals) {
+          const parsed = JSON.parse(savedRecentDeals);
+          if (Array.isArray(parsed)) setRecentDeals(parsed.slice(0, 30));
+        }
+      } catch {}
+      try {
+        const savedHidden = localStorage.getItem(HIDDEN_DEALS_STORAGE_KEY);
+        if (savedHidden) {
+          const parsed = JSON.parse(savedHidden);
+          if (Array.isArray(parsed)) {
+            setHiddenDealIds(parsed.filter((v): v is number => typeof v === "number"));
+          }
+        }
+      } catch {}
+      try {
+        const savedMuted = localStorage.getItem(MUTED_KEYWORDS_STORAGE_KEY);
+        if (savedMuted) {
+          const parsed = JSON.parse(savedMuted);
+          if (Array.isArray(parsed)) {
+            setMutedKeywords(parsed.filter((v): v is string => typeof v === "string"));
+          }
+        }
+      } catch {}
+      const savedViewMode = localStorage.getItem("insightdeal_view_mode");
+      if (savedViewMode === "compact" || savedViewMode === "card") {
+        setViewMode(savedViewMode);
+      }
       if (token) {
         void hydrateFromServer();
       }
@@ -2020,6 +2393,10 @@ export default function Home() {
           onlyHot: initialOnlyHot,
           hideClosed: initialHideClosed,
           includeClosed: initialIncludeClosed,
+          freeShipping: initialFreeShipping,
+          shop: initialShop,
+          minPrice: initialMinPrice,
+          maxPrice: initialMaxPrice,
         }
       );
       setIsRefreshing(false);
@@ -2043,6 +2420,7 @@ export default function Home() {
           "beforeinstallprompt",
           handleBeforeInstallPrompt
         );
+        window.removeEventListener("keydown", handleGlobalKeyDown);
       }
     };
   }, [clearSearchDebounce, fetchLiveDeals, getOrCreateBrowserUserId, hydrateFromServer, updateAppliedSearch]);
@@ -2090,6 +2468,26 @@ export default function Home() {
       } else {
         nextParams.delete("includeClosed");
       }
+      if (freeShippingOnly) {
+        nextParams.set("freeShipping", "1");
+      } else {
+        nextParams.delete("freeShipping");
+      }
+      if (shopFilter.trim()) {
+        nextParams.set("shop", shopFilter.trim());
+      } else {
+        nextParams.delete("shop");
+      }
+      if (minPriceInput.trim()) {
+        nextParams.set("minPrice", minPriceInput.trim());
+      } else {
+        nextParams.delete("minPrice");
+      }
+      if (maxPriceInput.trim()) {
+        nextParams.set("maxPrice", maxPriceInput.trim());
+      } else {
+        nextParams.delete("maxPrice");
+      }
       const nextQs = nextParams.toString();
       const currQs = window.location.search.replace(/^\?/, "");
       if (nextQs !== currQs) {
@@ -2106,6 +2504,10 @@ export default function Home() {
     onlyHotDeals,
     hideClosedDeals,
     includeClosedDeals,
+    freeShippingOnly,
+    shopFilter,
+    minPriceInput,
+    maxPriceInput,
   ]);
 
   useEffect(() => {
@@ -2229,9 +2631,56 @@ export default function Home() {
     includeClosedDeals,
   ]);
 
+  const toApproxKrw = (item: Deal) => {
+    const priceStr = String(item.price ?? "").trim();
+    if (
+      !priceStr ||
+      priceStr === "0" ||
+      priceStr === "0원" ||
+      priceStr === "가격 확인" ||
+      priceStr === "가격 문의" ||
+      priceStr === "정보 없음"
+    ) {
+      return 0;
+    }
+    const raw = parseFloat(priceStr.replace(/[^0-9.-]/g, "")) || 0;
+    if (!Number.isFinite(raw) || raw <= 0) return 0;
+    const curr = (item.currency || "KRW").trim().toUpperCase();
+    const hasDec = priceStr.includes(".");
+    if (curr === "USD") return (hasDec ? raw : raw / 100) * 1400;
+    if (curr === "EUR") return (hasDec ? raw : raw / 100) * 1500;
+    if (curr === "CNY") return (hasDec ? raw : raw / 100) * 195;
+    if (curr === "JPY") return raw * 9.5;
+    return raw;
+  };
+  const parseShippingKrw = (sf?: string | null): number => {
+    const clean = (sf || "").trim();
+    if (!clean || /무료|무배|직배무료|직구무배|공짜/.test(clean)) return 0;
+    const digits = clean.replace(/[^0-9]/g, "");
+    const val = digits ? parseInt(digits, 10) : 0;
+    return Number.isFinite(val) && val > 0 && val <= 200000 ? val : 0;
+  };
+  const toTotalApproxKrw = (item: Deal) => {
+    const base = toApproxKrw(item);
+    return base > 0 ? base + parseShippingKrw(item.shipping_fee) : 0;
+  };
+
   const filteredDeals = deals
     .filter((d) => {
+      if (hiddenDealIds.length > 0 && hiddenDealIds.includes(d.id)) return false;
+      if (mutedKeywords.length > 0) {
+        const lowerTitle = decodeHtmlEntities(d.title || "").toLowerCase();
+        if (mutedKeywords.some((kw) => kw && lowerTitle.includes(kw.toLowerCase()))) {
+          return false;
+        }
+      }
       if (hideClosedDeals && d.isClosed) return false;
+      if (freeShippingOnly) {
+        const sf = (d.shipping_fee || "").trim();
+        if (sf && /\d/.test(sf) && !/무료|무배|직배무료|직구무배|공짜|^0원?$/.test(sf)) {
+          return false;
+        }
+      }
       if (
         onlyHotDeals &&
         (d.honeyScore || 0) < 100 &&
@@ -2266,50 +2715,36 @@ export default function Home() {
       if (sortBy === "popular") {
         return (b.honeyScore || 0) - (a.honeyScore || 0);
       }
-      if (sortBy === "price_asc") {
-        const toApproxKrw = (item: Deal) => {
-          const priceStr = String(item.price ?? "").trim();
-          if (
-            !priceStr ||
-            priceStr === "0" ||
-            priceStr === "0원" ||
-            priceStr === "가격 확인" ||
-            priceStr === "가격 문의" ||
-            priceStr === "정보 없음"
-          ) {
-            return 0;
-          }
-          const raw = parseFloat(priceStr.replace(/[^0-9.-]/g, "")) || 0;
-          if (!Number.isFinite(raw) || raw <= 0) return 0;
-          const curr = (item.currency || "KRW").trim().toUpperCase();
-          const hasDec = priceStr.includes(".");
-          if (curr === "USD") return (hasDec ? raw : raw / 100) * 1400;
-          if (curr === "EUR") return (hasDec ? raw : raw / 100) * 1500;
-          if (curr === "CNY") return (hasDec ? raw : raw / 100) * 195;
-          if (curr === "JPY") return raw * 9.5;
-          return raw;
-        };
-        const parseShippingKrw = (sf?: string | null): number => {
-          const clean = (sf || "").trim();
-          if (!clean || /무료|무배|직배무료|직구무배|공짜/.test(clean)) return 0;
-          const digits = clean.replace(/[^0-9]/g, "");
-          const val = digits ? parseInt(digits, 10) : 0;
-          return Number.isFinite(val) && val > 0 && val <= 200000 ? val : 0;
-        };
-        const toTotalApproxKrw = (item: Deal) => {
-          const base = toApproxKrw(item);
-          return base > 0 ? base + parseShippingKrw(item.shipping_fee) : 0;
-        };
+      if (sortBy === "comments") {
+        return (b.comments ?? b.commentCount ?? 0) - (a.comments ?? a.commentCount ?? 0);
+      }
+      if (sortBy === "recommendations") {
+        return (b.recommendations ?? b.likeCount ?? 0) - (a.recommendations ?? a.likeCount ?? 0);
+      }
+      if (sortBy === "price_asc" || sortBy === "price_desc") {
         const pa = toTotalApproxKrw(a);
         const pb = toTotalApproxKrw(b);
         if (pa <= 0 && pb <= 0) return 0;
         if (pa <= 0) return 1;
         if (pb <= 0) return -1;
-        if (pa !== pb) return pa - pb;
-        return toApproxKrw(a) - toApproxKrw(b);
+        if (pa !== pb) return sortBy === "price_asc" ? pa - pb : pb - pa;
+        return sortBy === "price_asc"
+          ? toApproxKrw(a) - toApproxKrw(b)
+          : toApproxKrw(b) - toApproxKrw(a);
       }
       return 0;
     });
+
+  const selectedDealIndex = selectedDeal
+    ? filteredDeals.findIndex((d) => d.id === selectedDeal.id)
+    : -1;
+  const handleNavigateSelectedDeal = (delta: -1 | 1) => {
+    if (filteredDeals.length <= 1 || selectedDealIndex < 0) return;
+    const nextIdx =
+      (selectedDealIndex + delta + filteredDeals.length) % filteredDeals.length;
+    const nextDeal = filteredDeals[nextIdx];
+    if (nextDeal) openDealWithHistory(nextDeal);
+  };
 
   const wishlistDeals = wishlist
     .map((id) => deals.find((d) => d.id === id) || wishlistItemsMap[id])
@@ -2449,6 +2884,7 @@ export default function Home() {
               <div className="search-bar-wrapper">
                 <Search size={18} className="search-icon" aria-hidden="true" />
                 <input
+                  ref={searchInputRef}
                   type="text"
                   aria-label="핫딜 검색어 입력"
                   placeholder={
@@ -2783,6 +3219,9 @@ export default function Home() {
                   { key: "latest", label: "최신순" },
                   { key: "popular", label: "인기순" },
                   { key: "price_asc", label: "낮은가격순" },
+                  { key: "price_desc", label: "높은가격순" },
+                  { key: "comments", label: "댓글순" },
+                  { key: "recommendations", label: "추천순" },
                 ] as const
               ).map((opt) => {
                 const active = sortBy === opt.key;
@@ -2885,6 +3324,387 @@ export default function Home() {
             </div>
           </div>
 
+          <div
+            className="feed-quick-filter-row"
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: "8px",
+              marginBottom: "12px",
+            }}
+          >
+            <button
+              type="button"
+              aria-pressed={freeShippingOnly}
+              onClick={handleToggleFreeShipping}
+              className="filter-chip-btn bounce-click"
+              style={{
+                background: freeShippingOnly ? "var(--accent-soft-bg)" : "var(--card-bg)",
+                color: freeShippingOnly ? "var(--accent)" : "var(--text-sub)",
+                border: freeShippingOnly
+                  ? "1px solid var(--accent)"
+                  : "1px solid var(--card-border)",
+              }}
+            >
+              무료배송만
+            </button>
+
+            <select
+              aria-label="쇼핑몰 필터"
+              value={shopFilter}
+              onChange={(e) => handleShopFilterChange(e.target.value)}
+              style={{
+                minHeight: "36px",
+                padding: "4px 10px",
+                borderRadius: "10px",
+                background: "var(--card-bg)",
+                color: "var(--text-main)",
+                border: shopFilter
+                  ? "1px solid var(--accent)"
+                  : "1px solid var(--card-border)",
+                fontSize: "0.82rem",
+                fontWeight: 600,
+              }}
+            >
+              <option value="">전체 쇼핑몰</option>
+              {[
+                "쿠팡",
+                "네이버",
+                "지마켓",
+                "옥션",
+                "11번가",
+                "SSG",
+                "롯데온",
+                "카카오쇼핑",
+                "토스쇼핑",
+                "알리익스프레스",
+                "아마존",
+                "CJ온스타일",
+                "무신사",
+                "스팀",
+                "에픽게임즈",
+              ].map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleApplyPriceRange(minPriceInput, maxPriceInput);
+              }}
+              style={{ display: "inline-flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}
+            >
+              <input
+                type="number"
+                min={0}
+                step={1000}
+                aria-label="최소 가격"
+                placeholder="최소 원"
+                value={minPriceInput}
+                onChange={(e) => setMinPriceInput(e.target.value)}
+                style={{
+                  width: "86px",
+                  minHeight: "36px",
+                  padding: "4px 8px",
+                  borderRadius: "10px",
+                  background: "var(--card-bg)",
+                  color: "var(--text-main)",
+                  border: "1px solid var(--card-border)",
+                  fontSize: "0.8rem",
+                }}
+              />
+              <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>~</span>
+              <input
+                type="number"
+                min={0}
+                step={1000}
+                aria-label="최대 가격"
+                placeholder="최대 원"
+                value={maxPriceInput}
+                onChange={(e) => setMaxPriceInput(e.target.value)}
+                style={{
+                  width: "86px",
+                  minHeight: "36px",
+                  padding: "4px 8px",
+                  borderRadius: "10px",
+                  background: "var(--card-bg)",
+                  color: "var(--text-main)",
+                  border: "1px solid var(--card-border)",
+                  fontSize: "0.8rem",
+                }}
+              />
+              <button
+                type="submit"
+                className="filter-chip-btn bounce-click"
+                style={{
+                  background: "var(--card-bg)",
+                  color: "var(--text-main)",
+                  border: "1px solid var(--card-border)",
+                }}
+              >
+                가격 적용
+              </button>
+            </form>
+
+            <div
+              role="group"
+              aria-label="보기 방식"
+              style={{
+                display: "inline-flex",
+                borderRadius: "10px",
+                border: "1px solid var(--card-border)",
+                overflow: "hidden",
+              }}
+            >
+              <button
+                type="button"
+                aria-pressed={viewMode === "card"}
+                aria-label="카드 보기"
+                onClick={() => handleViewModeChange("card")}
+                style={{
+                  minHeight: "36px",
+                  padding: "4px 10px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  border: "none",
+                  background: viewMode === "card" ? "var(--accent)" : "var(--card-bg)",
+                  color: viewMode === "card" ? "var(--on-accent)" : "var(--text-sub)",
+                  cursor: "pointer",
+                }}
+              >
+                <LayoutGrid size={13} aria-hidden="true" />
+                <span>카드</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={viewMode === "compact"}
+                aria-label="한줄 컴팩트 보기"
+                onClick={() => handleViewModeChange("compact")}
+                style={{
+                  minHeight: "36px",
+                  padding: "4px 10px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  border: "none",
+                  background: viewMode === "compact" ? "var(--accent)" : "var(--card-bg)",
+                  color: viewMode === "compact" ? "var(--on-accent)" : "var(--text-sub)",
+                  cursor: "pointer",
+                }}
+              >
+                <List size={13} aria-hidden="true" />
+                <span>컴팩트</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              aria-expanded={showRecentDealsPanel}
+              onClick={() => setShowRecentDealsPanel((v) => !v)}
+              className="filter-chip-btn bounce-click"
+              style={{
+                background: showRecentDealsPanel ? "var(--accent-soft-bg)" : "var(--card-bg)",
+                color: showRecentDealsPanel ? "var(--accent)" : "var(--text-sub)",
+                border: "1px solid var(--card-border)",
+              }}
+            >
+              <Clock size={13} aria-hidden="true" />
+              <span>최근 본 ({recentDeals.length})</span>
+            </button>
+
+            <button
+              type="button"
+              aria-expanded={showHiddenManagePanel}
+              onClick={() => setShowHiddenManagePanel((v) => !v)}
+              className="filter-chip-btn bounce-click"
+              style={{
+                background: showHiddenManagePanel ? "var(--accent-soft-bg)" : "var(--card-bg)",
+                color: showHiddenManagePanel ? "var(--accent)" : "var(--text-sub)",
+                border: "1px solid var(--card-border)",
+              }}
+            >
+              <EyeOff size={13} aria-hidden="true" />
+              <span>숨김·뮤트 ({hiddenDealIds.length + mutedKeywords.length})</span>
+            </button>
+          </div>
+
+          {showRecentDealsPanel && (
+            <div
+              className="glass-panel"
+              style={{
+                padding: "12px 14px",
+                borderRadius: "14px",
+                marginBottom: "12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <strong style={{ fontSize: "0.85rem", color: "var(--text-main)" }}>
+                  최근 본 핫딜 ({recentDeals.length}건)
+                </strong>
+                {recentDeals.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRecentDeals([]);
+                      if (typeof window !== "undefined") {
+                        try {
+                          localStorage.removeItem(RECENT_DEALS_STORAGE_KEY);
+                        } catch {}
+                      }
+                    }}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--text-muted)",
+                      fontSize: "0.78rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    전체 비우기
+                  </button>
+                )}
+              </div>
+              {recentDeals.length === 0 ? (
+                <span style={{ fontSize: "0.82rem", color: "var(--text-sub)" }}>
+                  아직 열어본 핫딜이 없어요. 카드를 누르면 최근 기록이 여기에 쌓여요.
+                </span>
+              ) : (
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {recentDeals.slice(0, 10).map((rd) => (
+                    <button
+                      key={rd.id}
+                      type="button"
+                      onClick={() => openDealWithHistory(rd)}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: "999px",
+                        border: "1px solid var(--card-border)",
+                        background: "var(--card-bg)",
+                        color: "var(--text-main)",
+                        fontSize: "0.8rem",
+                        fontWeight: 600,
+                        maxWidth: "240px",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {decodeHtmlEntities(rd.title)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {showHiddenManagePanel && (
+            <div
+              className="glass-panel"
+              style={{
+                padding: "12px 14px",
+                borderRadius: "14px",
+                marginBottom: "12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+              }}
+            >
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleAddMutedKeyword(muteKeywordInput);
+                }}
+                style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}
+              >
+                <input
+                  type="text"
+                  value={muteKeywordInput}
+                  onChange={(e) => setMuteKeywordInput(e.target.value)}
+                  placeholder="피드에서 가릴 키워드 추가 (예: 휴대폰 케이스)"
+                  aria-label="뮤트 키워드 입력"
+                  style={{
+                    flex: 1,
+                    minWidth: "200px",
+                    minHeight: "38px",
+                    padding: "6px 12px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--card-border)",
+                    background: "var(--card-bg)",
+                    color: "var(--text-main)",
+                    fontSize: "0.84rem",
+                  }}
+                />
+                <button type="submit" className="btn-primary" style={{ minHeight: "38px", padding: "0 14px" }}>
+                  뮤트 추가
+                </button>
+              </form>
+              {mutedKeywords.length > 0 && (
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: "0.78rem", color: "var(--text-sub)", fontWeight: 700 }}>
+                    뮤트 키워드:
+                  </span>
+                  {mutedKeywords.map((kw) => (
+                    <button
+                      key={kw}
+                      type="button"
+                      onClick={() => handleRemoveMutedKeyword(kw)}
+                      className="applied-filter-chip"
+                    >
+                      <span>{kw}</span>
+                      <X size={12} aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {hiddenDealIds.length > 0 && (
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: "0.78rem", color: "var(--text-sub)", fontWeight: 700 }}>
+                    숨긴 핫딜 {hiddenDealIds.length}건
+                  </span>
+                  {hiddenDealIds.slice(0, 12).map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => handleUnhideDeal(id)}
+                      className="applied-filter-chip"
+                    >
+                      <span>#{id} 복구</span>
+                      <X size={12} aria-hidden="true" />
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHiddenDealIds([]);
+                      if (typeof window !== "undefined") {
+                        try {
+                          localStorage.removeItem(HIDDEN_DEALS_STORAGE_KEY);
+                        } catch {}
+                      }
+                      showToast("숨긴 핫딜을 모두 복구했어요");
+                    }}
+                    className="applied-filter-chip"
+                  >
+                    전체 복구
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {hasActiveFilters && (
             <div className="applied-filters-bar">
               <div
@@ -2971,6 +3791,41 @@ export default function Home() {
                     <X size={12} aria-hidden="true" />
                   </button>
                 )}
+                {freeShippingOnly && (
+                  <button
+                    type="button"
+                    onClick={handleToggleFreeShipping}
+                    className="applied-filter-chip applied-filter-chip--accent"
+                  >
+                    <span>무료배송만</span>
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                )}
+                {shopFilter && (
+                  <button
+                    type="button"
+                    onClick={() => handleShopFilterChange("")}
+                    className="applied-filter-chip"
+                  >
+                    <span>쇼핑몰: {shopFilter}</span>
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                )}
+                {(minPriceInput || maxPriceInput) && (
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPriceRange("", "")}
+                    className="applied-filter-chip"
+                  >
+                    <span>
+                      가격:{" "}
+                      {minPriceInput ? formatCompactPriceLabel(minPriceInput) : "0원"}
+                      {" ~ "}
+                      {maxPriceInput ? formatCompactPriceLabel(maxPriceInput) : "제한없음"}
+                    </span>
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                )}
                 {sortBy !== "latest" && (
                   <button
                     type="button"
@@ -2978,7 +3833,15 @@ export default function Home() {
                     className="applied-filter-chip"
                   >
                     <span>
-                      정렬: {sortBy === "popular" ? "인기순" : "낮은가격순"}
+                      정렬:{" "}
+                      {{
+                        latest: "최신순",
+                        popular: "인기순",
+                        price_asc: "낮은가격순",
+                        price_desc: "높은가격순",
+                        comments: "댓글순",
+                        recommendations: "추천순",
+                      }[sortBy]}
                     </span>
                     <X size={12} aria-hidden="true" />
                   </button>
@@ -3042,7 +3905,7 @@ export default function Home() {
           )}
 
           <h2 className="sr-only">실시간 핫딜 목록</h2>
-          <div className="deal-list">
+          <div className={viewMode === "compact" ? "deal-list deal-list--compact" : "deal-list"}>
             {loading && filteredDeals.length === 0 && !fetchError ? (
               <>
                 <span className="sr-only" role="status">
@@ -3190,7 +4053,10 @@ export default function Home() {
                   isWishlisted={wishlist.includes(deal.id)}
                   isAlertSet={alerts.includes(deal.id)}
                   priority={idx < 6}
-                  onSelectDeal={(selected) => setSelectedDeal(selected)}
+                  viewMode={viewMode}
+                  showCategoryPill={selectedCategories.length === 0}
+                  onHideDeal={handleHideDeal}
+                  onSelectDeal={(selected) => openDealWithHistory(selected)}
                   onShareDeal={handleShareDeal}
                   onToggleAlert={toggleAlert}
                   onToggleWishlist={toggleWishlist}
@@ -3319,6 +4185,14 @@ export default function Home() {
               >
                 서비스 이용약관
               </button>
+              <span style={{ color: "var(--card-border)" }}>|</span>
+              <a
+                href="mailto:support@insightdeal.com?subject=%5B%EC%96%BC%EB%A7%8C%EB%8D%B0%5D%20%EB%AC%B8%EC%9D%98%20%EB%B0%8F%20%EC%98%A4%EB%A5%98%20%EC%A0%9C%EB%B3%B4"
+                className="footer-link-btn"
+                style={{ color: "var(--text-sub)", fontWeight: 600 }}
+              >
+                문의 · 오류 제보
+              </a>
             </div>
           </div>
         </footer>
@@ -3330,13 +4204,19 @@ export default function Home() {
         showToast={showToast}
         onTargetAlertSaved={handleTargetAlertSaved}
         onDealClosed={handleDealClosed}
+        onNavigateDeal={
+          filteredDeals.length > 1 && selectedDealIndex >= 0
+            ? handleNavigateSelectedDeal
+            : undefined
+        }
+        onSelectRelatedDeal={(rel) => openDealWithHistory(rel)}
       />
 
       <NotificationDrawer
         isOpen={isNotificationOpen}
         onClose={() => setIsNotificationOpen(false)}
         deals={deals}
-        onSelectDeal={(deal) => setSelectedDeal(deal)}
+        onSelectDeal={(deal) => openDealWithHistory(deal)}
         onSearchKeyword={(kw) => handleSelectPopularKeyword(kw)}
         onServerAlertCountChange={(cnt) => setServerAlertCount(cnt)}
       />
@@ -3350,11 +4230,13 @@ export default function Home() {
         onRemoveServerWishlist={handleRemoveServerWishlist}
         onSelectDeal={(deal) => {
           setIsWishlistOpen(false);
-          setSelectedDeal(deal);
+          openDealWithHistory(deal);
         }}
         onSearchKeyword={(kw) => handleSelectPopularKeyword(kw)}
         isLoggedIn={isLoggedIn}
         onLoginSimulate={handleLoginSimulate}
+        onSyncComplete={hydrateFromServer}
+        onShowToast={showToast}
       />
 
       <DeviceSyncModal

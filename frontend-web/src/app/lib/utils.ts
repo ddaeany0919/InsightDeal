@@ -198,7 +198,15 @@ const MALL_ALIAS_MAP: Record<string, string> = {
   카카오쇼핑: "카카오쇼핑",
   카카오톡쇼핑하기: "카카오쇼핑",
   톡딜: "카카오쇼핑",
+  카카오톡딜: "카카오쇼핑",
   카카오선물하기: "카카오쇼핑",
+  cj온: "CJ온스타일",
+  cjon: "CJ온스타일",
+  cj온스타일: "CJ온스타일",
+  엑박스토어: "엑스박스",
+  xbox스토어: "엑스박스",
+  엑박: "엑스박스",
+  xbox: "엑스박스",
   토스: "토스쇼핑",
   토스쇼핑: "토스쇼핑",
   아이허브: "아이허브",
@@ -289,7 +297,9 @@ export const inferShopFromUrl = (rawUrl?: string | null): string | null => {
     [/(?:^|\/\/|\.)kurly\.com/, "컬리"],
     [/(?:^|\/\/|\.)e-himart\.co\.kr/, "하이마트"],
     [/(?:^|\/\/|\.)oliveyoung\.co\.kr/, "올리브영"],
-    [/(?:store|gift|shopping)\.kakao\.com/, "카카오쇼핑"],
+    [/(?:store|gift|talkdeal|shopping)\.kakao\.com/, "카카오쇼핑"],
+    [/(?:^|\/\/|\.)cjonstyle\.com/, "CJ온스타일"],
+    [/(?:^|\/\/|\.)xbox\.com/, "엑스박스"],
     [/(?:^|\/\/|\.)iherb\.com/, "아이허브"],
     [/(?:^|\/\/|\.)qoo10\.com/, "큐텐"],
     [/(?:^|\/\/|\.)temu\.com/, "테무"],
@@ -597,6 +607,27 @@ export const formatPrice = (
 // 제목 기반 15종 표준 카테고리 분류
 export const categorizeDeal = (title: string): string => {
   const t = decodeHtmlEntities(title).toLowerCase();
+  // 애플TV+/디즈니+/넷플릭스/티빙/웨이브 VOD 이용권 가드 (육아/가전 오탐 선제 차단)
+  if (/(?:애플\s*티비|애플\s*tv|apple\s*tv)/i.test(t)) {
+    if (/(?:4k|셋톱|스트리밍\s*박스|a15|64gb|128gb|리모컨|이더넷)/i.test(t)) {
+      return "PC용품";
+    }
+    return "상품권";
+  }
+  if (
+    /(?:디즈니\+|넷플릭스|티빙|웨이브|vod|영화)/i.test(t) &&
+    !/(?:레고|장난감|피규어|유모차|카시트|기저귀)/i.test(t)
+  ) {
+    return "상품권";
+  }
+  // MVNO 알뜰폰 요금제 가드
+  if (
+    /(?:알뜰폰|알뜰요금제|이야기모바일|프리티|유모바일|스노우맨|kg모바일|kt\s*m모바일|kt엠모바일|세븐모바일|리브엠|이지모바일|에이모바일|아이즈모바일|티플러스|헬로모바일|모나\s*5g|모나\s*lte|(?:lg|kt|skt|u\+|유플러스)망)/i.test(
+      t
+    )
+  ) {
+    return "상품권";
+  }
   if (
     /pc|컴퓨터|그래픽|모니터|ssd|hdd|ram|램|메모리|키보드|마우스|노트북|글카|rtx|보드|cpu|인텔|amd|라이젠|지포스|로지텍|공유기|nas|웹캠|헤드셋/i.test(
       t
@@ -605,11 +636,14 @@ export const categorizeDeal = (title: string): string => {
     return "PC용품";
   }
   if (
-    /스팀|steam|에픽|게임|닌텐도|스위치|ps5|플레이스테이션|xbox|소프트웨어|윈도우|오피스|디지털코드|gog/i.test(
+    /스팀|steam|에픽|게임|닌텐도|스위치|ps5|플레이스테이션|xbox|엑스박스|엑박|소프트웨어|윈도우|오피스|디지털코드|gog/i.test(
       t
     )
   ) {
     return "SW/게임";
+  }
+  if (/(?:아가드|구름목욕시간|색깔목욕시간|목욕시간|목욕놀이|유아입욕제)/i.test(t)) {
+    return "생활용품";
   }
   if (
     /기저귀|분유|물티슈|아기|유아|육아|유모차|카시트|젖병|장난감|레고/i.test(
@@ -632,7 +666,14 @@ export const categorizeDeal = (title: string): string => {
   ) {
     return "상품권";
   }
-  if (/적립|포인트|페이백|캐시백|출석체크|리워드|네이버페이/i.test(t)) {
+  const hasApparelOrFoodHint =
+    /나이키|아디다스|티셔츠|바지|신발|운동화|자켓|의류|패딩|모자|양말|구두|슬리퍼|가방|팬츠|아식스|뉴발|무신사|후디|후드티|스웻셔츠|스웨트셔츠|타미진스|h패션|방한화|털슬리퍼|패딩부츠|밸롭|물|생수|라면|커피|치킨|피자|콜라|제로|비타민|유산균|햇반|고기|돼지|소고기|과자|두유|우유|닭|스팸|참치|만두|볶음밥|삼다수|사이다|펩시|오레오|프로틴/i.test(
+      t
+    );
+  if (
+    !hasApparelOrFoodHint &&
+    /적립|포인트|페이백|캐시백|출석체크|리워드|네이버페이/i.test(t)
+  ) {
     return "적립";
   }
   if (/이벤트|응모|추첨|무료나눔|무료배포|체험단/i.test(t)) {
@@ -653,7 +694,7 @@ export const categorizeDeal = (title: string): string => {
     return "뷰티";
   }
   if (
-    /나이키|아디다스|티셔츠|바지|신발|운동화|자켓|의류|패딩|모자|양말|구두|슬리퍼|가방|팬츠|아식스|뉴발|무신사/i.test(
+    /나이키|아디다스|티셔츠|바지|신발|운동화|자켓|의류|패딩|모자|양말|구두|슬리퍼|가방|팬츠|아식스|뉴발|무신사|후디|후드티|스웻셔츠|스웨트셔츠|타미진스|h패션|방한화|털슬리퍼|패딩부츠|밸롭/i.test(
       t
     )
   ) {
@@ -1124,8 +1165,17 @@ export const getOptionSources = (
   return result;
 };
 
-export const polishDealBodyText = (rawHtml: string | undefined | null): string => {
+export const polishDealBodyText = (
+  rawHtml: string | undefined | null,
+  titleHint?: string | null
+): string => {
   if (!rawHtml) return "";
+  const normalizedTitle = titleHint
+    ? decodeHtmlEntities(titleHint)
+        .toLowerCase()
+        .replace(/\[[^\]]*\]/g, "")
+        .replace(/[^0-9a-z가-힣]/gi, "")
+    : "";
   let text = rawHtml
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|li|tr|h[1-6])>/gi, "\n")
@@ -1153,7 +1203,7 @@ export const polishDealBodyText = (rawHtml: string | undefined | null): string =
       l.replace(/^(?:보기|바로가기|제품\s*바로가기|상품\s*바로가기)\s*>{1,}\s*/i, "▪ ")
     )
     .map((l) => l.replace(/\s+최근\s*본\s*상품\s*>\s*$/i, ""))
-    .filter((l) => {
+    .filter((l, idx) => {
       if (!l || l === "▪") return false;
       if (/^\[상품이미지\s*:\s*https?:\/\/[^\]]+\]$/i.test(l)) return false;
       if (/^\[첨부된\s*이미지/i.test(l)) return false;
@@ -1161,11 +1211,27 @@ export const polishDealBodyText = (rawHtml: string | undefined | null): string =
       if (/^(?:링크|구매\s*링크)\s*>{2,}/i.test(l)) return false;
       if (/^>{2,}/.test(l)) return false;
       if (/^링크오류시$/i.test(l)) return false;
+      if (/^(?:게시글\s*본문은\s*원본\s*링크에서\s*확인|원본\s*게시글에서\s*확인|출처\s*:\s*https?:\/\/)/i.test(l)) {
+        return false;
+      }
       if (/^(?:갤럭시|아이폰)\s*:\s*.*(?:링크\s*꾹|알리익스프레스\s*앱)/i.test(l))
         return false;
       if (/^2\)\s*알리앱\s*꾹\s*눌러서/i.test(l)) return false;
       if (/^-\s*가격은\s*쿠폰\s*적용\s*전\s*가격을\s*적어주세요/i.test(l))
         return false;
+      if (idx === 0 && normalizedTitle && normalizedTitle.length >= 6) {
+        const compactLine = l
+          .toLowerCase()
+          .replace(/\[[^\]]*\]/g, "")
+          .replace(/[^0-9a-z가-힣]/gi, "");
+        if (
+          compactLine &&
+          (compactLine === normalizedTitle ||
+            (compactLine.includes(normalizedTitle) && compactLine.length <= normalizedTitle.length + 12))
+        ) {
+          return false;
+        }
+      }
       return true;
     });
 
@@ -2150,6 +2216,10 @@ export function mapRawDealToDeal(
     userVote: d.user_vote ?? d.userVote ?? null,
     commentCount:
       d.comment_count ?? d.commentCount ?? d.comments ?? undefined,
+    comments:
+      d.comments ?? d.comment_count ?? d.commentCount ?? undefined,
+    recommendations:
+      d.recommendations ?? d.buy_count ?? d.buyCount ?? d.like_count ?? undefined,
     historyCount: d.history_count ?? d.historyCount ?? undefined,
     isSearchFallback: Boolean(d.is_search_fallback ?? d.isSearchFallback),
     is_search_fallback: Boolean(d.is_search_fallback ?? d.isSearchFallback),
@@ -2389,8 +2459,11 @@ export const extractPaymentConditionBadge = (
   if (/(?:네멤\s*(?:할인|특가|전용)|네이버\s*멤버십)/i.test(cleanTitle) || /네멤/i.test(cleanShip)) {
     return "네멤 조건";
   }
-  if (/유니버스\s*클럽/i.test(cleanTitle)) {
+  if (/유니버스\s*클럽|유클/i.test(cleanTitle) || /유클/i.test(cleanShip)) {
     return "유니버스클럽 조건";
+  }
+  if (/스마일\s*클럽|스클/i.test(cleanTitle) || /스클/i.test(cleanShip)) {
+    return "스마일클럽 조건";
   }
   if (/슈퍼\s*적립/i.test(cleanTitle)) {
     return "슈퍼적립 조건";
@@ -2883,3 +2956,250 @@ export const computeUnitPriceBadge = (
 
   return null;
 };
+
+// 상세 정보 60초 SWR 프리페치 메모리 캐시 (최대 30건 LRU + In-Flight 중복 차단)
+const _DEAL_DETAIL_CACHE_TTL_MS = 60_000;
+const _DEAL_DETAIL_CACHE_MAX = 30;
+const _dealDetailCache = new Map<
+  number,
+  { data: RawDealApiResponse; cachedAt: number }
+>();
+const _dealDetailInflight = new Set<number>();
+
+export function getCachedDealDetail(
+  dealId: number
+): { data: RawDealApiResponse; cachedAt: number } | null {
+  if (!Number.isFinite(dealId) || dealId <= 0) return null;
+  const entry = _dealDetailCache.get(dealId);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > _DEAL_DETAIL_CACHE_TTL_MS) {
+    _dealDetailCache.delete(dealId);
+    return null;
+  }
+  return entry;
+}
+
+export function setCachedDealDetail(
+  dealId: number,
+  data: RawDealApiResponse
+): void {
+  if (!Number.isFinite(dealId) || dealId <= 0 || !data) return;
+  if (_dealDetailCache.has(dealId)) {
+    _dealDetailCache.delete(dealId);
+  } else if (_dealDetailCache.size >= _DEAL_DETAIL_CACHE_MAX) {
+    const oldestKey = _dealDetailCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      _dealDetailCache.delete(oldestKey);
+    }
+  }
+  _dealDetailCache.set(dealId, { data, cachedAt: Date.now() });
+}
+
+export function clearDealDetailCache(): void {
+  _dealDetailCache.clear();
+  _dealDetailInflight.clear();
+}
+
+export function prefetchDealDetail(dealId: number): void {
+  if (typeof window === "undefined") return;
+  if (!Number.isFinite(dealId) || dealId <= 0) return;
+  if (getCachedDealDetail(dealId) || _dealDetailInflight.has(dealId)) return;
+
+  _dealDetailInflight.add(dealId);
+  const headers: Record<string, string> = {};
+  const token = getStoredWebDeviceToken();
+  if (token) {
+    headers["X-Device-Token"] = token;
+  }
+
+  fetch(apiUrl(`/api/community/deals/${dealId}`), { headers })
+    .then(async (res) => {
+      if (!res.ok) return;
+      const json = (await res.json()) as RawDealApiResponse;
+      if (json && Number.isFinite(json.id)) {
+        setCachedDealDetail(dealId, json);
+      }
+    })
+    .catch(() => {})
+    .finally(() => {
+      _dealDetailInflight.delete(dealId);
+    });
+}
+
+const _FOREIGN_TO_KRW_RATES = {
+  USD: 1450,
+  EUR: 1550,
+  CNY: 200,
+  JPY: 9.5,
+} as const;
+
+type SupportedForeignCurrency = keyof typeof _FOREIGN_TO_KRW_RATES;
+
+function resolveForeignMajorAmount(
+  priceVal: string | number | null | undefined,
+  currency?: string | null
+): { currency: SupportedForeignCurrency; amount: number } | null {
+  const normCurr = (currency || "KRW").trim().toUpperCase();
+  if (
+    normCurr !== "USD" &&
+    normCurr !== "EUR" &&
+    normCurr !== "CNY" &&
+    normCurr !== "JPY"
+  ) {
+    return null;
+  }
+  const rawStr =
+    priceVal === null || priceVal === undefined ? "" : String(priceVal).trim();
+  if (!rawStr) return null;
+  const numOnly = rawStr.replace(/[^0-9.]/g, "");
+  if (!numOnly) return null;
+  const parsed = parseFloat(numOnly);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  if (normCurr === "JPY") {
+    return { currency: "JPY", amount: parsed };
+  }
+  const hasDecimal = rawStr.includes(".");
+  const hasExplicitSymbol = /[$€¥]/.test(rawStr);
+  const major = hasDecimal || hasExplicitSymbol ? parsed : parsed / 100;
+  return { currency: normCurr, amount: major };
+}
+
+export function estimateKrwFromForeign(
+  price: string | number | null | undefined,
+  currency?: string | null
+): { krw: number; formatted: string } | null {
+  const resolved = resolveForeignMajorAmount(price, currency);
+  if (!resolved) return null;
+  const krw = Math.round(
+    resolved.amount * _FOREIGN_TO_KRW_RATES[resolved.currency]
+  );
+  if (!Number.isFinite(krw) || krw <= 0) return null;
+  return {
+    krw,
+    formatted: `약 ${krw.toLocaleString("ko-KR")}원`,
+  };
+}
+
+export function isCustomsDutyRisk(
+  price: string | number | null | undefined,
+  currency?: string | null,
+  shopName?: string | null,
+  title?: string | null
+): { atRisk: boolean; thresholdUsd: number; usdApprox: number } {
+  const resolved = resolveForeignMajorAmount(price, currency);
+  if (!resolved) {
+    return { atRisk: false, thresholdUsd: 150, usdApprox: 0 };
+  }
+  const krwRate = _FOREIGN_TO_KRW_RATES[resolved.currency];
+  const usdApprox =
+    resolved.currency === "USD"
+      ? Math.round(resolved.amount * 100) / 100
+      : Math.round(((resolved.amount * krwRate) / _FOREIGN_TO_KRW_RATES.USD) * 100) /
+        100;
+
+  const contextText = `${shopName || ""} ${title || ""}`.toLowerCase();
+  const isNonUsOrigin =
+    /알리|테무|타오바오|큐텐|일본|아마존\s*재팬|amazon\.co\.jp|일마존|독마존|유럽|중국/.test(
+      contextText
+    );
+  const isUsOrigin =
+    !isNonUsOrigin &&
+    (/미국|아마존|amazon\.com|뉴에그|newegg|베스트바이|bestbuy|오레곤|델라웨어/.test(
+      contextText
+    ) ||
+      (resolved.currency === "USD" && /11번가\s*아마존|우주패스/.test(contextText)));
+  const thresholdUsd = isUsOrigin ? 200 : 150;
+  return {
+    atRisk: usdApprox > thresholdUsd,
+    thresholdUsd,
+    usdApprox,
+  };
+}
+
+export function computeShippingTotal(
+  price: string | number | null | undefined,
+  currency: string | null | undefined,
+  shippingText: string | null | undefined
+): { shippingFee: number; totalKrw: number; label: string } | null {
+  const normCurr = (currency || "KRW").trim().toUpperCase();
+  if (normCurr !== "KRW") return null;
+  const priceNum =
+    typeof price === "number"
+      ? Math.round(price)
+      : parseInt(String(price ?? "").replace(/[^0-9]/g, ""), 10);
+  if (!Number.isFinite(priceNum) || priceNum <= 0) return null;
+
+  const cleanShip = decodeHtmlEntities(shippingText || "").trim();
+  if (!cleanShip) return null;
+  if (
+    /무료|무배|유클|스클|평생|선착순|적립|증정|무제한|약정|할부|착불|별도/i.test(
+      cleanShip
+    )
+  ) {
+    return null;
+  }
+  if (/^\d+\s*(?:개월|년|일)/.test(cleanShip)) {
+    return null;
+  }
+
+  const m = cleanShip.match(/([0-9]{1,2}(?:,[0-9]{3})+|[0-9]{3,5})\s*원?/);
+  if (!m) return null;
+  const shippingFee = parseInt(m[1].replace(/,/g, ""), 10);
+  if (!Number.isFinite(shippingFee) || shippingFee < 500 || shippingFee > 50000) {
+    return null;
+  }
+  const totalKrw = priceNum + shippingFee;
+  return {
+    shippingFee,
+    totalKrw,
+    label: `배송비 포함 총 ${totalKrw.toLocaleString("ko-KR")}원`,
+  };
+}
+
+const _URGENT_PROMO_LABELS = [
+  "선착순특가",
+  "오늘끝딜",
+  "타임딜",
+  "긴급특가",
+  "게릴라특가",
+  "단독특가",
+  "번개딜",
+];
+
+export function stripPromoPrefixForDisplay(title: string): {
+  cleanTitle: string;
+  urgentBadge: string | null;
+} {
+  const decoded = decodeHtmlEntities(title || "").trim();
+  if (!decoded) return { cleanTitle: "", urgentBadge: null };
+
+  for (const promo of _URGENT_PROMO_LABELS) {
+    const bracketRe = new RegExp(`^\\s*\\[\\s*${promo}\\s*\\]\\s*`, "i");
+    if (bracketRe.test(decoded)) {
+      return {
+        cleanTitle: decoded.replace(bracketRe, "").trim() || decoded,
+        urgentBadge: promo,
+      };
+    }
+    const bareRe = new RegExp(`^\\s*${promo}\\s*[-:·]?\\s+`, "i");
+    if (bareRe.test(decoded)) {
+      return {
+        cleanTitle: decoded.replace(bareRe, "").trim() || decoded,
+        urgentBadge: promo,
+      };
+    }
+  }
+
+  const inlinePromo = _URGENT_PROMO_LABELS.find((p) => decoded.includes(p)) || null;
+  return { cleanTitle: decoded, urgentBadge: inlinePromo };
+}
+
+export function getDealAgeDays(
+  createdAt?: string | null,
+  nowMs: number = Date.now()
+): number {
+  const ts = parseIsoTimestampMs(createdAt);
+  if (ts === null) return 0;
+  const diffMs = Math.max(0, nowMs - ts);
+  return Math.floor(diffMs / 86_400_000);
+}

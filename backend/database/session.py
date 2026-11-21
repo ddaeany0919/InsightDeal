@@ -77,8 +77,14 @@ class DatabaseManager:
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA synchronous=NORMAL")
                 cursor.execute("PRAGMA busy_timeout=60000")
-                cache_kb = max(1000, int(os.getenv("SQLITE_CACHE_SIZE_KB", "4000")))
-                cursor.execute(f"PRAGMA cache_size=-{cache_kb}")  # 연결당 페이지 캐시 상한 (기본 4MB)
+                cache_kb = max(1000, int(os.getenv("SQLITE_CACHE_SIZE_KB", "8000")))
+                cursor.execute(f"PRAGMA cache_size=-{cache_kb}")  # 연결당 페이지 캐시 상한 (기본 8MB)
+                try:
+                    mmap_bytes = max(0, int(os.getenv("SQLITE_MMAP_SIZE_BYTES", str(32 * 1024 * 1024))))
+                    if mmap_bytes > 0:
+                        cursor.execute(f"PRAGMA mmap_size={mmap_bytes}")
+                except Exception:
+                    pass
                 cursor.execute("PRAGMA temp_store=MEMORY")
                 cursor.close()
         

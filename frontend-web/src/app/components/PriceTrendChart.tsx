@@ -27,6 +27,8 @@ const PERIOD_OPTIONS = [
   { key: "1m", label: "1개월" },
   { key: "3m", label: "3개월" },
   { key: "6m", label: "6개월" },
+  { key: "1y", label: "1년" },
+  { key: "all", label: "전체" },
 ] as const;
 
 type PeriodKey = (typeof PERIOD_OPTIONS)[number]["key"];
@@ -241,6 +243,8 @@ export default function PriceTrendChart({
     initialHistoryPeriod === "1m" ||
     initialHistoryPeriod === "3m" ||
     initialHistoryPeriod === "6m" ||
+    initialHistoryPeriod === "1y" ||
+    initialHistoryPeriod === "all" ||
     initialHistoryPeriod === "7d"
       ? initialHistoryPeriod
       : initialParsed?.fellBackTo3m

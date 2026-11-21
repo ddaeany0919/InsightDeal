@@ -1,4 +1,5 @@
 import base64
+from functools import lru_cache
 import html
 import logging
 import re
@@ -85,7 +86,7 @@ _BODY_SURCHARGE_PAREN_RE = re.compile(
 )
 
 _EXPLICIT_SHIPPING_KEYWORD_RE = re.compile(
-    r"^(?:무배|무료배송|무료|유배|유료배송|유료|배송비|택배비?|미국내\s*(?:무료|무배)|배대지\s*(?:무료|무배|별도)|국내까지\s*(?:무료|무배)|무료\s*직배|직배(?:\s*무료|\s*무배|\s*유료)?|직구\s*(?:무료|무배)|프라임\s*(?:무료|무배)|관부가세\s*포함|와우무료|와우무배|네멤무료|네멤무배|조건부무료|조건부|free(?:\s*shipping)?|fs)\b",
+    r"^(?:무배|무료배송|무료|유배|유료배송|유료|배송비|택배비?|미국내\s*(?:무료|무배)|배대지\s*(?:무료|무배|별도)|국내까지\s*(?:무료|무배)|무료\s*직배|직배(?:\s*무료|\s*무배|\s*유료)?|직구\s*(?:무료|무배)|프라임\s*(?:무료|무배)|관부가세\s*포함|와우무료|와우무배|네멤무료|네멤무배|유클무료|유클무배|유니버스클럽\s*(?:무료|무배)|스클무료|스클무배|스마일클럽\s*(?:무료|무배)|조건부무료|조건부|free(?:\s*shipping)?|fs)\b",
     re.IGNORECASE,
 )
 
@@ -188,19 +189,21 @@ MALL_ALIAS_MAP: dict[str, str] = {
     "wconcept": "W컨셉",
     "토스": "토스",
     "토스쇼핑": "토스",
-    "톡딜": "톡딜",
-    "카카오톡딜": "톡딜",
-    "카카오": "카카오",
-    "카카오쇼핑": "카카오",
-    "카카오톡쇼핑하기": "카카오",
-    "카카오선물하기": "카카오",
-    "카카오톡선물하기": "카카오",
+    "톡딜": "카카오쇼핑",
+    "카카오톡딜": "카카오쇼핑",
+    "카카오": "카카오쇼핑",
+    "카카오쇼핑": "카카오쇼핑",
+    "카카오톡쇼핑하기": "카카오쇼핑",
+    "카카오선물하기": "카카오쇼핑",
+    "카카오톡선물하기": "카카오쇼핑",
     "우체국쇼핑": "우체국쇼핑",
     "우체국": "우체국쇼핑",
     "하이마트": "하이마트",
     "하이마트몰": "하이마트",
     "롯데하이마트": "하이마트",
     "cj온스타일": "CJ온스타일",
+    "cj온": "CJ온스타일",
+    "cjon": "CJ온스타일",
     "cjonstyle": "CJ온스타일",
     "cj더마켓": "CJ더마켓",
     "cj제일제당": "CJ더마켓",
@@ -234,6 +237,12 @@ MALL_ALIAS_MAP: dict[str, str] = {
     "gog": "GOG",
     "ps스토어": "PS스토어",
     "플레이스테이션": "PS스토어",
+    "엑스박스": "엑스박스",
+    "엑스박스스토어": "엑스박스",
+    "엑박스토어": "엑스박스",
+    "엑박": "엑스박스",
+    "xbox": "엑스박스",
+    "xbox스토어": "엑스박스",
     "닌텐도": "닌텐도",
     "올리브영": "올리브영",
     "oliveyoung": "올리브영",
@@ -304,6 +313,7 @@ _DOMAIN_SHOP_RULES: list[tuple[str, str]] = [
     ("epicgames.com", "에픽게임즈"),
     ("gog.com", "GOG"),
     ("playstation.com", "PS스토어"),
+    ("xbox.com", "엑스박스"),
     ("nintendo.co.kr", "닌텐도"),
     ("emart.ssg.com", "이마트몰"),
     ("shinsegaemall.ssg.com", "신세계몰"),
@@ -313,10 +323,10 @@ _DOMAIN_SHOP_RULES: list[tuple[str, str]] = [
     ("musinsa.com", "무신사"),
     ("29cm.co.kr", "29CM"),
     ("wconcept.co.kr", "W컨셉"),
-    ("store.kakao.com", "톡딜"),
-    ("gift.kakao.com", "카카오"),
-    ("shopping.kakao.com", "카카오"),
-    ("kakao.com", "카카오"),
+    ("store.kakao.com", "카카오쇼핑"),
+    ("gift.kakao.com", "카카오쇼핑"),
+    ("shopping.kakao.com", "카카오쇼핑"),
+    ("kakao.com", "카카오쇼핑"),
     ("toss.im", "토스"),
     ("toss.shopping", "토스"),
     ("epost.go.kr", "우체국쇼핑"),
@@ -549,6 +559,76 @@ def sanitize_ingested_title(raw_title: str) -> str:
     return re.sub(r"\s{2,}", " ", t).strip()
 
 
+_CLEAN_TITLE_ULTRA_TAIL_RE = re.compile(r"\s*\([^)]*울트라\s*맥스[^)]*\)", re.IGNORECASE)
+_CLEAN_TITLE_EMPTY_PAREN_RE = re.compile(r"\(\s*[/,|]?\s*\)")
+_CLEAN_TITLE_HEAD_RE = re.compile(r"^\s*([^\[\]\(\)\s][^\[\]\(\)]{0,15})[\]\)]\s+(.+)$")
+_CLEAN_TITLE_SPEC_HEAD_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:인치|inch|kg|g|ml|l|w|gb|tb)$", re.IGNORECASE)
+_CLEAN_TITLE_WON_CUT_RE = re.compile(r"[\s/]*(?:[￦₩💰]|\\(?=\s*\d)).*$")
+_CLEAN_TITLE_JIRUM_CUT_RE = re.compile(r"[\s/]*(?:🚚|퀘이사존/지름|지름&할인정보).*$")
+_CLEAN_TITLE_PRICE_PAREN_TAIL_RE = re.compile(
+    r"\s*\([^)]*(?:"
+    r"(?:[$€¥￥]\s*[0-9]+(?:\.[0-9]+)?)"
+    r"|(?:(?:[0-9,]+|[0-9]+(?:\.[0-9]+)?)\s*(?:만\s*원?|천\s*원?|원|달러|불|엔|円|위안|유로|\$|€|¥|￥|USD|EUR|CNY|JPY|원\s*대|원\s*상당))"
+    r"|(?:[0-9]{1,3}(?:,[0-9]{3})+\s*[/,|]\s*(?:무배|무료|무료배송|유배|배송비|[0-9,]+))"
+    r")[^)]*\)\s*$",
+    re.IGNORECASE,
+)
+_CLEAN_TITLE_SHIP_PAREN_TAIL_RE = re.compile(
+    r"\s*\([^)]*(?:무료배송|배송비|무배|유배|미국내무료|미국내무배|국내까지\s*무료|국내까지무료|배대지무료|배대지무배|무료직배|직배무료|직배무배|프라임무료|관부가세포함|와우무료|와우무배|네멤무료|네멤무배|유클무료|유클무배|스클무료|스클무배|조건부무료|카드할인)[^)]*\)\s*$",
+    re.IGNORECASE,
+)
+_CLEAN_TITLE_UNCLOSED_PAREN_TAIL_RE = re.compile(r"\s*\([^)]*$")
+_CLEAN_TITLE_SLASH_TAIL_RE = re.compile(
+    r"\s*/\s*(?:[1-9][0-9]{0,2}(?:,[0-9]{3})+|[1-9][0-9]{3,6})\s*원?\s*/\s*"
+    r"(?:무배|무료배송|무료|무|0원?|와우무료|와우무배|네멤무료|네멤무배|유클무료|유클무배|스클무료|스클무배|조건부무료|(?:배송비\s*|택배비?\s*)?[1-9][0-9]{0,1},?[0-9]{3}\s*원?)\s*$",
+    re.IGNORECASE,
+)
+_CLEAN_TITLE_TRIM_END_RE = re.compile(r"[\s\.,\-\/~]+$")
+_MULTI_WS_RE = re.compile(r"\s{2,}")
+
+
+@lru_cache(maxsize=4096)
+def _clean_canonical_title_cached(raw_title: str) -> str:
+    if not raw_title:
+        return ""
+    t = html.unescape(raw_title)
+    t = t.replace("\xa0", " ").replace("릿模셈", "넾다세일").replace("\ufffd", "").strip()
+    if len(t) > 500:
+        t = t[:500]
+
+    t = _PLACEHOLDER_COMMA_RE.sub("", t)
+    t = _SEED_DUMMY_TAIL_RE.sub("", t)
+    t = _CLEAN_TITLE_ULTRA_TAIL_RE.sub("", t)
+    t = _CLEAN_TITLE_EMPTY_PAREN_RE.sub("", t)
+
+    # 앞머리 닫는 괄호 오타 교정 ('잔여공구코드] ' -> '[잔여공구코드] ')
+    m_head = _CLEAN_TITLE_HEAD_RE.match(t)
+    if m_head:
+        head_tok = m_head.group(1).strip()
+        if not _CLEAN_TITLE_SPEC_HEAD_RE.search(head_tok):
+            t = f"[{head_tok}] {m_head.group(2).strip()}"
+
+    # 통화 기호/백슬래시(반드시 뒤에 숫자가 오는 경우만) 및 게시판 지름 꼬리표 절삭
+    t = _CLEAN_TITLE_WON_CUT_RE.sub("", t)
+    t = _CLEAN_TITLE_JIRUM_CUT_RE.sub("", t)
+
+    # 후행 가격/배송비 괄호 반복 제거 (예: '(15.6인치) (89,000원/무배)' -> '(15.6인치)')
+    for _ in range(2):
+        prev = t
+        t = _CLEAN_TITLE_PRICE_PAREN_TAIL_RE.sub("", t)
+        t = _CLEAN_TITLE_SHIP_PAREN_TAIL_RE.sub("", t)
+        if t == prev:
+            break
+
+    # 닫는 괄호가 누락된 후행 열린 괄호 제거 (예: '(16,680원/무료')
+    t = _CLEAN_TITLE_UNCLOSED_PAREN_TAIL_RE.sub("", t)
+    # 후행 슬래시 가격/배송비 꼬리표 제거 (예: '/88,900원/2500원', '/22050원/무배')
+    t = _CLEAN_TITLE_SLASH_TAIL_RE.sub("", t)
+    t = _CLEAN_TITLE_TRIM_END_RE.sub("", t)
+    t = _MULTI_WS_RE.sub(" ", t).strip()
+    return t or html.unescape(raw_title).strip()
+
+
 def clean_canonical_title(raw_title: str) -> str:
     """
     API 응답(목록/상세) 표시용 제목 정제:
@@ -559,69 +639,22 @@ def clean_canonical_title(raw_title: str) -> str:
     """
     if not raw_title:
         return ""
-    t = html.unescape(str(raw_title))
-    t = t.replace("\xa0", " ").replace("릿模셈", "넾다세일").replace("\ufffd", "").strip()
-    if len(t) > 500:
-        t = t[:500]
-
-    t = _PLACEHOLDER_COMMA_RE.sub("", t)
-    t = _SEED_DUMMY_TAIL_RE.sub("", t)
-    t = re.sub(r"\s*\([^)]*울트라\s*맥스[^)]*\)", "", t, flags=re.IGNORECASE)
-    t = re.sub(r"\(\s*[/,|]?\s*\)", "", t)
-
-    # 앞머리 닫는 괄호 오타 교정 ('잔여공구코드] ' -> '[잔여공구코드] ')
-    m_head = re.match(r"^\s*([^\[\]\(\)\s][^\[\]\(\)]{0,15})[\]\)]\s+(.+)$", t)
-    if m_head:
-        head_tok = m_head.group(1).strip()
-        if not re.search(r"\d+(?:\.\d+)?\s*(?:인치|inch|kg|g|ml|l|w|gb|tb)$", head_tok, re.IGNORECASE):
-            t = f"[{head_tok}] {m_head.group(2).strip()}"
-
-    # 통화 기호/백슬래시(반드시 뒤에 숫자가 오는 경우만) 및 게시판 지름 꼬리표 절삭
-    t = re.sub(r"[\s/]*(?:[￦₩💰]|\\(?=\s*\d)).*$", "", t)
-    t = re.sub(r"[\s/]*(?:🚚|퀘이사존/지름|지름&할인정보).*$", "", t)
-
-    # 후행 가격/배송비 괄호 반복 제거 (예: '(15.6인치) (89,000원/무배)' -> '(15.6인치)')
-    for _ in range(2):
-        prev = t
-        t = re.sub(
-            r"\s*\([^)]*(?:"
-            r"(?:[$€¥￥]\s*[0-9]+(?:\.[0-9]+)?)"
-            r"|(?:(?:[0-9,]+|[0-9]+(?:\.[0-9]+)?)\s*(?:만\s*원?|천\s*원?|원|달러|불|엔|円|위안|유로|\$|€|¥|￥|USD|EUR|CNY|JPY|원\s*대|원\s*상당))"
-            r"|(?:[0-9]{1,3}(?:,[0-9]{3})+\s*[/,|]\s*(?:무배|무료|무료배송|유배|배송비|[0-9,]+))"
-            r")[^)]*\)\s*$",
-            "",
-            t,
-            flags=re.IGNORECASE,
-        )
-        t = re.sub(
-            r"\s*\([^)]*(?:무료배송|배송비|무배|유배|미국내무료|미국내무배|국내까지\s*무료|국내까지무료|배대지무료|배대지무배|무료직배|직배무료|직배무배|프라임무료|관부가세포함|와우무료|와우무배|네멤무료|네멤무배|조건부무료|카드할인)[^)]*\)\s*$",
-            "",
-            t,
-            flags=re.IGNORECASE,
-        )
-        if t == prev:
-            break
-
-    # 닫는 괄호가 누락된 후행 열린 괄호 제거 (예: '(16,680원/무료')
-    t = re.sub(r"\s*\([^)]*$", "", t)
-    # 후행 슬래시 가격/배송비 꼬리표 제거 (예: '/88,900원/2500원', '/22050원/무배')
-    t = re.sub(
-        r"\s*/\s*(?:[1-9][0-9]{0,2}(?:,[0-9]{3})+|[1-9][0-9]{3,6})\s*원?\s*/\s*"
-        r"(?:무배|무료배송|무료|무|0원?|와우무료|와우무배|네멤무료|네멤무배|조건부무료|(?:배송비\s*|택배비?\s*)?[1-9][0-9]{0,1},?[0-9]{3}\s*원?)\s*$",
-        "",
-        t,
-        flags=re.IGNORECASE,
-    )
-    t = re.sub(r"[\s\.,\-\/~]+$", "", t)
-    t = re.sub(r"\s{2,}", " ", t).strip()
-    return t or html.unescape(str(raw_title)).strip()
+    return _clean_canonical_title_cached(str(raw_title))
 
 
-def normalize_shipping_fee(raw_fee: Optional[str], title_hint: str = "") -> str:
-    """
-    배송비 표기를 표준 규격('무료배송', '와우무료', '네멤무료', '조건부무료', '2,500원', '')으로 정규화합니다.
-    """
-    s = html.unescape(str(raw_fee or "")).replace("\xa0", " ").strip()
+_TITLE_SHIP_WOW_RE = re.compile(r"(?:와우\s*무배|와우\s*무료|쿠팡와우\s*0?\s*무료)", re.IGNORECASE)
+_TITLE_SHIP_NMEM_RE = re.compile(r"(?:네멤\s*무배|네멤\s*무료|멤버십\s*0?\s*무료)", re.IGNORECASE)
+_TITLE_SHIP_UCLUB_RE = re.compile(r"(?:유클\s*무배|유클\s*무료|유니버스\s*클럽\s*(?:무료|무배))", re.IGNORECASE)
+_TITLE_SHIP_SCLUB_RE = re.compile(r"(?:스클\s*무배|스클\s*무료|스마일\s*클럽\s*(?:무료|무배))", re.IGNORECASE)
+_TITLE_SHIP_FREE_RE = re.compile(
+    r"(?:무배|무료배송|직배\s*무료|직배\s*무배|직구\s*무배?|미국내\s*(?:무료|무배)|국내까지\s*(?:무료|무배)|배대지\s*(?:무료|무배)|무료\s*직배|프라임\s*(?:무료|무배)|/\s*(?:무료|무|0원?|free|fs)\s*(?:[\)\]]|$))",
+    re.IGNORECASE,
+)
+
+
+@lru_cache(maxsize=4096)
+def _normalize_shipping_fee_cached(raw_fee_str: str, title_hint: str) -> str:
+    s = html.unescape(raw_fee_str).replace("\xa0", " ").strip()
     s = re.sub(r"\s+", " ", s)
 
     def _classify_single(val_str: str) -> Optional[str]:
@@ -630,7 +663,11 @@ def normalize_shipping_fee(raw_fee: Optional[str], title_hint: str = "") -> str:
         low = val_str.lower().strip()
         compact = re.sub(r"\s+", "", low)
 
-        if low in ("-", ".", "정보 없음", "정보없음", "확인 필요", "확인필요", "없음", "none", "null", "미정"):
+        if low in ("-", ".", "정보 없음", "정보없음", "확인 필요", "확인필요", "없음", "none", "null", "미정", "평생", "선착순", "적립", "증정", "무제한", "약정", "할부"):
+            return ""
+        if re.match(r"^(?:평생|약\s*\d+\s*개월|\d+\s*(?:개월|년|일|주)\b)", low) and not any(
+            k in low for k in ("무료", "무배", "배송", "원")
+        ):
             return ""
         if "http://" in low or "https://" in low or "게시물입니다" in low:
             if any(k in low for k in ("무료배송", "무배", "배송비 무료", "배송비포함", "배송비 포함", "free shipping")):
@@ -639,6 +676,10 @@ def normalize_shipping_fee(raw_fee: Optional[str], title_hint: str = "") -> str:
         if len(val_str) > 35:
             if "와우" in compact and ("무료" in compact or "무배" in compact):
                 return "와우무료"
+            if ("유클" in compact or "유니버스클럽" in compact) and ("무료" in compact or "무배" in compact):
+                return "유클무료"
+            if ("스클" in compact or "스마일클럽" in compact) and ("무료" in compact or "무배" in compact):
+                return "스클무료"
             if ("멤버십" in compact or "네멤" in compact) and ("무료" in compact or "무배" in compact):
                 return "네멤무료"
             if any(k in low for k in ("무료배송", "무배", "배송비 무료", "배송비포함", "배송비 포함", "free shipping")):
@@ -647,6 +688,10 @@ def normalize_shipping_fee(raw_fee: Optional[str], title_hint: str = "") -> str:
 
         if "와우" in compact and any(k in compact for k in ("무료", "무배", "0")):
             return "와우무료"
+        if ("유클" in compact or "유니버스클럽" in compact) and any(k in compact for k in ("무료", "무배", "0")):
+            return "유클무료"
+        if ("스클" in compact or "스마일클럽" in compact) and any(k in compact for k in ("무료", "무배", "0")):
+            return "스클무료"
         if any(m in compact for m in ("멤버십", "네멤", "네이버멤버십", "플러스멤버십")) and any(
             k in compact for k in ("무료", "무배", "0")
         ):
@@ -697,18 +742,25 @@ def normalize_shipping_fee(raw_fee: Optional[str], title_hint: str = "") -> str:
 
     if not res and title_hint:
         th = html.unescape(title_hint)
-        if re.search(r"(?:와우\s*무배|와우\s*무료|쿠팡와우\s*0?\s*무료)", th, re.IGNORECASE):
+        if _TITLE_SHIP_WOW_RE.search(th):
             return "와우무료"
-        if re.search(r"(?:네멤\s*무배|네멤\s*무료|멤버십\s*0?\s*무료)", th, re.IGNORECASE):
+        if _TITLE_SHIP_UCLUB_RE.search(th):
+            return "유클무료"
+        if _TITLE_SHIP_SCLUB_RE.search(th):
+            return "스클무료"
+        if _TITLE_SHIP_NMEM_RE.search(th):
             return "네멤무료"
-        if re.search(
-            r"(?:무배|무료배송|직배\s*무료|직배\s*무배|직구\s*무배?|미국내\s*(?:무료|무배)|국내까지\s*(?:무료|무배)|배대지\s*(?:무료|무배)|무료\s*직배|프라임\s*(?:무료|무배)|/\s*(?:무료|무|0원?|free|fs)\s*(?:[\)\]]|$))",
-            th,
-            re.IGNORECASE,
-        ):
+        if _TITLE_SHIP_FREE_RE.search(th):
             return "무료배송"
 
     return res or ""
+
+
+def normalize_shipping_fee(raw_fee: Optional[str], title_hint: str = "") -> str:
+    """
+    배송비 표기를 표준 규격('무료배송', '와우무료', '유클무료', '스클무료', '네멤무료', '조건부무료', '2,500원', '')으로 정규화합니다.
+    """
+    return _normalize_shipping_fee_cached(str(raw_fee or ""), str(title_hint or ""))
 
 
 def is_non_mall_label(label: Optional[str]) -> bool:
@@ -776,20 +828,14 @@ def _match_mall_alias(text: Optional[str]) -> str:
     return ""
 
 
-def resolve_canonical_shop_name(
-    raw_title: Optional[str] = "",
-    ecommerce_url: Optional[str] = "",
-    current_shop: Optional[str] = "",
-    post_url: Optional[str] = "",
-    default_empty: str = "",
+@lru_cache(maxsize=4096)
+def _resolve_canonical_shop_name_cached(
+    raw_title: str,
+    ecommerce_url: str,
+    current_shop: str,
+    post_url: str,
+    default_empty: str,
 ) -> str:
-    """
-    쇼핑몰명 단일 정규화 함수:
-    1) current_shop 별칭 매칭 (비쇼핑몰 단어 제외)
-    2) 제목 선두 [말머리] 별칭 매칭 (비쇼핑몰 말머리 '[특가]', '[재입고]', '[광군제 공구]', '[잔여공구코드]' 등 원천 배제)
-    3) ecommerce_url 도메인 역추론 (래퍼 URL 자동 언래핑 포함)
-    4) 유효한 미등록 고유 쇼핑몰명 보존 (숫자/스펙/비쇼핑몰 단어 제외)
-    """
     # 1) current_shop에서 표준 별칭 매칭
     matched_curr = _match_mall_alias(current_shop)
     if matched_curr:
@@ -822,6 +868,29 @@ def resolve_canonical_shop_name(
                 return cand
 
     return default_empty
+
+
+def resolve_canonical_shop_name(
+    raw_title: Optional[str] = "",
+    ecommerce_url: Optional[str] = "",
+    current_shop: Optional[str] = "",
+    post_url: Optional[str] = "",
+    default_empty: str = "",
+) -> str:
+    """
+    쇼핑몰명 단일 정규화 함수:
+    1) current_shop 별칭 매칭 (비쇼핑몰 단어 제외)
+    2) 제목 선두 [말머리] 별칭 매칭 (비쇼핑몰 말머리 '[특가]', '[재입고]', '[광군제 공구]', '[잔여공구코드]' 등 원천 배제)
+    3) ecommerce_url 도메인 역추론 (래퍼 URL 자동 언래핑 포함)
+    4) 유효한 미등록 고유 쇼핑몰명 보존 (숫자/스펙/비쇼핑몰 단어 제외)
+    """
+    return _resolve_canonical_shop_name_cached(
+        str(raw_title or ""),
+        str(ecommerce_url or ""),
+        str(current_shop or ""),
+        str(post_url or ""),
+        str(default_empty or ""),
+    )
 
 
 def is_micro_point_deal(price: int, raw_title: str) -> bool:
@@ -906,7 +975,7 @@ def parse_price_string(
     # 단위당 가격(100g당 990원) 및 배송비 부속 문구((무배), 무료배송) 선제 제거 후 가격 판별
     s_clean = _UNIT_PRICE_RE.sub(" ", s)
     s_no_ship = re.sub(
-        r"\(\s*(?:무배|무료배송|무료|와우무배|와우무료|네멤무배|네멤무료|배송비\s*무료)\s*\)|무료배송|무배|배송비\s*무료",
+        r"\(\s*(?:무배|무료배송|무료|와우무배|와우무료|네멤무배|네멤무료|유클무배|유클무료|스클무배|스클무료|배송비\s*무료)\s*\)|무료배송|무배|유클무료|유클무배|스클무료|스클무배|배송비\s*무료",
         " ",
         s_clean,
         flags=re.IGNORECASE,
@@ -1093,7 +1162,7 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
             ship_part = m_comma.group(2).strip()
         else:
             m_ship_kw = re.match(
-                r"^(.+?)\s+((?:무배|무료배송|무료|유배|유료배송|배송비[^\)\]]*|택배비?[^\)\]]*|와우무료|와우무배|네멤무료|네멤무배|조건부무료|free(?:\s*shipping)?|fs))$",
+                r"^(.+?)\s+((?:무배|무료배송|무료|유배|유료배송|배송비[^\)\]]*|택배비?[^\)\]]*|와우무료|와우무배|네멤무료|네멤무배|유클무료|유클무배|스클무료|스클무배|조건부무료|free(?:\s*shipping)?|fs))$",
                 cleaned,
                 re.IGNORECASE,
             )
@@ -1182,45 +1251,101 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
     return parsed_price, parsed_curr, norm_ship
 
 
-def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]:
-    """
-    제목에서 (price, currency, shipping_fee, is_explicit_free_deal)을 단일 진실 공급원으로 정밀 추출합니다.
-    1) (10/13 오전10:30) 등 날짜+시간 괄호 및 100g당 단위가격 선제 마스킹
-    2) 우측(뒤쪽) 괄호 우선 탐색(reversed(finditer)), 닫는 괄호 누락 '(16,680원/무료' 지원
-    3) 괄호 외 만/원/슬래시/외화($, €, ¥/위안, 엔) 파싱
-    """
+_THOUSAND_DOT_WON_RE = re.compile(r"(?<![0-9.])([1-9][0-9]{0,2}(?:\.[0-9]{3})+)(?=\s*원)")
+_MSRP_PAREN_MASK_RE = re.compile(
+    r"[\(\[]\s*(?:정가|정상\s*가(?:격)?|기존\s*가(?:격)?|출시\s*가(?:격)?|소비자가)\b[^\)\]]*[\)\]]",
+    re.IGNORECASE,
+)
+_TITLE_NONZERO_PRICE_RE = re.compile(
+    r"[1-9][\d,.]*\s*(?:만\s*원?|천\s*원?|원|달러|\d*불(?!가|량|능)|유로|위안|엔|円|€|\$|¥|￥)"
+    r"|(?:[$€¥￥])\s*[1-9][\d,.]*",
+    re.IGNORECASE,
+)
+_TITLE_FREE_RE_1 = re.compile(
+    r"\(\s*0\s*원\s*\)|무료\s*배포|한정\s*무료|일시\s*무료|무료\s*\(유료|100%\s*할인",
+    re.IGNORECASE,
+)
+_TITLE_FREE_RE_2 = re.compile(r"\(\s*(?:무료|free)\s*\)", re.IGNORECASE)
+_INLINE_SHIP_PATTERN_RE = re.compile(
+    r"(?:[\(\[]\s*[+\-]?\s*(?:배송\s*비|택배\s*비|우편\s*비|유료\s*배송|유배)\s*[:：=]?\s*([1-9][0-9]{0,1},?[0-9]{3}|[1-9][0-9]{2}|0)\s*원?\s*[\)\]]"
+    r"|[+\-]?\s*(?:배송\s*비|택배\s*비|우편\s*비|유료\s*배송|유배)\s*[:：=]?\s*([1-9][0-9]{0,1},?[0-9]{3}|[1-9][0-9]{2}|0)\s*원?)",
+    re.IGNORECASE,
+)
+_SLASH_PRICE_SHIP_RE = re.compile(
+    r"(?<![a-zA-Z0-9#.\-])([1-9][0-9]{0,2}(?:,[0-9]{3})+|[1-9][0-9]{3,6})\s*(원)?\s*(?:외|부터|~|대)?\s*"
+    r"[/|]\s*"
+    r"(무배|무료배송|무료|무|0원?|와우무료|와우무배|네멤무료|네멤무배|유클무료|유클무배|스클무료|스클무배|조건부무료|유배|유료배송|"
+    r"(?:배송비\s*|택배비?\s*)?(?:[1-9][0-9]{0,1},?[0-9]{3}|[1-9][0-9]{2})(?:\s*원(?!\s*권)|(?![0-9,])))"
+    r"(?!\s*원\s*권)",
+    re.IGNORECASE,
+)
+_TITLE_USD_RE = re.compile(
+    r"(?:\$\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)(?:\s*(?:달러|USD|불(?!가|량|능|편|안|발|포함|빛))|\$(?!\d)))",
+    re.IGNORECASE,
+)
+_TITLE_EUR_RE = re.compile(
+    r"(?:€\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:유로|EUR))",
+    re.IGNORECASE,
+)
+_TITLE_CNY_RE = re.compile(
+    r"(?:[¥￥]\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:위안|CNY|RMB))",
+    re.IGNORECASE,
+)
+_TITLE_JPY_RE = re.compile(
+    r"(?:JPY\s*(\d(?:[\d,]*\d)?)|(\d(?:[\d,]*\d)?)\s*(?:엔(?!진|터|드|젤)|円|JPY))",
+    re.IGNORECASE,
+)
+_TITLE_MAN_CHUN_RE = re.compile(
+    r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)([0-9]+)\s*만\s*([0-9]+)\s*천\s*원?"
+)
+_TITLE_MAN_RE = re.compile(
+    r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)(\d(?:[\d,]*\d)?(?:\.[\d]+)?)\s*만(?!\s*(?:원\s*)?(?:할인|적립|쿠폰|캐시백|페이백|이상|권|mAh|mah|암페어|개|명))"
+)
+_TITLE_WON_RE = re.compile(
+    r"(?<![+\-\d,])(?<!\d\s~\s)(?<!~\s)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7}|[1-9][0-9]?)\s*원"
+    r"(?!\s*(?:할인|적립\s*쿠폰|쿠폰|캐시백|페이백|청구|즉시|추가|이상|권))"
+)
+_TITLE_ALT_SLASH_RE = re.compile(
+    r"(?<!\d)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})(?![0-9,])\s*원?\s*(?:외|부터|~)?\s*"
+    r"(?:(?:/|,(?!\s*[0-9]{3}(?:\D|$)))\s*(무배|무료|무료배송|무|유배|유료|택배|와우|와우무료|네멤무료|유클무료|스클무료|배송비|[0-9,]{3,5}\s*원?)|\s+(무배|무료배송))"
+)
+_TITLE_OVERSEAS_HINT_RE = re.compile(
+    r"(?:국내까지\s*무료|미국내\s*(?:무료|무배)|직배\s*(?:무료|무배)|배대지|아마존|amazon|a\.co)",
+    re.IGNORECASE,
+)
+_TITLE_BARE_DEC_RE = re.compile(r"(?<![a-zA-Z0-9.])(\d{1,4}\.\d{2})(?![a-zA-Z0-9.%])")
+_TITLE_BARE_DEC_UNIT_RE = re.compile(
+    r"^\s*(?:인치|inch|mm|cm|kg|g|mg|ml|l|gb|tb|w|v|hz|세|년|월|일)\b",
+    re.IGNORECASE,
+)
+_TITLE_COMMA_FALLBACK_RE = re.compile(
+    r"(?:(?<![a-zA-Z0-9.])([1-9][0-9]{0,2}(?:,[0-9]{3}){2})(?![0-9a-zA-Z])"
+    r"|(?:결제가?|체감가?|최종가?|할인가?|혜택가?|쿠폰가?|/)\s*([1-9][0-9]{0,2}(?:,[0-9]{3})+)(?![0-9a-zA-Z]))"
+)
+_PLUS_SPLIT_RE = re.compile(r"\s+\+\s+")
+
+
+@lru_cache(maxsize=4096)
+def _parse_title_price_and_shipping_cached(raw_title: str) -> tuple[int, str, str, bool]:
     if not raw_title:
         return 0, "KRW", "", False
 
-    sanitized = html.unescape(str(raw_title)).replace("\xa0", " ").strip()
+    sanitized = html.unescape(raw_title).replace("\xa0", " ").strip()
     sanitized = _PLACEHOLDER_COMMA_RE.sub("", sanitized)
     sanitized = _SEED_DUMMY_TAIL_RE.sub("", sanitized)
-    sanitized = re.sub(
-        r"(?<![0-9.])([1-9][0-9]{0,2}(?:\.[0-9]{3})+)(?=\s*원)",
+    sanitized = _THOUSAND_DOT_WON_RE.sub(
         lambda m: m.group(1).replace(".", ","),
         sanitized,
     )
 
     masked = _UNIT_PRICE_RE.sub(" ", sanitized)
     masked = _DATE_TIME_PAREN_RE.sub(" ", masked)
-    masked = re.sub(
-        r"[\(\[]\s*(?:정가|정상\s*가(?:격)?|기존\s*가(?:격)?|출시\s*가(?:격)?|소비자가)\b[^\)\]]*[\)\]]",
-        " ",
-        masked,
-        flags=re.IGNORECASE,
-    )
+    masked = _MSRP_PAREN_MASK_RE.sub(" ", masked)
 
-    has_nonzero_price_in_title = bool(
-        re.search(
-            r"[1-9][\d,.]*\s*(?:만\s*원?|천\s*원?|원|달러|\d*불(?!가|량|능)|유로|위안|엔|円|€|\$|¥|￥)"
-            r"|(?:[$€¥￥])\s*[1-9][\d,.]*",
-            masked,
-            re.IGNORECASE,
-        )
-    )
+    has_nonzero_price_in_title = bool(_TITLE_NONZERO_PRICE_RE.search(masked))
     is_explicit_free = bool(
-        re.search(r"\(\s*0\s*원\s*\)|무료\s*배포|한정\s*무료|일시\s*무료|무료\s*\(유료|100%\s*할인", sanitized, re.IGNORECASE)
-        or (re.search(r"\(\s*(?:무료|free)\s*\)", sanitized, re.IGNORECASE) and not has_nonzero_price_in_title)
+        _TITLE_FREE_RE_1.search(sanitized)
+        or (_TITLE_FREE_RE_2.search(sanitized) and not has_nonzero_price_in_title)
     )
 
     title_price = 0
@@ -1245,31 +1370,16 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
             break
 
     # 1-b. 괄호 안팎 명시적 '배송비/택배비 N원' 구문 선제 추출 및 마스킹 (상품가 역전 원천 차단)
-    _inline_ship_pattern = re.compile(
-        r"(?:[\(\[]\s*[+\-]?\s*(?:배송\s*비|택배\s*비|우편\s*비|유료\s*배송|유배)\s*[:：=]?\s*([1-9][0-9]{0,1},?[0-9]{3}|[1-9][0-9]{2}|0)\s*원?\s*[\)\]]"
-        r"|[+\-]?\s*(?:배송\s*비|택배\s*비|우편\s*비|유료\s*배송|유배)\s*[:：=]?\s*([1-9][0-9]{0,1},?[0-9]{3}|[1-9][0-9]{2}|0)\s*원?)",
-        re.IGNORECASE,
-    )
-    for m_ship_inline in _inline_ship_pattern.finditer(masked):
+    for m_ship_inline in _INLINE_SHIP_PATTERN_RE.finditer(masked):
         cand_sf = normalize_shipping_fee(m_ship_inline.group(1) or m_ship_inline.group(2))
         if cand_sf and not title_ship:
             title_ship = cand_sf
-    masked = _inline_ship_pattern.sub(" ", masked)
+    masked = _INLINE_SHIP_PATTERN_RE.sub(" ", masked)
 
     # 2. 괄호 밖 가격 표기 탐색 (우측 슬래시 '상품가/배송비' 우선 -> 외화/만원/원화 -> 천단위 콤마 폴백)
     if title_price == 0 and not is_explicit_free:
         # 2-0) 괄호 밖 슬래시/파이프 '상품가 / 배송비' 패턴 선제 추출 (예: /88,900원/2500원, /22050원/무배)
-        slash_candidates = list(
-            re.finditer(
-                r"(?<![a-zA-Z0-9#.\-])([1-9][0-9]{0,2}(?:,[0-9]{3})+|[1-9][0-9]{3,6})\s*(원)?\s*(?:외|부터|~|대)?\s*"
-                r"[/|]\s*"
-                r"(무배|무료배송|무료|무|0원?|와우무료|와우무배|네멤무료|네멤무배|조건부무료|유배|유료배송|"
-                r"(?:배송비\s*|택배비?\s*)?(?:[1-9][0-9]{0,1},?[0-9]{3}|[1-9][0-9]{2})(?:\s*원(?!\s*권)|(?![0-9,])))"
-                r"(?!\s*원\s*권)",
-                masked,
-                re.IGNORECASE,
-            )
-        )
+        slash_candidates = list(_SLASH_PRICE_SHIP_RE.finditer(masked))
         for sm in reversed(slash_candidates):
             raw_p_str = sm.group(1)
             has_won_tok = bool(sm.group(2))
@@ -1278,7 +1388,7 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
             is_kw_ship = bool(
                 _EXPLICIT_SHIPPING_KEYWORD_RE.search(raw_sf_str)
                 or raw_sf_str.lower() in ("무", "0", "0원", "무배", "무료", "무료배송")
-                or any(k in raw_sf_str for k in ("배송", "택배", "와우", "네멤", "조건부"))
+                or any(k in raw_sf_str for k in ("배송", "택배", "와우", "네멤", "유클", "스클", "조건부"))
             )
             if is_kw_ship:
                 if 1990 <= cand_sl <= 2035 and not has_won_tok and "," not in raw_p_str:
@@ -1306,54 +1416,18 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
         if title_price == 0:
             # 2-a) 외화 기호/단위 ($ 17.97, 89.99$, 17.97달러, ¥189, 189위안, 3,980엔, €49.50)
             # trailing `$`는 숫자 바로 뒤(공백 0칸)에만 허용해 "샤오신 프로 12.7 $164.25" 오인식 차단
-            m_usd_all = list(
-                re.finditer(
-                    r"(?:\$\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)(?:\s*(?:달러|USD|불(?!가|량|능|편|안|발|포함|빛))|\$(?!\d)))",
-                    masked,
-                    re.IGNORECASE,
-                )
-            )
-            m_eur_all = list(
-                re.finditer(
-                    r"(?:€\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:유로|EUR))",
-                    masked,
-                    re.IGNORECASE,
-                )
-            )
-            m_cny_all = list(
-                re.finditer(
-                    r"(?:[¥￥]\s*(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)|(\d(?:[\d,]*\d)?(?:\.[0-9]+)?)\s*(?:위안|CNY|RMB))",
-                    masked,
-                    re.IGNORECASE,
-                )
-            )
-            m_jpy_all = list(
-                re.finditer(
-                    r"(?:JPY\s*(\d(?:[\d,]*\d)?)|(\d(?:[\d,]*\d)?)\s*(?:엔(?!진|터|드|젤)|円|JPY))",
-                    masked,
-                    re.IGNORECASE,
-                )
-            )
+            m_usd_all = list(_TITLE_USD_RE.finditer(masked))
+            m_eur_all = list(_TITLE_EUR_RE.finditer(masked))
+            m_cny_all = list(_TITLE_CNY_RE.finditer(masked))
+            m_jpy_all = list(_TITLE_JPY_RE.finditer(masked))
 
             # 만원 / 원화 패턴
-            m_man_chun = re.search(
-                r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)([0-9]+)\s*만\s*([0-9]+)\s*천\s*원?",
-                masked,
-            )
-            m_man = re.search(
-                r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)(\d(?:[\d,]*\d)?(?:\.[\d]+)?)\s*만(?!\s*(?:원\s*)?(?:할인|적립|쿠폰|캐시백|페이백|이상|권|mAh|mah|암페어|개|명))",
-                masked,
-            )
+            m_man_chun = _TITLE_MAN_CHUN_RE.search(masked)
+            m_man = _TITLE_MAN_RE.search(masked)
             if m_man and ("$" in masked and "만원" not in masked and "만 원" not in masked):
                 m_man = None
 
-            won_matches = list(
-                re.finditer(
-                    r"(?<![+\-\d,])(?<!\d\s~\s)(?<!~\s)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7}|[1-9][0-9]?)\s*원"
-                    r"(?!\s*(?:할인|적립\s*쿠폰|쿠폰|캐시백|페이백|청구|즉시|추가|이상|권))",
-                    masked,
-                )
-            )
+            won_matches = list(_TITLE_WON_RE.finditer(masked))
 
             if m_man_chun:
                 title_price = int(m_man_chun.group(1)) * 10000 + int(m_man_chun.group(2)) * 1000
@@ -1390,11 +1464,7 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
                     title_price = round(float(val_s.replace(",", "")) * 100)
                     title_curr = "CNY"
             else:
-                m_slash = re.search(
-                    r"(?<!\d)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})(?![0-9,])\s*원?\s*(?:외|부터|~)?\s*"
-                    r"(?:(?:/|,(?!\s*[0-9]{3}(?:\D|$)))\s*(무배|무료|무료배송|무|유배|유료|택배|와우|와우무료|네멤무료|배송비|[0-9,]{3,5}\s*원?)|\s+(무배|무료배송))",
-                    masked,
-                )
+                m_slash = _TITLE_ALT_SLASH_RE.search(masked)
                 if m_slash:
                     cand_sl = int(m_slash.group(1).replace(",", ""))
                     if not (1990 <= cand_sl <= 2035 and not m_slash.group(2)):
@@ -1404,18 +1474,11 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
                         norm_sf = normalize_shipping_fee(raw_sf)
                         if norm_sf:
                             title_ship = norm_sf
-                elif re.search(
-                    r"(?:국내까지\s*무료|미국내\s*(?:무료|무배)|직배\s*(?:무료|무배)|배대지|아마존|amazon|a\.co)",
-                    sanitized,
-                    re.IGNORECASE,
-                ):
-                    main_seg = re.split(r"\s+\+\s+", masked, maxsplit=1)[0]
-                    for m_dec in re.finditer(
-                        r"(?<![a-zA-Z0-9.])(\d{1,4}\.\d{2})(?![a-zA-Z0-9.%])",
-                        main_seg,
-                    ):
+                elif _TITLE_OVERSEAS_HINT_RE.search(sanitized):
+                    main_seg = _PLUS_SPLIT_RE.split(masked, maxsplit=1)[0]
+                    for m_dec in _TITLE_BARE_DEC_RE.finditer(main_seg):
                         tail_ctx = main_seg[m_dec.end():m_dec.end() + 12]
-                        if re.match(r"^\s*(?:인치|inch|mm|cm|kg|g|mg|ml|l|gb|tb|w|v|hz|세|년|월|일)\b", tail_ctx, re.IGNORECASE):
+                        if _TITLE_BARE_DEC_UNIT_RE.match(tail_ctx):
                             continue
                         dec_val = float(m_dec.group(1))
                         if 1.0 <= dec_val <= 10000:
@@ -1427,13 +1490,7 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
             sym in masked.lower()
             for sym in ("$", "€", "¥", "￥", "달러", "usd", "유로", "eur", "위안", "cny", "엔", "jpy")
         ):
-            m_comma_fallback = list(
-                re.finditer(
-                    r"(?:(?<![a-zA-Z0-9.])([1-9][0-9]{0,2}(?:,[0-9]{3}){2})(?![0-9a-zA-Z])"
-                    r"|(?:결제가?|체감가?|최종가?|할인가?|혜택가?|쿠폰가?|/)\s*([1-9][0-9]{0,2}(?:,[0-9]{3})+)(?![0-9a-zA-Z]))",
-                    masked,
-                )
-            )
+            m_comma_fallback = list(_TITLE_COMMA_FALLBACK_RE.finditer(masked))
             for mcf in reversed(m_comma_fallback):
                 tok = mcf.group(1) or mcf.group(2)
                 cand_cf = int(tok.replace(",", ""))
@@ -1452,6 +1509,18 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
         return 0, "KRW", title_ship, False
 
     return title_price, title_curr, title_ship, False
+
+
+def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]:
+    """
+    제목에서 (price, currency, shipping_fee, is_explicit_free_deal)을 단일 진실 공급원으로 정밀 추출합니다.
+    1) (10/13 오전10:30) 등 날짜+시간 괄호 및 100g당 단위가격 선제 마스킹
+    2) 우측(뒤쪽) 괄호 우선 탐색(reversed(finditer)), 닫는 괄호 누락 '(16,680원/무료' 지원
+    3) 괄호 외 만/원/슬래시/외화($, €, ¥/위안, 엔) 파싱
+    """
+    if not raw_title:
+        return 0, "KRW", "", False
+    return _parse_title_price_and_shipping_cached(str(raw_title))
 
 
 def extract_body_fallback_price(body_text: Optional[str], title_text: str = "") -> tuple[int, str]:

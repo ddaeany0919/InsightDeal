@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useId, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Minus, Plus, RefreshCw, RotateCcw, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Minus, Plus, RefreshCw, RotateCcw, X } from "lucide-react";
 import { useDialogA11y } from "../lib/useDialogA11y";
 import { getProxyImageUrl, tryApplyFallbackProxyImage } from "../lib/utils";
 import BrandImagePlaceholder from "./BrandImagePlaceholder";
@@ -288,6 +288,43 @@ function LightboxViewer({
               }}
             >
               <Plus size={16} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label="이미지 저장"
+              title="이미지 저장"
+              onClick={async () => {
+                if (!activeUrl) return;
+                const src = buildLightboxImageSrc(activeUrl);
+                if (!src) return;
+                try {
+                  const res = await fetch(src);
+                  if (!res.ok) throw new Error("fetch failed");
+                  const blob = await res.blob();
+                  const blobUrl = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = blobUrl;
+                  a.download = `insightdeal-image-${currentIndex + 1}.jpg`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+                } catch {
+                  window.open(src, "_blank", "noopener,noreferrer");
+                }
+              }}
+              style={{
+                minWidth: "44px",
+                minHeight: "44px",
+                borderRadius: "10px",
+                background: "rgba(255, 255, 255, 0.14)",
+                color: "#F9FAFB",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Download size={16} aria-hidden="true" />
             </button>
             <button
               ref={closeBtnRef}

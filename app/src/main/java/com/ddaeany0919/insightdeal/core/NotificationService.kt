@@ -38,6 +38,9 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         private const val SILENT_CHANNEL_NAME = "야간 무음 알림"
         private const val SILENT_CHANNEL_DESCRIPTION = "방해금지 시간대(21:00~08:00)에 소리와 진동 없이 수신되는 알림입니다"
 
+        private const val NOTIFICATION_GROUP_KEY = "com.ddaeany0919.insightdeal.DEAL_ALERTS"
+        private const val SUMMARY_NOTIFICATION_ID = 9001
+
         // 알림 카테고리
         private const val TYPE_NEW_HOTDEAL = "new_hotdeal"
         private const val TYPE_PRICE_DROP = "price_drop"
@@ -381,6 +384,7 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
             .setContentIntent(pendingIntent)
             .setAutoCancel(autoCancel)
             .setPriority(activePriority)
+            .setGroup(NOTIFICATION_GROUP_KEY)
 
         val imageUrl = data["image_url"]
             ?: data["thumbnail_url"]
@@ -417,6 +421,18 @@ class InsightDealFirebaseMessagingService : FirebaseMessagingService() {
         val notification = notificationBuilder.build()
         val notificationId = System.currentTimeMillis().toInt()
         notificationManager.notify(notificationId, notification)
+
+        val summaryNotification = NotificationCompat.Builder(this, activeChannelId)
+            .setContentTitle("얼만데 새 핫딜 알림")
+            .setContentText(title)
+            .setSmallIcon(icon)
+            .setContentIntent(pendingIntent)
+            .setGroup(NOTIFICATION_GROUP_KEY)
+            .setGroupSummary(true)
+            .setAutoCancel(true)
+            .setPriority(activePriority)
+            .build()
+        notificationManager.notify(SUMMARY_NOTIFICATION_ID, summaryNotification)
 
         Log.d(TAG, "🔔 스마트 알림 표시 (채널: $activeChannelId): $title")
     }

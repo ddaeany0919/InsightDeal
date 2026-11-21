@@ -1347,4 +1347,58 @@ class InsightDealV11bUnitTest {
             ImageUrlResolver.upgradeLowresImageUrl("https://search2.kakaocdn.net/argon/656x0_80_wr/Ij9QZhtv6N0")
         )
     }
+
+    @Test
+    fun v11f_mallNormalizationAndPaymentBadges_matchCrossPlatformRules() {
+        assertEquals("카카오쇼핑", com.ddaeany0919.insightdeal.presentation.normalizeMallBadgeName("[카카오톡쇼핑하기]"))
+        assertEquals("CJ온스타일", com.ddaeany0919.insightdeal.presentation.normalizeMallBadgeName("cj온"))
+        assertEquals("엑스박스", com.ddaeany0919.insightdeal.presentation.normalizeMallBadgeName("엑박"))
+
+        assertEquals("엑스박스", com.ddaeany0919.insightdeal.presentation.inferMallFromUrl("https://www.xbox.com/ko-KR/games/store/foo"))
+        assertEquals("카카오쇼핑", com.ddaeany0919.insightdeal.presentation.inferMallFromUrl("https://store.kakao.com/brand/products/123"))
+
+        assertEquals("유니버스클럽 조건", extractPaymentConditionBadge("[G마켓] 생수 특가", "유클무료"))
+        assertEquals("스마일클럽 조건", extractPaymentConditionBadge("[옥션] 휴지 특가", "스클무료"))
+    }
+
+    @OptIn(ExperimentalPagingApi::class)
+    @Test
+    fun v11f_hotDealsRemoteMediator_initializeHonorsFiveMinuteRefreshTtl() = runBlocking {
+        HotDealsRemoteMediator.clearRefreshCache()
+        var nowMs = 1_000_000L
+        val server = LocalStubHttpServer {
+            200 to """{
+                "deals": [{"id": 700, "title": "TTL 테스트 딜", "price": 12900, "site_name": "뽐뿌"}],
+                "has_more": false,
+                "next_cursor": null
+            }"""
+        }.also { resourcesToClose += it }
+
+        val dealDao = InMemoryDealDao()
+        val keysDao = InMemoryDealRemoteKeysDao()
+        val mediator = HotDealsRemoteMediator(
+            dealDao = dealDao,
+            dealRemoteKeysDao = keysDao,
+            runInTransaction = { block -> block() },
+            apiService = createApiService(server.baseUrl),
+            category = null,
+            keyword = null,
+            platform = null,
+            sort = "latest",
+            clockMs = { nowMs }
+        )
+
+        assertEquals(RemoteMediator.InitializeAction.LAUNCH_INITIAL_REFRESH, mediator.initialize())
+
+        val refresh = mediator.load(LoadType.REFRESH, buildPagingState(emptyList()))
+        assertTrue(refresh is RemoteMediator.MediatorResult.Success)
+
+        nowMs += 60_000L
+        assertEquals(RemoteMediator.InitializeAction.SKIP_INITIAL_REFRESH, mediator.initialize())
+
+        nowMs += 300_000L
+        assertEquals(RemoteMediator.InitializeAction.LAUNCH_INITIAL_REFRESH, mediator.initialize())
+
+        HotDealsRemoteMediator.clearRefreshCache()
+    }
 }

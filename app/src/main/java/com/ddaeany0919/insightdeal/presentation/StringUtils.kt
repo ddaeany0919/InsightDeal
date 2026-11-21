@@ -186,7 +186,9 @@ fun normalizeMallBadgeName(raw: String?): String? {
         compactLower in setOf("스팀", "steam") -> "스팀"
         compactLower in setOf("에픽", "에픽게임즈", "epic", "epicgames") -> "에픽게임즈"
         compactLower in setOf("토스", "토스쇼핑") -> "토스쇼핑"
-        compactLower in setOf("카카오", "카카오톡딜", "톡딜", "카카오쇼핑", "카카오선물하기") -> "카카오쇼핑"
+        compactLower in setOf("카카오", "카카오톡딜", "톡딜", "카카오쇼핑", "카카오선물하기", "카카오톡쇼핑하기") -> "카카오쇼핑"
+        compactLower in setOf("cj온", "cjon", "cj온스타일") -> "CJ온스타일"
+        compactLower in setOf("엑박", "xbox", "엑박스토어", "xbox스토어") -> "엑스박스"
         compactLower in setOf("티몬", "위메프") -> null
         else -> cleaned
     }
@@ -222,6 +224,8 @@ fun inferMallFromUrl(url: String?): String? {
         host.contains("hmall.com") -> "현대Hmall"
         host.contains("gsshop.com") -> "GS샵"
         host.contains("cjonstyle.com") || host.contains("cjthemarket.com") -> "CJ온스타일"
+        host.contains("store.kakao.com") || host.contains("gift.kakao.com") || host.contains("talkdeal.kakao.com") || host.contains("shopping.kakao.com") -> "카카오쇼핑"
+        host.contains("xbox.com") -> "엑스박스"
         host.contains("amazon.") || host.contains("amzn.to") -> "아마존"
         host.contains("steampowered.com") -> "스팀"
         host.contains("epicgames.com") -> "에픽게임즈"

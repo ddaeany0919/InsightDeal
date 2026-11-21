@@ -569,36 +569,71 @@ fun AdvancedSearchScreen(
                     }
                 }
             } else {
-                // P1-05: 종료딜(과거 역대가) 포함 검색 토글 바
-                Row(
+                // P1-05: 종료딜(과거 역대가) 포함 검색 토글 + 정렬 바
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    FilterChip(
-                        selected = searchState.includeClosed,
-                        onClick = { viewModel.toggleIncludeClosed() },
-                        label = {
-                            Text(
-                                text = "종료딜(과거 역대가) 포함",
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        FilterChip(
+                            selected = searchState.includeClosed,
+                            onClick = { viewModel.toggleIncludeClosed() },
+                            label = {
+                                Text(
+                                    text = "종료딜(과거 역대가) 포함",
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .semantics {
+                                    role = Role.Tab
+                                    selected = searchState.includeClosed
+                                }
+                        )
+                        Text(
+                            text = if (searchState.includeClosed) "종료된 딜도 함께 검색 중" else "진행 중인 딜만 검색",
+                            fontSize = 11.5.sp,
+                            color = semantic.textMuted
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf(
+                            "latest" to "최신순",
+                            "price_asc" to "낮은가격순",
+                            "popular" to "인기순"
+                        ).forEach { (sortKey, sortLabel) ->
+                            val isSelected = searchState.sortBy == sortKey
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.selectSort(sortKey) },
+                                label = {
+                                    Text(
+                                        text = sortLabel,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
+                                modifier = Modifier
+                                    .heightIn(min = 44.dp)
+                                    .semantics {
+                                        role = Role.Tab
+                                        selected = isSelected
+                                    }
                             )
-                        },
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .semantics {
-                                role = Role.Tab
-                                selected = searchState.includeClosed
-                            }
-                    )
-                    Text(
-                        text = if (searchState.includeClosed) "종료된 딜도 함께 검색 중" else "진행 중인 딜만 검색",
-                        fontSize = 11.5.sp,
-                        color = semantic.textMuted
-                    )
+                        }
+                    }
                 }
                 val refreshState = dealsPagingItems.loadState.refresh
                 if (refreshState is LoadState.Loading && dealsPagingItems.itemCount == 0) {

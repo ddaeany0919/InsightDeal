@@ -15,14 +15,15 @@ const THEME_OPTIONS: ReadonlyArray<{
   { key: "system", label: "시스템", ariaLabel: "시스템 테마 자동 적용" },
   { key: "light", label: "라이트", ariaLabel: "라이트 모드 전환" },
   { key: "dark", label: "다크", ariaLabel: "다크 모드 전환" },
+  { key: "amoled", label: "AMOLED", ariaLabel: "AMOLED 순수 블랙 모드 전환" },
 ];
 
 function applyThemeToDocument(mode: ThemeMode): void {
   if (typeof document === "undefined" || typeof window === "undefined") return;
   const root = document.documentElement;
-  if (mode === "light" || mode === "dark") {
+  if (mode === "light" || mode === "dark" || mode === "amoled") {
     root.dataset.theme = mode;
-    root.style.colorScheme = mode;
+    root.style.colorScheme = mode === "light" ? "light" : "dark";
     return;
   }
   delete root.dataset.theme;
@@ -34,7 +35,7 @@ function getThemeSnapshot(): ThemeMode {
   if (typeof window === "undefined") return "system";
   try {
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
-    if (saved === "light" || saved === "dark" || saved === "system") {
+    if (saved === "light" || saved === "dark" || saved === "amoled" || saved === "system") {
       return saved;
     }
   } catch {}

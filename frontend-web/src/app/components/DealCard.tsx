@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Bell, ExternalLink, Heart, Share2 } from "lucide-react";
+import { Bell, ExternalLink, EyeOff, Heart, Share2 } from "lucide-react";
 import type { Deal, DealSource } from "../lib/types";
 import {
+  computeShippingTotal,
   computeUnitPriceBadge,
   decodeHtmlEntities,
+  estimateKrwFromForeign,
   extractPaymentConditionBadge,
   formatPrice,
   formatRelativeTimeKo,
@@ -13,9 +15,11 @@ import {
   getProxyImageUrl,
   isNonMallLabel,
   normalizeMallAlias,
+  prefetchDealDetail,
   resolveDealShopName,
   resolveOutboundUrl,
   stripLeadingShopBracket,
+  stripPromoPrefixForDisplay,
   trackOutboundClick,
   tryApplyFallbackProxyImage,
 } from "../lib/utils";
@@ -31,6 +35,9 @@ interface DealCardProps {
   isWishlisted: boolean;
   isAlertSet: boolean;
   priority?: boolean;
+  viewMode?: "card" | "compact";
+  showCategoryPill?: boolean;
+  onHideDeal?: (dealId: number) => void;
   onSelectDeal: (deal: Deal) => void;
   onShareDeal: (e: React.MouseEvent, deal: Deal) => void;
   onToggleAlert: (e: React.MouseEvent, dealId: number) => void;
@@ -46,6 +53,9 @@ export default function DealCard({
   isWishlisted,
   isAlertSet,
   priority = false,
+  viewMode = "card",
+  showCategoryPill = false,
+  onHideDeal,
   onSelectDeal,
   onShareDeal,
   onToggleAlert,
@@ -55,6 +65,15 @@ export default function DealCard({
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const prefetchTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (prefetchTimerRef.current !== null && typeof window !== "undefined") {
+        window.clearTimeout(prefetchTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const img = imgRef.current;
@@ -91,10 +110,28 @@ export default function DealCard({
     title: deal.title,
     ecommerce_url: deal.ecommerce_url,
   });
-  const displayTitle = stripLeadingShopBracket(deal.title, shopBadge);
+  const titleWithoutShop = stripLeadingShopBracket(deal.title, shopBadge);
+  const { cleanTitle: displayTitle, urgentBadge } =
+    stripPromoPrefixForDisplay(titleWithoutShop);
   const displayShipping = deal.shipping_fee
     ? decodeHtmlEntities(deal.shipping_fee)
     : null;
+  const formattedPriceRaw = deal.isFree
+    ? "0원 (무료)"
+    : formatPrice(deal.price, deal.currency, deal.title);
+  const displayPriceText =
+    !deal.isFree && formattedPriceRaw === "가격 확인"
+      ? "옵션·할인율 확인"
+      : formattedPriceRaw;
+  const foreignKrwHint = !deal.isFree
+    ? estimateKrwFromForeign(deal.price, deal.currency)
+    : null;
+  const shippingTotalHint =
+    !deal.isFree && !deal.isClosed
+      ? computeShippingTotal(deal.price, deal.currency, displayShipping)
+      : null;
+  const recommendTotal = deal.recommendations ?? deal.buyCount ?? 0;
+  const commentTotal = deal.comments ?? deal.commentCount ?? 0;
   const isSearchFallback = Boolean(
     deal.isSearchFallback || deal.is_search_fallback
   );
@@ -152,15 +189,62 @@ export default function DealCard({
           deal.scraped_at || "최근"
         );
 
+  const handleCardSurfaceClick = (e: React.MouseEvent<HTMLElement>) => {
+    const target = e.target as HTMLElement | null;
+    if (
+      target?.closest(
+        'a, button, input, select, textarea, [role="button"]'
+      )
+    ) {
+      return;
+    }
+    if (
+      typeof window !== "undefined" &&
+      window.getSelection()?.toString().trim()
+    ) {
+      return;
+    }
+    onSelectDeal(deal);
+  };
+
   return (
-    <article className="glass-panel deal-card">
+    <article
+      className={`glass-panel deal-card ${
+        viewMode === "compact" ? "deal-card--compact" : ""
+      }`}
+      onClick={handleCardSurfaceClick}
+      onMouseEnter={() => {
+        if (typeof window === "undefined") return;
+        if (prefetchTimerRef.current !== null) {
+          window.clearTimeout(prefetchTimerRef.current);
+        }
+        prefetchTimerRef.current = window.setTimeout(() => {
+          prefetchDealDetail(deal.id);
+        }, 120);
+      }}
+      onMouseLeave={() => {
+        if (prefetchTimerRef.current !== null && typeof window !== "undefined") {
+          window.clearTimeout(prefetchTimerRef.current);
+          prefetchTimerRef.current = null;
+        }
+      }}
+      onTouchStart={() => prefetchDealDetail(deal.id)}
+    >
       {/* 1. 본문 클릭 영역 (비인터랙티브 자식만 포함 -> 상세 모달 오픈) */}
       <div
         role="button"
         tabIndex={0}
         className="deal-card-body-trigger"
         aria-label={`${displayTitle} 상세 정보 보기`}
-        onClick={() => onSelectDeal(deal)}
+        onClick={() => {
+          if (
+            typeof window !== "undefined" &&
+            window.getSelection()?.toString().trim()
+          ) {
+            return;
+          }
+          onSelectDeal(deal);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
@@ -293,6 +377,47 @@ export default function DealCard({
           )}
           <span aria-hidden="true">·</span>
           <span>{liveTimeAgo}</span>
+          {showCategoryPill && deal.category && deal.category !== "기타" && (
+            <span
+              className="deal-tag"
+              style={{
+                background: "var(--badge-bg)",
+                color: "var(--text-sub)",
+                border: "1px solid var(--card-border)",
+              }}
+            >
+              {deal.category}
+            </span>
+          )}
+          {urgentBadge && !deal.isClosed && (
+            <span
+              className="deal-tag"
+              style={{
+                background: "var(--danger-bg)",
+                color: "var(--danger-text)",
+                border: "1px solid var(--danger-border)",
+              }}
+            >
+              {urgentBadge}
+            </span>
+          )}
+          {(recommendTotal > 0 || commentTotal > 0) && (
+            <span
+              style={{
+                fontSize: "0.73rem",
+                color: "var(--text-sub)",
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+              aria-label={`추천 ${recommendTotal} 댓글 ${commentTotal}`}
+            >
+              {recommendTotal > 0 && `👍 ${recommendTotal}`}
+              {recommendTotal > 0 && commentTotal > 0 && " · "}
+              {commentTotal > 0 && `💬 ${commentTotal}`}
+            </span>
+          )}
         </div>
 
         {/* 3. 가격 + 배지 + 찜/알림/공유 액션 */}
@@ -306,11 +431,31 @@ export default function DealCard({
               minWidth: 0,
             }}
           >
-            <span className="deal-price">
-              {deal.isFree
-                ? "0원 (무료)"
-                : formatPrice(deal.price, deal.currency, deal.title)}
-            </span>
+            <span className="deal-price">{displayPriceText}</span>
+            {foreignKrwHint && (
+              <span
+                style={{
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  color: "var(--text-sub)",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                ({foreignKrwHint.formatted})
+              </span>
+            )}
+            {shippingTotalHint && (
+              <span
+                style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  color: "var(--text-sub)",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {shippingTotalHint.label}
+              </span>
+            )}
             {deal.isClosed ? (
               <span className="badge badge-danger">품절·종료</span>
             ) : (
@@ -382,6 +527,20 @@ export default function DealCard({
           </div>
 
           <div className="deal-card-actions">
+            {onHideDeal && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onHideDeal(deal.id);
+                }}
+                className="deal-card-icon-btn bounce-click"
+                aria-label="이 핫딜 숨기기"
+                title="이 핫딜 숨기기"
+              >
+                <EyeOff size={17} color="var(--text-muted)" aria-hidden="true" />
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => onShareDeal(e, deal)}

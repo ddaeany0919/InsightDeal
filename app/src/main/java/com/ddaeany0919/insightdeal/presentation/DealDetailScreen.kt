@@ -2947,6 +2947,39 @@ fun DealHeader(
                     ecommerceUrl = selectedOption?.ecommerceUrl ?: deal.ecommerceUrl
                 )
             }
+            val displayShippingInfo = remember(deal.shippingFee, deal.category, resolvedShopTitle.cleanTitle) {
+                val isDigitalTitle = resolvedShopTitle.cleanTitle.contains("요금제") || resolvedShopTitle.cleanTitle.contains("데이터")
+                val hideShipping = deal.category in DIGITAL_CATEGORIES || isDigitalTitle
+
+                if (hideShipping) {
+                    null
+                } else {
+                    val trimmed = decodeHtmlEntities(deal.shippingFee).trim().ifEmpty { "정보 없음" }
+                    val compactShip = trimmed.replace(Regex("\\s+"), "")
+                    val isNoiseShipping = trimmed.contains(Regex("(평생|선착순|적립|증정|무제한|약정|할부)")) ||
+                        trimmed.matches(Regex("^\\d+(?:개월|년|일)$"))
+                    when {
+                        isNoiseShipping -> "확인 필요"
+                        compactShip == "유클무료" -> "무료 (유클)"
+                        compactShip == "스클무료" -> "무료 (스클)"
+                        trimmed == "정보 없음" || trimmed == "배송비 확인 필요" -> "확인 필요"
+                        trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
+                        trimmed.matches(SHIPPING_ZERO_SLASH_REGEX) -> trimmed.replace(SHIPPING_ZERO_PREFIX_REGEX, "무료 ")
+                        trimmed == "유료" || trimmed == "유료배송" -> "유료"
+                        trimmed.matches(SHIPPING_NUMERIC_REGEX) -> "${trimmed}원"
+                        else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
+                    }
+                }
+            }
+            val paidShippingFeeKrw = remember(displayShippingInfo) {
+                val info = displayShippingInfo.orEmpty()
+                if (info.isBlank() || info.contains("무료") || info.contains("무배") || info.contains("확인")) {
+                    0L
+                } else {
+                    val digits = info.replace(Regex("[^0-9]"), "")
+                    digits.toLongOrNull()?.takeIf { it in 100L..200_000L } ?: 0L
+                }
+            }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -3037,25 +3070,6 @@ fun DealHeader(
                                 color = semantic.onDangerContainer,
                                 modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                             )
-                        }
-                    }
-                }
-
-                val displayShippingInfo = remember(deal.shippingFee, deal.category, resolvedShopTitle.cleanTitle) {
-                    val isDigitalTitle = resolvedShopTitle.cleanTitle.contains("요금제") || resolvedShopTitle.cleanTitle.contains("데이터")
-                    val hideShipping = deal.category in DIGITAL_CATEGORIES || isDigitalTitle
-
-                    if (hideShipping) {
-                        null
-                    } else {
-                        val trimmed = decodeHtmlEntities(deal.shippingFee).trim().ifEmpty { "정보 없음" }
-                        when {
-                            trimmed == "정보 없음" || trimmed == "배송비 확인 필요" -> "확인 필요"
-                            trimmed == "0" || trimmed == "0원" || trimmed == "무배" || trimmed == "무료" || trimmed == "무료배송" -> "무료"
-                            trimmed.matches(SHIPPING_ZERO_SLASH_REGEX) -> trimmed.replace(SHIPPING_ZERO_PREFIX_REGEX, "무료 ")
-                            trimmed == "유료" || trimmed == "유료배송" -> "유료"
-                            trimmed.matches(SHIPPING_NUMERIC_REGEX) -> "${trimmed}원"
-                            else -> trimmed.replace("무료배송", "무료").replace("유료배송", "유료")
                         }
                     }
                 }
@@ -3156,6 +3170,24 @@ fun DealHeader(
                         modifier = Modifier.size(20.dp).padding(bottom = 2.dp)
                     )
                 }
+            }
+
+            if (
+                !isClosed &&
+                !isFreeDeal &&
+                effectivePrice > 0 &&
+                (effectiveCurrency.isNullOrBlank() || effectiveCurrency.equals("KRW", ignoreCase = true)) &&
+                paidShippingFeeKrw > 0
+            ) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "배송비 포함 약 ${formatPrice(effectivePrice + paidShippingFeeKrw, "KRW")}",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFeatureSettings = PriceTextStyle.fontFeatureSettings,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = semantic.textMuted
+                )
             }
 
             val selectedOptionTitle = selectedOption?.let { cleanOptionTitle(it.siteName) }.orEmpty()
@@ -3313,30 +3345,105 @@ fun DealHeader(
                 }
             }
 
+            val dealAgeDays = remember(deal.createdAt) {
+                val parsed = parseBackendTimestampToKst(deal.createdAt)
+                if (parsed != null) {
+                    java.time.Duration.between(
+                        parsed,
+                        java.time.OffsetDateTime.now(java.time.ZoneId.of("Asia/Seoul"))
+                    ).toDays().coerceAtLeast(0L)
+                } else {
+                    0L
+                }
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = "등록 $timeDisplayText",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = semantic.textMuted,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "등록 $timeDisplayText",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = semantic.textMuted,
+                        fontWeight = FontWeight.Medium
+                    )
 
-                Text(
-                    text = "•",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = semantic.textMuted
-                )
+                    Text(
+                        text = "•",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = semantic.textMuted
+                    )
 
-                Text(
-                    text = "조회 ${deal.viewCount}회",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = semantic.textMuted,
-                    fontWeight = FontWeight.Medium
-                )
+                    Text(
+                        text = "조회 ${deal.viewCount}회",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = semantic.textMuted,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    modifier = Modifier.clickable {
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("title", resolvedShopTitle.cleanTitle))
+                        android.widget.Toast.makeText(context, "상품명을 복사했어요", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "상품명 복사",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = "상품명 복사",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (!isClosed && dealAgeDays >= 3L) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = semantic.warningContainer,
+                    border = BorderStroke(1.dp, semantic.onWarningContainer.copy(alpha = 0.25f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = semantic.onWarningContainer,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "등록된 지 ${dealAgeDays}일 지난 핫딜이에요 · 가격과 품절 여부를 꼭 다시 확인해 주세요",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = semantic.onWarningContainer
+                        )
+                    }
+                }
             }
 
             if (isSearchFallbackActive) {
@@ -3443,6 +3550,9 @@ fun DealHeader(
                         if (ln.matches(Regex("^(?:갤럭시|아이폰)\\s*:\\s*.*(?:링크\\s*꾹|알리익스프레스\\s*앱).*$", RegexOption.IGNORE_CASE))) continue
                         if (ln.matches(Regex("^2\\)\\s*알리앱\\s*꾹\\s*눌러서.*$", RegexOption.IGNORE_CASE))) continue
                         if (ln.matches(Regex("^-\\s*가격은\\s*쿠폰\\s*적용\\s*전\\s*가격을\\s*적어주세요.*$", RegexOption.IGNORE_CASE))) continue
+                        if (ln.contains("게시글 본문은 원본 링크에서 확인") || ln.contains("원본 게시글에서 확인")) continue
+                        if (ln.matches(Regex("^출처\\s*:.*$", RegexOption.IGNORE_CASE))) continue
+                        if (ln.replace(" ", "") == deal.title.replace(" ", "")) continue
                         val cleanLn = ln
                             .replace(Regex(",\\s*,+"), ", ")
                             .replace(Regex("([A-Za-z0-9]{4,})\\s*,\\s*(?=[A-Za-z0-9]{4,})"), "$1, ")
@@ -3581,6 +3691,47 @@ fun DealHeader(
                             ),
                             modifier = Modifier.padding(16.dp)
                         )
+                    }
+                }
+            }
+
+            if (cleanedBodyText.length < 40) {
+                Spacer(modifier = Modifier.height(14.dp))
+                val summaryPrice = formatDetailPriceText(
+                    price = effectivePrice,
+                    currency = effectiveCurrency,
+                    titleHint = resolvedShopTitle.cleanTitle,
+                    isFree = isFreeDeal
+                )
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+                    elevation = CardDefaults.cardElevation(0.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "핵심 요약",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "판매처: ${resolvedShopTitle.shopBadge ?: deal.siteName} · 가격: $summaryPrice${displayShippingInfo?.let { " · 배송비: $it" }.orEmpty()}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (cleanedBodyText.isBlank()) {
+                            Text(
+                                text = "커뮤니티 본문이 짧거나 이미지 위주예요. 아래 원본 게시글 버튼으로 상세 조건을 확인해 보세요.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = semantic.textMuted
+                            )
+                        }
                     }
                 }
             }

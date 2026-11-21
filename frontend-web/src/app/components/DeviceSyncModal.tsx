@@ -66,6 +66,9 @@ function DeviceSyncModalContent({
   const [connectedUser, setConnectedUser] = useState<StoredAccountUser | null>(() =>
     getStoredAccountUser()
   );
+  const [showWithdrawConfirm, setShowWithdrawConfirm] = useState<boolean>(false);
+  const [withdrawPassword, setWithdrawPassword] = useState<string>("");
+  const [withdrawing, setWithdrawing] = useState<boolean>(false);
 
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -264,8 +267,46 @@ function DeviceSyncModalContent({
   const handleLogoutAccount = () => {
     clearStoredAccountAuth();
     setConnectedUser(null);
+    setShowWithdrawConfirm(false);
+    setWithdrawPassword("");
     setAccountSuccess("계정 연결을 해제했어요. 게스트 기기 상태는 그대로 유지돼요.");
     onShowToast?.("계정 연결을 해제했어요");
+  };
+
+  const handleWithdrawAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!connectedUser || !withdrawPassword || withdrawing) {
+      setAccountError("탈퇴 확인을 위해 비밀번호를 입력해 주세요.");
+      return;
+    }
+    setWithdrawing(true);
+    setAccountError(null);
+    try {
+      const res = await authFetch("/api/auth/withdraw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: connectedUser.username,
+          password: withdrawPassword,
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as { detail?: string; message?: string } | null;
+      if (!res.ok) {
+        setAccountError(data?.detail || "회원 탈퇴 처리에 실패했어요. 비밀번호를 확인해 주세요.");
+        return;
+      }
+      clearStoredAccountAuth();
+      setConnectedUser(null);
+      setShowWithdrawConfirm(false);
+      setWithdrawPassword("");
+      const msg = data?.message || "회원 탈퇴가 완료되었습니다.";
+      setAccountSuccess(msg);
+      onShowToast?.(msg);
+    } catch {
+      setAccountError("네트워크 오류로 회원 탈퇴에 실패했어요.");
+    } finally {
+      setWithdrawing(false);
+    }
   };
 
   const storedTokenExists = Boolean(getStoredAccountToken());
@@ -632,42 +673,141 @@ function DeviceSyncModalContent({
                   background: "var(--surface-subtle)",
                   border: "1px solid var(--card-border)",
                   display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
+                  flexDirection: "column",
                   gap: "12px",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <UserCheck size={20} color="var(--accent)" aria-hidden="true" />
-                  <div>
-                    <div style={{ fontSize: "0.94rem", fontWeight: 800, color: "var(--text-main)" }}>
-                      {connectedUser.nickname} ({connectedUser.username})
-                    </div>
-                    <div style={{ fontSize: "0.78rem", color: "var(--text-sub)", fontWeight: 600 }}>
-                      현재 기기와 계정이 연결되어 있어요
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleLogoutAccount}
+                <div
                   style={{
-                    minHeight: "44px",
-                    padding: "8px 12px",
-                    borderRadius: "10px",
-                    background: "var(--danger-bg)",
-                    color: "var(--danger-text)",
-                    border: "1px solid var(--danger-border)",
-                    fontSize: "0.8rem",
-                    fontWeight: 700,
-                    display: "inline-flex",
+                    display: "flex",
                     alignItems: "center",
-                    gap: "4px",
+                    justifyContent: "space-between",
+                    gap: "12px",
                   }}
                 >
-                  <LogOut size={14} aria-hidden="true" />
-                  <span>연결 해제</span>
-                </button>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <UserCheck size={20} color="var(--accent)" aria-hidden="true" />
+                    <div>
+                      <div style={{ fontSize: "0.94rem", fontWeight: 800, color: "var(--text-main)" }}>
+                        {connectedUser.nickname} ({connectedUser.username})
+                      </div>
+                      <div style={{ fontSize: "0.78rem", color: "var(--text-sub)", fontWeight: 600 }}>
+                        현재 기기와 계정이 연결되어 있어요
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleLogoutAccount}
+                    style={{
+                      minHeight: "44px",
+                      padding: "8px 12px",
+                      borderRadius: "10px",
+                      background: "var(--danger-bg)",
+                      color: "var(--danger-text)",
+                      border: "1px solid var(--danger-border)",
+                      fontSize: "0.8rem",
+                      fontWeight: 700,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    <LogOut size={14} aria-hidden="true" />
+                    <span>연결 해제</span>
+                  </button>
+                </div>
+
+                {!showWithdrawConfirm ? (
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowWithdrawConfirm(true);
+                        setAccountError(null);
+                      }}
+                      style={{
+                        minHeight: "36px",
+                        padding: "4px 10px",
+                        fontSize: "0.76rem",
+                        fontWeight: 700,
+                        color: "var(--text-muted)",
+                        textDecoration: "underline",
+                      }}
+                    >
+                      계정 탈퇴
+                    </button>
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={handleWithdrawAccount}
+                    style={{
+                      padding: "12px",
+                      borderRadius: "10px",
+                      background: "var(--card-bg)",
+                      border: "1px solid var(--danger-border)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                    }}
+                  >
+                    <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--danger-text)" }}>
+                      계정을 영구 삭제하려면 비밀번호를 입력하세요. (복구 불가)
+                    </span>
+                    <input
+                      type="password"
+                      value={withdrawPassword}
+                      onChange={(e) => setWithdrawPassword(e.target.value)}
+                      placeholder="현재 비밀번호"
+                      aria-label="계정 탈퇴 확인 비밀번호"
+                      style={{
+                        minHeight: "44px",
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid var(--card-border)",
+                        background: "var(--surface-subtle)",
+                        color: "var(--text-main)",
+                        fontSize: "0.88rem",
+                      }}
+                    />
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowWithdrawConfirm(false);
+                          setWithdrawPassword("");
+                        }}
+                        style={{
+                          flex: 1,
+                          minHeight: "44px",
+                          borderRadius: "8px",
+                          border: "1px solid var(--card-border)",
+                          background: "var(--surface-subtle)",
+                          color: "var(--text-main)",
+                          fontWeight: 700,
+                          fontSize: "0.82rem",
+                        }}
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={withdrawing}
+                        style={{
+                          flex: 1,
+                          minHeight: "44px",
+                          borderRadius: "8px",
+                          background: "var(--danger-text)",
+                          color: "#ffffff",
+                          fontWeight: 800,
+                          fontSize: "0.82rem",
+                        }}
+                      >
+                        {withdrawing ? "처리 중..." : "탈퇴 확정"}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             ) : (
               <form

@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+import { clearDealDetailCache } from "@/app/lib/utils";
 
 class MemoryStorage implements Storage {
   private store = new Map<string, string>();
@@ -105,6 +106,7 @@ if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
 
 afterEach(() => {
   cleanup();
+  clearDealDetailCache();
   globalThis.localStorage.clear();
   globalThis.sessionStorage.clear();
   vi.restoreAllMocks();

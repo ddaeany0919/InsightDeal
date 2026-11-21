@@ -21,6 +21,7 @@ export default function TrendingKeywordsTicker({
 }: TrendingKeywordsTickerProps) {
   const [tickerIndex, setTickerIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const boardId = useId();
 
@@ -36,12 +37,12 @@ export default function TrendingKeywordsTicker({
         }));
 
   useEffect(() => {
-    if (items.length === 0 || isExpanded) return;
+    if (items.length === 0 || isExpanded || isPaused) return;
     const timer = setInterval(() => {
       setTickerIndex((prev) => (prev + 1) % items.length);
     }, 3200);
     return () => clearInterval(timer);
-  }, [items.length, isExpanded]);
+  }, [items.length, isExpanded, isPaused]);
 
   // 팝오버 형태로 펼쳐졌을 때 외부 클릭 또는 Escape 키로 자연스럽게 닫기
   useEffect(() => {
@@ -98,7 +99,18 @@ export default function TrendingKeywordsTicker({
   };
 
   return (
-    <div ref={wrapperRef} className="trending-ticker-wrapper">
+    <div
+      ref={wrapperRef}
+      className="trending-ticker-wrapper"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      onFocus={() => setIsPaused(true)}
+      onBlur={(e) => {
+        if (!wrapperRef.current?.contains(e.relatedTarget as Node | null)) {
+          setIsPaused(false);
+        }
+      }}
+    >
       <div className="trending-ticker-bar">
         <button
           type="button"

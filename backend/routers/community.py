@@ -475,6 +475,7 @@ def _build_direct_mall_search_url(shop_name: str, raw_title: str, post_url: str 
         "KREAM": f"https://kream.co.kr/search?keyword={q_enc}",
         "톡딜": f"https://store.kakao.com/search/result/product?q={q_enc}",
         "카카오": f"https://store.kakao.com/search/result/product?q={q_enc}",
+        "카카오쇼핑": f"https://store.kakao.com/search/result/product?q={q_enc}",
         "알리익스프레스": f"https://ko.aliexpress.com/w/wholesale-{urllib.parse.quote(query_str.replace(' ', '-'))}.html?SearchText={q_enc}",
         "알리": f"https://ko.aliexpress.com/w/wholesale-{urllib.parse.quote(query_str.replace(' ', '-'))}.html?SearchText={q_enc}",
         "우체국쇼핑": f"https://mall.epost.go.kr/fo/search/search.do?searchTerm={q_enc}",
@@ -926,6 +927,47 @@ def _serialize_options_data(raw_options, deal_id: Optional[int] = None) -> list[
     return serialized
 
 
+def _resolve_option_aware_price_and_currency(
+    base_price: int,
+    base_curr: str,
+    serialized_opts: list[dict],
+    title: str = "",
+) -> int:
+    """다중 옵션(직구 모음전 등)의 대표가가 제목 최저가와 불일치하거나 비싼 옵션으로 튀는 착시를 보정."""
+    curr = (base_curr or "KRW").strip().upper()
+    if not serialized_opts:
+        return base_price
+    from backend.core.deal_normalizer import parse_title_price_and_shipping
+
+    tp, tc, _, is_free = parse_title_price_and_shipping(title) if title else (0, "KRW", "", False)
+    if is_free:
+        return base_price
+
+    min_floor = 100 if curr in ("USD", "EUR", "CNY") else 100
+    if tp > 0 and tc == curr:
+        min_floor = max(min_floor, int(tp * 0.35))
+
+    same_curr_prices = []
+    for opt in serialized_opts:
+        try:
+            op = int(opt.get("price") or 0)
+        except (TypeError, ValueError):
+            op = 0
+        oc = (opt.get("currency") or curr).strip().upper()
+        if op >= min_floor and oc == curr:
+            same_curr_prices.append(op)
+
+    if same_curr_prices:
+        min_opt = min(same_curr_prices)
+        if base_price <= 0 or min_opt < base_price:
+            return min_opt
+        return base_price
+
+    if tp > 0 and tc == curr and len(serialized_opts) >= 2 and (base_price <= 0 or tp < base_price):
+        return tp
+    return base_price
+
+
 def _compute_total_price(price_int: int, currency: Optional[str], shipping_fee_str: str) -> int:
     if not price_int or price_int <= 0:
         return 0
@@ -1278,12 +1320,14 @@ def has_price_conflict(
     from backend.core.deal_normalizer import has_currency_aware_price_conflict
     return has_currency_aware_price_conflict(price_a, price_b, curr_a, curr_b, threshold=0.45)
 
-def build_dsu(deals, time_window_days=1):
+def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[int, str]]] = None):
     dsu = DSU()
     url_to_deal = {}
     model_to_deal = {}
     name_clusters = []
     token_to_cluster_idxs: dict[str, list[int]] = {}
+    sc_to_cluster_idxs: dict[str, list[int]] = {}
+    memo = price_memo if price_memo is not None else {}
 
     unit_or_generic_re = re.compile(
         r'^(?:\d+(?:\.\d+)?(?:kg|g|ml|l|gb|tb|mb|w|v|a|hz|mah|ah|gsm|in1|인치|inch|개입|개|입|캔|병|팩|봉|포|매|판|박스|세트|롤|정|캡슐|구|미|쪽|호|p|ea|pcs|년|개월|일|시간|원|만원|천원)?|국내산|국산|해외|정품|무료|무배|특가|할인|증정|사은품|단품|혼합|선택|외|모음|한정|출시|신제품|신모델|리뉴얼|끌올)$',
@@ -1298,7 +1342,8 @@ def build_dsu(deals, time_window_days=1):
         n_url = get_normalized_url(deal)
         n_name = get_normalized_base_name(deal)
         deal_time = _to_utc_naive(deal.indexed_at)
-        curr_price, curr_currency = resolve_deal_price_and_currency(deal)
+        curr_price, curr_currency = memo.get(deal.id) or resolve_deal_price_and_currency(deal)
+        memo.setdefault(deal.id, (curr_price, curr_currency))
         curr_model = (getattr(deal, 'model_code', None) or "").strip().lower()
 
         curr_words_set = set(n_name.split(' ')) if n_name else set()
@@ -1367,11 +1412,14 @@ def build_dsu(deals, time_window_days=1):
         if n_name and curr_core_set:
             words_set = curr_words_set
             matched = False
-            cand_idxs = sorted({
+            cand_idx_set = {
                 idx
                 for cw in curr_core_set
                 for idx in token_to_cluster_idxs.get(cw, ())
-            })
+            }
+            if curr_sc and len(curr_sc) >= 6:
+                cand_idx_set.update(sc_to_cluster_idxs.get(curr_sc, ()))
+            cand_idxs = sorted(cand_idx_set)
             for idx in cand_idxs:
                 cluster = name_clusters[idx]
                 if curr_model and cluster.get('model_code') and curr_model != cluster['model_code']:
@@ -1397,10 +1445,15 @@ def build_dsu(deals, time_window_days=1):
                 core_min_len = min(len(curr_core_set), len(cluster['core_words']))
                 core_subset_ratio = core_inter / core_min_len if core_min_len > 0 else 0
 
-                sc_match = bool(curr_sc and cluster.get('sc') and curr_sc == cluster['sc'] and core_inter >= 2)
+                sc_match = bool(
+                    curr_sc
+                    and cluster.get('sc')
+                    and curr_sc == cluster['sc']
+                    and (core_inter >= 2 or len(curr_sc) >= 6)
+                )
 
-                if (core_min_len == 1 and core_jaccard == 1.0) or (
-                    core_inter >= 2 and (core_jaccard >= 0.68 or sc_match or (core_subset_ratio >= 0.85 and core_inter >= 3))
+                if (core_min_len == 1 and core_jaccard == 1.0) or sc_match or (
+                    core_inter >= 2 and (core_jaccard >= 0.68 or (core_subset_ratio >= 0.85 and core_inter >= 3))
                 ):
                     if (
                         not has_quantity_conflict(words_set, cluster['words'])
@@ -1435,6 +1488,8 @@ def build_dsu(deals, time_window_days=1):
                 })
                 for cw in curr_core_set:
                     token_to_cluster_idxs.setdefault(cw, []).append(new_idx)
+                if curr_sc and len(curr_sc) >= 6:
+                    sc_to_cluster_idxs.setdefault(curr_sc, []).append(new_idx)
 
     return dsu
 
@@ -1445,21 +1500,40 @@ _TOP_DEALS_API_CACHE = {"ts": 0.0, "max_id": 0, "bind_id": 0, "data": None}
 _HOT_DEALS_API_CACHE = {}  # key: (bind_id, category, keyword, platform, sort, only_hot, include_closed) -> {"ts": float, "max_id": int, "grouped": list, ...}
 _HOT_DEALS_CURSOR_CACHE: dict[tuple, dict] = {}
 _HOT_DEALS_CACHE_LOCK = threading.Lock()
-_FEED_CACHE_TTL_SEC = 45.0
+_FEED_CACHE_TTL_SEC = 180.0
 
 _DEAL_HISTORY_CACHE: OrderedDict = OrderedDict()
 _DEAL_HISTORY_CACHE_MAX_SIZE = 512
-_DEAL_HISTORY_CACHE_TTL_SEC = 60.0
+_DEAL_HISTORY_CACHE_TTL_SEC = 300.0
 _DEAL_HISTORY_CACHE_LOCK = threading.Lock()
 
 _POPULAR_KEYWORDS_CACHE: dict = {}
 _POPULAR_KEYWORDS_LOCK = threading.Lock()
-_POPULAR_KEYWORDS_TTL_SEC = 60.0
+_POPULAR_KEYWORDS_TTL_SEC = 300.0
 
 _DEAL_DETAIL_CACHE: OrderedDict = OrderedDict()
 _DEAL_DETAIL_CACHE_MAX_SIZE = 256
-_DEAL_DETAIL_CACHE_TTL_SEC = 20.0
+_DEAL_DETAIL_CACHE_TTL_SEC = 120.0
 _DEAL_DETAIL_CACHE_LOCK = threading.Lock()
+
+_TELECOM_PLAN_TITLE_RE = re.compile(
+    r"(?:알뜰폰|알뜰\s*요금제|이야기\s*모바일|모나\s*(?:5g|lte)|프리티|유모바일|스노우맨|kg\s*모바일|kt\s*m\s*모바일|kt엠모바일|세븐모바일|리브엠|이지모바일|에이모바일|아이즈모바일|티플러스|헬로모바일|(?:lg|kt|skt|u\+|유플러스)\s*망)",
+    re.IGNORECASE,
+)
+_MART_FLYER_PROMO_RE = re.compile(
+    r"(?:(?:홈플러스|이마트|롯데마트|하나로마트|메가마트|트레이더스|킴스클럽)\s*\d{1,2}\s*[./]\s*\d{1,2}\s*[~∼\-]|100g\s*당.*(?:할인|행사|특가|세일|전단)|금주\s*(?:전단|행사))",
+    re.IGNORECASE,
+)
+
+
+def _apply_public_cache_headers(response: Optional[Response], cache_control: str) -> None:
+    if response is None:
+        return
+    response.headers["Cache-Control"] = cache_control
+    if not cache_control.startswith("private") and "no-store" not in cache_control:
+        response.headers["CDN-Cache-Control"] = cache_control
+        response.headers["Vercel-CDN-Cache-Control"] = cache_control
+    response.headers["Vary"] = "Accept-Encoding"
 
 
 def _evict_deal_detail_cache(deal_id: int) -> None:
@@ -1665,8 +1739,15 @@ def _clean_content_text(raw_text: str, title: str = "") -> str:
         .replace('&#039;', "'")
         .replace('&#39;', "'")
     )
-    # 단독 URL 라인 및 본문 내 날것의 URL 제거
+    # 단독 URL 라인 및 본문 내 날것의 URL + RSS 보일러플레이트 꼬리표 제거
     text = re.sub(r'https?://[^\s\)\]]+', '', text)
+    text = re.sub(r'💰\s*가격\s*미확인', '', text)
+    text = re.sub(
+        r'(?:뽐뿌/(?:뽐게|해외뽐뿌)|에펨코리아/핫딜|루리웹/핫딜|클리앙/알뜰구매|퀘이사존/(?:지름|핫딜)|알리뽐뿌|빠삭[^\s·•]*)\s*[·•]\s*#[^\n<]*',
+        '',
+        text,
+    )
+    text = re.sub(r'\s*#(?:식품|컴퓨터|가전|생활|의류|뷰티|디지털|게임|육아|상품권|해외)(?:\s*/\s*[가-힣A-Za-z]+)*\s*$', '', text)
     # 각 줄 양끝 공백 정리 및 빈 줄 압축
     lines = [ln.strip() for ln in text.splitlines()]
     cleaned_lines = []
@@ -1682,8 +1763,13 @@ def _clean_content_text(raw_text: str, title: str = "") -> str:
     result = "\n".join(cleaned_lines).strip()
     if len(result) < 4:
         return ""
-    if title and result.replace(" ", "") == title.replace(" ", ""):
-        return ""
+    if title:
+        norm_res = re.sub(r'[\s\[\]\(\)\-·•/,:!?.~]+', '', clean_deal_title(result).lower())
+        norm_title = re.sub(r'[\s\[\]\(\)\-·•/,:!?.~]+', '', clean_deal_title(title).lower())
+        raw_res_ws = re.sub(r'\s+', '', result.lower())
+        raw_title_ws = re.sub(r'\s+', '', title.lower())
+        if raw_res_ws == raw_title_ws or (norm_title and (norm_res == norm_title or norm_title in norm_res and len(norm_res) <= len(norm_title) + 12)):
+            return ""
     return result
 
 def _clean_ai_summary(raw_summary: str) -> str:
@@ -2066,18 +2152,43 @@ def _build_single_category_clause(models, single_cat: str, or_, and_, not_):
     if canonical_cat == "핫딜모음":
         return models.Deal.honey_score >= 100
     if canonical_cat == "육아/유아용품":
-        parenting_title_kws = ["기저귀", "분유", "아기", "유아", "키즈", "하기스", "팸퍼스", "젖병", "카시트", "유모차", "베베", "아동"]
-        return or_(
-            models.Community.name == "bbasak_parenting",
-            models.Deal.category.ilike("%육아%"),
-            models.Deal.category.ilike("%유아%"),
-            *[models.Deal.title.ilike(f"%{kw}%") for kw in parenting_title_kws],
+        parenting_title_kws = [
+            "기저귀", "분유", "아기", "유아", "키즈", "하기스", "팸퍼스",
+            "젖병", "카시트", "유모차", "베베", "아동", "아가드", "목욕시간", "유아목욕",
+        ]
+        return and_(
+            or_(
+                models.Community.name == "bbasak_parenting",
+                models.Deal.category.ilike("%육아%"),
+                models.Deal.category.ilike("%유아%"),
+                *[models.Deal.title.ilike(f"%{kw}%") for kw in parenting_title_kws],
+            ),
+            not_(models.Deal.title.ilike("%애플tv%")),
+            not_(models.Deal.title.ilike("%애플 tv%")),
+            not_(models.Deal.title.ilike("%애플티비%")),
+            not_(models.Deal.title.ilike("%apple tv%")),
+            not_(models.Deal.title.ilike("%디즈니+%")),
+            not_(models.Deal.title.ilike("%넷플릭스%")),
+            not_(models.Deal.title.ilike("%영화%")),
+            not_(models.Deal.title.ilike("%vod%")),
+            not_(models.Deal.title.ilike("%키보드%")),
         )
     if canonical_cat == "적립":
-        point_title_kws = ["네이버페이", "적립", "네이버포인트", "페이포인트", "라방", "클릭", "출석"]
+        point_title_kws = ["네이버페이", "네이버포인트", "페이포인트", "라방", "클릭", "출석"]
         return or_(
             *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
             *[models.Deal.title.ilike(f"%{kw}%") for kw in point_title_kws],
+            and_(
+                models.Deal.title.ilike("%적립%"),
+                or_(
+                    models.Deal.category.in_(["적립", "적립/이벤트", "기타"]),
+                    models.Deal.category.is_(None),
+                ),
+                not_(models.Deal.title.ilike("%방한화%")),
+                not_(models.Deal.title.ilike("%운동화%")),
+                not_(models.Deal.title.ilike("%후디%")),
+                not_(models.Deal.title.ilike("%패딩%")),
+            ),
         )
     if canonical_cat == "이벤트":
         event_title_kws = ["이벤트", "선착순", "무료배포", "일시무료", "프로모션", "체험단", "응모"]
@@ -2144,15 +2255,21 @@ def get_hot_deals(
     keyword: str = Query(None, description="검색어 (공백 AND, -제외단어, :상한가격 지원)"),
     platform: str = Query(None, description="커뮤니티/사이트 필터"),
     source: Optional[str] = Query(None, description="커뮤니티/사이트 필터 (alias for platform)"),
-    sort: str = Query("latest", description="정렬 기준: latest | popular | price_asc"),
+    sort: str = Query("latest", description="정렬 기준: latest | popular | price_asc | price_desc | comments | recommendations"),
     popular_only: bool = Query(False, description="인기 딜(honey_score >= 100)만 필터링"),
+    min_price: Optional[int] = Query(None, ge=0, description="최소 가격 (KRW 환산 기준)"),
+    max_price: Optional[int] = Query(None, ge=0, description="최대 가격 (KRW 환산 기준)"),
+    free_shipping: bool = Query(False, description="무료배송(멤버십 무배 포함)만 필터링"),
+    shop: Optional[str] = Query(None, description="쇼핑몰 필터 (예: 쿠팡, 네이버, 지마켓)"),
     cursor_indexed_at: Optional[str] = Query(None, description="커서 기준 indexed_at (ISO-8601, latest 전용)"),
     cursor_id: Optional[int] = Query(None, description="커서 기준 id (latest 전용)"),
     include_closed: bool = Query(False, description="종료된 딜 포함 여부"),
     only_hot: bool = Query(False, description="인기/슈퍼핫딜 필터"),
     hide_closed: bool = Query(False, description="종료된 딜 강제 숨김 (include_closed보다 우선)"),
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db_session),
+    response: Response = None,
 ):
+    _HOT_DEALS_CACHE_CTL = "public, max-age=10, s-maxage=30, stale-while-revalidate=120"
     try:
         from sqlalchemy import and_, func, not_, or_
 
@@ -2188,6 +2305,9 @@ def get_hot_deals(
         normalized_platform_key = ",".join(
             sorted({p.strip() for p in (target_platform or "").split(",") if p.strip() and p.strip() != "전체"})
         )
+        normalized_shop_key = (shop or "").strip()
+        if normalized_shop_key == "전체":
+            normalized_shop_key = ""
         cache_key = (
             db_bind_id,
             normalized_cat_key,
@@ -2196,6 +2316,10 @@ def get_hot_deals(
             sort_mode,
             effective_only_hot,
             effective_include_closed,
+            min_price,
+            max_price,
+            bool(free_shipping),
+            normalized_shop_key,
         )
         def _hydrate_cached_slice_rows(cached_entry_obj: dict, target_slice: list) -> None:
             need_meta = []
@@ -2265,6 +2389,7 @@ def get_hot_deals(
                     if sort_mode == "latest" and cached_has_more and cached_slice:
                         cursors_map = cached_entry.get("cursors", {})
                         cached_next_cursor = cursors_map.get(offset + len(cached_slice) - 1)
+                    _apply_public_cache_headers(response, _HOT_DEALS_CACHE_CTL)
                     return {
                         "deals": [dict(item) for item in cached_slice],
                         "has_more": cached_has_more,
@@ -2294,6 +2419,7 @@ def get_hot_deals(
                             if (cached_has_more and cached_slice)
                             else None
                         )
+                        _apply_public_cache_headers(response, _HOT_DEALS_CACHE_CTL)
                         return {
                             "deals": [dict(item) for item in cached_slice],
                             "has_more": cached_has_more,
@@ -2308,6 +2434,7 @@ def get_hot_deals(
                 and cursor_entry.get("max_id") == current_max_id
                 and (now_ts - cursor_entry["ts"]) < _FEED_CACHE_TTL_SEC
             ):
+                _apply_public_cache_headers(response, _HOT_DEALS_CACHE_CTL)
                 return {
                     "deals": [dict(item) for item in cursor_entry["deals"]],
                     "has_more": bool(cursor_entry["has_more"]),
@@ -2437,7 +2564,7 @@ def get_hot_deals(
                     ib_like = f"%{_escape_like(inner_bracket)}%"
                     clauses.append(models.Deal.title.ilike(ib_like, escape="\\"))
 
-                # 순수 한글/영숫자 토큰에 한해 공백·하이픈 무시 비교(3자 이상), 복합어 분해, 한/영 동의어 확장 적용
+                # 순수 한글/영숫자 토큰에 한해 공백·하이픈 무시 비교(3자 이상, 제목 기준), 복합어 분해, 한/영 동의어 확장 적용
                 if re.fullmatch(r"[가-힣a-zA-Z0-9\-]+", pt):
                     pt_compact = re.sub(r"[\s\-]+", "", pt)
                     if len(pt_compact) >= 3:
@@ -2446,19 +2573,21 @@ def get_hot_deals(
                             func.replace(func.replace(models.Deal.title, " ", ""), "-", "").ilike(compact_like, escape="\\")
                         )
                         clauses.append(
-                            func.replace(func.replace(models.Deal.base_product_name, " ", ""), "-", "").ilike(compact_like, escape="\\")
+                            func.replace(models.Deal.options_data, " ", "").ilike(compact_like, escape="\\")
                         )
-                        clauses.append(
-                            func.replace(func.replace(models.Deal.options_data, " ", ""), "-", "").ilike(compact_like, escape="\\")
-                        )
+                        clauses.append(models.Deal.search_keywords.ilike(compact_like, escape="\\"))
 
                     for sub_parts in _decompose_compound_query_token(pt_compact):
                         if len(sub_parts) >= 2:
-                            clauses.append(
-                                and_(
-                                    *[_any_col_ilike(f"%{_escape_like(sp)}%") for sp in sub_parts]
+                            sub_and_terms = []
+                            for sp in sub_parts:
+                                sp_low = sp.lower()
+                                sp_syns = tuple(KOR_ENG_SEARCH_SYNONYMS.get(sp_low, ())) + tuple(_query_only_synonyms.get(sp_low, ()))
+                                sp_variants = [sp] + [s for s in sp_syns if s.lower() != sp_low]
+                                sub_and_terms.append(
+                                    or_(*[_any_col_ilike(f"%{_escape_like(v)}%") for v in sp_variants])
                                 )
-                            )
+                            clauses.append(and_(*sub_and_terms))
 
                     pt_lower = pt_compact.lower()
                     syns = tuple(KOR_ENG_SEARCH_SYNONYMS.get(pt_lower, ())) + tuple(_query_only_synonyms.get(pt_lower, ()))
@@ -2549,6 +2678,33 @@ def get_hot_deals(
                 platform_conditions.append(models.Deal.merged_communities == str(cid))
             if platform_conditions:
                 query = query.filter(or_(*platform_conditions))
+
+        if normalized_shop_key:
+            from sqlalchemy import or_
+            shop_alias_groups = {
+                "카카오쇼핑": ("카카오", "카카오쇼핑", "톡딜", "kakao"),
+                "카카오": ("카카오", "카카오쇼핑", "톡딜", "kakao"),
+                "토스쇼핑": ("토스", "토스쇼핑", "toss"),
+                "토스": ("토스", "토스쇼핑", "toss"),
+                "네이버": ("네이버", "스마트스토어", "브랜드스토어", "naver.com"),
+                "지마켓": ("지마켓", "g마켓", "gmarket"),
+                "알리익스프레스": ("알리익스프레스", "알리", "aliexpress"),
+                "11번가": ("11번가", "11st"),
+                "롯데온": ("롯데온", "lotteon"),
+                "쿠팡": ("쿠팡", "coupang", "coupa.ng"),
+                "CJ온스타일": ("CJ온스타일", "CJ온", "cjonstyle"),
+                "엑스박스": ("엑스박스", "엑박", "xbox"),
+            }
+            s_terms = shop_alias_groups.get(normalized_shop_key, (normalized_shop_key,))
+            shop_sql_clauses = []
+            for st in s_terms:
+                esc_st = _escape_like(st)
+                shop_sql_clauses.append(models.Deal.shop_name.ilike(f"%{esc_st}%", escape="\\"))
+                shop_sql_clauses.append(models.Deal.title.ilike(f"%[{esc_st}%", escape="\\"))
+                if "." in st or st.isascii():
+                    shop_sql_clauses.append(models.Deal.ecommerce_link.ilike(f"%{esc_st}%", escape="\\"))
+            if shop_sql_clauses:
+                query = query.filter(or_(*shop_sql_clauses))
             
         # [300건 상한 해제 + latest 키셋 커서/popular 전수 페이징]
         def _build_grouped_from_raw(raw_seed_list: list):
@@ -2597,12 +2753,12 @@ def get_hot_deals(
                         defer(models.Deal.content_html),
                         defer(models.Deal.search_keywords),
                     ).filter(
-                        models.Deal.ecommerce_link.in_(ecom_links),
+                        models.Deal.ecommerce_link.in_(ecom_links[:40]),
                         ~models.Deal.id.in_(existing_ids),
                     )
                     if not effective_include_closed:
                         backfill_q = backfill_q.filter(models.Deal.is_closed == False)
-                    additional_deals = backfill_q.limit(100).all()
+                    additional_deals = backfill_q.limit(60).all()
                     if additional_deals:
                         deals_all.extend(additional_deals)
 
@@ -2613,7 +2769,8 @@ def get_hot_deals(
             c_map = {}
             g_list = []
             cluster_meta_by_gid = {}
-            dsu_obj = build_dsu(deals_all)
+            price_memo: dict[int, tuple[int, str]] = {}
+            dsu_obj = build_dsu(deals_all, price_memo=price_memo)
             valid_c_keys = {dsu_obj.find(sid) for sid in seed_ids} if has_search_or_platform_filter else None
 
             for deal in deals_all:
@@ -2632,10 +2789,13 @@ def get_hot_deals(
                 comp_name = getattr(deal.community, 'display_name', None) or COMMUNITY_MAP.get(deal.community.name, deal.community.name)
                 image_url = _resolve_best_image_url(deal, BASE_URL)
                 clean_title = clean_deal_title(deal.title)
-                parsed_price_int, resolved_currency = resolve_deal_price_and_currency(deal)
+                serialized_opts = _serialize_options_data(getattr(deal, "options_data", None), deal.id)
+                parsed_price_int, resolved_currency = price_memo.get(deal.id) or resolve_deal_price_and_currency(deal)
+                parsed_price_int = _resolve_option_aware_price_and_currency(
+                    parsed_price_int, resolved_currency, serialized_opts, title
+                )
                 norm_shipping_fee = _normalize_shipping_fee(deal.shipping_fee, title_hint=deal.title or "")
                 total_price = _compute_total_price(parsed_price_int, resolved_currency, norm_shipping_fee)
-                serialized_opts = _serialize_options_data(getattr(deal, "options_data", None), deal.id)
                 loaded_html = _safe_loaded_attr(deal, "content_html", "")
                 deal_body_imgs = _extract_body_images(loaded_html)
 
@@ -2782,10 +2942,28 @@ def get_hot_deals(
                         "cluster_deals": [deal],
                     }
 
+            effective_upper_cap = None
             if search_max_price is not None and search_max_price > 0:
+                effective_upper_cap = search_max_price
+            if max_price is not None and max_price > 0:
+                effective_upper_cap = max_price if effective_upper_cap is None else min(effective_upper_cap, max_price)
+
+            if min_price is not None and min_price > 0:
                 g_list = [
                     g for g in g_list
-                    if 0 < _to_krw_equiv(g.get("price"), g.get("currency")) <= search_max_price
+                    if _to_krw_equiv(g.get("price"), g.get("currency")) >= min_price
+                ]
+
+            if effective_upper_cap is not None:
+                g_list = [
+                    g for g in g_list
+                    if 0 < _to_krw_equiv(g.get("price"), g.get("currency")) <= effective_upper_cap
+                ]
+
+            if free_shipping:
+                g_list = [
+                    g for g in g_list
+                    if any(tok in str(g.get("shipping_fee") or "") for tok in ("무료", "무배"))
                 ]
 
             if effective_only_hot:
@@ -2896,16 +3074,59 @@ def get_hot_deals(
             if not has_more and not db_exhausted:
                 has_more = True
         else:
+            has_narrow_filter = bool(
+                min_price or max_price or free_shipping or normalized_shop_key
+            )
             if sort_mode == "popular":
                 raw_limit = min(2000, max(260, offset + limit * 5 + 150))
+                ref_max_dt = db.query(func.max(models.Deal.indexed_at)).scalar()
+                if ref_max_dt is not None:
+                    recent_pop_cutoff = _to_utc_naive(ref_max_dt) - timedelta(days=14)
+                    raw_seed_deals = query.filter(
+                        order_ts_expr >= recent_pop_cutoff
+                    ).order_by(
+                        models.Deal.honey_score.desc(),
+                        models.Deal.like_count.desc(),
+                        order_ts_expr.desc(),
+                        models.Deal.id.desc(),
+                    ).limit(raw_limit).all()
+                    if len(raw_seed_deals) < raw_limit:
+                        existing_pop_ids = {d.id for d in raw_seed_deals}
+                        more_pop = query.filter(
+                            order_ts_expr < recent_pop_cutoff
+                        ).order_by(
+                            models.Deal.honey_score.desc(),
+                            models.Deal.like_count.desc(),
+                            order_ts_expr.desc(),
+                            models.Deal.id.desc(),
+                        ).limit(raw_limit - len(raw_seed_deals)).all()
+                        raw_seed_deals.extend([d for d in more_pop if d.id not in existing_pop_ids])
+                else:
+                    raw_seed_deals = query.order_by(
+                        models.Deal.honey_score.desc(),
+                        models.Deal.like_count.desc(),
+                        order_ts_expr.desc(),
+                        models.Deal.id.desc(),
+                    ).limit(raw_limit).all()
+            elif sort_mode == "comments":
+                raw_limit = min(2000, max(320, offset + limit * 5 + 180))
                 raw_seed_deals = query.order_by(
-                    models.Deal.honey_score.desc(),
+                    models.Deal.comment_count.desc(),
                     models.Deal.like_count.desc(),
                     order_ts_expr.desc(),
                     models.Deal.id.desc(),
                 ).limit(raw_limit).all()
+            elif sort_mode == "recommendations":
+                raw_limit = min(2000, max(320, offset + limit * 5 + 180))
+                raw_seed_deals = query.order_by(
+                    models.Deal.like_count.desc(),
+                    models.Deal.honey_score.desc(),
+                    order_ts_expr.desc(),
+                    models.Deal.id.desc(),
+                ).limit(raw_limit).all()
             else:
-                raw_limit = min(2000, max(1000, offset + limit + 400))
+                base_raw_limit = 650 if has_narrow_filter else 450
+                raw_limit = min(1500, max(base_raw_limit, offset + limit * 6 + 260))
                 raw_seed_deals = query.order_by(
                     order_ts_expr.desc(),
                     models.Deal.id.desc(),
@@ -2914,15 +3135,80 @@ def get_hot_deals(
             grouped_result, dsu, cluster_meta_by_gid = _build_grouped_from_raw(raw_seed_deals)
 
             if sort_mode == "popular":
+                def _parse_created_naive(iso_str) -> Optional[datetime]:
+                    if not iso_str:
+                        return None
+                    try:
+                        return _to_utc_naive(datetime.fromisoformat(str(iso_str).replace("Z", "+00:00")))
+                    except Exception:
+                        return None
+
+                ref_now_dt = max(
+                    (dt for x in grouped_result if (dt := _parse_created_naive(x.get("created_at"))) is not None),
+                    default=datetime.utcnow(),
+                )
+
+                def _popular_sort_key(item: dict) -> tuple:
+                    h_score = int(item.get("honey_score") or 0)
+                    l_cnt = int(item.get("like_count") or 0)
+                    c_cnt = int(item.get("comment_count") or 0)
+                    dt_val = _parse_created_naive(item.get("created_at"))
+                    if dt_val is None:
+                        return (float(h_score), float(l_cnt), float(c_cnt))
+                    age_days = max(0.0, (ref_now_dt - dt_val).total_seconds() / 86400.0)
+                    if age_days <= 3.0:
+                        return (float(h_score), float(l_cnt), float(c_cnt))
+                    penalty = 1.0 + ((age_days - 3.0) ** 1.5) * 1.5
+                    if age_days > 7.0:
+                        penalty *= 5.0
+                    return (
+                        round(h_score / penalty, 4),
+                        round(l_cnt / penalty, 4),
+                        round(c_cnt / penalty, 4),
+                    )
+
+                grouped_result.sort(key=_popular_sort_key, reverse=True)
+            elif sort_mode == "comments":
                 grouped_result.sort(
                     key=lambda x: (
-                        int(x.get("honey_score") or 0),
+                        int(x.get("comment_count") or 0),
                         int(x.get("like_count") or 0),
-                        int(x.get("comment_count") or 0)
+                        int(x.get("honey_score") or 0),
+                        int(x.get("id") or 0),
                     ),
-                    reverse=True
+                    reverse=True,
+                )
+            elif sort_mode == "recommendations":
+                grouped_result.sort(
+                    key=lambda x: (
+                        int(x.get("like_count") or 0),
+                        int(x.get("honey_score") or 0),
+                        int(x.get("comment_count") or 0),
+                        int(x.get("id") or 0),
+                    ),
+                    reverse=True,
+                )
+            elif sort_mode == "price_desc":
+                grouped_result.sort(
+                    key=lambda x: (
+                        1 if int(x.get("price") or 0) > 0 else 0,
+                        _to_krw_equiv(x.get("price"), x.get("currency")),
+                        int(x.get("id") or 0),
+                    ),
+                    reverse=True,
                 )
             elif sort_mode == "price_asc":
+                suppress_low_value_top = not normalized_cat_key and not (keyword or "").strip()
+
+                def _price_asc_tier(item: dict) -> int:
+                    if int(item.get("price") or 0) <= 0:
+                        return 2
+                    if suppress_low_value_top:
+                        title_txt = str(item.get("title") or "")
+                        if _TELECOM_PLAN_TITLE_RE.search(title_txt) or _MART_FLYER_PROMO_RE.search(title_txt):
+                            return 1
+                    return 0
+
                 def _price_asc_sort_krw(item: dict) -> float:
                     base_eq = _to_krw_equiv(item.get("total_price") or item.get("price"), item.get("currency"))
                     curr = str(item.get("currency") or "KRW").upper()
@@ -2935,7 +3221,7 @@ def get_hot_deals(
 
                 grouped_result.sort(
                     key=lambda x: (
-                        0 if int(x.get("price") or 0) > 0 else 1,
+                        _price_asc_tier(x),
                         _price_asc_sort_krw(x),
                         _to_krw_equiv(x.get("price"), x.get("currency")),
                     )
@@ -2972,13 +3258,15 @@ def get_hot_deals(
                         db=db,
                     )
 
+        seed_pos_map = {d.id: idx for idx, d in enumerate(raw_seed_deals)} if (sort_mode == "latest" and raw_seed_deals) else {}
+        seed_cluster_keys = [dsu.find(d.id) for d in raw_seed_deals] if (sort_mode == "latest" and dsu is not None and raw_seed_deals) else []
+
         def _compute_next_cursor_for_slice(slice_end_idx: int) -> Optional[dict]:
             if sort_mode != "latest" or dsu is None or not raw_seed_deals:
                 return None
             if slice_end_idx < 0 or slice_end_idx >= len(grouped_result):
                 return None
             last_emitted_id = grouped_result[slice_end_idx]["id"]
-            seed_pos_map = {d.id: idx for idx, d in enumerate(raw_seed_deals)}
             rep_idx = seed_pos_map.get(last_emitted_id)
             if rep_idx is None:
                 return None
@@ -2986,7 +3274,7 @@ def get_hot_deals(
             cursor_raw = raw_seed_deals[rep_idx]
             k = rep_idx + 1
             while k < len(raw_seed_deals):
-                if dsu.find(raw_seed_deals[k].id) in remaining_cluster_keys:
+                if seed_cluster_keys[k] in remaining_cluster_keys:
                     break
                 cursor_raw = raw_seed_deals[k]
                 k += 1
@@ -2995,18 +3283,36 @@ def get_hot_deals(
                 "id": int(cursor_raw.id),
             }
 
+        cursors_map: dict[int, dict] = {}
+        if cursor_dt is None and sort_mode == "latest" and dsu is not None and raw_seed_deals and len(grouped_result) > 1:
+            remaining_acc: set = set()
+            for idx in range(len(grouped_result) - 2, -1, -1):
+                remaining_acc.add(dsu.find(grouped_result[idx + 1]["id"]))
+                rep_idx = seed_pos_map.get(grouped_result[idx]["id"])
+                if rep_idx is None:
+                    continue
+                cursor_raw = raw_seed_deals[rep_idx]
+                k = rep_idx + 1
+                while k < len(raw_seed_deals):
+                    if seed_cluster_keys[k] in remaining_acc:
+                        break
+                    cursor_raw = raw_seed_deals[k]
+                    k += 1
+                cursors_map[idx] = {
+                    "indexed_at": _format_cursor_iso(cursor_raw.indexed_at),
+                    "id": int(cursor_raw.id),
+                }
+
         next_cursor_obj = None
         if sort_mode == "latest" and has_more and final_result:
             slice_base = 0 if cursor_dt is not None else max(0, offset)
-            next_cursor_obj = _compute_next_cursor_for_slice(slice_base + len(final_result) - 1)
+            end_g_idx = slice_base + len(final_result) - 1
+            if cursor_dt is None and end_g_idx in cursors_map:
+                next_cursor_obj = cursors_map[end_g_idx]
+            else:
+                next_cursor_obj = _compute_next_cursor_for_slice(end_g_idx)
 
         if cursor_dt is None:
-            cursors_map: dict[int, dict] = {}
-            if sort_mode == "latest":
-                for idx in range(len(grouped_result) - 1):
-                    nc = _compute_next_cursor_for_slice(idx)
-                    if nc:
-                        cursors_map[idx] = nc
             primitive_meta = {
                 gid: {
                     "primary_id": m["primary_deal"].id,
@@ -3048,6 +3354,7 @@ def get_hot_deals(
                     "next_cursor": next_cursor_obj,
                 }
 
+        _apply_public_cache_headers(response, _HOT_DEALS_CACHE_CTL)
         return {
             "deals": [dict(item) for item in final_result],
             "has_more": has_more,
@@ -3105,7 +3412,9 @@ def force_scrape_deals(background_tasks: BackgroundTasks):
 def get_popular_keywords(
     limit: int = Query(10, ge=1, le=50, description="반환할 인기 검색어 개수"),
     db: Session = Depends(get_db_session),
+    response: Response = None,
 ):
+    _POP_KW_CACHE_CTL = "public, max-age=30, s-maxage=60, stale-while-revalidate=300"
     try:
         from sqlalchemy import func
         from backend.core.deal_normalizer import (
@@ -3129,6 +3438,7 @@ def get_popular_keywords(
             kw_cached = _POPULAR_KEYWORDS_CACHE.get(kw_cache_key)
             if kw_cached is not None and (now_kw_ts - kw_cached["ts"]) < _POPULAR_KEYWORDS_TTL_SEC:
                 cd = kw_cached["data"]
+                _apply_public_cache_headers(response, _POP_KW_CACHE_CTL)
                 return {
                     "keywords": list(cd["keywords"]),
                     "rankings": [dict(r) for r in cd["rankings"]],
@@ -3142,6 +3452,7 @@ def get_popular_keywords(
             "구분", "대체", "제품별", "가정용", "업소용", "소용량", "제주", "슈퍼", "스페셜",
             "슬림", "와이드", "멀티", "고속", "초고속", "스토어쿠폰", "결제할인", "공구코드",
             "슈퍼적립", "브랜드쿠폰", "전원증정", "오늘마켓", "총정리", "넾다세일", "기타",
+            "순살", "묶음", "랜덤", "단품", "신상", "한정", "세일", "추천",
         }
 
         def _is_clean_kw(candidate: str) -> bool:
@@ -3247,14 +3558,24 @@ def get_popular_keywords(
                 if len(top_keywords) >= limit:
                     break
 
-        final_keywords = top_keywords[:limit]
+        scored_candidates: list[tuple[int, int, str]] = []
+        for kw in top_keywords:
+            d_cnt, r_cnt = count_matching_deals(kw)
+            if d_cnt == 0:
+                d_cnt = words_count.get(kw, 1)
+            scored_candidates.append((1 if r_cnt > 0 else 0, r_cnt * 2 + d_cnt, kw))
+        scored_candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        final_keywords = [item[2] for item in scored_candidates[:limit]]
+
         rankings = []
         for idx, kw in enumerate(final_keywords):
             deal_cnt, recent_cnt = count_matching_deals(kw)
             if deal_cnt == 0:
                 deal_cnt = words_count.get(kw, 1)
 
-            if idx == 0 or (idx < 3 and recent_cnt >= 3):
+            if recent_cnt <= 0:
+                status = "SAME"
+            elif idx == 0 or (idx < 3 and recent_cnt >= 3):
                 status = "HOT"
             elif idx < 5 or recent_cnt >= 2:
                 status = "UP"
@@ -3280,6 +3601,7 @@ def get_popular_keywords(
             if len(_POPULAR_KEYWORDS_CACHE) > 20:
                 _POPULAR_KEYWORDS_CACHE.clear()
             _POPULAR_KEYWORDS_CACHE[kw_cache_key] = {"ts": now_kw_ts, "data": result_payload}
+        _apply_public_cache_headers(response, _POP_KW_CACHE_CTL)
         return result_payload
     except Exception as e:
         logger.error(f"Error fetching keywords: {e}", exc_info=True)
@@ -3335,7 +3657,13 @@ def get_deal(
     deal_id: int,
     user_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db_session),
+    response: Response = None,
 ):
+    _DETAIL_CACHE_CTL = (
+        "private, no-store"
+        if user_id
+        else "public, max-age=15, s-maxage=30, stale-while-revalidate=120"
+    )
     bind_obj = db.get_bind() if hasattr(db, "get_bind") else None
     detail_cache_key = (id(bind_obj), deal_id) if bind_obj is not None else None
     now_detail_ts = _feed_time.time()
@@ -3387,6 +3715,7 @@ def get_deal(
                     uv_val = uv_row[0] if uv_row else None
                     cached_res["user_vote"] = uv_val
                     cached_res["userVote"] = uv_val
+                _apply_public_cache_headers(response, _DETAIL_CACHE_CTL)
                 return cached_res
             with _DEAL_DETAIL_CACHE_LOCK:
                 _DEAL_DETAIL_CACHE.pop(detail_cache_key, None)
@@ -3437,11 +3766,12 @@ def get_deal(
             search_clauses.append(models.Deal.title.ilike(f"%{esc_code}%", escape="\\"))
 
     core_tokens = sorted(get_core_product_tokens(deal), key=lambda x: len(x), reverse=True)
-    for cw in core_tokens[:6]:
+    for idx_cw, cw in enumerate(core_tokens[:4]):
         if len(cw) >= 2:
             esc_cw = _escape_like(cw)
             search_clauses.append(models.Deal.title.ilike(f"%{esc_cw}%", escape="\\"))
-            search_clauses.append(models.Deal.base_product_name.ilike(f"%{esc_cw}%", escape="\\"))
+            if idx_cw < 2:
+                search_clauses.append(models.Deal.base_product_name.ilike(f"%{esc_cw}%", escape="\\"))
 
     base_sim_q = db.query(models.Deal).join(models.Community).options(
         joinedload(models.Deal.community),
@@ -3517,14 +3847,26 @@ def get_deal(
                 is_closed = False
                 break
     
-    # 최저가 계산 (이종 통화 혼선 방지를 위해 대표 통화와 동일한 옵션 가격만 비교)
+    # 최저가 계산 (이종 통화 혼선 방지를 위해 대표 통화와 동일한 옵션 가격만 비교 + 제목가 대비 비정상 쿠폰 소액 옵션 차단)
     _, curr = resolve_deal_price_and_currency(best_deal)
-    same_curr_prices = [s["price"] for s in sources if s.get("price", 0) > 0 and (s.get("currency") or curr) == curr]
-    min_price = min(same_curr_prices, default=0)
     original_price, orig_curr = resolve_deal_price_and_currency(deal)
     if orig_curr != curr:
         original_price, _ = resolve_deal_price_and_currency(best_deal)
+    from backend.core.deal_normalizer import parse_title_price_and_shipping
+    _det_tp, _det_tc, _, _det_is_free = parse_title_price_and_shipping(getattr(best_deal, "title", "") or deal.title or "")
+    _opt_min_floor = 100
+    if _det_tp > 0 and _det_tc == curr:
+        _opt_min_floor = max(100, int(_det_tp * 0.35))
+    same_curr_prices = [
+        s["price"]
+        for s in sources
+        if s.get("price", 0) >= _opt_min_floor and (s.get("currency") or curr) == curr
+    ]
+    min_price = min(same_curr_prices, default=0)
     final_price_int = min_price if min_price > 0 and (original_price == 0 or min_price < original_price) else original_price
+    if not _det_is_free and not same_curr_prices and len(sources) >= 2 and _det_tp > 0 and _det_tc == curr:
+        if final_price_int <= 0 or _det_tp < final_price_int:
+            final_price_int = _det_tp
                      
     clean_detail_ecom_url = get_clean_ecommerce_url(
         best_deal.ecommerce_link or best_deal.post_link, 
@@ -3573,14 +3915,22 @@ def get_deal(
     initial_history_period: str = "7d"
     try:
         hist_target_id = best_deal.id if (original_price == 0 and min_price > 0) else deal_id
-        hist_points = _compute_deal_history(hist_target_id, "7d", db, target_currency=curr)
-        if isinstance(hist_points, list):
-            initial_history = hist_points
-        if len(initial_history) <= 1:
-            hist_3m = _compute_deal_history(hist_target_id, "3m", db, target_currency=curr)
-            if isinstance(hist_3m, list) and len(hist_3m) >= 2:
-                initial_history = hist_3m
-                initial_history_period = "3m"
+        hist_target_deal = best_deal if hist_target_id == best_deal.id else deal
+        if _compute_deal_history is _ORIG_COMPUTE_DEAL_HISTORY:
+            initial_history, initial_history_period = _compute_initial_deal_history_single_pass(
+                hist_target_id,
+                db,
+                target_currency=curr,
+                deal_obj=hist_target_deal,
+            )
+        else:
+            initial_history = _compute_deal_history(
+                hist_target_id,
+                "7d",
+                db,
+                target_currency=curr,
+            )
+            initial_history_period = "7d"
         history_count = len(initial_history)
     except Exception as hist_exc:
         logger.debug(f"[get_deal] history_count fallback (deal_id={deal_id}): {hist_exc}")
@@ -3595,6 +3945,48 @@ def get_deal(
         title_hint=getattr(best_deal, "title", "") or deal.title or "",
     )
     detail_shop_name = _resolve_canonical_shop_name(best_deal, detail_ecom_url) or _resolve_canonical_shop_name(deal, detail_ecom_url)
+    detail_category_key = normalize_category_key(getattr(best_deal, "category", None) or getattr(deal, "category", None))
+
+    similar_deals_payload: list[dict] = []
+    try:
+        from sqlalchemy import not_ as _sa_not
+        sim_q = (
+            db.query(models.Deal)
+            .options(joinedload(models.Deal.community), defer(models.Deal.content_html), defer(models.Deal.search_keywords))
+            .filter(
+                models.Deal.id != deal.id,
+                models.Deal.is_closed == False,
+                _sa_not(models.Deal.title.like("%블라인드%")),
+            )
+        )
+        if detail_category_key and detail_category_key != "기타":
+            sim_q = sim_q.filter(models.Deal.category.ilike(f"%{_escape_like(detail_category_key)}%", escape="\\"))
+        sim_rows = (
+            sim_q.order_by(models.Deal.honey_score.desc(), models.Deal.indexed_at.desc(), models.Deal.id.desc())
+            .limit(4)
+            .all()
+        )
+        for sd in sim_rows:
+            sp, sc = resolve_deal_price_and_currency(sd)
+            s_comp = (
+                sd.community.display_name
+                if sd.community and getattr(sd.community, "display_name", None)
+                else COMMUNITY_MAP.get(sd.community.name, sd.community.name) if sd.community else ""
+            )
+            similar_deals_payload.append({
+                "id": sd.id,
+                "title": clean_deal_title(sd.title or ""),
+                "price": sp,
+                "currency": sc,
+                "shop_name": _resolve_canonical_shop_name(sd, sd.ecommerce_link or ""),
+                "image_url": _resolve_best_image_url(sd, BASE_URL),
+                "shipping_fee": _normalize_shipping_fee(sd.shipping_fee, title_hint=sd.title or ""),
+                "site_name": s_comp,
+                "category": normalize_category_key(sd.category),
+                "created_at": to_utc_iso(sd.indexed_at),
+            })
+    except Exception as sim_exc:
+        logger.debug(f"[get_deal] similar_deals skipped (deal_id={deal_id}): {sim_exc}")
 
     detail_payload = {
         "id": deal.id,
@@ -3610,7 +4002,7 @@ def get_deal(
         "currency": curr,
         "sources": sources,
         "options_data": serialized_detail_opts,
-        "category": normalize_category_key(getattr(best_deal, "category", None) or getattr(deal, "category", None)),
+        "category": detail_category_key,
         "author": getattr(best_deal, "author", "익명") or "익명",
         "views": getattr(best_deal, "view_count", 0) or 0,
         "recommendations": getattr(best_deal, "like_count", 0) or 0,
@@ -3643,6 +4035,8 @@ def get_deal(
         "bodyImages": body_images,
         "report_count": report_count,
         "reportCount": report_count,
+        "similar_deals": similar_deals_payload,
+        "similarDeals": similar_deals_payload,
     }
     if detail_cache_key is not None:
         fresh_stamp = (
@@ -3665,6 +4059,7 @@ def get_deal(
 
     detail_payload["user_vote"] = user_vote
     detail_payload["userVote"] = user_vote
+    _apply_public_cache_headers(response, _DETAIL_CACHE_CTL)
     return detail_payload
 
 
@@ -3736,35 +4131,74 @@ def get_deal_history(
     option_name: Optional[str] = Query(None, description="선택된 멀티옵션 상품명"),
     query: Optional[str] = Query(None, description="선택된 옵션/검색어 쿼리 (안드로이드 호환)"),
     currency: Optional[str] = Query(None, description="선택된 통화 (KRW, USD)"),
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db_session),
+    response: Response = None,
 ):
+    _HIST_CACHE_CTL = "public, max-age=30, s-maxage=60, stale-while-revalidate=300"
     opt_query = option_name or query
     period_norm = (period or "7d").strip().lower()
     auto_fallback = (period_norm == "7d_auto")
+    if auto_fallback and not opt_query:
+        res, resolved_period = _compute_initial_deal_history_single_pass(
+            deal_id,
+            db,
+            target_currency=currency,
+        )
+        if len(res) <= 1 and resolved_period != "3m":
+            res_6m = _compute_deal_history(deal_id, "6m", db, option_name=opt_query, target_currency=currency)
+            if len(res_6m) >= 2:
+                _apply_public_cache_headers(response, _HIST_CACHE_CTL)
+                return res_6m
+        elif len(res) <= 1:
+            res_6m = _compute_deal_history(deal_id, "6m", db, option_name=opt_query, target_currency=currency)
+            if len(res_6m) >= 2:
+                _apply_public_cache_headers(response, _HIST_CACHE_CTL)
+                return res_6m
+        _apply_public_cache_headers(response, _HIST_CACHE_CTL)
+        return res
+
     effective_period = "7d" if auto_fallback else period_norm
     res = _compute_deal_history(deal_id, effective_period, db, option_name=opt_query, target_currency=currency)
     if auto_fallback and len(res) <= 1:
         res_3m = _compute_deal_history(deal_id, "3m", db, option_name=opt_query, target_currency=currency)
         if len(res_3m) >= 2:
+            _apply_public_cache_headers(response, _HIST_CACHE_CTL)
             return res_3m
         res_6m = _compute_deal_history(deal_id, "6m", db, option_name=opt_query, target_currency=currency)
         if len(res_6m) >= 2:
+            _apply_public_cache_headers(response, _HIST_CACHE_CTL)
             return res_6m
+    _apply_public_cache_headers(response, _HIST_CACHE_CTL)
     return res
 
-def _compute_deal_history(
-    deal_id: int, 
-    period: str = "7d", 
-    db: Session = None,
-    option_name: Optional[str] = None,
-    target_currency: Optional[str] = None
-):
-    from backend.core.deal_normalizer import is_suspicious_price_history_value
 
-    deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
-    if not deal:
-        raise HTTPException(status_code=404, detail="Deal not found")
+def _get_cached_deal_history(hist_cache_key: tuple) -> Optional[list]:
+    now_hist_ts = _feed_time.time()
+    with _DEAL_HISTORY_CACHE_LOCK:
+        hist_entry = _DEAL_HISTORY_CACHE.get(hist_cache_key)
+        if hist_entry is not None:
+            if (now_hist_ts - hist_entry["ts"]) < _DEAL_HISTORY_CACHE_TTL_SEC:
+                _DEAL_HISTORY_CACHE.move_to_end(hist_cache_key)
+                return [dict(pt) for pt in hist_entry["data"]]
+            _DEAL_HISTORY_CACHE.pop(hist_cache_key, None)
+    return None
 
+
+def _put_cached_deal_history(hist_cache_key: tuple, result: list) -> None:
+    with _DEAL_HISTORY_CACHE_LOCK:
+        while len(_DEAL_HISTORY_CACHE) >= _DEAL_HISTORY_CACHE_MAX_SIZE:
+            _DEAL_HISTORY_CACHE.popitem(last=False)
+        _DEAL_HISTORY_CACHE[hist_cache_key] = {
+            "ts": _feed_time.time(),
+            "data": [dict(pt) for pt in result],
+        }
+
+
+def _resolve_history_context(
+    deal,
+    option_name: Optional[str],
+    target_currency: Optional[str],
+) -> tuple[str, int, str, int, str]:
     resolved_deal_price, resolved_deal_curr = resolve_deal_price_and_currency(deal)
     target_opt_name = (option_name or "").strip()
     target_opt_price = 0
@@ -3791,39 +4225,21 @@ def _compute_deal_history(
     else:
         target_price_val = 0
 
-    # 0원('가격 확인') 단일 딜은 과거 더미 잔재(777원, 10원)나 타 상품 가격이 섞이지 않도록 즉시 빈 배열 반환
-    if not target_opt_name and resolved_deal_curr == effective_currency and target_price_val <= 0:
-        return []
+    return target_opt_name, target_opt_price, effective_currency, target_price_val, resolved_deal_curr
 
-    period_norm = (period or "7d").strip().lower()
-    if period_norm == "7d_auto":
-        period_norm = "7d"
 
-    hist_cache_key = (id(db.get_bind()), deal_id, period_norm, target_opt_name, effective_currency)
-    now_hist_ts = _feed_time.time()
-    with _DEAL_HISTORY_CACHE_LOCK:
-        hist_entry = _DEAL_HISTORY_CACHE.get(hist_cache_key)
-        if hist_entry is not None:
-            if (now_hist_ts - hist_entry["ts"]) < _DEAL_HISTORY_CACHE_TTL_SEC:
-                _DEAL_HISTORY_CACHE.move_to_end(hist_cache_key)
-                return [dict(pt) for pt in hist_entry["data"]]
-            _DEAL_HISTORY_CACHE.pop(hist_cache_key, None)
-
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-    ref_base_utc = _to_utc_naive(deal.indexed_at) if deal.indexed_at else now_utc
-    end_time_utc = max(now_utc, ref_base_utc) + timedelta(minutes=5)
-
-    is_all_period = (period_norm == "all")
-    days_map = {
-        "7d": 7,
-        "1m": 30,
-        "3m": 90,
-        "6m": 180,
-        "1y": 365,
-        "all": 3650,
-    }
-    days = days_map.get(period_norm, 7)
-    time_limit_utc = None if is_all_period else (ref_base_utc - timedelta(days=days))
+def _collect_raw_history_events(
+    deal,
+    time_limit_utc: Optional[datetime],
+    end_time_utc: datetime,
+    db: Session,
+    target_opt_name: str,
+    target_opt_price: int,
+    target_price_val: int,
+    resolved_deal_curr: str,
+    effective_currency: str,
+) -> tuple[list[dict], list[tuple[datetime, int]]]:
+    from backend.core.deal_normalizer import is_suspicious_price_history_value
 
     if target_opt_name:
         curr_norm_name = target_opt_name
@@ -3870,7 +4286,7 @@ def _compute_deal_history(
     if target_opt_name and not curr_true_codes and len(core_tokens) <= 1:
         candidate_deals = [deal]
     elif search_clauses:
-        candidate_deals = query.filter(or_(*search_clauses)).order_by(models.Deal.indexed_at.asc()).limit(450).all()
+        candidate_deals = query.filter(or_(*search_clauses)).order_by(models.Deal.indexed_at.desc()).limit(200).all()
     else:
         candidate_deals = [deal]
 
@@ -3949,9 +4365,19 @@ def _compute_deal_history(
         core_jaccard = len(core_inter) / len(core_union) if core_union else 0
         core_min_len = min(len(core_tokens), len(d_core_tokens))
         core_subset = len(core_inter) / core_min_len if core_min_len else 0
+        same_cat = (
+            normalize_category_key(getattr(deal, "category", None))
+            == normalize_category_key(getattr(d, "category", None))
+            and normalize_category_key(getattr(deal, "category", None)) != "기타"
+        )
 
         if (core_min_len == 1 and core_jaccard == 1.0) or (
-            len(core_inter) >= 2 and (core_jaccard >= 0.55 or (core_subset >= 0.80 and len(core_inter) >= 2))
+            len(core_inter) >= 2
+            and (
+                core_jaccard >= 0.55
+                or (core_subset >= 0.80 and len(core_inter) >= 2)
+                or (same_cat and core_jaccard >= 0.42)
+            )
         ):
             matched_deals.append(d)
 
@@ -3961,7 +4387,7 @@ def _compute_deal_history(
         matched_deal_ids.append(deal.id)
 
     if not matched_deals:
-        return []
+        return [], []
 
     fallback_kst_now = datetime.now(_KST)
 
@@ -4014,9 +4440,6 @@ def _compute_deal_history(
         ph_query = ph_query.filter(models.PriceHistory.checked_at >= time_limit_utc)
     history = ph_query.order_by(models.PriceHistory.checked_at.asc(), models.PriceHistory.id.asc()).all()
 
-    time_format = "%m.%d %H:%M" if days <= 7 else "%y.%m.%d"
-
-    community_points = []
     raw_comm_events: list[dict] = []
     ph_by_deal: dict[int, list[tuple[datetime, int]]] = {}
 
@@ -4093,6 +4516,37 @@ def _compute_deal_history(
 
     raw_comm_events.sort(key=lambda ev: (ev["dt"], ev["seq"]))
 
+    # 3. 네이버 쇼핑 최저가 히스토리(NaverPriceHistory) 원시 포인트 수집
+    naver_entries: list[tuple[datetime, int]] = []
+    if not target_opt_name and effective_currency == "KRW" and target_price_val > 0:
+        target_model_code = deal.model_code if deal.model_code else (deal.base_product_name if deal.base_product_name else None)
+        if deal.brand and target_model_code:
+            nh_query = db.query(models.NaverPriceHistory).filter(
+                models.NaverPriceHistory.brand == deal.brand,
+                models.NaverPriceHistory.model_code == target_model_code,
+                models.NaverPriceHistory.checked_at <= end_time_utc,
+            )
+            if time_limit_utc is not None:
+                nh_query = nh_query.filter(models.NaverPriceHistory.checked_at >= time_limit_utc)
+            for nh in nh_query.order_by(models.NaverPriceHistory.checked_at.asc()).all():
+                try:
+                    p_val = int(nh.price)
+                    if p_val <= 0 or p_val < target_price_val * 0.40 or p_val > target_price_val * 2.20:
+                        continue
+                    naver_entries.append((normalize_kst_dt(nh.checked_at), p_val))
+                except Exception as exc:
+                    logger.debug(f"_compute_deal_history naver_history row skipped: {exc}")
+
+    return raw_comm_events, naver_entries
+
+
+def _format_history_events(
+    raw_comm_events: list[dict],
+    naver_entries: list[tuple[datetime, int]],
+    time_format: str,
+    effective_currency: str,
+) -> list[dict]:
+    community_points = []
     for ev in raw_comm_events:
         dt = ev["dt"]
         p_val = ev["price"]
@@ -4114,48 +4568,26 @@ def _compute_deal_history(
             "deal_id": ev["deal_id"],
         })
 
-    # 3. 네이버 쇼핑 최저가 히스토리(NaverPriceHistory) 조회 및 병합 (원화 단일 상품 전용)
     naver_points = []
-    if not target_opt_name and effective_currency == "KRW" and target_price_val > 0:
-        target_model_code = deal.model_code if deal.model_code else (deal.base_product_name if deal.base_product_name else None)
-        if deal.brand and target_model_code:
-            nh_query = db.query(models.NaverPriceHistory).filter(
-                models.NaverPriceHistory.brand == deal.brand,
-                models.NaverPriceHistory.model_code == target_model_code,
-                models.NaverPriceHistory.checked_at <= end_time_utc,
-            )
-            if time_limit_utc is not None:
-                nh_query = nh_query.filter(models.NaverPriceHistory.checked_at >= time_limit_utc)
-            naver_history = nh_query.order_by(models.NaverPriceHistory.checked_at.asc()).all()
+    if naver_entries:
+        naver_map = {}
+        for dt, p_val in naver_entries:
+            time_key = dt.strftime(time_format)
+            if time_key not in naver_map or p_val < naver_map[time_key]["price"]:
+                naver_map[time_key] = {"price": p_val, "dt": dt}
+        for k, v in naver_map.items():
+            naver_points.append({
+                "price": v["price"],
+                "originalPrice": None,
+                "discountRate": None,
+                "recordedAt": k.replace(" 00:00", ""),
+                "source": "naver",
+                "dt": v["dt"],
+            })
 
-            naver_map = {}
-            for nh in naver_history:
-                try:
-                    p_val = int(nh.price)
-                    if p_val <= 0 or p_val < target_price_val * 0.40 or p_val > target_price_val * 2.20:
-                        continue
-                    dt = normalize_kst_dt(nh.checked_at)
-                    time_key = dt.strftime(time_format)
-                    if time_key not in naver_map or p_val < naver_map[time_key]["price"]:
-                        naver_map[time_key] = {"price": p_val, "dt": dt, "source": "naver"}
-                except Exception as exc:
-                    logger.debug(f"_compute_deal_history naver_history row skipped: {exc}")
-
-            for k, v in naver_map.items():
-                naver_points.append({
-                    "price": v["price"],
-                    "originalPrice": None,
-                    "discountRate": None,
-                    "recordedAt": k.replace(" 00:00", ""),
-                    "source": "naver",
-                    "dt": v["dt"]
-                })
-
-    # 4. 두 최저가 스트림을 통합하여 날짜(dt) 순으로 오름차순 정렬
     all_points = community_points + naver_points
     all_points.sort(key=lambda x: x["dt"])
 
-    # 5. 최종 반환 형태 정제 (currency 및 UTC Z ISO-8601 타임스탬프 + KST 차트 라벨 recordedAt 유지)
     result = []
     for p in all_points:
         iso_utc = to_utc_iso(p["dt"])
@@ -4170,16 +4602,134 @@ def _compute_deal_history(
             "source": p["source"],
             "platform": p["source"],
         })
-
-    with _DEAL_HISTORY_CACHE_LOCK:
-        while len(_DEAL_HISTORY_CACHE) >= _DEAL_HISTORY_CACHE_MAX_SIZE:
-            _DEAL_HISTORY_CACHE.popitem(last=False)
-        _DEAL_HISTORY_CACHE[hist_cache_key] = {
-            "ts": _feed_time.time(),
-            "data": [dict(pt) for pt in result],
-        }
-
     return result
+
+
+def _compute_initial_deal_history_single_pass(
+    deal_id: int,
+    db: Session,
+    target_currency: Optional[str] = None,
+    deal_obj=None,
+) -> tuple[list[dict], str]:
+    """단일 90일 DB 조회로 7d/3m 초기 가격 추이를 동시에 계산하고 양쪽 캐시를 워밍합니다."""
+    deal = deal_obj if deal_obj is not None else db.query(models.Deal).filter(models.Deal.id == deal_id).first()
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found")
+
+    target_opt_name, target_opt_price, effective_currency, target_price_val, resolved_deal_curr = _resolve_history_context(
+        deal, None, target_currency
+    )
+    if not target_opt_name and resolved_deal_curr == effective_currency and target_price_val <= 0:
+        return [], "7d"
+
+    bind_id = id(db.get_bind())
+    key_7d = (bind_id, deal_id, "7d", "", effective_currency)
+    key_3m = (bind_id, deal_id, "3m", "", effective_currency)
+
+    cached_7d = _get_cached_deal_history(key_7d)
+    if cached_7d is not None:
+        if len(cached_7d) >= 2:
+            return cached_7d, "7d"
+        cached_3m = _get_cached_deal_history(key_3m)
+        if cached_3m is not None:
+            if len(cached_3m) >= 2:
+                return cached_3m, "3m"
+            return cached_7d, "7d"
+
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    ref_base_utc = _to_utc_naive(deal.indexed_at) if deal.indexed_at else now_utc
+    end_time_utc = max(now_utc, ref_base_utc) + timedelta(minutes=5)
+    time_limit_3m_utc = ref_base_utc - timedelta(days=90)
+    cutoff_7d_kst = _to_kst_aware(ref_base_utc - timedelta(days=7)) or datetime.now(_KST)
+
+    raw_comm_3m, naver_3m = _collect_raw_history_events(
+        deal=deal,
+        time_limit_utc=time_limit_3m_utc,
+        end_time_utc=end_time_utc,
+        db=db,
+        target_opt_name=target_opt_name,
+        target_opt_price=target_opt_price,
+        target_price_val=target_price_val,
+        resolved_deal_curr=resolved_deal_curr,
+        effective_currency=effective_currency,
+    )
+
+    raw_comm_7d = [ev for ev in raw_comm_3m if ev["dt"] >= cutoff_7d_kst]
+    naver_7d = [(dt, p) for (dt, p) in naver_3m if dt >= cutoff_7d_kst]
+
+    pts_7d = _format_history_events(raw_comm_7d, naver_7d, "%m.%d %H:%M", effective_currency)
+    _put_cached_deal_history(key_7d, pts_7d)
+
+    pts_3m = _format_history_events(raw_comm_3m, naver_3m, "%y.%m.%d", effective_currency)
+    _put_cached_deal_history(key_3m, pts_3m)
+
+    if len(pts_7d) <= 1 and len(pts_3m) >= 2:
+        return pts_3m, "3m"
+    return pts_7d, "7d"
+
+
+def _compute_deal_history(
+    deal_id: int, 
+    period: str = "7d", 
+    db: Session = None,
+    option_name: Optional[str] = None,
+    target_currency: Optional[str] = None
+):
+    deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found")
+
+    target_opt_name, target_opt_price, effective_currency, target_price_val, resolved_deal_curr = _resolve_history_context(
+        deal, option_name, target_currency
+    )
+
+    # 0원('가격 확인') 단일 딜은 과거 더미 잔재(777원, 10원)나 타 상품 가격이 섞이지 않도록 즉시 빈 배열 반환
+    if not target_opt_name and resolved_deal_curr == effective_currency and target_price_val <= 0:
+        return []
+
+    period_norm = (period or "7d").strip().lower()
+    if period_norm == "7d_auto":
+        period_norm = "7d"
+
+    hist_cache_key = (id(db.get_bind()), deal_id, period_norm, target_opt_name, effective_currency)
+    cached_res = _get_cached_deal_history(hist_cache_key)
+    if cached_res is not None:
+        return cached_res
+
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    ref_base_utc = _to_utc_naive(deal.indexed_at) if deal.indexed_at else now_utc
+    end_time_utc = max(now_utc, ref_base_utc) + timedelta(minutes=5)
+
+    is_all_period = (period_norm == "all")
+    days_map = {
+        "7d": 7,
+        "1m": 30,
+        "3m": 90,
+        "6m": 180,
+        "1y": 365,
+        "all": 3650,
+    }
+    days = days_map.get(period_norm, 7)
+    time_limit_utc = None if is_all_period else (ref_base_utc - timedelta(days=days))
+
+    raw_comm_events, naver_entries = _collect_raw_history_events(
+        deal=deal,
+        time_limit_utc=time_limit_utc,
+        end_time_utc=end_time_utc,
+        db=db,
+        target_opt_name=target_opt_name,
+        target_opt_price=target_opt_price,
+        target_price_val=target_price_val,
+        resolved_deal_curr=resolved_deal_curr,
+        effective_currency=effective_currency,
+    )
+    time_format = "%m.%d %H:%M" if days <= 7 else "%y.%m.%d"
+    result = _format_history_events(raw_comm_events, naver_entries, time_format, effective_currency)
+    _put_cached_deal_history(hist_cache_key, result)
+    return result
+
+
+_ORIG_COMPUTE_DEAL_HISTORY = _compute_deal_history
 
 # --- 소비 참견 거지방 API ---
 
@@ -4903,6 +5453,11 @@ async def ingest_scraped_deals_batch(
 
     if has_feed_change:
         invalidate_feed_api_cache(clear_ecom_url_cache=False)
+        try:
+            from backend.main import schedule_feed_prewarm
+            schedule_feed_prewarm()
+        except Exception as exc:
+            logger.debug("Feed prewarm scheduling skipped: %s", exc)
     if new_inserted_images:
         try:
             from backend.main import schedule_thumbnail_prewarm

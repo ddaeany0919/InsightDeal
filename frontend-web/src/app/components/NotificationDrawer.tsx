@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef, useId, useCallback } from "react";
-import { Bell, Trash2, RefreshCw } from "lucide-react";
+import { Bell, CheckCheck, Trash2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import type { Deal, NotificationLogItem, WishlistApiItem } from "../lib/types";
 import {
@@ -31,6 +31,19 @@ function formatAlertTime(item: NotificationLogItem, referenceNow: number): strin
   return formatRelativeTimeKo(rawTime, referenceNow || Date.now(), "최근");
 }
 
+const READ_NOTIF_STORAGE_KEY = "insightdeal_read_notif_ids";
+
+function loadReadNotifIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(READ_NOTIF_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
 export default function NotificationDrawer({
   isOpen,
   onClose,
@@ -42,10 +55,37 @@ export default function NotificationDrawer({
   const [serverAlerts, setServerAlerts] = useState<NotificationLogItem[]>([]);
   const [serverTargetWishlists, setServerTargetWishlists] = useState<WishlistApiItem[]>([]);
   const [alertIds, setAlertIds] = useState<number[]>([]);
+  const [readIds, setReadIds] = useState<Set<string>>(() => loadReadNotifIds());
   const [nowTs, setNowTs] = useState<number>(0);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const persistReadIds = (nextSet: Set<string>) => {
+    setReadIds(nextSet);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(
+          READ_NOTIF_STORAGE_KEY,
+          JSON.stringify(Array.from(nextSet).slice(-300))
+        );
+      } catch {}
+    }
+  };
+
+  const markAlertRead = (alertId: string | number) => {
+    const key = String(alertId);
+    if (readIds.has(key)) return;
+    const next = new Set(readIds);
+    next.add(key);
+    persistReadIds(next);
+  };
+
+  const handleMarkAllRead = () => {
+    const next = new Set(readIds);
+    serverAlerts.forEach((a) => next.add(String(a.id)));
+    persistReadIds(next);
+  };
 
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -345,47 +385,81 @@ export default function NotificationDrawer({
         )}
 
         {/* 1. 키워드 매칭 알림 수신 내역 */}
-        {serverAlerts.length > 0 && (
+        {serverAlerts.length > 0 && (() => {
+          const unreadCount = serverAlerts.filter(
+            (a) => !readIds.has(String(a.id))
+          ).length;
+          return (
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--accent)" }}>
-                최근 도착한 키워드·목표가 알림 ({serverAlerts.length})
+                최근 도착한 키워드·목표가 알림 ({serverAlerts.length}
+                {unreadCount > 0 ? ` · 미읽음 ${unreadCount}` : ""})
               </span>
-              <button
-                type="button"
-                onClick={handleClearAllServerAlerts}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "var(--text-sub)",
-                  fontSize: "0.74rem",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  minHeight: "44px",
-                  padding: "0 6px",
-                }}
-              >
-                <Trash2 size={13} aria-hidden="true" />
-                <span>전체 비우기</span>
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleMarkAllRead}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--accent)",
+                      fontSize: "0.74rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      minHeight: "44px",
+                      padding: "0 6px",
+                    }}
+                  >
+                    <CheckCheck size={13} aria-hidden="true" />
+                    <span>모두 읽음</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleClearAllServerAlerts}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--text-sub)",
+                    fontSize: "0.74rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    minHeight: "44px",
+                    padding: "0 6px",
+                  }}
+                >
+                  <Trash2 size={13} aria-hidden="true" />
+                  <span>전체 비우기</span>
+                </button>
+              </div>
             </div>
             {serverAlerts.map((item) => {
               const rawLink = (item.dealUrl || item.deal_url || "").trim();
               const hasSafeLink = !rawLink.startsWith("/") && isSafeHttpUrl(rawLink);
+              const isRead = readIds.has(String(item.id));
               return (
                 <div
                   key={item.id}
+                  onClick={() => markAlertRead(item.id)}
                   style={{
                     background: "var(--surface-subtle)",
-                    border: "1px solid var(--card-border)",
+                    border: isRead
+                      ? "1px solid var(--card-border)"
+                      : "1px solid var(--accent-soft-border)",
                     borderRadius: "14px",
                     padding: "12px 14px",
                     display: "flex",
                     flexDirection: "column",
                     gap: "6px",
+                    opacity: isRead ? 0.8 : 1,
                   }}
                 >
                   <div
@@ -396,8 +470,29 @@ export default function NotificationDrawer({
                       gap: "8px",
                     }}
                   >
-                    <span className="deal-source" style={{ fontSize: "0.7rem", padding: "2px 8px" }}>
-                      #{item.keyword}
+                    <span
+                      className="deal-source"
+                      style={{
+                        fontSize: "0.7rem",
+                        padding: "2px 8px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                      }}
+                    >
+                      {!isRead && (
+                        <span
+                          aria-label="읽지 않은 알림"
+                          style={{
+                            width: "6px",
+                            height: "6px",
+                            borderRadius: "50%",
+                            background: "var(--accent)",
+                            display: "inline-block",
+                          }}
+                        />
+                      )}
+                      <span>#{item.keyword}</span>
                     </span>
                     <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                       <span style={{ fontSize: "0.72rem", color: "var(--text-sub)" }}>
@@ -432,11 +527,12 @@ export default function NotificationDrawer({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => {
+                        markAlertRead(item.id);
                         openExternalUrlInToss(rawLink, e);
                       }}
                       style={{
                         fontSize: "0.85rem",
-                        fontWeight: 700,
+                        fontWeight: isRead ? 600 : 700,
                         lineHeight: 1.4,
                         color: "var(--text-main)",
                         minHeight: "44px",
@@ -450,7 +546,7 @@ export default function NotificationDrawer({
                     <span
                       style={{
                         fontSize: "0.85rem",
-                        fontWeight: 700,
+                        fontWeight: isRead ? 600 : 700,
                         lineHeight: 1.4,
                         color: "var(--text-main)",
                       }}
@@ -462,7 +558,8 @@ export default function NotificationDrawer({
               );
             })}
           </div>
-        )}
+          );
+        })()}
 
         {/* 2. 가격 변동 알림 켜둔 상품 (현재 피드 + 서버 동기화 목표가 항목) */}
         <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1 }}>

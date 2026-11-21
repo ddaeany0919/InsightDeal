@@ -99,6 +99,8 @@ export interface RawDealApiResponse {
   initialHistory?: PriceHistoryItem[];
   initial_history_period?: string;
   initialHistoryPeriod?: string;
+  similar_deals?: RawDealApiResponse[];
+  similarDeals?: RawDealApiResponse[];
 }
 
 export interface Deal {
@@ -131,6 +133,8 @@ export interface Deal {
   passCount?: number;
   userVote?: string | null;
   commentCount?: number;
+  comments?: number;
+  recommendations?: number;
   historyCount?: number;
   isSearchFallback?: boolean;
   is_search_fallback?: boolean;
@@ -283,4 +287,4 @@ export interface NotificationLogItem {
   digest_sent_at?: string | null;
 }
 
-export type ThemeMode = "system" | "light" | "dark";
+export type ThemeMode = "system" | "light" | "dark" | "amoled";

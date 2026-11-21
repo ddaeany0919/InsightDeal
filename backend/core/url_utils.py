@@ -4,6 +4,7 @@ import ipaddress
 import os
 import re
 import socket
+import sys
 import threading
 import time
 import unicodedata
@@ -123,6 +124,12 @@ def is_safe_external_url(url: str) -> bool:
 
 _SHORTLINK_UNWRAP_CACHE: dict[str, str] = {}
 _AFFILIATE_DEEPLINK_CACHE: dict[str, str] = {}
+_AFFILIATE_DEEPLINK_TTL_CACHE: dict[str, tuple[str | None, float]] = {}
+_COUPANG_DEEPLINK_LOCK = threading.Lock()
+_INFLIGHT_COUPANG_DEEPLINKS: set[str] = set()
+_COUPANG_DEEPLINK_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cp_dl")
+_COUPANG_DEEPLINK_POS_TTL_SEC = 86400.0
+_COUPANG_DEEPLINK_NEG_TTL_SEC = 1800.0
 _LINKPRICE_APPROVAL_CACHE: dict[tuple[str, str], tuple[bool, float]] = {}
 _INFLIGHT_LINKPRICE_PROBES: set[tuple[str, str]] = set()
 _LINKPRICE_PROBE_LOCK = threading.Lock()
@@ -571,6 +578,61 @@ def classify_outbound_mall(url: str) -> tuple[str, str, str, float]:
         return ("기타", "", "direct", 0.0)
 
 
+def _resolve_coupang_deeplink_async(clean_url: str, sub_id: str, coupang_service_obj) -> None:
+    resolved_dl: str | None = None
+    try:
+        dl = coupang_service_obj.create_deeplink(clean_url, sub_id=sub_id)
+        if dl:
+            resolved_dl = dl
+            if len(_AFFILIATE_DEEPLINK_CACHE) > 4096:
+                _AFFILIATE_DEEPLINK_CACHE.clear()
+            _AFFILIATE_DEEPLINK_CACHE[clean_url] = dl
+    except Exception:
+        resolved_dl = None
+    finally:
+        with _COUPANG_DEEPLINK_LOCK:
+            if len(_AFFILIATE_DEEPLINK_TTL_CACHE) > 4096:
+                _AFFILIATE_DEEPLINK_TTL_CACHE.clear()
+            _AFFILIATE_DEEPLINK_TTL_CACHE[clean_url] = (resolved_dl, time.time())
+            _INFLIGHT_COUPANG_DEEPLINKS.discard(clean_url)
+
+
+def schedule_coupang_deeplink_warm(clean_url: str, sub_id: str, coupang_service_obj) -> str | None:
+    """캐시된 쿠팡 딥링크가 있으면 즉시 반환하고, 없으면 논블로킹 백그라운드로 변환을 예약합니다."""
+    cached_dl = _AFFILIATE_DEEPLINK_CACHE.get(clean_url)
+    if cached_dl:
+        return cached_dl
+
+    now = time.time()
+    ttl_entry = _AFFILIATE_DEEPLINK_TTL_CACHE.get(clean_url)
+    if ttl_entry is not None:
+        ttl_dl, ttl_ts = ttl_entry
+        if ttl_dl and (now - ttl_ts) < _COUPANG_DEEPLINK_POS_TTL_SEC:
+            return ttl_dl
+        if ttl_dl is None and (now - ttl_ts) < _COUPANG_DEEPLINK_NEG_TTL_SEC:
+            return None
+
+    if "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ:
+        return None
+
+    should_spawn = False
+    with _COUPANG_DEEPLINK_LOCK:
+        if clean_url not in _INFLIGHT_COUPANG_DEEPLINKS:
+            _INFLIGHT_COUPANG_DEEPLINKS.add(clean_url)
+            should_spawn = True
+
+    if should_spawn:
+        try:
+            _COUPANG_DEEPLINK_EXECUTOR.submit(
+                _resolve_coupang_deeplink_async, clean_url, sub_id, coupang_service_obj
+            )
+        except Exception:
+            with _COUPANG_DEEPLINK_LOCK:
+                _INFLIGHT_COUPANG_DEEPLINKS.discard(clean_url)
+
+    return None
+
+
 def apply_affiliate_monetization(url: str) -> str:
     """
     💰 [수익화 엔진] 쇼핑몰 아웃링크에서 타인/타 커뮤니티 제휴 코드를 세탁한 뒤,
@@ -602,12 +664,8 @@ def apply_affiliate_monetization(url: str) -> str:
         if "coupang.com" in host and "link.coupang.com" not in host:
             from backend.routers.coupang import coupang_service
             if coupang_service.is_configured():
-                cached_dl = _AFFILIATE_DEEPLINK_CACHE.get(clean_url)
-                if cached_dl:
-                    return cached_dl
-                dl = coupang_service.create_deeplink(clean_url, sub_id=coupang_subid)
+                dl = schedule_coupang_deeplink_warm(clean_url, coupang_subid, coupang_service)
                 if dl:
-                    _AFFILIATE_DEEPLINK_CACHE[clean_url] = dl
                     return dl
             if coupang_lptag:
                 qs = parse_qs(parsed.query)

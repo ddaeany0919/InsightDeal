@@ -2,9 +2,13 @@ package com.ddaeany0919.insightdeal.presentation.webview
 
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -14,7 +18,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -147,7 +153,34 @@ fun DealWebViewScreen(
                 actions = {
                     IconButton(onClick = {
                         val targetUrl = webView?.url ?: url
-                        CustomTabLauncher.launchShoppingUrl(context, targetUrl)
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("url", targetUrl))
+                        Toast.makeText(context, "링크를 복사했어요", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "링크 복사")
+                    }
+                    IconButton(onClick = {
+                        val targetUrl = webView?.url ?: url
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, targetUrl)
+                        }
+                        runCatching {
+                            context.startActivity(Intent.createChooser(shareIntent, "게시글 공유"))
+                        }
+                    }) {
+                        Icon(Icons.Default.Share, contentDescription = "링크 공유")
+                    }
+                    IconButton(onClick = {
+                        val targetUrl = webView?.url ?: url
+                        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)).apply {
+                            addCategory(Intent.CATEGORY_BROWSABLE)
+                        }
+                        runCatching {
+                            context.startActivity(browserIntent)
+                        }.onFailure {
+                            CustomTabLauncher.launchShoppingUrl(context, targetUrl)
+                        }
                     }) {
                         Icon(Icons.Default.OpenInBrowser, contentDescription = "브라우저로 열기")
                     }
