@@ -1715,17 +1715,26 @@ class AggregatorService:
                     async with httpx.AsyncClient(timeout=2.0, follow_redirects=True) as client:
                         res = await client.get(target_url, headers={'User-Agent': 'Mozilla/5.0'})
                         if res.status_code == 200:
-                            def _extract_meta_price_sync(html_txt: str) -> int | None:
+                            def _extract_meta_price_sync(html_txt: str) -> tuple[int, str] | None:
                                 soup = BeautifulSoup(html_txt, 'html.parser')
                                 meta_price = soup.find('meta', property='product:price:amount') or soup.find('meta', property='og:price:amount')
                                 if meta_price and meta_price.get('content'):
-                                    return int(float(meta_price['content'].replace(',', '')))
+                                    raw_f = float(meta_price['content'].replace(',', '').strip())
+                                    meta_curr_tag = soup.find('meta', property='product:price:currency') or soup.find('meta', property='og:price:currency')
+                                    meta_curr = (meta_curr_tag.get('content') if meta_curr_tag else None) or 'KRW'
+                                    meta_curr = str(meta_curr).strip().upper() or 'KRW'
+                                    if meta_curr in ("USD", "EUR", "CNY"):
+                                        return int(round(raw_f * 100)), meta_curr
+                                    return int(round(raw_f)), meta_curr
                                 return None
 
-                            sniped_p = await run_in_threadpool(_extract_meta_price_sync, res.text)
-                            if sniped_p is not None:
-                                final_price = sniped_p
-                                logger.info(f"[Hit] 쇼핑몰 메타태그에서 가격 적중! {final_price}원")
+                            sniped = await run_in_threadpool(_extract_meta_price_sync, res.text)
+                            if sniped is not None:
+                                sniped_p, sniped_curr = sniped
+                                if sniped_p > 0:
+                                    final_price = sniped_p
+                                    currency = sniped_curr
+                                    logger.info(f"[Hit] 쇼핑몰 메타태그에서 가격 적중! {final_price} ({currency})")
             except Exception as e:
                 logger.debug(f"쇼핑몰 메타 스나이핑 실패: {e}")
 
@@ -1767,7 +1776,7 @@ class AggregatorService:
 
         # 적립/포인트 강제 보정 (사용자 요청: 적립 탭으로 분리)
         event_keywords = ["추첨", "설문", "무료배포", "체험단", "선착순", "라이브", "방송", "라방"]
-        point_keywords = ["적립", "포인트", "페이백", "앱테크"]
+        point_keywords = ["적립", "포인트", "페이백", "앱테크", "네이버페이", "네페", "폐지", "라방", "출석", "출첵"]
         # 순수 적립이 아닌 구매/조건부 쇼핑을 걸러내기 위한 금지어
         not_point_keywords = ["결제", "구매", "이상", "슈퍼적립", "혜택", "사은품", "증정", "할인"]
         
@@ -1792,9 +1801,9 @@ class AggregatorService:
             if price <= 1000:
                 is_event = True
                 
-        # "직배무료", "다양/무료", "와우무료" 등 배송·옵션 표기 내 '무료'는 이벤트 오분류에서 제외
+        # "직배무료", "미국내무료", "국내까지 무료", "다양/무료", "와우무료" 등 배송·옵션 표기 내 '무료'는 이벤트 오분류에서 제외
         free_check_title = re.sub(
-            r"(?:직배|직구|해외직구|통합|방문|설치|와우|네멤|로켓|반품|교환|무배|다양\s*/?)\s*무료|/\s*무료(?:\)|\s|$)|무료\s*(?:배송|직배|반품|교환|설치)",
+            r"(?:미국내|국내까지|배대지|프라임|직배|직구|해외직구|통합|방문|설치|와우|네멤|로켓|반품|교환|무배|다양\s*/?)\s*무료|/\s*무료(?:\)|\s|$)|무료\s*(?:배송|직배|반품|교환|설치)",
             " ",
             check_title,
         )

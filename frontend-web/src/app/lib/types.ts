@@ -117,6 +117,8 @@ export interface Deal {
   isClosed: boolean;
   originalDate?: string;
   honeyScore?: number;
+  isSuperHotdeal?: boolean;
+  likeCount?: number;
   aiSummary?: string;
   contentHtml?: string;
   sources?: DealSource[];

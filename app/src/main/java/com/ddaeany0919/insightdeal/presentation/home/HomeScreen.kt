@@ -2,6 +2,7 @@ package com.ddaeany0919.insightdeal.presentation.home
 
 import com.ddaeany0919.insightdeal.presentation.computeUnitPriceBadge
 import com.ddaeany0919.insightdeal.presentation.decodeHtmlEntities
+import com.ddaeany0919.insightdeal.presentation.extractPaymentConditionBadge
 import com.ddaeany0919.insightdeal.presentation.formatDetailPriceText
 import com.ddaeany0919.insightdeal.presentation.formatPrice
 import com.ddaeany0919.insightdeal.presentation.resolveShopBadgeAndCleanTitle
@@ -2638,6 +2639,22 @@ fun DealCardComposable(
             null
         }
     }
+    val rawPaymentCondBadge = remember(deal.id, deal.title, deal.shippingFee, deal.isClosed, deal.isFree, priceText) {
+        if (!deal.isClosed && !deal.isFree && priceText != "무료") {
+            extractPaymentConditionBadge(deal.title, deal.shippingFee)
+        } else {
+            null
+        }
+    }
+    val paymentCondBadge = if (
+        rawPaymentCondBadge != null &&
+        !((rawPaymentCondBadge == "와우회원 조건" && displayShipping.orEmpty().contains("와우")) ||
+            (rawPaymentCondBadge == "네멤 조건" && displayShipping.orEmpty().contains("네멤")))
+    ) {
+        rawPaymentCondBadge
+    } else {
+        null
+    }
 
     val multiOptions = remember(deal.id, deal.optionsData, deal.sources, deal.currency, deal.ecommerceUrl, deal.postUrl) {
         if (deal.optionsData.size > 1) {
@@ -2995,6 +3012,24 @@ fun DealCardComposable(
                                     }
                                 }
 
+                                if (paymentCondBadge != null) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = semantic.warningContainer,
+                                        border = BorderStroke(0.5.dp, semantic.onWarningContainer.copy(alpha = 0.35f)),
+                                        modifier = Modifier.align(Alignment.CenterVertically)
+                                    ) {
+                                        Text(
+                                            text = paymentCondBadge,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = semantic.onWarningContainer,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+
                                 if (deal.isSearchFallback) {
                                     Surface(
                                         shape = RoundedCornerShape(4.dp),
@@ -3244,16 +3279,23 @@ fun KeywordSettingsBottomSheet(
         Column(modifier = Modifier.padding(24.dp).padding(bottom = 32.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Text("맞춤 키워드 알림", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurface)
-                Switch(
-                    checked = !dndEnabled,
-                    onCheckedChange = { isEnabled ->
-                        keywordViewModel.updateDndSettings(
-                            enabled = !isEnabled,
-                            startTime = dndStartTime,
-                            endTime = dndEndTime
-                        )
-                    }
-                )
+                val statusColors = if (dndEnabled) {
+                    MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                }
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = statusColors.first
+                ) {
+                    Text(
+                        text = if (dndEnabled) "방해금지 중" else "실시간 수신",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = statusColors.second,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
             }
             Text("원하는 키워드를 등록하면 특가가 떴을 때 즉시 푸시 알림을 쏴드립니다!", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top=8.dp, bottom=16.dp))
 

@@ -73,7 +73,8 @@ _BODY_CONTEXT_PREFIX_MASK_RE = re.compile(
 
 _BODY_CONTEXT_SUFFIX_MASK_RE = re.compile(
     r"[+\-]\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|천\s*원?|원|달러|불|위안|엔|유로)"
-    r"|(?:[$₩￦€¥￥]?\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|천\s*원?|원|달러|불|위안|엔|유로))\s*"
+    r"|(?:[$₩￦€¥￥]?\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|천\s*원?|원|달러|불|위안|엔|유로))"
+    r"(?:[이가을를은는도]|\s*(?:정도|가량|만큼|더))?\s*"
     r"(?:추가|할인|적립|쿠폰|캐시백|페이백|차감|인하|절감|배송비|택배비|이상\s*(?:구매|결제|무료|무배|주문))",
     re.IGNORECASE,
 )
@@ -84,7 +85,7 @@ _BODY_SURCHARGE_PAREN_RE = re.compile(
 )
 
 _EXPLICIT_SHIPPING_KEYWORD_RE = re.compile(
-    r"^(?:무배|무료배송|무료|유배|유료배송|배송비|택배비?|직배(?:\s*무료|\s*무배|\s*유료)?|직구\s*(?:무료|무배)|와우무료|와우무배|네멤무료|네멤무배|조건부무료|조건부|free(?:\s*shipping)?|fs)\b",
+    r"^(?:무배|무료배송|무료|유배|유료배송|유료|배송비|택배비?|미국내\s*(?:무료|무배)|배대지\s*(?:무료|무배|별도)|국내까지\s*(?:무료|무배)|무료\s*직배|직배(?:\s*무료|\s*무배|\s*유료)?|직구\s*(?:무료|무배)|프라임\s*(?:무료|무배)|관부가세\s*포함|와우무료|와우무배|네멤무료|네멤무배|조건부무료|조건부|free(?:\s*shipping)?|fs)\b",
     re.IGNORECASE,
 )
 
@@ -331,6 +332,7 @@ _DOMAIN_SHOP_RULES: list[tuple[str, str]] = [
     ("amazon.co.jp", "아마존"),
     ("amazon.com", "아마존"),
     ("amzn.to", "아마존"),
+    ("a.co", "아마존"),
     ("temu.com", "테무"),
     ("iherb.com", "아이허브"),
     ("oliveyoung.co.kr", "올리브영"),
@@ -592,7 +594,7 @@ def clean_canonical_title(raw_title: str) -> str:
             flags=re.IGNORECASE,
         )
         t = re.sub(
-            r"\s*\([^)]*(?:무료배송|배송비|무배|유배|와우무료|와우무배|네멤무료|네멤무배|조건부무료|카드할인)[^)]*\)\s*$",
+            r"\s*\([^)]*(?:무료배송|배송비|무배|유배|미국내무료|미국내무배|국내까지\s*무료|국내까지무료|배대지무료|배대지무배|무료직배|직배무료|직배무배|프라임무료|관부가세포함|와우무료|와우무배|네멤무료|네멤무배|조건부무료|카드할인)[^)]*\)\s*$",
             "",
             t,
             flags=re.IGNORECASE,
@@ -655,10 +657,21 @@ def normalize_shipping_fee(raw_fee: Optional[str], title_hint: str = "") -> str:
         if compact in (
             "0", "0원", "무", "무배", "무료", "무료배송", "배송비무료", "택배비무료",
             "직배무료", "직배무배", "직구무료", "직구무배",
+            "미국내무료", "미국내무배", "국내까지무료", "배대지무료", "배대지무배",
+            "무료직배", "프라임무료", "프라임무배",
             "배송비포함", "무료(포함)", "포함", "free", "freeshipping", "fs", "臾대즺", "臾대같",
         ):
             return "무료배송"
-        if any(k in low for k in ("무료배송", "무배", "배송비 무료", "택배비 무료", "직배무료", "직배 무료", "직구무배", "배송비 포함", "배송비포함", "free shipping", "臾대즺", "臾대같")):
+        if any(
+            k in low
+            for k in (
+                "무료배송", "무배", "배송비 무료", "택배비 무료",
+                "직배무료", "직배 무료", "직배무배", "직구무배",
+                "미국내무료", "미국내 무료", "미국내무배", "국내까지 무료", "국내까지무료",
+                "배대지무료", "배대지 무료", "배대지무배", "무료직배", "프라임무료", "프라임 무료",
+                "배송비 포함", "배송비포함", "free shipping", "臾대즺", "臾대같",
+            )
+        ):
             return "무료배송"
 
         if "$" in low or "달러" in low or "usd" in low:
@@ -688,7 +701,11 @@ def normalize_shipping_fee(raw_fee: Optional[str], title_hint: str = "") -> str:
             return "와우무료"
         if re.search(r"(?:네멤\s*무배|네멤\s*무료|멤버십\s*0?\s*무료)", th, re.IGNORECASE):
             return "네멤무료"
-        if re.search(r"(?:무배|무료배송|직배\s*무료|직구\s*무배?|/\s*(?:무료|무|0원?|free|fs)\s*(?:[\)\]]|$))", th, re.IGNORECASE):
+        if re.search(
+            r"(?:무배|무료배송|직배\s*무료|직배\s*무배|직구\s*무배?|미국내\s*(?:무료|무배)|국내까지\s*(?:무료|무배)|배대지\s*(?:무료|무배)|무료\s*직배|프라임\s*(?:무료|무배)|/\s*(?:무료|무|0원?|free|fs)\s*(?:[\)\]]|$))",
+            th,
+            re.IGNORECASE,
+        ):
             return "무료배송"
 
     return res or ""
@@ -808,7 +825,7 @@ def resolve_canonical_shop_name(
 
 
 def is_micro_point_deal(price: int, raw_title: str) -> bool:
-    if not (1 <= int(price or 0) < 100):
+    if not (1 <= int(price or 0) <= 100):
         return False
     t = html.unescape(raw_title or "")
     if not any(kw in t for kw in _MICRO_POINT_KEYWORDS):
@@ -1091,20 +1108,25 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
         ship_part
         and (
             _EXPLICIT_SHIPPING_KEYWORD_RE.search(ship_part)
-            or ship_part.lower() in ("무", "0", "0원", "무배", "무료", "무료배송", "직배무료", "직구무배", "free", "fs", "다양")
+            or ship_part.lower() in (
+                "무", "0", "0원", "무배", "무료", "무료배송",
+                "직배무료", "직구무배", "미국내무료", "미국내무배", "국내까지무료", "배대지무료", "무료직배", "직배무배", "프라임무료",
+                "free", "fs", "다양",
+            )
             or re.match(r"^(?:[$€¥]?\s*[0-9,.]+\s*(?:원|달러|위안|엔)?|배송비\s*[0-9,]+원?)$", ship_part, re.IGNORECASE)
         )
     )
 
-    # 해외직구/해외배송 괄호 내 무기호 소수점 가격 처리 (예: '(89.99/직배무료)', '[amazon] ... (19.99/무배)')
+    # 해외직구/해외배송 괄호 내 무기호 소수점 가격 처리 (예: '(89.99/직배무료)', '(181.92/미국내무료)', '[amazon] ... (19.99/무배)')
     if re.fullmatch(r"[0-9]{1,4}\.[0-9]{1,2}", price_part_core):
         overseas_ctx = f"{context_hint} {ship_part}".lower()
         overseas_hints = (
             "amazon", "아마존", "aliexpress", "알리", "ebay", "newegg", "iherb", "bhphotovideo",
             "직배", "직구", "배대지", "해외", "달러", "usd", "free shipping", "fs",
+            "미국내", "국내까지", "프라임", "coravin", "woot", "jomashop", "costco", "bestbuy", "walmart", "target", "b&h",
         )
         if any(h in overseas_ctx for h in overseas_hints) and (
-            has_valid_ship or any(u in overseas_ctx for u in ("usd", "달러", "직배"))
+            has_valid_ship or any(u in overseas_ctx for u in ("usd", "달러", "직배", "미국내", "국내까지", "프라임", "배대지"))
         ) and not re.search(
             r"(?:인치|inch|mm|cm|kg|g|mg|ml|l|gb|tb|w|v|hz)\b", cleaned, re.IGNORECASE
         ):
@@ -1382,6 +1404,24 @@ def parse_title_price_and_shipping(raw_title: str) -> tuple[int, str, str, bool]
                         norm_sf = normalize_shipping_fee(raw_sf)
                         if norm_sf:
                             title_ship = norm_sf
+                elif re.search(
+                    r"(?:국내까지\s*무료|미국내\s*(?:무료|무배)|직배\s*(?:무료|무배)|배대지|아마존|amazon|a\.co)",
+                    sanitized,
+                    re.IGNORECASE,
+                ):
+                    main_seg = re.split(r"\s+\+\s+", masked, maxsplit=1)[0]
+                    for m_dec in re.finditer(
+                        r"(?<![a-zA-Z0-9.])(\d{1,4}\.\d{2})(?![a-zA-Z0-9.%])",
+                        main_seg,
+                    ):
+                        tail_ctx = main_seg[m_dec.end():m_dec.end() + 12]
+                        if re.match(r"^\s*(?:인치|inch|mm|cm|kg|g|mg|ml|l|gb|tb|w|v|hz|세|년|월|일)\b", tail_ctx, re.IGNORECASE):
+                            continue
+                        dec_val = float(m_dec.group(1))
+                        if 1.0 <= dec_val <= 10000:
+                            title_price = round(dec_val * 100)
+                            title_curr = "USD"
+                            break
 
         if title_price == 0 and not any(
             sym in masked.lower()
@@ -1519,7 +1559,8 @@ KOR_ENG_SEARCH_SYNONYMS: dict[str, tuple[str, ...]] = {
     "lg": ("엘지",),
     "로지텍": ("logitech",),
     "logitech": ("로지텍",),
-    "지슈라": ("superlight", "gpro"),
+    "지슈라": ("superlight", "gpro", "지프로슈퍼라이트"),
+    "superlight": ("지슈라",),
     "샥즈": ("shokz",),
     "shokz": ("샥즈",),
     "오픈런": ("openrun",),
@@ -1576,25 +1617,25 @@ KOR_ENG_SEARCH_SYNONYMS: dict[str, tuple[str, ...]] = {
     "반려묘": ("고양이", "애묘"),
     "플레이스테이션": ("playstation", "ps5", "플스", "플스5"),
     "playstation": ("플레이스테이션", "플스", "플스5", "ps5"),
-    "콜옵": ("call", "duty", "cod", "콜오브듀티"),
-    "콜오브듀티": ("call", "duty", "cod", "콜옵"),
+    "콜옵": ("call of duty", "cod", "콜오브듀티"),
+    "콜오브듀티": ("call of duty", "cod", "콜옵"),
     "cod": ("콜옵", "콜오브듀티"),
     "다슴살": ("닭가슴살",),
     "닭가슴살": ("다슴살", "chicken"),
     "엑박": ("xbox", "엑스박스"),
     "엑스박스": ("xbox", "엑박"),
     "xbox": ("엑박", "엑스박스"),
-    "스팀덱": ("steamdeck", "steam"),
+    "스팀덱": ("steamdeck", "steam deck"),
     "steamdeck": ("스팀덱",),
-    "몬헌": ("monster", "hunter", "몬스터헌터"),
-    "몬스터헌터": ("monster", "hunter", "몬헌"),
+    "몬헌": ("monster hunter", "몬스터헌터"),
+    "몬스터헌터": ("monster hunter", "몬헌"),
     "포켓몬": ("pokemon",),
     "pokemon": ("포켓몬",),
     "젤다": ("zelda",),
     "zelda": ("젤다",),
     "마리오": ("mario",),
     "mario": ("마리오",),
-    "사일런트힐": ("silent", "hill"),
+    "사일런트힐": ("silent hill",),
     "라데온": ("radeon", "amd"),
     "radeon": ("라데온", "amd"),
     "지포스": ("geforce", "nvidia", "rtx"),
@@ -1605,9 +1646,10 @@ KOR_ENG_SEARCH_SYNONYMS: dict[str, tuple[str, ...]] = {
     "ryzen": ("라이젠", "amd"),
     "인텔": ("intel",),
     "intel": ("인텔",),
-    "하이닉스": ("hynix", "sk"),
-    "hynix": ("하이닉스",),
-    "마이크론": ("micron", "crucial"),
+    "하이닉스": ("hynix", "sk하이닉스", "sk hynix"),
+    "hynix": ("하이닉스", "sk하이닉스"),
+    "마이크론": ("micron", "crucial", "크루셜"),
+    "micron": ("마이크론", "크루셜", "crucial"),
     "crucial": ("크루셜", "마이크론"),
     "크루셜": ("crucial", "마이크론"),
     "게임서": ("gamesir",),
@@ -1624,13 +1666,17 @@ KOR_ENG_SEARCH_SYNONYMS: dict[str, tuple[str, ...]] = {
     "아디다스": ("adidas",),
     "adidas": ("아디다스",),
     "뉴발란스": ("newbalance", "뉴발"),
+    "newbalance": ("뉴발란스", "뉴발"),
     "뉴발": ("newbalance", "뉴발란스"),
     "노스페이스": ("northface", "노페"),
+    "northface": ("노스페이스", "노페"),
     "노페": ("northface", "노스페이스"),
     "소니": ("sony",),
     "sony": ("소니",),
     "보스": ("bose",),
     "bose": ("보스",),
+    "마샬": ("marshall",),
+    "marshall": ("마샬",),
 }
 
 
@@ -1641,7 +1687,8 @@ def build_search_keywords(
     model_code: str = "",
 ) -> str:
     """
-    띄어쓰기 변형, 영숫자 분리/결합, 한/영 브랜드·시리즈 동의어를 결합한 검색 색인 문자열을 생성합니다.
+    띄어쓰기 변형, 인접 단어+모델숫자 결합, 한/영 브랜드·시리즈 동의어를 결합한 검색 색인 문자열을 생성합니다.
+    전체 제목을 공백 없이 이어 붙이는 compact_title은 이질 단어 간 유령 부분매칭('하리보스타믹스'->'보스')을 유발하므로 제외합니다.
     """
     src = html.unescape(f"{raw_title or ''} {brand or ''} {base_name or ''} {model_code or ''}").strip()
     if not src:
@@ -1656,12 +1703,19 @@ def build_search_keywords(
             seen.add(t)
             tokens.append(t)
 
-    compact_title = re.sub(r"[\s\-_/]+", "", clean).lower()
-    if 2 <= len(compact_title) <= 80:
-        _add(compact_title)
+    def _match_synonyms(word: str, parts: list[str]) -> None:
+        for key, syns in KOR_ENG_SEARCH_SYNONYMS.items():
+            matched = (
+                (word == key or key in parts)
+                if (key.isascii() and len(key) <= 3)
+                else (key in word)
+            )
+            if matched:
+                for s in syns:
+                    _add(s)
 
     words = re.findall(r"[가-힣a-zA-Z0-9]+", clean.lower())
-    for w in words:
+    for idx, w in enumerate(words):
         _add(w)
         # 영문+숫자 경계 분해 (예: rtx5070ti -> rtx, 5070, rtx5070)
         alnum_parts = re.findall(r"[a-z]+|\d+|[가-힣]+", w)
@@ -1670,10 +1724,16 @@ def build_search_keywords(
                 _add(p)
             if len(alnum_parts) >= 3:
                 _add(alnum_parts[0] + alnum_parts[1])
-        for key, syns in KOR_ENG_SEARCH_SYNONYMS.items():
-            if key in w:
-                for s in syns:
-                    _add(s)
+        _match_synonyms(w, alnum_parts)
+
+        # 인접 단어+숫자/1글자 토큰 결합 (예: '스위치 2' -> '스위치2', 'ps 5' -> 'ps5', 'usb c' -> 'usbc')
+        if idx + 1 < len(words):
+            nxt = words[idx + 1]
+            if len(w) >= 2 and (nxt.isdigit() or (nxt.isascii() and len(nxt) == 1)):
+                comb = f"{w}{nxt}"
+                _add(comb)
+                comb_parts = re.findall(r"[a-z]+|\d+|[가-힣]+", comb)
+                _match_synonyms(comb, comb_parts)
 
     joined = " ".join(tokens)
     return joined[:480]

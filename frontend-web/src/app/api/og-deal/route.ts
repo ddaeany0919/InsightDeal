@@ -40,7 +40,8 @@ function upgradeOgImage(rawUrl: string | null | undefined, origin: string): stri
   return normalized;
 }
 
-function formatOgPrice(price: unknown, currency: unknown): string {
+function formatOgPrice(price: unknown, currency: unknown, isFree?: unknown): string {
+  if (isFree === true) return "무료";
   const num = Number(price || 0);
   if (!Number.isFinite(num) || num <= 0) return "가격 확인";
   const curr = String(currency || "KRW").trim().toUpperCase();
@@ -111,7 +112,7 @@ export async function GET(req: NextRequest) {
     if (dealRes.status === "fulfilled" && dealRes.value.ok) {
       const detail = (await dealRes.value.json()) as Record<string, unknown>;
       const rawTitle = String(detail.title || "").trim();
-      const priceLabel = formatOgPrice(detail.price, detail.currency);
+      const priceLabel = formatOgPrice(detail.price, detail.currency, detail.is_free);
       const shopLabel = String(detail.shop_name || detail.shopName || "").trim();
       const commLabel = String(detail.site_name || detail.community_name || "").trim();
       const shipLabel = String(detail.shipping_fee || detail.shippingFee || "").trim();
@@ -156,7 +157,10 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch {
-    return NextResponse.redirect(new URL("/", origin), 307);
+    return NextResponse.redirect(
+      new URL(`/?dealId=${encodeURIComponent(dealIdRaw)}&_og=1`, origin),
+      307
+    );
   } finally {
     clearTimeout(timeout);
   }

@@ -39,12 +39,29 @@ private val APPLIANCE_OUTLET_REGEX = Regex(
     RegexOption.IGNORE_CASE
 )
 private val NUTRITION_WORD_REGEX = Regex(
-    "(?:당류|지방|포화지방|나트륨|콜레스테롤|단백질|탄수화물|카페인|당)\\s*$"
+    "(?:당류|당|단백질|프로틴|단백|지방|포화지방|트랜스지방|탄수화물|나트륨|식이섬유|콜라겐|카페인|타우린|아르기닌|유산균|비타민|칼슘|마그네슘|오메가|함량|함유|저당|무당|고단백)\\s*[:：]?\\s*$",
+    RegexOption.IGNORE_CASE
+)
+private val PROTEIN_HINT_REGEX = Regex(
+    "(?:프로틴|단백질|하이뮨|셀렉스|더단백|테이크핏|마이프로틴|닥터유\\s*프로)",
+    RegexOption.IGNORE_CASE
+)
+private val FASHION_CATEGORY_REGEX = Regex("^(?:패션|패션/의류|의류|패션/잡화)$")
+private val NON_LIQUID_VOLUME_REGEX = Regex(
+    "(?:쓰레기봉투|종량제|리빙박스|수납함|정리함|백팩|배낭|캐리어|밀폐용기|냉동용기|보관용기|반찬통|텀블러|보온병|에어프라이어|전자레인지|오븐|냉장고|김치냉장고|세탁기|건조기)",
+    RegexOption.IGNORE_CASE
+)
+private val BEAUTY_HINT_REGEX = Regex(
+    "(?:세럼|에센스|앰플|크림|선크림|립밤|아이크림|쿠션|파운데이션|틴트|미스트|토너|로션|향수|오일|마스크팩)",
+    RegexOption.IGNORE_CASE
 )
 private val SMALL_SACHET_UNIT_REGEX = Regex("^(?:포|스틱|봉|캡슐|정|개입|입)$")
 private val SMALL_SACHET_LABEL_UNIT_REGEX = Regex("^(?:포|스틱|봉|캡슐|정)$")
 
 private val PAREN_WON_PRICE_REGEX = Regex("\\([^)]*원[^)]*\\)")
+private val TRAILING_SLASH_PRICE_SHIP_REGEX = Regex(
+    "\\s*/\\s*(?:[0-9,]+(?:\\s*원)?\\s*/\\s*)?(?:무료배송|무배|무료|유배|유료배송|[0-9,]+\\s*원)\\s*$"
+)
 private val LEADING_BRACKET_TITLE_REGEX = Regex("^\\[[^\\]]+\\]\\s*")
 private val MULTI_WHITESPACE_REGEX = Regex("\\s+")
 
@@ -52,20 +69,22 @@ private val SHEET_PACK_REGEX = Regex(
     "(\\d{2,4})\\s*매(?:입)?\\s*(?:[xX×*]|,|\\s)\\s*(\\d{1,3})\\s*(팩|봉|개|통|박스)(?![가-힣])"
 )
 private val WEIGHT_REGEX = Regex(
-    "(?<![a-zA-Z0-9.])(\\d+(?:\\.\\d+)?)\\s*(kg|g)(?![a-wyzA-WYZ]|x(?!\\d)|X(?!\\d))",
+    "(?<![a-zA-Z0-9.])(\\d+(?:\\.\\d+)?)\\s*(kg|g)(?![a-wyzA-WYZ]|x(?!\\d)|X(?!\\d)|당)",
     RegexOption.IGNORE_CASE
 )
 private val VOLUME_REGEX = Regex(
-    "(?<![a-zA-Z0-9.])(\\d+(?:\\.\\d+)?)\\s*(ml|l|리터)(?![a-wyzA-WYZ]|x(?!\\d)|X(?!\\d))",
+    "(?<![a-zA-Z0-9.])(\\d+(?:\\.\\d+)?)\\s*(ml|l|리터)(?![a-wyzA-WYZ]|x(?!\\d)|X(?!\\d)|당)",
     RegexOption.IGNORE_CASE
 )
 private val TRAILING_WEIGHT_COUNT_REGEX = Regex(
-    "^(?:\\s*(?:본품|리필|용기|증정)\\s*(?:[xX×*,]|\\s)+|(?:[xX×*,]|\\s)+)(\\d{1,3})\\s*(개입|개|팩|봉지|봉|캔|병|통|포|스틱|곽|입|박스|세트|종(?:\\s*세트)?)(?![가-힣])"
+    "^(?:\\s*(?:본품|리필|용기|증정)\\s*(?:[xX×*,]|\\s)+|(?:[xX×*,]|\\s)+)(\\d{1,3})\\s*(개입|개|팩|봉지|봉|캔|병|통|포|스틱|캡슐|정|환|곽|입|박스|세트|종(?:\\s*세트)?)(?![가-힣])"
 )
 private val TRAILING_VOLUME_COUNT_REGEX = Regex(
     "^(?:\\s*(?:본품|리필|용기|증정)\\s*(?:[xX×*,]|\\s)+|(?:[xX×*,]|\\s)+)(\\d{1,3})\\s*(개입|개|캔|병|팩|페트|pet|포|스틱|통|입|박스|세트|종(?:\\s*세트)?)(?![a-wyzA-WYZ가-힣])",
     RegexOption.IGNORE_CASE
 )
+private val TRAILING_UNITLESS_MULTIPLIER_REGEX = Regex("^\\s*[xX×*]\\s*(\\d{1,3})(?=\\s|$|\\))")
+private val TRAILING_PLUS_RATIO_REGEX = Regex("^\\s*(\\d)\\s*\\+\\s*(\\d)(?![\\d.]|[a-zA-Z])")
 private val TRAILING_TIERED_COUNT_REGEX = Regex(
     "^\\s*\\)?\\s*(?:[xX×*]|\\s)*(\\d{1,2})\\s*(?:개입|개|팩|봉지|봉|박스|세트|묶음|번들|통|곽|입|판|종(?:\\s*세트)?)(?![가-힣])"
 )
@@ -73,14 +92,18 @@ private val TRAILING_BONUS_COUNT_REGEX = Regex(
     "^\\s*\\)?\\s*\\+\\s*(\\d{1,2})\\s*(?:개입|개|팩|봉|캔|병|포|통)(?!\\s*(?:g|kg|ml|l|리터))",
     RegexOption.IGNORE_CASE
 )
+private val STANDALONE_BUNDLE_HINT_REGEX = Regex(
+    "(?:총\\s*|[\\s,xX×*+(/\\[])(\\d{1,3})\\s*(개입|개(?![월가-힣])|팩|봉지|봉|캔|병|포|스틱|롤|캡슐|정|켤레|박스|인분|환|(?<!매)입)(?![가-힣])"
+)
 private val TOTAL_BUNDLE_REGEX = Regex(
-    "총\\s*(\\d{1,3})\\s*(개입|팩|봉지|봉|캔|병|포|스틱|롤|캡슐|정|켤레|박스|인분|환|(?<!매)입)(?![가-힣])"
+    "총\\s*(\\d{1,3})\\s*(개입|개(?![월가-힣])|팩|봉지|봉|캔|병|포|스틱|롤|캡슐|정|켤레|박스|인분|환|(?<!매)입)(?![가-힣])"
 )
 private val BUNDLE_COUNT_REGEX = Regex(
-    "(?:^|[\\s,xX×*+(/\\[])(\\d{2,3}|[2-9])\\s*(개입|팩|봉지|봉|캔|병|포|스틱|롤|캡슐|정|켤레|박스|인분|환|(?<!매)입)(?![가-힣])"
+    "(?:^|[\\s,xX×*+(/\\[])(\\d{2,3}|[2-9])\\s*(개입|개(?![월가-힣])|팩|봉지|봉|캔|병|포|스틱|롤|캡슐|정|켤레|박스|인분|환|(?<!매)입)(?![가-힣])"
 )
+private val DOSE_PREFIX_REGEX = Regex("(?:1일|하루|일일|매일)\\s*$")
 private val BUNDLE_TIER_MULTIPLIER_REGEX = Regex(
-    "^\\s*(?:[xX×*]|\\s)\\s*(\\d{1,2})\\s*(?:박스|세트|묶음|번들|팩)(?![가-힣])"
+    "^\\s*(?:[xX×*]|\\s)\\s*(\\d{1,2})\\s*(?:박스|세트|묶음|번들|팩|통)(?![가-힣])"
 )
 private val EGG_COUNT_REGEX = Regex(
     "(?:^|[\\s,xX×*+(/\\[])(\\d{2,3}|[2-9])\\s*구(?![가-힣])"
@@ -101,6 +124,7 @@ private data class TrailingCountMeta(
 private data class WeightEntry(
     val totalGrams: Double,
     val count: Long,
+    val matchedCount: Boolean,
     val startIdx: Int,
     val endIdx: Int
 )
@@ -108,6 +132,7 @@ private data class WeightEntry(
 private data class VolumeEntry(
     val totalMl: Double,
     val count: Long,
+    val matchedCount: Boolean,
     val startIdx: Int,
     val endIdx: Int
 )
@@ -117,7 +142,19 @@ private fun formatKorComma(value: Long): String =
 
 private fun extractTrailingMeta(afterStr: String, pattern: Regex): TrailingCountMeta {
     val windowStr = afterStr.take(36)
-    val match = pattern.find(windowStr) ?: return TrailingCountMeta(1L, false, "")
+    val match = pattern.find(windowStr)
+    if (match == null) {
+        TRAILING_UNITLESS_MULTIPLIER_REGEX.find(windowStr)?.let { unitlessMatch ->
+            val cnt = unitlessMatch.groupValues[1].toLongOrNull() ?: 0L
+            if (cnt in 1L..500L) return TrailingCountMeta(cnt, true, "개")
+        }
+        TRAILING_PLUS_RATIO_REGEX.find(windowStr)?.let { plusMatch ->
+            val sumCnt = (plusMatch.groupValues[1].toLongOrNull() ?: 0L) +
+                (plusMatch.groupValues[2].toLongOrNull() ?: 0L)
+            if (sumCnt in 2L..20L) return TrailingCountMeta(sumCnt, true, "개")
+        }
+        return TrailingCountMeta(1L, false, "")
+    }
     val baseCount = match.groupValues[1].toLongOrNull() ?: return TrailingCountMeta(1L, false, "")
     if (baseCount !in 1L..500L) return TrailingCountMeta(1L, false, "")
     val unitLabel = match.groupValues.getOrElse(2) { "" }
@@ -227,7 +264,10 @@ fun computeUnitPriceBadge(
 
     // 0. 상품권·금액권 액면가 대비 할인율 배지
     val voucherTitle = MULTI_WHITESPACE_REGEX.replace(
-        LEADING_BRACKET_TITLE_REGEX.replace(decodeHtmlEntities(title), ""),
+        LEADING_BRACKET_TITLE_REGEX.replace(
+            TRAILING_SLASH_PRICE_SHIP_REGEX.replace(decodeHtmlEntities(title), ""),
+            ""
+        ),
         " "
     ).trim()
     if (
@@ -263,11 +303,16 @@ fun computeUnitPriceBadge(
         }
     }
 
-    if (!category.isNullOrBlank() && category.trim() in UNIT_PRICE_EXCLUDED_CATEGORIES) return null
+    val trimmedCategory = category.orEmpty().trim()
+    if (trimmedCategory.isNotEmpty() && trimmedCategory in UNIT_PRICE_EXCLUDED_CATEGORIES) return null
+    val isFashionCategory = FASHION_CATEGORY_REGEX.matches(trimmedCategory)
 
     val cleanedTitle = MULTI_WHITESPACE_REGEX.replace(
         LEADING_BRACKET_TITLE_REGEX.replace(
-            PAREN_WON_PRICE_REGEX.replace(decodeHtmlEntities(title), " "),
+            TRAILING_SLASH_PRICE_SHIP_REGEX.replace(
+                PAREN_WON_PRICE_REGEX.replace(decodeHtmlEntities(title), " "),
+                ""
+            ),
             ""
         ),
         " "
@@ -292,49 +337,68 @@ fun computeUnitPriceBadge(
         }
     }
 
-    // 2. 중량 (kg / g) — 100g당 및 소용량 포(2g x 30포 2박스 -> 1포당) 지원
-    val weightEntries = mutableListOf<WeightEntry>()
-    for (wm in WEIGHT_REGEX.findAll(cleanedTitle)) {
-        val rawVal = wm.groupValues[1].toDoubleOrNull() ?: continue
-        if (rawVal <= 0.0) continue
-        val unit = wm.groupValues[2].lowercase(Locale.US)
-        val unitGrams = if (unit == "kg") rawVal * 1000.0 else rawVal
-        val startIdx = wm.range.first
-        val endIdx = wm.range.last + 1
-        val beforeSlice = cleanedTitle.substring(maxOf(0, startIdx - 12), startIdx)
-        val afterStr = cleanedTitle.substring(endIdx)
-        val trailing = extractTrailingMeta(afterStr, TRAILING_WEIGHT_COUNT_REGEX)
+    val volumeTokenPresent = VOLUME_REGEX.containsMatchIn(cleanedTitle)
+    val standaloneMatch = STANDALONE_BUNDLE_HINT_REGEX.find(cleanedTitle)
+    val hasStandaloneBundleCount = (standaloneMatch?.groupValues?.get(1)?.toLongOrNull() ?: 0L) in 2L..500L
 
-        if (unitGrams < 10.0) {
-            if (
-                unitGrams >= 1.0 &&
-                !NUTRITION_WORD_REGEX.containsMatchIn(beforeSlice) &&
-                trailing.matched &&
-                trailing.count >= 5L &&
-                SMALL_SACHET_UNIT_REGEX.matches(trailing.unitLabel)
-            ) {
-                val sachetTotal = unitGrams * trailing.count
-                if (sachetTotal in 20.0..100_000.0) {
-                    val perSachet = (price.toDouble() / trailing.count).roundToLong()
-                    if (perSachet in 10L until price) {
-                        val uName = if (SMALL_SACHET_LABEL_UNIT_REGEX.matches(trailing.unitLabel)) {
-                            trailing.unitLabel
-                        } else {
-                            "개"
+    // 2. 중량 (kg / g) — 100g당 및 소용량 포(2g x 30포 2박스 -> 1포당), 영양성분(프로틴 22g 등) 정밀 차단
+    val weightEntries = mutableListOf<WeightEntry>()
+    if (!isFashionCategory) {
+        for (wm in WEIGHT_REGEX.findAll(cleanedTitle)) {
+            val rawVal = wm.groupValues[1].toDoubleOrNull() ?: continue
+            if (rawVal <= 0.0) continue
+            val unit = wm.groupValues[2].lowercase(Locale.US)
+            val unitGrams = if (unit == "kg") rawVal * 1000.0 else rawVal
+            val startIdx = wm.range.first
+            val endIdx = wm.range.last + 1
+            val beforeSlice = cleanedTitle.substring(maxOf(0, startIdx - 20), startIdx)
+            val afterStr = cleanedTitle.substring(endIdx)
+            val trailing = extractTrailingMeta(afterStr, TRAILING_WEIGHT_COUNT_REGEX)
+
+            val isNutritionToken =
+                unitGrams <= 60.0 && (
+                    NUTRITION_WORD_REGEX.containsMatchIn(beforeSlice) ||
+                        (
+                            unitGrams in 10.0..50.0 &&
+                                !trailing.matched &&
+                                PROTEIN_HINT_REGEX.containsMatchIn(cleanedTitle) &&
+                                (volumeTokenPresent || hasStandaloneBundleCount)
+                            )
+                    )
+            if (isNutritionToken) {
+                continue
+            }
+
+            if (unitGrams < 10.0) {
+                if (
+                    unitGrams >= 1.0 &&
+                    trailing.matched &&
+                    trailing.count >= 5L &&
+                    SMALL_SACHET_UNIT_REGEX.matches(trailing.unitLabel)
+                ) {
+                    val sachetTotal = unitGrams * trailing.count
+                    if (sachetTotal in 20.0..100_000.0) {
+                        val perSachet = (price.toDouble() / trailing.count).roundToLong()
+                        if (perSachet in 10L until price) {
+                            val uName = if (SMALL_SACHET_LABEL_UNIT_REGEX.matches(trailing.unitLabel)) {
+                                trailing.unitLabel
+                            } else {
+                                "개"
+                            }
+                            return UnitPriceBadgeInfo(
+                                label = "1${uName}당 ${formatKorComma(perSachet)}원",
+                                detail = "총 ${trailing.count}${trailing.unitLabel} · ${formatKorComma(sachetTotal.roundToLong())}g 기준"
+                            )
                         }
-                        return UnitPriceBadgeInfo(
-                            label = "1${uName}당 ${formatKorComma(perSachet)}원",
-                            detail = "총 ${trailing.count}${trailing.unitLabel} · ${formatKorComma(sachetTotal.roundToLong())}g 기준"
-                        )
                     }
                 }
+                continue
             }
-            continue
-        }
 
-        val totalGrams = unitGrams * trailing.count
-        if (totalGrams in 10.0..100_000.0) {
-            weightEntries.add(WeightEntry(totalGrams, trailing.count, startIdx, endIdx))
+            val totalGrams = unitGrams * trailing.count
+            if (totalGrams in 10.0..100_000.0) {
+                weightEntries.add(WeightEntry(totalGrams, trailing.count, trailing.matched, startIdx, endIdx))
+            }
         }
     }
 
@@ -378,40 +442,23 @@ fun computeUnitPriceBadge(
         }
     }
 
-    for (we in weightEntries) {
-        if (we.totalGrams >= 10.0 && we.totalGrams < 100.0) {
-            val per10g = ((price.toDouble() / we.totalGrams) * 10.0).roundToLong()
-            if (per10g in 10L until price) {
-                val totalRounded = we.totalGrams.roundToLong()
-                val detail = if (we.count >= 2L) {
-                    val perCount = (price.toDouble() / we.count).roundToLong()
-                    "총 ${formatKorComma(totalRounded)}g · 개당 ${formatKorComma(perCount)}원"
-                } else {
-                    "총 ${formatKorComma(totalRounded)}g 기준"
-                }
-                return UnitPriceBadgeInfo(
-                    label = "10g당 ${formatKorComma(per10g)}원",
-                    detail = detail
-                )
-            }
-        }
-    }
-
-    // 3. 용량 (ml / L / 리터)
+    // 3. 용량 (ml / L / 리터) — 비액체 용기·쓰레기봉투·가전 및 패션 제외
     val volumeEntries = mutableListOf<VolumeEntry>()
-    for (vm in VOLUME_REGEX.findAll(cleanedTitle)) {
-        val rawVal = vm.groupValues[1].toDoubleOrNull() ?: continue
-        if (rawVal <= 0.0) continue
-        val unit = vm.groupValues[2].lowercase(Locale.US)
-        val unitMl = if (unit == "ml") rawVal else rawVal * 1000.0
-        if (unitMl < 10.0) continue
-        val startIdx = vm.range.first
-        val endIdx = vm.range.last + 1
-        val afterStr = cleanedTitle.substring(endIdx)
-        val trailing = extractTrailingMeta(afterStr, TRAILING_VOLUME_COUNT_REGEX)
-        val totalMl = unitMl * trailing.count
-        if (totalMl in 10.0..100_000.0) {
-            volumeEntries.add(VolumeEntry(totalMl, trailing.count, startIdx, endIdx))
+    if (!isFashionCategory && !NON_LIQUID_VOLUME_REGEX.containsMatchIn(cleanedTitle)) {
+        for (vm in VOLUME_REGEX.findAll(cleanedTitle)) {
+            val rawVal = vm.groupValues[1].toDoubleOrNull() ?: continue
+            if (rawVal <= 0.0) continue
+            val unit = vm.groupValues[2].lowercase(Locale.US)
+            val unitMl = if (unit == "ml") rawVal else rawVal * 1000.0
+            if (unitMl < 10.0) continue
+            val startIdx = vm.range.first
+            val endIdx = vm.range.last + 1
+            val afterStr = cleanedTitle.substring(endIdx)
+            val trailing = extractTrailingMeta(afterStr, TRAILING_VOLUME_COUNT_REGEX)
+            val totalMl = unitMl * trailing.count
+            if (totalMl in 10.0..100_000.0) {
+                volumeEntries.add(VolumeEntry(totalMl, trailing.count, trailing.matched, startIdx, endIdx))
+            }
         }
     }
 
@@ -455,32 +502,16 @@ fun computeUnitPriceBadge(
         }
     }
 
-    for (ve in volumeEntries) {
-        if (ve.totalMl >= 10.0 && ve.totalMl < 100.0) {
-            val per10ml = ((price.toDouble() / ve.totalMl) * 10.0).roundToLong()
-            if (per10ml in 10L until price) {
-                val totalRounded = ve.totalMl.roundToLong()
-                val detail = if (ve.count >= 2L) {
-                    val perCount = (price.toDouble() / ve.count).roundToLong()
-                    "총 ${formatKorComma(totalRounded)}ml · 개당 ${formatKorComma(perCount)}원"
-                } else {
-                    "총 ${formatKorComma(totalRounded)}ml 기준"
-                }
-                return UnitPriceBadgeInfo(
-                    label = "10ml당 ${formatKorComma(per10ml)}원",
-                    detail = detail
-                )
-            }
-        }
-    }
-
-    // 4. 순수 묶음 수량 (총N입/스틱/인분/환/롤/캡슐/정/켤레/팩/봉 + 계란 한정 N구)
+    // 4. 순수 묶음 수량 (총N개/개입/스틱/인분/환/롤/캡슐/정/켤레/팩/봉 + 계란 한정 N구)
     TOTAL_BUNDLE_REGEX.find(cleanedTitle)?.let { tbm ->
         val cnt = tbm.groupValues[1].toLongOrNull() ?: 0L
         formatBundleBadge(price, cnt, tbm.groupValues[2])?.let { return it }
     }
 
     for (bm in BUNDLE_COUNT_REGEX.findAll(cleanedTitle)) {
+        val bmStart = bm.range.first
+        val dosePrefix = cleanedTitle.substring(maxOf(0, bmStart - 8), bmStart)
+        if (DOSE_PREFIX_REGEX.containsMatchIn(dosePrefix)) continue
         val baseCount = bm.groupValues[1].toLongOrNull() ?: 0L
         val unitLabel = bm.groupValues[2]
         val afterStr = cleanedTitle.substring(bm.range.last + 1)
@@ -492,7 +523,7 @@ fun computeUnitPriceBadge(
 
     if (
         !APPLIANCE_OUTLET_REGEX.containsMatchIn(cleanedTitle) &&
-        (EGG_ITEM_HINT_REGEX.containsMatchIn(cleanedTitle) || (category ?: "").trim() == "음식")
+        (EGG_ITEM_HINT_REGEX.containsMatchIn(cleanedTitle) || trimmedCategory == "음식")
     ) {
         EGG_COUNT_REGEX.find(cleanedTitle)?.let { eggMatch ->
             val baseEgg = eggMatch.groupValues[1].toLongOrNull() ?: 0L
@@ -507,13 +538,61 @@ fun computeUnitPriceBadge(
     }
 
     // 식품 맛 조합 수량 (예: '애슐리 딥디쉬 피자 시카고2+고구마2')
-    if ((category ?: "").trim() == "음식" && !cleanedTitle.contains("/")) {
+    if (trimmedCategory == "음식" && !cleanedTitle.contains("/")) {
         FOOD_COMBO_COUNT_REGEX.find(cleanedTitle)?.let { comboMatch ->
             val c1 = comboMatch.groupValues[2].toLongOrNull() ?: 0L
             val c2 = comboMatch.groupValues[4].toLongOrNull() ?: 0L
             val totalCombo = c1 + c2
             if (c1 in 1L..20L && c2 in 1L..20L && totalCombo in 2L..40L) {
                 formatBundleBadge(price, totalCombo, "개")?.let { return it }
+            }
+        }
+    }
+
+    // 7. 소용량 10g당 / 10ml당 최후 폴백 (묶음 수량·영양성분 차단 이후, 뷰티·소용량 화장품 전용 허용)
+    val isBeautyContext =
+        trimmedCategory == "뷰티" ||
+            trimmedCategory == "화장품" ||
+            BEAUTY_HINT_REGEX.containsMatchIn(cleanedTitle)
+    val per10gCap = if (isBeautyContext) 20_000L else 5_000L
+    val per10mlCap = if (isBeautyContext) 25_000L else 3_000L
+
+    for (we in weightEntries) {
+        if (!we.matchedCount && hasStandaloneBundleCount) continue
+        if (we.totalGrams in 10.0..100.0) {
+            val per10g = ((price.toDouble() / we.totalGrams) * 10.0).roundToLong()
+            if (per10g in 10L until price && per10g <= per10gCap) {
+                val totalRounded = we.totalGrams.roundToLong()
+                val detail = if (we.count >= 2L) {
+                    val perCount = (price.toDouble() / we.count).roundToLong()
+                    "총 ${formatKorComma(totalRounded)}g · 개당 ${formatKorComma(perCount)}원"
+                } else {
+                    "총 ${formatKorComma(totalRounded)}g 기준"
+                }
+                return UnitPriceBadgeInfo(
+                    label = "10g당 ${formatKorComma(per10g)}원",
+                    detail = detail
+                )
+            }
+        }
+    }
+
+    for (ve in volumeEntries) {
+        if (!ve.matchedCount && hasStandaloneBundleCount) continue
+        if (ve.totalMl in 10.0..100.0) {
+            val per10ml = ((price.toDouble() / ve.totalMl) * 10.0).roundToLong()
+            if (per10ml in 10L until price && per10ml <= per10mlCap) {
+                val totalRounded = ve.totalMl.roundToLong()
+                val detail = if (ve.count >= 2L) {
+                    val perCount = (price.toDouble() / ve.count).roundToLong()
+                    "총 ${formatKorComma(totalRounded)}ml · 개당 ${formatKorComma(perCount)}원"
+                } else {
+                    "총 ${formatKorComma(totalRounded)}ml 기준"
+                }
+                return UnitPriceBadgeInfo(
+                    label = "10ml당 ${formatKorComma(per10ml)}원",
+                    detail = detail
+                )
             }
         }
     }

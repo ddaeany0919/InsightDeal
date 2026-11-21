@@ -1314,6 +1314,25 @@ class InsightDealV11bUnitTest {
         assertEquals("약 6.9% 할인", giftVoucher?.label)
         assertEquals("액면가 50,000원 기준", giftVoucher?.detail)
 
+        // v1.1e 회귀: 영양성분 22g 무시 -> 개당 1,056원, 패션 중량/비액체 20L 차단, 패션 5켤레 유지, 세럼 50ml 1+1
+        val himune = computeUnitPriceBadge("하이뮨 프로틴 밸런스 액티브 22g 바닐라봉봉 ZERO 18개", 19000L, "KRW", "음식")
+        assertNotNull(himune)
+        assertEquals("개당 1,056원", himune?.label)
+        assertEquals("총 18개 기준", himune?.detail)
+
+        assertNull(computeUnitPriceBadge("노스페이스 구스다운 300g", 199000L, "KRW", "패션"))
+        assertNull(computeUnitPriceBadge("종량제 쓰레기봉투 20L 100매", 12000L, "KRW", "생활용품"))
+
+        val socks5 = computeUnitPriceBadge("양말 크루삭스 5켤레", 10000L, "KRW", "패션")
+        assertNotNull(socks5)
+        assertEquals("1켤레당 2,000원", socks5?.label)
+        assertEquals("총 5켤레 기준", socks5?.detail)
+
+        val serum = computeUnitPriceBadge("세럼 50ml 1+1", 19000L, "KRW", "화장품")
+        assertNotNull(serum)
+        assertEquals("10ml당 1,900원", serum?.label)
+        assertEquals("총 100ml · 개당 9,500원", serum?.detail)
+
         assertEquals("네이버페이 조건", extractPaymentConditionBadge("[던킨도너츠] 네이버페이 결제시 50% 할인", ""))
         assertEquals("우리카드 조건", extractPaymentConditionBadge("[컴퓨존] 스위치2 포켓몬 레전드 ZA (우리카드)", ""))
         assertEquals("네멤 조건", extractPaymentConditionBadge("퍼실 세탁세제", "네멤무료"))

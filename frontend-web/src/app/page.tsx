@@ -211,6 +211,7 @@ export default function Home() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingWishlistRef = useRef<Set<number>>(new Set());
   const pendingAlertRef = useRef<Set<number>>(new Set());
+  const maxKnownDealIdRef = useRef<number>(0);
 
   const clearSearchDebounce = useCallback(() => {
     if (searchDebounceRef.current) {
@@ -221,6 +222,7 @@ export default function Home() {
 
   useEffect(() => {
     dealsRef.current = deals;
+    maxKnownDealIdRef.current = deals.reduce((acc, item) => (item.id > acc ? item.id : acc), 0);
   }, [deals]);
 
   useEffect(() => {
@@ -300,7 +302,12 @@ export default function Home() {
             if (!nextAlerts.includes(matchedDeal.id)) {
               nextAlerts.push(matchedDeal.id);
             }
-            targetMap[String(matchedDeal.id)] = Number(wItem.target_price);
+            const dealCurr = String(matchedDeal.currency || "KRW").trim().toUpperCase();
+            const isSubunit = dealCurr === "USD" || dealCurr === "EUR" || dealCurr === "CNY";
+            const rawTarget = Number(wItem.target_price);
+            targetMap[String(matchedDeal.id)] = isSubunit
+              ? Math.round(rawTarget) / 100
+              : rawTarget;
           }
         }
       }
@@ -2144,8 +2151,10 @@ export default function Home() {
     fetchLiveDeals,
   ]);
 
+  const hasLoadedDeals = deals.length > 0;
+
   useEffect(() => {
-    if (!isMounted || deals.length === 0) return;
+    if (!isMounted || !hasLoadedDeals || sortBy !== "latest") return;
 
     let activePollController: AbortController | null = null;
     const checkInterval = setInterval(async () => {
@@ -2186,8 +2195,8 @@ export default function Home() {
         const incomingDeals: RawDealApiResponse[] = Array.isArray(data)
           ? data
           : data.deals || data.items || [];
-        if (incomingDeals.length > 0 && deals.length > 0) {
-          const latestKnownId = deals[0]?.id || 0;
+        const latestKnownId = maxKnownDealIdRef.current;
+        if (incomingDeals.length > 0 && latestKnownId > 0) {
           const freshCount = incomingDeals.filter(
             (d: RawDealApiResponse) => d.id > latestKnownId
           ).length;
@@ -2210,7 +2219,8 @@ export default function Home() {
     };
   }, [
     isMounted,
-    deals,
+    hasLoadedDeals,
+    sortBy,
     selectedCategories,
     selectedPlatforms,
     appliedSearch,
@@ -2222,7 +2232,14 @@ export default function Home() {
   const filteredDeals = deals
     .filter((d) => {
       if (hideClosedDeals && d.isClosed) return false;
-      if (onlyHotDeals && (d.honeyScore || 0) < 100) return false;
+      if (
+        onlyHotDeals &&
+        (d.honeyScore || 0) < 100 &&
+        !d.isSuperHotdeal &&
+        (d.likeCount || 0) < 8
+      ) {
+        return false;
+      }
       if (selectedPlatforms.length > 0) {
         const commNames = (d.community_name || "")
           .split(",")

@@ -1012,7 +1012,11 @@ export default function DealDetailModal({
       try {
         await navigator.share({ title: cleanShareTitle, text: shareText, url: shareUrl });
         return;
-      } catch {}
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          return;
+        }
+      }
     }
     const copied = await copyTextSafe(`${shareText}\n${shareUrl}`);
     if (copied) {
@@ -1164,12 +1168,18 @@ export default function DealDetailModal({
     !(deal.has_options && !selectedOption)
       ? (unitFromOption ?? unitFromDealTitle)
       : null;
-  const detailPaymentCondBadge =
+  const rawDetailPaymentCondBadge =
     !isClosedState && !showZeroWonPrice
       ? extractPaymentConditionBadge(
           activeOptionTitle ? `${deal.title} ${activeOptionTitle}` : deal.title,
           deal.shipping_fee
         )
+      : null;
+  const detailPaymentCondBadge =
+    rawDetailPaymentCondBadge &&
+    !((rawDetailPaymentCondBadge === "와우회원 조건" && (displayShipping || "").includes("와우")) ||
+      (rawDetailPaymentCondBadge === "네멤 조건" && (displayShipping || "").includes("네멤")))
+      ? rawDetailPaymentCondBadge
       : null;
 
   const summaryInsight = (() => {

@@ -3158,20 +3158,18 @@ fun DealHeader(
                 }
             }
 
-            val detailUnitTitle = selectedOption?.let { cleanOptionTitle(it.siteName) } ?: resolvedShopTitle.cleanTitle
-            val detailUnitPriceBadge = remember(
-                detailUnitTitle,
+            val selectedOptionTitle = selectedOption?.let { cleanOptionTitle(it.siteName) }.orEmpty()
+            val unitFromOption = remember(
+                selectedOptionTitle,
                 effectivePrice,
                 effectiveCurrency,
                 deal.category,
                 isClosed,
-                isFreeDeal,
-                deal.hasOptions,
-                selectedOption
+                isFreeDeal
             ) {
-                if (!isClosed && !isFreeDeal && !(deal.hasOptions && selectedOption == null)) {
+                if (!isClosed && !isFreeDeal && selectedOptionTitle.isNotBlank()) {
                     computeUnitPriceBadge(
-                        title = detailUnitTitle,
+                        title = selectedOptionTitle,
                         price = effectivePrice,
                         currency = effectiveCurrency,
                         category = deal.category
@@ -3180,41 +3178,123 @@ fun DealHeader(
                     null
                 }
             }
-            if (detailUnitPriceBadge != null) {
+            val unitFromDealTitle = remember(
+                resolvedShopTitle.cleanTitle,
+                effectivePrice,
+                deal.price,
+                effectiveCurrency,
+                deal.category,
+                selectedOption,
+                selectedOptionTitle,
+                unitFromOption,
+                isClosed,
+                isFreeDeal,
+                deal.hasOptions
+            ) {
+                if (
+                    !isClosed &&
+                    !isFreeDeal &&
+                    unitFromOption == null &&
+                    !(deal.hasOptions && selectedOption == null) &&
+                    (selectedOption == null ||
+                        effectivePrice == deal.price ||
+                        Regex("^(?:로켓배송|무료배송|기본|선택\\s*\\d+|옵션\\s*\\d+)$", RegexOption.IGNORE_CASE)
+                            .matches(selectedOptionTitle.trim()))
+                ) {
+                    computeUnitPriceBadge(
+                        title = resolvedShopTitle.cleanTitle,
+                        price = effectivePrice,
+                        currency = effectiveCurrency,
+                        category = deal.category
+                    )
+                } else {
+                    null
+                }
+            }
+            val detailUnitPriceBadge = unitFromOption ?: unitFromDealTitle
+            val rawDetailPaymentCondBadge = remember(
+                deal.title,
+                selectedOptionTitle,
+                deal.shippingFee,
+                isClosed,
+                isFreeDeal
+            ) {
+                if (!isClosed && !isFreeDeal) {
+                    val combined = if (selectedOptionTitle.isNotBlank()) "${deal.title} $selectedOptionTitle" else deal.title
+                    extractPaymentConditionBadge(combined, deal.shippingFee)
+                } else {
+                    null
+                }
+            }
+            val rawShippingForDedup = remember(deal.category, deal.shippingFee) {
+                if (deal.category in DIGITAL_CATEGORIES) "" else decodeHtmlEntities(deal.shippingFee)
+            }
+            val detailPaymentCondBadge = if (
+                rawDetailPaymentCondBadge != null &&
+                !((rawDetailPaymentCondBadge == "와우회원 조건" && rawShippingForDedup.contains("와우")) ||
+                    (rawDetailPaymentCondBadge == "네멤 조건" && rawShippingForDedup.contains("네멤")))
+            ) {
+                rawDetailPaymentCondBadge
+            } else {
+                null
+            }
+            if (detailUnitPriceBadge != null || detailPaymentCondBadge != null) {
                 Spacer(modifier = Modifier.height(6.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.semantics(mergeDescendants = true) {
-                        contentDescription = "${detailUnitPriceBadge.label}, ${detailUnitPriceBadge.detail}"
+                        contentDescription = listOfNotNull(
+                            detailUnitPriceBadge?.let { "${it.label}, ${it.detail}" },
+                            detailPaymentCondBadge
+                        ).joinToString(", ")
                     }
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = semantic.infoContainer,
-                        border = BorderStroke(0.5.dp, semantic.info.copy(alpha = 0.35f)),
-                        modifier = Modifier.align(Alignment.CenterVertically)
-                    ) {
-                        Text(
-                            text = detailUnitPriceBadge.label,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = semantic.onInfoContainer,
-                            style = PriceTextStyle,
-                            maxLines = 1,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                    if (detailUnitPriceBadge.detail.isNotBlank()) {
-                        Text(
-                            text = detailUnitPriceBadge.detail,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFeatureSettings = PriceTextStyle.fontFeatureSettings,
-                                fontWeight = FontWeight.SemiBold
-                            ),
-                            color = semantic.textMuted,
+                    if (detailUnitPriceBadge != null) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = semantic.infoContainer,
+                            border = BorderStroke(0.5.dp, semantic.info.copy(alpha = 0.35f)),
                             modifier = Modifier.align(Alignment.CenterVertically)
-                        )
+                        ) {
+                            Text(
+                                text = detailUnitPriceBadge.label,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = semantic.onInfoContainer,
+                                style = PriceTextStyle,
+                                maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        if (detailUnitPriceBadge.detail.isNotBlank()) {
+                            Text(
+                                text = detailUnitPriceBadge.detail,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFeatureSettings = PriceTextStyle.fontFeatureSettings,
+                                    fontWeight = FontWeight.SemiBold
+                                ),
+                                color = semantic.textMuted,
+                                modifier = Modifier.align(Alignment.CenterVertically)
+                            )
+                        }
+                    }
+                    if (detailPaymentCondBadge != null) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = semantic.warningContainer,
+                            border = BorderStroke(0.5.dp, semantic.onWarningContainer.copy(alpha = 0.35f)),
+                            modifier = Modifier.align(Alignment.CenterVertically)
+                        ) {
+                            Text(
+                                text = detailPaymentCondBadge,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = semantic.onWarningContainer,
+                                maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
                     }
                 }
             }

@@ -2112,6 +2112,20 @@ def _build_single_category_clause(models, single_cat: str, or_, and_, not_):
                 *[models.Deal.title.ilike(f"%{kw}%") for kw in appliance_title_kws],
             ),
             not_(models.Deal.title.ilike("%오븐구이%")),
+            not_(models.Deal.title.ilike("%오븐베이크%")),
+            not_(models.Deal.title.ilike("%강아지%")),
+            not_(models.Deal.title.ilike("%사료%")),
+            not_(models.Deal.title.ilike("%멀티비타민%")),
+            not_(models.Deal.title.ilike("%tving%")),
+            not_(models.Deal.title.ilike("%티빙%")),
+            not_(models.Deal.title.ilike("%건조기시트%")),
+            not_(models.Deal.title.ilike("%건조기 시트%")),
+            not_(models.Deal.title.ilike("%식기세척기세제%")),
+            not_(models.Deal.title.ilike("%식기세척기 세제%")),
+            not_(models.Deal.title.ilike("%세탁조%")),
+            not_(models.Deal.title.ilike("%종이호일%")),
+            not_(models.Deal.title.ilike("%팝콘%")),
+            not_(models.Deal.title.ilike("%정리함%")),
             not_(models.Deal.title.ilike("%apple tv+%")),
             not_(models.Deal.title.ilike("%애플티비%")),
             not_(models.Deal.title.ilike("%애플 티비%")),
@@ -2340,7 +2354,9 @@ def get_hot_deals(
                     models.Deal.category != "적립/이벤트",
                     not_(models.Deal.title.like("%일일적립%")),
                     not_(models.Deal.title.like("%정보 안내%")),
-                    not_(models.Deal.title.like("%불가%"))
+                    not_(models.Deal.title.like("%구매불가%")),
+                    not_(models.Deal.title.like("%사용불가%")),
+                    not_(models.Deal.title.like("%적용불가%")),
                 )
             )
 
@@ -2374,10 +2390,32 @@ def get_hot_deals(
                     # 와일드카드/특수기호만 있는 입력('%', '_', '[]' 등) 차단
                     if not re.search(r"[가-힣a-zA-Z0-9]", tok):
                         return {"deals": [], "has_more": False}
-                    # 단일 영문 알파벳(예: 'f'), 단일 숫자, 단일 한글 자모(예: 'ㄱ')는 노이즈 매칭을 유발하므로 차단
-                    if len(tok) == 1 and (tok.isascii() or re.match(r'^[ㄱ-ㅎㅏ-ㅣ]$', tok)):
-                        return {"deals": [], "has_more": False}
                     positive_tokens.append(tok)
+
+            def _is_single_char_noise(tok: str) -> bool:
+                return len(tok) == 1 and (tok.isascii() or bool(re.match(r"^[ㄱ-ㅎㅏ-ㅣ]$", tok)))
+
+            if positive_tokens and all(_is_single_char_noise(t) for t in positive_tokens):
+                return {"deals": [], "has_more": False}
+
+            _query_only_synonyms: dict[str, tuple[str, ...]] = {
+                "프로": ("pro",),
+                "pro": ("프로",),
+                "미니": ("mini",),
+                "mini": ("미니",),
+                "울트라": ("ultra",),
+                "ultra": ("울트라",),
+                "맥스": ("max",),
+                "max": ("맥스",),
+            }
+
+            def _any_col_ilike(like_expr: str):
+                return or_(
+                    models.Deal.title.ilike(like_expr, escape="\\"),
+                    models.Deal.base_product_name.ilike(like_expr, escape="\\"),
+                    models.Deal.search_keywords.ilike(like_expr, escape="\\"),
+                    models.Deal.options_data.ilike(like_expr, escape="\\"),
+                )
 
             def _build_positive_keyword_clause(pt: str):
                 pt_escaped = _escape_like(pt)
@@ -2390,10 +2428,7 @@ def get_hot_deals(
                     )
 
                 clauses = [
-                    models.Deal.title.ilike(pt_like, escape="\\"),
-                    models.Deal.search_keywords.ilike(pt_like, escape="\\"),
-                    models.Deal.base_product_name.ilike(pt_like, escape="\\"),
-                    models.Deal.options_data.ilike(pt_like, escape="\\"),
+                    _any_col_ilike(pt_like),
                 ]
 
                 # 대괄호 감싸진 검색어('[특가]' 등) 입력 시 대괄호 제거 본문도 함께 매칭
@@ -2402,10 +2437,10 @@ def get_hot_deals(
                     ib_like = f"%{_escape_like(inner_bracket)}%"
                     clauses.append(models.Deal.title.ilike(ib_like, escape="\\"))
 
-                # 순수 한글/영숫자 토큰에 한해 공백·하이픈 무시 비교, 복합어 분해, 한/영 동의어 확장 적용
+                # 순수 한글/영숫자 토큰에 한해 공백·하이픈 무시 비교(3자 이상), 복합어 분해, 한/영 동의어 확장 적용
                 if re.fullmatch(r"[가-힣a-zA-Z0-9\-]+", pt):
                     pt_compact = re.sub(r"[\s\-]+", "", pt)
-                    if len(pt_compact) >= 2:
+                    if len(pt_compact) >= 3:
                         compact_like = f"%{_escape_like(pt_compact)}%"
                         clauses.append(
                             func.replace(func.replace(models.Deal.title, " ", ""), "-", "").ilike(compact_like, escape="\\")
@@ -2413,61 +2448,63 @@ def get_hot_deals(
                         clauses.append(
                             func.replace(func.replace(models.Deal.base_product_name, " ", ""), "-", "").ilike(compact_like, escape="\\")
                         )
+                        clauses.append(
+                            func.replace(func.replace(models.Deal.options_data, " ", ""), "-", "").ilike(compact_like, escape="\\")
+                        )
 
                     for sub_parts in _decompose_compound_query_token(pt_compact):
                         if len(sub_parts) >= 2:
                             clauses.append(
                                 and_(
-                                    *[
-                                        or_(
-                                            models.Deal.title.ilike(f"%{_escape_like(sp)}%", escape="\\"),
-                                            models.Deal.base_product_name.ilike(f"%{_escape_like(sp)}%", escape="\\"),
-                                            models.Deal.search_keywords.ilike(f"%{_escape_like(sp)}%", escape="\\"),
-                                            models.Deal.options_data.ilike(f"%{_escape_like(sp)}%", escape="\\"),
-                                        )
-                                        for sp in sub_parts
-                                    ]
+                                    *[_any_col_ilike(f"%{_escape_like(sp)}%") for sp in sub_parts]
                                 )
                             )
 
-                    syns = KOR_ENG_SEARCH_SYNONYMS.get(pt_compact.lower(), ())
+                    pt_lower = pt_compact.lower()
+                    syns = tuple(KOR_ENG_SEARCH_SYNONYMS.get(pt_lower, ())) + tuple(_query_only_synonyms.get(pt_lower, ()))
                     for syn in syns:
                         syn_like = f"%{_escape_like(syn)}%"
-                        clauses.append(models.Deal.title.ilike(syn_like, escape="\\"))
-                        clauses.append(models.Deal.base_product_name.ilike(syn_like, escape="\\"))
-                        clauses.append(models.Deal.search_keywords.ilike(syn_like, escape="\\"))
+                        clauses.append(_any_col_ilike(syn_like))
 
-                    m_knum = re.fullmatch(r"([가-힣]{2,}|[a-z]{2,})([0-9]+[a-z0-9]*)", pt_compact.lower())
+                    m_knum = re.fullmatch(r"([가-힣]{2,}|[a-z]{2,})([0-9]+[a-z0-9]*)", pt_lower)
                     if m_knum:
                         k_pref, num_suf = m_knum.group(1), m_knum.group(2)
                         for p_syn in KOR_ENG_SEARCH_SYNONYMS.get(k_pref, ()):
                             if re.fullmatch(r"[a-z가-힣0-9]+", p_syn):
                                 comb_tok = f"{p_syn}{num_suf}"
-                                comb_like = f"%{_escape_like(comb_tok)}%"
-                                clauses.append(models.Deal.title.ilike(comb_like, escape="\\"))
-                                clauses.append(models.Deal.base_product_name.ilike(comb_like, escape="\\"))
-                                clauses.append(models.Deal.search_keywords.ilike(comb_like, escape="\\"))
+                                clauses.append(_any_col_ilike(f"%{_escape_like(comb_tok)}%"))
                             pref_like = f"%{_escape_like(p_syn)}%"
                             num_like = f"%{_escape_like(num_suf)}%"
-                            clauses.append(
-                                and_(
-                                    or_(
-                                        models.Deal.title.ilike(pref_like, escape="\\"),
-                                        models.Deal.base_product_name.ilike(pref_like, escape="\\"),
-                                        models.Deal.search_keywords.ilike(pref_like, escape="\\"),
-                                    ),
-                                    or_(
-                                        models.Deal.title.ilike(num_like, escape="\\"),
-                                        models.Deal.base_product_name.ilike(num_like, escape="\\"),
-                                        models.Deal.search_keywords.ilike(num_like, escape="\\"),
-                                    ),
-                                )
-                            )
+                            clauses.append(and_(_any_col_ilike(pref_like), _any_col_ilike(num_like)))
 
                 return or_(*clauses)
 
-            for pt in positive_tokens:
-                query = query.filter(_build_positive_keyword_clause(pt))
+            idx_tok = 0
+            while idx_tok < len(positive_tokens):
+                pt = positive_tokens[idx_tok]
+                if (
+                    idx_tok + 1 < len(positive_tokens)
+                    and len(pt) >= 2
+                    and len(positive_tokens[idx_tok + 1]) == 1
+                    and positive_tokens[idx_tok + 1].isalnum()
+                    and positive_tokens[idx_tok + 1].isascii()
+                    and re.fullmatch(r"[가-힣a-zA-Z0-9\-]+", pt)
+                ):
+                    nxt_ch = positive_tokens[idx_tok + 1]
+                    merged_tok = f"{pt}{nxt_ch}"
+                    query = query.filter(
+                        or_(
+                            _build_positive_keyword_clause(merged_tok),
+                            and_(
+                                _build_positive_keyword_clause(pt),
+                                _build_positive_keyword_clause(nxt_ch),
+                            ),
+                        )
+                    )
+                    idx_tok += 2
+                else:
+                    query = query.filter(_build_positive_keyword_clause(pt))
+                    idx_tok += 1
             for et in exclude_tokens:
                 et_like = f"%{_escape_like(et)}%"
                 query = query.filter(not_(models.Deal.title.ilike(et_like, escape="\\")))
@@ -2886,10 +2923,20 @@ def get_hot_deals(
                     reverse=True
                 )
             elif sort_mode == "price_asc":
+                def _price_asc_sort_krw(item: dict) -> float:
+                    base_eq = _to_krw_equiv(item.get("total_price") or item.get("price"), item.get("currency"))
+                    curr = str(item.get("currency") or "KRW").upper()
+                    ship = str(item.get("shipping_fee") or "").replace(" ", "")
+                    raw_price_int = int(item.get("price") or 0)
+                    if curr == "KRW" and raw_price_int > 0:
+                        if ship in ("유배", "유료배송", "착불") or ("조건부" in ship and raw_price_int < 15000):
+                            return base_eq + 3000.0
+                    return base_eq
+
                 grouped_result.sort(
                     key=lambda x: (
                         0 if int(x.get("price") or 0) > 0 else 1,
-                        _to_krw_equiv(x.get("total_price") or x.get("price"), x.get("currency")),
+                        _price_asc_sort_krw(x),
                         _to_krw_equiv(x.get("price"), x.get("currency")),
                     )
                 )

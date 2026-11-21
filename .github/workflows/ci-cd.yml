@@ -1,15 +1,23 @@
 name: InsightDeal CI/CD
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gate-1-backend:
     name: Gate 1 — Backend Unit & E2E
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       ENABLE_SCHEDULER: "false"
       DATABASE_URL: "sqlite:///:memory:"
@@ -49,6 +57,7 @@ jobs:
   gate-2-contract:
     name: Gate 2 — OpenAPI <-> Web & Android Contract
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       ENABLE_SCHEDULER: "false"
       DATABASE_URL: "sqlite:///:memory:"
@@ -75,6 +84,7 @@ jobs:
   gate-3-web:
     name: Gate 3 — Web Lint, TSC, Vitest, Build & Toss
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: ./frontend-web
@@ -107,6 +117,7 @@ jobs:
       - name: Verify Toss static export build compatibility
         run: |
           set -euo pipefail
+          rm -rf .next out
           STASHED=0
           restore_api() {
             if [ "$STASHED" -eq 1 ] && [ -d ".toss-api-stash" ]; then
@@ -129,6 +140,7 @@ jobs:
   gate-4-android:
     name: Gate 4 — Android UnitTest, LintRelease & AssembleRelease
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -173,8 +185,14 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Run unit tests, lintRelease, and assembleRelease
-        run: ./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleRelease --no-daemon --console=plain
+      - name: Run Android unit tests
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --console=plain -Dorg.gradle.configuration-cache=false --max-workers=2
+
+      - name: Run Android lintRelease
+        run: ./gradlew :app:lintRelease --no-daemon --console=plain -Dorg.gradle.configuration-cache=false --max-workers=2
+
+      - name: Build Android assembleRelease
+        run: ./gradlew :app:assembleRelease --no-daemon --console=plain -Dorg.gradle.configuration-cache=false --max-workers=2
 
       - name: Upload Android test & lint reports
         if: always()
@@ -197,6 +215,7 @@ jobs:
     name: Deploy Guard (Post 4-Gate)
     needs: [gate-1-backend, gate-2-contract, gate-3-web, gate-4-android]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:

@@ -1005,6 +1005,23 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
       label: "약 6.9% 할인",
       detail: "액면가 50,000원 기준",
     });
+    // v1.1e 회귀: 영양성분 22g 무시 -> 개당 1,056원, 패션 중량/비액체 20L 차단, 패션 5켤레 유지, 세럼 50ml 1+1
+    expect(
+      computeUnitPriceBadge("하이뮨 프로틴 밸런스 액티브 22g 바닐라봉봉 ZERO 18개", 19000, "KRW", "음식")
+    ).toEqual({
+      label: "개당 1,056원",
+      detail: "총 18개 기준",
+    });
+    expect(computeUnitPriceBadge("노스페이스 구스다운 300g", 199000, "KRW", "패션")).toBeNull();
+    expect(computeUnitPriceBadge("종량제 쓰레기봉투 20L 100매", 12000, "KRW", "생활용품")).toBeNull();
+    expect(computeUnitPriceBadge("양말 크루삭스 5켤레", 10000, "KRW", "패션")).toEqual({
+      label: "1켤레당 2,000원",
+      detail: "총 5켤레 기준",
+    });
+    expect(computeUnitPriceBadge("세럼 50ml 1+1", 19000, "KRW", "화장품")).toEqual({
+      label: "10ml당 1,900원",
+      detail: "총 100ml · 개당 9,500원",
+    });
     expect(extractPaymentConditionBadge("[던킨도너츠] 네이버페이 결제시 50% 할인", "")).toBe("네이버페이 조건");
     expect(extractPaymentConditionBadge("[컴퓨존] 스위치2 포켓몬 레전드 ZA (우리카드)", "")).toBe("우리카드 조건");
     expect(extractPaymentConditionBadge("퍼실 세탁세제", "네멤무료")).toBe("네멤 조건");

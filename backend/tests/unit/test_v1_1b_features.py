@@ -2527,3 +2527,238 @@ def test_v11d_img_kakaocdn_600x0_fallback_and_naver_shopping(unit_v11b_env, monk
     scraper = DummyImgScraper("뽐뿌")
     found_img = asyncio.run(scraper.fetch_og_image("", "[오뚜기] 가뿐한끼 현미밥 150g x 30개"))
     assert found_img == "https://shopping-phinf.pstatic.net/main_8295776/82957760434.12.jpg?type=f640"
+
+
+def test_v11e_live_qa_fixes(unit_v11b_env):
+    """v1.1e: 해외직구 USD·미국내무료, 카테고리 오탐 차단, 다중어절 검색·동의어 options_data 확장, price_asc 배송비 가산을 검증한다."""
+    import json
+    from backend.core.deal_normalizer import (
+        build_search_keywords,
+        extract_body_fallback_price,
+        parse_title_price_and_shipping,
+        resolve_canonical_shop_name,
+    )
+    from backend.services.normalizer.regex_normalizer import RegexNormalizer
+
+    # 1. 해외직구 가격·배송비·도메인 쇼핑몰 추론
+    assert parse_title_price_and_shipping("[Coravin] 코라빈 타임리스 스리 SL 와인 보존 시스템 (181.92/미국내무료)")[:3] == (
+        18192,
+        "USD",
+        "무료배송",
+    )
+    assert parse_title_price_and_shipping(
+        "[아마존] Marshall Emberton III 무배 프로모션 89.99 + 컬리건 쿠폰 20.59 (국내까지 무료)"
+    )[:3] == (8999, "USD", "무료배송")
+    assert extract_body_fallback_price("결제 시 25.18달러가 할인 되었습니다.", "") == (0, "KRW")
+    assert resolve_canonical_shop_name("[기타] Marshall Emberton III", "https://a.co/d/0bB75cO", "") == "아마존"
+
+    # 2. 카테고리 정상 분류 및 오분류 방지
+    norm = RegexNormalizer()
+    assert norm._map_category("비트 몬스터팟 캡슐세제 총 55개") == "생활용품"
+    assert norm._map_category("하림펫푸드 강아지사료 오븐베이크트 홀리스틱") == "생활용품"
+    assert norm._map_category("일리윤 Ceramide 아토 집중 크림 500ml") == "화장품"
+    assert norm._map_category("가그린 안심 가글 제로 750ml") == "생활용품"
+    assert norm._map_category("Marshall Emberton III 무배 프로모션 89.99") == "가전제품"
+    assert norm._map_category("풀무원샘물 500ml 40병") == "음식"
+    assert norm._map_category("국내산 자숙 홍게 3kg") == "음식"
+    assert norm._map_category("전통 청국장 1kg") == "음식"
+    assert norm._map_category("빈폴 남성 구스 다운 점퍼") == "의류"
+    assert norm._map_category("레이밴 메타 스마트안경 웨이페어러") == "PC제품"
+
+    # 3. DB 시드 기반 검색(다중어절/동의어 options_data/유령매칭 차단/가전 필터/불가 완화/price_asc 정렬)
+    db = unit_v11b_env.SessionCls()
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    try:
+        db.query(models.Deal).delete()
+        rows = [
+            models.Deal(
+                source_community_id=1,
+                title="닌텐도 스위치 2 인왕3 일반판",
+                price="79800",
+                currency="KRW",
+                shipping_fee="무료배송",
+                category="SW/게임",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95001",
+                search_keywords=build_search_keywords("닌텐도 스위치 2 인왕3 일반판"),
+                indexed_at=now_naive - timedelta(minutes=1),
+                is_closed=False,
+            ),
+            models.Deal(
+                source_community_id=1,
+                title="[롯데하이마트] 플스 5 슬림 디지털 에디션",
+                price="598000",
+                currency="KRW",
+                shipping_fee="무료배송",
+                category="SW/게임",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95002",
+                search_keywords=build_search_keywords("[롯데하이마트] 플스 5 슬림 디지털 에디션"),
+                indexed_at=now_naive - timedelta(minutes=2),
+                is_closed=False,
+            ),
+            models.Deal(
+                source_community_id=1,
+                title="[쿠팡] 애플 무선 이어폰 정품 프로모션",
+                price="249000",
+                currency="KRW",
+                shipping_fee="와우무료",
+                category="PC제품",
+                options_data=json.dumps([{"name": "AirPods Pro 3세대", "price": 249000, "currency": "KRW"}], ensure_ascii=False),
+                has_options=True,
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95003",
+                search_keywords=build_search_keywords("[쿠팡] 애플 무선 이어폰 정품 프로모션"),
+                indexed_at=now_naive - timedelta(minutes=3),
+                is_closed=False,
+            ),
+            models.Deal(
+                source_community_id=1,
+                title="하리보 스타믹스 젤리 1kg",
+                price="11900",
+                currency="KRW",
+                shipping_fee="무료배송",
+                category="음식",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95004",
+                search_keywords=build_search_keywords("하리보 스타믹스 젤리 1kg"),
+                indexed_at=now_naive - timedelta(minutes=4),
+                is_closed=False,
+            ),
+            models.Deal(
+                source_community_id=1,
+                title="SK하이닉스 P41 M.2 NVMe SSD 2TB",
+                price="199000",
+                currency="KRW",
+                shipping_fee="무료배송",
+                category="PC제품",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95005",
+                search_keywords=build_search_keywords("SK하이닉스 P41 M.2 NVMe SSD 2TB"),
+                indexed_at=now_naive - timedelta(minutes=5),
+                is_closed=False,
+            ),
+            models.Deal(
+                source_community_id=1,
+                title="SKT 티멤버십 데이터 요금제 10GB",
+                price="15000",
+                currency="KRW",
+                shipping_fee="",
+                category="패키지/이용권",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95006",
+                search_keywords=build_search_keywords("SKT 티멤버십 데이터 요금제 10GB"),
+                indexed_at=now_naive - timedelta(minutes=6),
+                is_closed=False,
+            ),
+            models.Deal(
+                source_community_id=1,
+                title="한경희 스팀 청소기 프로",
+                price="89000",
+                currency="KRW",
+                shipping_fee="무료배송",
+                category="가전제품",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95007",
+                search_keywords=build_search_keywords("한경희 스팀 청소기 프로"),
+                indexed_at=now_naive - timedelta(minutes=7),
+                is_closed=False,
+            ),
+            models.Deal(
+                source_community_id=1,
+                title="Steam Deck OLED 512GB 휴대용 콘솔",
+                price="829000",
+                currency="KRW",
+                shipping_fee="무료배송",
+                category="SW/게임",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95008",
+                search_keywords=build_search_keywords("Steam Deck OLED 512GB 휴대용 콘솔"),
+                indexed_at=now_naive - timedelta(minutes=8),
+                is_closed=False,
+            ),
+            models.Deal(
+                source_community_id=1,
+                title="[무신사] 비교불가 가성비 구스다운 패딩",
+                price="99000",
+                currency="KRW",
+                shipping_fee="무료배송",
+                category="의류",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95009",
+                search_keywords=build_search_keywords("[무신사] 비교불가 가성비 구스다운 패딩"),
+                indexed_at=now_naive - timedelta(minutes=9),
+                is_closed=False,
+            ),
+            models.Deal(
+                source_community_id=1,
+                title="하림펫푸드 강아지사료 오븐베이크트",
+                price="29900",
+                currency="KRW",
+                shipping_fee="무료배송",
+                category="가전제품",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95010",
+                indexed_at=now_naive - timedelta(minutes=10),
+                is_closed=False,
+            ),
+            models.Deal(
+                source_community_id=1,
+                title="티빙 베이직 이용권",
+                price="5500",
+                currency="KRW",
+                shipping_fee="",
+                category="가전제품",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95011",
+                indexed_at=now_naive - timedelta(minutes=11),
+                is_closed=False,
+            ),
+            models.Deal(
+                source_community_id=1,
+                title="유배 생수 5000원 상품",
+                price="5000",
+                currency="KRW",
+                shipping_fee="유배",
+                category="음식",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95012",
+                indexed_at=now_naive - timedelta(minutes=12),
+                is_closed=False,
+            ),
+            models.Deal(
+                source_community_id=1,
+                title="무배 생수 6000원 상품",
+                price="6000",
+                currency="KRW",
+                shipping_fee="무료배송",
+                category="음식",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95013",
+                indexed_at=now_naive - timedelta(minutes=13),
+                is_closed=False,
+            ),
+        ]
+        db.add_all(rows)
+        db.commit()
+    finally:
+        db.close()
+
+    community_router.invalidate_feed_api_cache()
+    client = unit_v11b_env.client
+
+    assert len(client.get("/api/community/hot-deals", params={"keyword": "스위치 2", "limit": 20}).json()["deals"]) >= 1
+    assert len(client.get("/api/community/hot-deals", params={"keyword": "플스 5", "limit": 20}).json()["deals"]) >= 1
+
+    airpods_ko = client.get("/api/community/hot-deals", params={"keyword": "에어팟 프로 3", "limit": 20}).json()["deals"]
+    airpods_en = client.get("/api/community/hot-deals", params={"keyword": "airpods", "limit": 20}).json()["deals"]
+    airpods_bare = client.get("/api/community/hot-deals", params={"keyword": "에어팟", "limit": 20}).json()["deals"]
+    assert len(airpods_ko) == 1
+    assert len(airpods_en) == len(airpods_bare) == 1
+
+    assert len(client.get("/api/community/hot-deals", params={"keyword": "bose", "limit": 20}).json()["deals"]) == 0
+    assert len(client.get("/api/community/hot-deals", params={"keyword": "보스", "limit": 20}).json()["deals"]) == 0
+
+    hynix_res = client.get("/api/community/hot-deals", params={"keyword": "하이닉스", "limit": 20}).json()["deals"]
+    assert len(hynix_res) == 1 and "하이닉스" in hynix_res[0]["title"]
+
+    steamdeck_res = client.get("/api/community/hot-deals", params={"keyword": "스팀덱", "limit": 20}).json()["deals"]
+    assert len(steamdeck_res) == 1 and "Steam Deck" in steamdeck_res[0]["title"]
+
+    all_feed = client.get("/api/community/hot-deals", params={"limit": 30}).json()["deals"]
+    assert any("비교불가 가성비 구스다운 패딩" in d["title"] for d in all_feed)
+
+    app_feed = client.get("/api/community/hot-deals", params={"category": "가전제품", "limit": 30}).json()["deals"]
+    assert not any("강아지사료" in d["title"] or "티빙" in d["title"] for d in app_feed)
+
+    price_sort = client.get("/api/community/hot-deals", params={"category": "음식", "sort": "price_asc", "limit": 20}).json()["deals"]
+    idx_free_6000 = next(i for i, d in enumerate(price_sort) if "무배 생수 6000원" in d["title"])
+    idx_paid_5000 = next(i for i, d in enumerate(price_sort) if "유배 생수 5000원" in d["title"])
+    assert idx_free_6000 < idx_paid_5000

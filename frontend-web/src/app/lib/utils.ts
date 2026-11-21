@@ -2126,6 +2126,8 @@ export function mapRawDealToDeal(
       ? titleFallback.currency
       : d.currency || "KRW",
     honeyScore: Number(d.honey_score ?? d.honeyScore ?? d.score ?? 0),
+    isSuperHotdeal: Boolean(d.is_super_hotdeal),
+    likeCount: d.like_count ?? d.buy_count ?? d.buyCount ?? undefined,
     aiSummary: decodeHtmlEntities(d.ai_summary || d.aiSummary || ""),
     contentHtml: d.content_html || d.contentHtml || "",
     sources: d.sources || [],
@@ -2326,7 +2328,14 @@ const _EGG_ITEM_HINT_RE =
 const _APPLIANCE_OUTLET_RE =
   /(?:멀티탭|콘센트|어댑터|충전기|인덕션|하이라이트|가스레인지|포트|허브|스위치|전등|조명|소켓|usb|hdmi)/i;
 const _NUTRITION_WORD_RE =
-  /(?:당류|지방|포화지방|나트륨|콜레스테롤|단백질|탄수화물|카페인|당)\s*$/;
+  /(?:당류|당|단백질|프로틴|단백|지방|포화지방|트랜스지방|탄수화물|나트륨|식이섬유|콜라겐|카페인|타우린|아르기닌|유산균|비타민|칼슘|마그네슘|오메가|함량|함유|저당|무당|고단백)\s*[:：]?\s*$/i;
+const _PROTEIN_HINT_RE =
+  /(?:프로틴|단백질|하이뮨|셀렉스|더단백|테이크핏|마이프로틴|닥터유\s*프로)/i;
+const _FASHION_CATEGORY_RE = /^(?:패션|패션\/의류|의류|패션\/잡화)$/;
+const _NON_LIQUID_VOLUME_RE =
+  /(?:쓰레기봉투|종량제|리빙박스|수납함|정리함|백팩|배낭|캐리어|밀폐용기|냉동용기|보관용기|반찬통|텀블러|보온병|에어프라이어|전자레인지|오븐|냉장고|김치냉장고|세탁기|건조기)/i;
+const _BEAUTY_HINT_RE =
+  /(?:세럼|에센스|앰플|크림|선크림|립밤|아이크림|쿠션|파운데이션|틴트|미스트|토너|로션|향수|오일|마스크팩)/i;
 
 export interface UnitPriceBadgeInfo {
   label: string;
@@ -2411,6 +2420,7 @@ export const computeUnitPriceBadge = (
 
   // 0. 상품권·금액권 액면가 대비 할인율 배지 (모바일/기프티콘·상품권 카테고리 제외 전 선판정)
   const voucherTitle = decodeHtmlEntities(title)
+    .replace(/\s*\/\s*(?:[0-9,]+(?:\s*원)?\s*\/\s*)?(?:무료배송|무배|무료|유배|유료배송|[0-9,]+\s*원)\s*$/g, "")
     .replace(/^\[[^\]]+\]\s*/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -2450,8 +2460,12 @@ export const computeUnitPriceBadge = (
     return null;
   }
 
+  const trimmedCategory = (category || "").trim();
+  const isFashionCategory = _FASHION_CATEGORY_RE.test(trimmedCategory);
+
   const cleanedTitle = decodeHtmlEntities(title)
     .replace(/\([^)]*원[^)]*\)/g, " ")
+    .replace(/\s*\/\s*(?:[0-9,]+(?:\s*원)?\s*\/\s*)?(?:무료배송|무배|무료|유배|유료배송|[0-9,]+\s*원)\s*$/g, "")
     .replace(/^\[[^\]]+\]\s*/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -2477,14 +2491,30 @@ export const computeUnitPriceBadge = (
     }
   }
 
-  // Helper: 기준 단위 직후 36자 내 2단 번들((2g x 30포) 2박스, 5봉 x 4팩) 또는 수량(+증정분) 추출
+  // Helper: 기준 단위 직후 36자 내 2단 번들((2g x 30포) 2박스, 5봉 x 4팩), 단위 없는 x24, 1+1/2+1 추출
   const extractTrailingMeta = (
     afterStr: string,
     pattern: RegExp
   ): { count: number; matched: boolean; unitLabel: string } => {
     const windowStr = afterStr.slice(0, 36);
     const m = pattern.exec(windowStr);
-    if (!m) return { count: 1, matched: false, unitLabel: "" };
+    if (!m) {
+      const unitlessM = /^\s*[xX×*]\s*(\d{1,3})(?=\s|$|\))/.exec(windowStr);
+      if (unitlessM) {
+        const cnt = Number(unitlessM[1]);
+        if (cnt >= 1 && cnt <= 500) {
+          return { count: cnt, matched: true, unitLabel: "개" };
+        }
+      }
+      const plusRatioM = /^\s*(\d)\s*\+\s*(\d)(?![\d.]|[a-zA-Z])/.exec(windowStr);
+      if (plusRatioM) {
+        const sumCnt = Number(plusRatioM[1]) + Number(plusRatioM[2]);
+        if (sumCnt >= 2 && sumCnt <= 20) {
+          return { count: sumCnt, matched: true, unitLabel: "개" };
+        }
+      }
+      return { count: 1, matched: false, unitLabel: "" };
+    }
     const baseCnt = Number(m[1]);
     if (!Number.isFinite(baseCnt) || baseCnt < 1 || baseCnt > 500) {
       return { count: 1, matched: false, unitLabel: "" };
@@ -2515,12 +2545,22 @@ export const computeUnitPriceBadge = (
   };
 
   const trailingWeightRe =
-    /^(?:\s*(?:본품|리필|용기|증정)\s*(?:[xX×*,]|\s)+|(?:[xX×*,]|\s)+)(\d{1,3})\s*(개입|개|팩|봉지|봉|캔|병|통|포|스틱|곽|입|박스|세트|종(?:\s*세트)?)(?![가-힣])/;
+    /^(?:\s*(?:본품|리필|용기|증정)\s*(?:[xX×*,]|\s)+|(?:[xX×*,]|\s)+)(\d{1,3})\s*(개입|개|팩|봉지|봉|캔|병|통|포|스틱|캡슐|정|환|곽|입|박스|세트|종(?:\s*세트)?)(?![가-힣])/;
   const trailingVolumeRe =
     /^(?:\s*(?:본품|리필|용기|증정)\s*(?:[xX×*,]|\s)+|(?:[xX×*,]|\s)+)(\d{1,3})\s*(개입|개|캔|병|팩|페트|pet|포|스틱|통|입|박스|세트|종(?:\s*세트)?)(?![a-wyzA-WYZ가-힣])/i;
 
-  // 2. 중량 (kg / g) — 100g당 및 소용량 포(2g x 30포 2박스 -> 1포당) 지원
-  const weightRe = /(?<![a-zA-Z0-9.])(\d+(?:\.\d+)?)\s*(kg|g)(?![a-wyz]|x(?!\d))/gi;
+  const volumeTokenPresent = /(?<![a-zA-Z0-9.])\d+(?:\.\d+)?\s*(?:ml|l|리터)(?![a-wyz]|x(?!\d)|당)/i.test(
+    cleanedTitle
+  );
+  const standaloneBundleHintRe =
+    /(?:총\s*|[\s,xX×*+(/\[])(\d{1,3})\s*(개입|개(?![월가-힣])|팩|봉지|봉|캔|병|포|스틱|롤|캡슐|정|켤레|박스|인분|환|(?<!매)입)(?![가-힣])/;
+  const standaloneM = standaloneBundleHintRe.exec(cleanedTitle);
+  const hasStandaloneBundleCount = Boolean(
+    standaloneM && Number(standaloneM[1]) >= 2 && Number(standaloneM[1]) <= 500
+  );
+
+  // 2. 중량 (kg / g) — 100g당 및 소용량 포(2g x 30포 2박스 -> 1포당), 영양성분(당/단백질 22g 등) 정밀 차단
+  const weightRe = /(?<![a-zA-Z0-9.])(\d+(?:\.\d+)?)\s*(kg|g)(?![a-wyz]|x(?!\d)|당)/gi;
   const weightEntries: Array<{
     totalGrams: number;
     count: number;
@@ -2530,55 +2570,69 @@ export const computeUnitPriceBadge = (
     startIdx: number;
     endIdx: number;
   }> = [];
-  for (const wm of cleanedTitle.matchAll(weightRe)) {
-    const rawVal = Number(wm[1]);
-    const unit = wm[2].toLowerCase();
-    if (!Number.isFinite(rawVal) || rawVal <= 0) continue;
-    const unitGrams = unit === "kg" ? rawVal * 1000 : rawVal;
-    const startIdx = wm.index ?? 0;
-    const endIdx = startIdx + wm[0].length;
-    const beforeSlice = cleanedTitle.slice(Math.max(0, startIdx - 12), startIdx);
-    const afterStr = cleanedTitle.slice(endIdx);
-    const trailing = extractTrailingMeta(afterStr, trailingWeightRe);
+  if (!isFashionCategory) {
+    for (const wm of cleanedTitle.matchAll(weightRe)) {
+      const rawVal = Number(wm[1]);
+      const unit = wm[2].toLowerCase();
+      if (!Number.isFinite(rawVal) || rawVal <= 0) continue;
+      const unitGrams = unit === "kg" ? rawVal * 1000 : rawVal;
+      const startIdx = wm.index ?? 0;
+      const endIdx = startIdx + wm[0].length;
+      const beforeSlice = cleanedTitle.slice(Math.max(0, startIdx - 20), startIdx);
+      const afterStr = cleanedTitle.slice(endIdx);
+      const trailing = extractTrailingMeta(afterStr, trailingWeightRe);
 
-    if (unitGrams < 10) {
-      if (
-        unitGrams >= 1 &&
-        !_NUTRITION_WORD_RE.test(beforeSlice) &&
-        trailing.matched &&
-        trailing.count >= 5 &&
-        /^(?:포|스틱|봉|캡슐|정|개입|입)$/.test(trailing.unitLabel)
-      ) {
-        const sachetTotal = unitGrams * trailing.count;
-        if (sachetTotal >= 20 && sachetTotal <= 100000) {
-          const perSachet = Math.round(normalizedPrice / trailing.count);
-          if (perSachet >= 10 && perSachet < normalizedPrice) {
-            const uName = /^(?:포|스틱|봉|캡슐|정)$/.test(trailing.unitLabel)
-              ? trailing.unitLabel
-              : "개";
-            return {
-              label: `1${uName}당 ${perSachet.toLocaleString("ko-KR")}원`,
-              detail: `총 ${trailing.count}${trailing.unitLabel} · ${Math.round(
-                sachetTotal
-              ).toLocaleString("ko-KR")}g 기준`,
-            };
+      // 영양성분 함량(프로틴 22g / 당류 0g 등) 차단
+      const isNutritionToken =
+        unitGrams <= 60 &&
+        (_NUTRITION_WORD_RE.test(beforeSlice) ||
+          (unitGrams >= 10 &&
+            unitGrams <= 50 &&
+            !trailing.matched &&
+            _PROTEIN_HINT_RE.test(cleanedTitle) &&
+            (volumeTokenPresent || hasStandaloneBundleCount)));
+      if (isNutritionToken) {
+        continue;
+      }
+
+      if (unitGrams < 10) {
+        if (
+          unitGrams >= 1 &&
+          trailing.matched &&
+          trailing.count >= 5 &&
+          /^(?:포|스틱|봉|캡슐|정|개입|입)$/.test(trailing.unitLabel)
+        ) {
+          const sachetTotal = unitGrams * trailing.count;
+          if (sachetTotal >= 20 && sachetTotal <= 100000) {
+            const perSachet = Math.round(normalizedPrice / trailing.count);
+            if (perSachet >= 10 && perSachet < normalizedPrice) {
+              const uName = /^(?:포|스틱|봉|캡슐|정)$/.test(trailing.unitLabel)
+                ? trailing.unitLabel
+                : "개";
+              return {
+                label: `1${uName}당 ${perSachet.toLocaleString("ko-KR")}원`,
+                detail: `총 ${trailing.count}${trailing.unitLabel} · ${Math.round(
+                  sachetTotal
+                ).toLocaleString("ko-KR")}g 기준`,
+              };
+            }
           }
         }
+        continue;
       }
-      continue;
-    }
 
-    const totalGrams = unitGrams * trailing.count;
-    if (totalGrams >= 10 && totalGrams <= 100000) {
-      weightEntries.push({
-        totalGrams,
-        count: trailing.count,
-        unitGrams,
-        unitLabel: trailing.unitLabel,
-        matchedCount: trailing.matched,
-        startIdx,
-        endIdx,
-      });
+      const totalGrams = unitGrams * trailing.count;
+      if (totalGrams >= 10 && totalGrams <= 100000) {
+        weightEntries.push({
+          totalGrams,
+          count: trailing.count,
+          unitGrams,
+          unitLabel: trailing.unitLabel,
+          matchedCount: trailing.matched,
+          startIdx,
+          endIdx,
+        });
+      }
     }
   }
 
@@ -2621,49 +2675,36 @@ export const computeUnitPriceBadge = (
     }
   }
 
-  for (const we of weightEntries) {
-    if (we.totalGrams >= 10 && we.totalGrams < 100) {
-      const per10g = Math.round((normalizedPrice / we.totalGrams) * 10);
-      if (per10g >= 10 && per10g < normalizedPrice) {
-        return {
-          label: `10g당 ${per10g.toLocaleString("ko-KR")}원`,
-          detail:
-            we.count >= 2
-              ? `총 ${Math.round(we.totalGrams).toLocaleString("ko-KR")}g · 개당 ${Math.round(
-                  normalizedPrice / we.count
-                ).toLocaleString("ko-KR")}원`
-              : `총 ${Math.round(we.totalGrams).toLocaleString("ko-KR")}g 기준`,
-        };
-      }
-    }
-  }
-
-  // 3. 용량 (ml / L / 리터)
-  const volumeRe = /(?<![a-zA-Z0-9.])(\d+(?:\.\d+)?)\s*(ml|l|리터)(?![a-wyz]|x(?!\d))/gi;
+  // 3. 용량 (ml / L / 리터) — 비액체 용기·쓰레기봉투·가전 및 패션 제외
+  const volumeRe = /(?<![a-zA-Z0-9.])(\d+(?:\.\d+)?)\s*(ml|l|리터)(?![a-wyz]|x(?!\d)|당)/gi;
   const volumeEntries: Array<{
     totalMl: number;
     count: number;
+    matchedCount: boolean;
     startIdx: number;
     endIdx: number;
   }> = [];
-  for (const vm of cleanedTitle.matchAll(volumeRe)) {
-    const rawVal = Number(vm[1]);
-    const unit = vm[2].toLowerCase();
-    if (!Number.isFinite(rawVal) || rawVal <= 0) continue;
-    const unitMl = unit === "ml" ? rawVal : rawVal * 1000;
-    if (unitMl < 10) continue;
-    const startIdx = vm.index ?? 0;
-    const endIdx = startIdx + vm[0].length;
-    const afterStr = cleanedTitle.slice(endIdx);
-    const trailing = extractTrailingMeta(afterStr, trailingVolumeRe);
-    const totalMl = unitMl * trailing.count;
-    if (totalMl >= 10 && totalMl <= 100000) {
-      volumeEntries.push({
-        totalMl,
-        count: trailing.count,
-        startIdx,
-        endIdx,
-      });
+  if (!isFashionCategory && !_NON_LIQUID_VOLUME_RE.test(cleanedTitle)) {
+    for (const vm of cleanedTitle.matchAll(volumeRe)) {
+      const rawVal = Number(vm[1]);
+      const unit = vm[2].toLowerCase();
+      if (!Number.isFinite(rawVal) || rawVal <= 0) continue;
+      const unitMl = unit === "ml" ? rawVal : rawVal * 1000;
+      if (unitMl < 10) continue;
+      const startIdx = vm.index ?? 0;
+      const endIdx = startIdx + vm[0].length;
+      const afterStr = cleanedTitle.slice(endIdx);
+      const trailing = extractTrailingMeta(afterStr, trailingVolumeRe);
+      const totalMl = unitMl * trailing.count;
+      if (totalMl >= 10 && totalMl <= 100000) {
+        volumeEntries.push({
+          totalMl,
+          count: trailing.count,
+          matchedCount: trailing.matched,
+          startIdx,
+          endIdx,
+        });
+      }
     }
   }
 
@@ -2706,24 +2747,7 @@ export const computeUnitPriceBadge = (
     }
   }
 
-  for (const ve of volumeEntries) {
-    if (ve.totalMl >= 10 && ve.totalMl < 100) {
-      const per10ml = Math.round((normalizedPrice / ve.totalMl) * 10);
-      if (per10ml >= 10 && per10ml < normalizedPrice) {
-        return {
-          label: `10ml당 ${per10ml.toLocaleString("ko-KR")}원`,
-          detail:
-            ve.count >= 2
-              ? `총 ${Math.round(ve.totalMl).toLocaleString("ko-KR")}ml · 개당 ${Math.round(
-                  normalizedPrice / ve.count
-                ).toLocaleString("ko-KR")}원`
-              : `총 ${Math.round(ve.totalMl).toLocaleString("ko-KR")}ml 기준`,
-        };
-      }
-    }
-  }
-
-  // 4. 순수 묶음 수량 (총N입/스틱/인분/환/롤/캡슐/정/켤레/팩/봉 + 계란 한정 N구)
+  // 4. 순수 묶음 수량 (총N개/개입/스틱/인분/환/롤/캡슐/정/켤레/팩/봉 + 계란 한정 N구)
   const formatBundleBadge = (count: number, unitLabel: string): UnitPriceBadgeInfo | null => {
     if (count < 2 || count > 500) return null;
     const perUnit = Math.round(normalizedPrice / count);
@@ -2749,7 +2773,7 @@ export const computeUnitPriceBadge = (
   };
 
   const totalBundleRe =
-    /총\s*(\d{1,3})\s*(개입|팩|봉지|봉|캔|병|포|스틱|롤|캡슐|정|켤레|박스|인분|환|(?<!매)입)(?![가-힣])/;
+    /총\s*(\d{1,3})\s*(개입|개(?![월가-힣])|팩|봉지|봉|캔|병|포|스틱|롤|캡슐|정|켤레|박스|인분|환|(?<!매)입)(?![가-힣])/;
   const tbm = totalBundleRe.exec(cleanedTitle);
   if (tbm) {
     const res = formatBundleBadge(Number(tbm[1]), tbm[2]);
@@ -2757,13 +2781,16 @@ export const computeUnitPriceBadge = (
   }
 
   const bundleRe =
-    /(?:^|[\s,xX×*+(/\[])(\d{2,3}|[2-9])\s*(개입|팩|봉지|봉|캔|병|포|스틱|롤|캡슐|정|켤레|박스|인분|환|(?<!매)입)(?![가-힣])/g;
+    /(?:^|[\s,xX×*+(/\[])(\d{2,3}|[2-9])\s*(개입|개(?![월가-힣])|팩|봉지|봉|캔|병|포|스틱|롤|캡슐|정|켤레|박스|인분|환|(?<!매)입)(?![가-힣])/g;
   for (const bm of cleanedTitle.matchAll(bundleRe)) {
+    const bmStart = bm.index ?? 0;
+    const dosePrefix = cleanedTitle.slice(Math.max(0, bmStart - 8), bmStart);
+    if (/(?:1일|하루|일일|매일)\s*$/.test(dosePrefix)) continue;
     const baseCnt = Number(bm[1]);
     const unitLabel = bm[2];
-    const endIdx = (bm.index ?? 0) + bm[0].length;
+    const endIdx = bmStart + bm[0].length;
     const afterStr = cleanedTitle.slice(endIdx);
-    const tierM = /^\s*(?:[xX×*]|\s)\s*(\d{1,2})\s*(?:박스|세트|묶음|번들|팩)(?![가-힣])/.exec(
+    const tierM = /^\s*(?:[xX×*]|\s)\s*(\d{1,2})\s*(?:박스|세트|묶음|번들|팩|통)(?![가-힣])/.exec(
       afterStr.slice(0, 20)
     );
     const totalCnt =
@@ -2775,7 +2802,7 @@ export const computeUnitPriceBadge = (
   // 계란/달걀 '구' (멀티탭 8구 등 전기·가전 오탐 엄격 배제)
   if (
     !_APPLIANCE_OUTLET_RE.test(cleanedTitle) &&
-    (_EGG_ITEM_HINT_RE.test(cleanedTitle) || (category || "").trim() === "음식")
+    (_EGG_ITEM_HINT_RE.test(cleanedTitle) || trimmedCategory === "음식")
   ) {
     const eggMatch = /(?:^|[\s,xX×*+(/\[])(\d{2,3}|[2-9])\s*구(?![가-힣])/.exec(cleanedTitle);
     if (eggMatch) {
@@ -2794,7 +2821,7 @@ export const computeUnitPriceBadge = (
   }
 
   // 식품 맛 조합 수량 (예: '애슐리 딥디쉬 피자 시카고2+고구마2')
-  if ((category || "").trim() === "음식" && !cleanedTitle.includes("/")) {
+  if (trimmedCategory === "음식" && !cleanedTitle.includes("/")) {
     const comboMatch =
       /([가-힣]{2,10})\s*(\d{1,2})\s*\+\s*([가-힣]{2,10})\s*(\d{1,2})(?![가-힣0-9]|\s*(?:만|천|원|%|개월|년|일|시|분))/.exec(
         cleanedTitle
@@ -2806,6 +2833,50 @@ export const computeUnitPriceBadge = (
       if (c1 >= 1 && c1 <= 20 && c2 >= 1 && c2 <= 20 && totalCombo >= 2 && totalCombo <= 40) {
         const res = formatBundleBadge(totalCombo, "개");
         if (res) return res;
+      }
+    }
+  }
+
+  // 7. 소용량 10g당 / 10ml당 최후 폴백 (묶음 수량·영양성분 차단 이후, 뷰티·소용량 화장품 전용 허용)
+  const isBeautyContext =
+    trimmedCategory === "뷰티" ||
+    trimmedCategory === "화장품" ||
+    _BEAUTY_HINT_RE.test(cleanedTitle);
+  const per10gCap = isBeautyContext ? 20000 : 5000;
+  const per10mlCap = isBeautyContext ? 25000 : 3000;
+
+  for (const we of weightEntries) {
+    if (!we.matchedCount && hasStandaloneBundleCount) continue;
+    if (we.totalGrams >= 10 && we.totalGrams <= 100) {
+      const per10g = Math.round((normalizedPrice / we.totalGrams) * 10);
+      if (per10g >= 10 && per10g < normalizedPrice && per10g <= per10gCap) {
+        return {
+          label: `10g당 ${per10g.toLocaleString("ko-KR")}원`,
+          detail:
+            we.count >= 2
+              ? `총 ${Math.round(we.totalGrams).toLocaleString("ko-KR")}g · 개당 ${Math.round(
+                  normalizedPrice / we.count
+                ).toLocaleString("ko-KR")}원`
+              : `총 ${Math.round(we.totalGrams).toLocaleString("ko-KR")}g 기준`,
+        };
+      }
+    }
+  }
+
+  for (const ve of volumeEntries) {
+    if (!ve.matchedCount && hasStandaloneBundleCount) continue;
+    if (ve.totalMl >= 10 && ve.totalMl <= 100) {
+      const per10ml = Math.round((normalizedPrice / ve.totalMl) * 10);
+      if (per10ml >= 10 && per10ml < normalizedPrice && per10ml <= per10mlCap) {
+        return {
+          label: `10ml당 ${per10ml.toLocaleString("ko-KR")}원`,
+          detail:
+            ve.count >= 2
+              ? `총 ${Math.round(ve.totalMl).toLocaleString("ko-KR")}ml · 개당 ${Math.round(
+                  normalizedPrice / ve.count
+                ).toLocaleString("ko-KR")}원`
+              : `총 ${Math.round(ve.totalMl).toLocaleString("ko-KR")}ml 기준`,
+        };
       }
     }
   }
