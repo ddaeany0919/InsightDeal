@@ -259,3 +259,9 @@ def test_hot_deals_extended_filters_sorts_similar_deals_and_push_test(v11f_db):
 
     limited = client.post("/api/push/test", json={"device_uuid": dev_uuid}, headers=headers)
     assert limited.status_code == 429
+
+    # Direct Python invocation (like _warm_default_feeds_sync) must unwrap FastAPI Query defaults cleanly
+    direct_res = community.get_hot_deals(limit=5, db=db)
+    assert isinstance(direct_res, dict)
+    assert "deals" in direct_res
+    assert len(direct_res["deals"]) >= 1

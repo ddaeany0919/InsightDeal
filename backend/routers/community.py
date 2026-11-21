@@ -2271,7 +2271,27 @@ def get_hot_deals(
 ):
     _HOT_DEALS_CACHE_CTL = "public, max-age=10, s-maxage=30, stale-while-revalidate=120"
     try:
+        from fastapi.params import Param as _FastAPIParam
         from sqlalchemy import and_, func, not_, or_
+
+        def _u(v):
+            return v.default if isinstance(v, _FastAPIParam) else v
+
+        category = _u(category)
+        keyword = _u(keyword)
+        platform = _u(platform)
+        source = _u(source)
+        sort = _u(sort)
+        popular_only = _u(popular_only)
+        min_price = _u(min_price)
+        max_price = _u(max_price)
+        free_shipping = _u(free_shipping)
+        shop = _u(shop)
+        cursor_indexed_at = _u(cursor_indexed_at)
+        cursor_id = _u(cursor_id)
+        include_closed = _u(include_closed)
+        only_hot = _u(only_hot)
+        hide_closed = _u(hide_closed)
 
         if limit < 1 or limit > 1000:
             raise HTTPException(status_code=400, detail="Invalid limit")
