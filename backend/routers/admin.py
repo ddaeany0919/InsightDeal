@@ -101,6 +101,16 @@ HTML_TEMPLATE = """
             <div style="text-align:center; color:#999; font-size:14px;">데이터를 불러오는 중...</div>
         </div>
 
+        <div class="status-title" style="margin-bottom: 10px;">검색 결과 0건 키워드 (Top 20 · 동의어 사전 보강 후보)</div>
+        <div class="progress-container" id="zero-search-box" style="margin-bottom: 20px;">
+            <div style="text-align:center; color:#999; font-size:14px;">0건 검색어 집계를 불러오는 중...</div>
+        </div>
+
+        <div class="status-title" style="margin-bottom: 10px;">사용자 피드백(VOC) 수신함</div>
+        <div class="progress-container" id="voc-feedback-box" style="margin-bottom: 20px;">
+            <div style="text-align:center; color:#999; font-size:14px;">사용자 피드백을 불러오는 중...</div>
+        </div>
+
         <div class="status-title" style="margin-bottom: 10px;">상세 실시간 로그</div>
         <div class="log-container" id="log-box">로그를 불러오는 중...</div>
     </div>
@@ -314,10 +324,110 @@ HTML_TEMPLATE = """
             } catch (e) {}
         }
 
+        async function fetchZeroSearchQueries() {
+            const box = document.getElementById('zero-search-box');
+            if (!box) return;
+            try {
+                const res = await fetch('/admin/zero-search-queries?limit=20&t=' + Date.now(), {
+                    headers: getAdminHeaders()
+                });
+                if (!res.ok) return;
+                const d = await res.json();
+                const items = Array.isArray(d.items) ? d.items : [];
+                box.textContent = '';
+                if (!items.length) {
+                    const emptyEl = document.createElement('div');
+                    emptyEl.style.cssText = 'text-align:center;color:#999;font-size:13px;';
+                    emptyEl.textContent = '아직 누적된 0건 검색어가 없습니다.';
+                    box.appendChild(emptyEl);
+                    return;
+                }
+                items.forEach(item => {
+                    const row = document.createElement('div');
+                    row.className = 'progress-item';
+                    const left = document.createElement('div');
+                    left.style.cssText = 'flex:1;font-weight:bold;color:#333;';
+                    left.textContent = String(item.query || '');
+                    const right = document.createElement('div');
+                    right.style.cssText = 'font-size:12px;color:#666;';
+                    right.textContent = `${Number(item.hit_count || 0)}회${item.last_category ? ' · ' + String(item.last_category) : ''}`;
+                    row.appendChild(left);
+                    row.appendChild(right);
+                    box.appendChild(row);
+                });
+            } catch (e) {}
+        }
+
+        async function resolveFeedback(feedbackId, nextStatus) {
+            try {
+                const res = await fetch(`/admin/feedback/${Number(feedbackId)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', ...getAdminHeaders() },
+                    body: JSON.stringify({ status: nextStatus })
+                });
+                if (res.ok) {
+                    fetchFeedbacks();
+                }
+            } catch (e) {}
+        }
+
+        async function fetchFeedbacks() {
+            const box = document.getElementById('voc-feedback-box');
+            if (!box) return;
+            try {
+                const res = await fetch('/admin/feedback?status=all&limit=20&t=' + Date.now(), {
+                    headers: getAdminHeaders()
+                });
+                if (!res.ok) return;
+                const d = await res.json();
+                const items = Array.isArray(d.items) ? d.items : [];
+                box.textContent = '';
+                if (!items.length) {
+                    const emptyEl = document.createElement('div');
+                    emptyEl.style.cssText = 'text-align:center;color:#999;font-size:13px;';
+                    emptyEl.textContent = '접수된 사용자 피드백이 없습니다.';
+                    box.appendChild(emptyEl);
+                    return;
+                }
+                items.forEach(item => {
+                    const row = document.createElement('div');
+                    row.className = 'progress-item';
+                    const left = document.createElement('div');
+                    left.style.cssText = 'flex:1;font-size:13px;color:#333;';
+                    const meta = document.createElement('div');
+                    meta.style.cssText = 'font-weight:bold;margin-bottom:4px;';
+                    meta.textContent = `[${String(item.category || 'general')} · ${String(item.platform || 'web')}] ${item.contact ? String(item.contact) : '익명'}`;
+                    const msg = document.createElement('div');
+                    msg.style.cssText = 'color:#555;white-space:pre-wrap;word-break:break-word;';
+                    msg.textContent = String(item.message || '');
+                    left.appendChild(meta);
+                    left.appendChild(msg);
+
+                    const right = document.createElement('div');
+                    right.style.cssText = 'margin-left:12px;';
+                    const btn = document.createElement('button');
+                    btn.className = 'btn';
+                    btn.style.cssText = 'padding:6px 10px;font-size:12px;';
+                    const isResolved = item.status === 'resolved';
+                    btn.textContent = isResolved ? '완료됨 (재오픈)' : '처리완료';
+                    btn.onclick = () => resolveFeedback(item.id, isResolved ? 'open' : 'resolved');
+                    right.appendChild(btn);
+
+                    row.appendChild(left);
+                    row.appendChild(right);
+                    box.appendChild(row);
+                });
+            } catch (e) {}
+        }
+
         fetchLogs();
         fetchMonetizationStats();
+        fetchZeroSearchQueries();
+        fetchFeedbacks();
         setInterval(fetchLogs, 2000);
         setInterval(fetchMonetizationStats, 10000);
+        setInterval(fetchZeroSearchQueries, 15000);
+        setInterval(fetchFeedbacks, 15000);
     </script>
 </body>
 </html>
@@ -462,3 +572,88 @@ async def trigger_update_script():
         return {"message": "스크래퍼 작업이 시작되었습니다."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/zero-search-queries", dependencies=[Depends(_verify_admin_key)])
+def get_zero_search_queries(
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db_session),
+):
+    from backend.database import models
+    from backend.core.utils import to_utc_iso
+
+    rows = (
+        db.query(models.ZeroSearchQuery)
+        .order_by(models.ZeroSearchQuery.hit_count.desc(), models.ZeroSearchQuery.last_searched_at.desc())
+        .limit(limit)
+        .all()
+    )
+    items = [
+        {
+            "id": r.id,
+            "query": r.query,
+            "hit_count": int(r.hit_count or 0),
+            "last_category": r.last_category,
+            "last_platform": r.last_platform,
+            "last_searched_at": to_utc_iso(r.last_searched_at),
+            "created_at": to_utc_iso(r.created_at),
+        }
+        for r in rows
+    ]
+    return {"items": items, "total": len(items)}
+
+
+@router.get("/feedback", dependencies=[Depends(_verify_admin_key)])
+def get_user_feedback_list(
+    status: str = Query(default="open", description="open | resolved | all"),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db_session),
+):
+    from backend.database import models
+    from backend.core.utils import to_utc_iso
+
+    norm_status = (status or "open").strip().lower()
+    if norm_status not in ("open", "resolved", "all"):
+        raise HTTPException(status_code=400, detail="Invalid status filter (open | resolved | all)")
+
+    q = db.query(models.UserFeedback)
+    if norm_status != "all":
+        q = q.filter(models.UserFeedback.status == norm_status)
+    rows = q.order_by(models.UserFeedback.created_at.desc(), models.UserFeedback.id.desc()).limit(limit).all()
+    items = [
+        {
+            "id": r.id,
+            "device_uuid": r.device_uuid,
+            "category": r.category,
+            "message": r.message,
+            "contact": r.contact,
+            "platform": r.platform,
+            "app_version": r.app_version,
+            "status": r.status,
+            "created_at": to_utc_iso(r.created_at),
+        }
+        for r in rows
+    ]
+    return {"items": items, "total": len(items)}
+
+
+@router.patch("/feedback/{feedback_id}", dependencies=[Depends(_verify_admin_key)])
+def update_user_feedback_status(
+    feedback_id: int,
+    payload: dict,
+    db: Session = Depends(get_db_session),
+):
+    from backend.database import models
+
+    next_status = str((payload or {}).get("status") or "").strip().lower()
+    if next_status not in ("open", "resolved"):
+        raise HTTPException(status_code=400, detail="status must be 'open' or 'resolved'")
+
+    row = db.query(models.UserFeedback).filter(models.UserFeedback.id == feedback_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+
+    row.status = next_status
+    db.commit()
+    return {"success": True, "id": row.id, "status": row.status}
+

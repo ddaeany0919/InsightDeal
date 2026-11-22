@@ -620,4 +620,32 @@ class OutboundClick(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
 
 
+class ZeroSearchQuery(Base):
+    """🔍 검색 결과 0건 키워드 누적 집계 테이블 (동의어 사전 보강용)"""
+    __tablename__ = "zero_search_queries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(String(100), unique=True, nullable=False, index=True)
+    hit_count = Column(Integer, default=1, nullable=False)
+    last_category = Column(String(50), nullable=True)
+    last_platform = Column(String(50), nullable=True)
+    last_searched_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), default=func.now(), index=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), default=func.now())
+
+
+class UserFeedback(Base):
+    """📮 사용자 경량 VOC/오류 제보 수신함 테이블"""
+    __tablename__ = "user_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    device_uuid = Column(String(100), nullable=False, index=True)
+    category = Column(String(30), default="general", nullable=False)  # bug, feature, deal_error, general
+    message = Column(TEXT, nullable=False)
+    contact = Column(String(120), nullable=True)
+    platform = Column(String(30), default="web", nullable=False)
+    app_version = Column(String(30), nullable=True)
+    status = Column(String(20), default="open", nullable=False, index=True)  # open, resolved
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), default=func.now(), index=True)
+
+
 

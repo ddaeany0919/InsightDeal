@@ -2370,6 +2370,67 @@ def _sync_feed_cache_app_counts(
                         _patch_entry_list(deals_slice)
 
 
+_FEEDBACK_RATE_MAX_PER_WINDOW = 5
+_FEEDBACK_RATE_WINDOW_SECONDS = 60
+_feedback_rate_limit: dict[str, list[float]] = {}
+_VALID_FEEDBACK_CATEGORIES = {"bug", "feature", "deal_error", "general"}
+_VALID_FEEDBACK_PLATFORMS = {"web", "toss", "android"}
+
+
+def reset_feedback_rate_limits() -> None:
+    """테스트 및 런타임 격리를 위한 피드백 접수 레이트리밋 초기화 훅"""
+    _feedback_rate_limit.clear()
+
+
+def _record_zero_search_query(
+    db: Session,
+    raw_keyword: Optional[str],
+    category: Optional[str],
+    platform: Optional[str],
+) -> None:
+    """검색 결과 0건 키워드를 normalized query 기준으로 누적 집계합니다 (동의어/동의어 사전 보강용)."""
+    if not raw_keyword:
+        return
+    normalized_q = re.sub(r"\s+", " ", str(raw_keyword)).strip().lower()
+    if len(normalized_q) < 2 or len(normalized_q) > 60:
+        return
+    if not re.search(r"[가-힣a-zA-Z0-9]", normalized_q):
+        return
+    cat_val = (category or "").strip()[:50] or None
+    plat_val = (platform or "").strip()[:50] or None
+    try:
+        existing = (
+            db.query(models.ZeroSearchQuery)
+            .filter(models.ZeroSearchQuery.query == normalized_q)
+            .first()
+        )
+        now_utc = datetime.utcnow()
+        if existing:
+            existing.hit_count = int(existing.hit_count or 0) + 1
+            existing.last_searched_at = now_utc
+            if cat_val:
+                existing.last_category = cat_val
+            if plat_val:
+                existing.last_platform = plat_val
+        else:
+            db.add(
+                models.ZeroSearchQuery(
+                    query=normalized_q,
+                    hit_count=1,
+                    last_category=cat_val,
+                    last_platform=plat_val,
+                    last_searched_at=now_utc,
+                )
+            )
+        db.commit()
+    except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logger.debug("Zero search logging skipped: %s", exc)
+
+
 @router.get("/hot-deals")
 def get_hot_deals(
     limit: int = 20,
@@ -2533,6 +2594,8 @@ def get_hot_deals(
                         cursors_map = cached_entry.get("cursors", {})
                         cached_next_cursor = cursors_map.get(offset + len(cached_slice) - 1)
                     _apply_public_cache_headers(response, _HOT_DEALS_CACHE_CTL)
+                    if offset == 0 and len(cached_slice) == 0 and keyword and keyword.strip():
+                        _record_zero_search_query(db, keyword, normalized_cat_key or None, normalized_platform_key or None)
                     return {
                         "deals": [dict(item) for item in cached_slice],
                         "has_more": cached_has_more,
@@ -3527,6 +3590,8 @@ def get_hot_deals(
                 }
 
         _apply_public_cache_headers(response, _HOT_DEALS_CACHE_CTL)
+        if cursor_dt is None and offset == 0 and len(final_result) == 0 and keyword and keyword.strip():
+            _record_zero_search_query(db, keyword, normalized_cat_key or None, normalized_platform_key or None)
         return {
             "deals": [dict(item) for item in final_result],
             "has_more": has_more,
@@ -5574,6 +5639,9 @@ async def ingest_scraped_deals_batch(
         if not hmac.compare_digest(x_feeder_token or "", expected_token):
             raise HTTPException(status_code=401, detail="Invalid or missing feeder token")
     else:
+        env = os.getenv("ENV", "development").strip().lower()
+        if env in ("production", "prod") or env.startswith("prod"):
+            raise HTTPException(status_code=503, detail="FEEDER_API_TOKEN is not configured")
         forwarded_for = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip().lower() if request else ""
         real_ip = (request.headers.get("x-real-ip") or "").strip().lower() if request else ""
         client_host = ((request.client.host if request and request.client else "") or "").strip().lower()
@@ -5702,4 +5770,70 @@ async def ingest_scraped_deals_batch(
         except Exception as exc:
             logger.debug("Thumbnail prewarm scheduling skipped: %s", exc)
     return {"status": "ok", "community": payload.display_name, "processed": inserted}
+
+
+class FeedbackReq(BaseModel):
+    category: str = "general"
+    message: str
+    contact: Optional[str] = None
+    platform: str = "web"
+    app_version: Optional[str] = None
+
+
+@router.post("/feedback")
+def submit_user_feedback(
+    req: FeedbackReq,
+    auth_uuid: str = Depends(require_device_token),
+    db: Session = Depends(get_db_session),
+):
+    """사용자 오류 제보·기능 제안·정보 오류를 경량 VOC 테이블에 접수합니다."""
+    now_ts = time.time()
+    recent = [
+        ts for ts in _feedback_rate_limit.get(auth_uuid, [])
+        if (now_ts - ts) < _FEEDBACK_RATE_WINDOW_SECONDS
+    ]
+    if len(recent) >= _FEEDBACK_RATE_MAX_PER_WINDOW:
+        _feedback_rate_limit[auth_uuid] = recent
+        raise HTTPException(
+            status_code=429,
+            detail="잠시 후 다시 시도해 주세요. (1분당 최대 5건 접수 가능)",
+        )
+
+    trimmed_msg = (req.message or "").strip()
+    if len(trimmed_msg) < 5 or len(trimmed_msg) > 1000:
+        raise HTTPException(status_code=400, detail="내용은 5자 이상 1,000자 이하로 입력해 주세요.")
+
+    norm_cat = (req.category or "general").strip().lower()
+    if norm_cat not in _VALID_FEEDBACK_CATEGORIES:
+        norm_cat = "general"
+
+    norm_plat = (req.platform or "web").strip().lower()
+    if norm_plat not in _VALID_FEEDBACK_PLATFORMS:
+        norm_plat = "web"
+
+    contact_val = (req.contact or "").strip()[:120] or None
+    ver_val = (req.app_version or "").strip()[:30] or None
+
+    recent.append(now_ts)
+    _feedback_rate_limit[auth_uuid] = recent
+
+    row = models.UserFeedback(
+        device_uuid=auth_uuid,
+        category=norm_cat,
+        message=trimmed_msg,
+        contact=contact_val,
+        platform=norm_plat,
+        app_version=ver_val,
+        status="open",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    return {
+        "success": True,
+        "id": row.id,
+        "message": "소중한 의견을 접수했어요. 빠르게 검토할게요!",
+    }
+
 

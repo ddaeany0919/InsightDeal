@@ -22,7 +22,7 @@ def get_device_secret() -> str:
     if secret:
         return secret
     env = os.getenv("ENV", "development").strip().lower()
-    if env in ("production", "prod"):
+    if env in ("production", "prod") or env.startswith("prod"):
         raise HTTPException(
             status_code=503,
             detail="SERVER_DEVICE_SECRET is not configured",

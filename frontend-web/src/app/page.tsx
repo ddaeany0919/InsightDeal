@@ -68,6 +68,7 @@ import TrendingKeywordsTicker from "./components/TrendingKeywordsTicker";
 import ThemeToggle from "./components/ThemeToggle";
 import InAppBrowserBanner from "./components/InAppBrowserBanner";
 import DealCard from "./components/DealCard";
+import FeedbackModal from "./components/FeedbackModal";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -225,6 +226,7 @@ export default function Home() {
 
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showEulaModal, setShowEulaModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [isCompactViewport, setIsCompactViewport] = useState(false);
   const [isUltraCompactViewport, setIsUltraCompactViewport] = useState(false);
@@ -4461,13 +4463,14 @@ export default function Home() {
                 서비스 이용약관
               </button>
               <span style={{ color: "var(--card-border)" }}>|</span>
-              <a
-                href="mailto:support@insightdeal.com?subject=%5B%EC%96%BC%EB%A7%8C%EB%8D%B0%5D%20%EB%AC%B8%EC%9D%98%20%EB%B0%8F%20%EC%98%A4%EB%A5%98%20%EC%A0%9C%EB%B3%B4"
+              <button
+                type="button"
                 className="footer-link-btn"
+                onClick={() => setShowFeedbackModal(true)}
                 style={{ color: "var(--text-sub)", fontWeight: 600 }}
               >
                 문의 · 오류 제보
-              </a>
+              </button>
             </div>
           </div>
         </footer>
@@ -4530,6 +4533,12 @@ export default function Home() {
       <EulaModal
         isOpen={showEulaModal}
         onClose={() => setShowEulaModal(false)}
+      />
+
+      <FeedbackModal
+        isOpen={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+        onShowToast={showToast}
       />
     </>
   );
