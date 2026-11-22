@@ -528,7 +528,14 @@ export default function NotificationSettingsPage() {
     setTestPushMsg(null);
     try {
       await ensureWebDeviceAuth();
-      const res = await authFetch('/api/push/test', { method: 'POST' });
+      const res = await authFetch((latestAuth) => ({
+        pathOrUrl: '/api/push/test',
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_uuid: latestAuth.deviceUuid }),
+        },
+      }));
       const data = (await res.json().catch(() => null)) as { message?: string; detail?: string; delivered?: boolean } | null;
       if (res.status === 429) {
         setTestPushMsg({ ok: false, text: '잠시 후 다시 테스트해 주세요. (요청 제한)' });
@@ -885,23 +892,44 @@ export default function NotificationSettingsPage() {
                   </button>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={requestPermission}
-                  disabled={isLoading || !isSupported || permission === 'denied'}
-                  className="btn-primary"
-                  style={
-                    !isSupported || permission === 'denied'
-                      ? { opacity: 0.55, cursor: 'not-allowed' }
-                      : undefined
-                  }
-                >
-                  {!isSupported
-                    ? '현재 브라우저 미지원'
-                    : permission === 'denied'
-                      ? '브라우저에서 차단됨'
-                      : '알림 켜기'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={handleSendTestPush}
+                    disabled={isLoading || isSendingTest}
+                    className="bounce-click"
+                    style={{
+                      minHeight: '44px',
+                      background: 'var(--bg-subtle, rgba(16, 185, 129, 0.12))',
+                      color: 'var(--accent-primary, #059669)',
+                      padding: '10px 16px',
+                      borderRadius: '12px',
+                      fontWeight: 700,
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                      cursor: isSendingTest ? 'not-allowed' : 'pointer',
+                      opacity: isSendingTest ? 0.65 : 1,
+                    }}
+                  >
+                    {isSendingTest ? '전송 중...' : '테스트 알림 보내기'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={requestPermission}
+                    disabled={isLoading || !isSupported || permission === 'denied'}
+                    className="btn-primary"
+                    style={
+                      !isSupported || permission === 'denied'
+                        ? { opacity: 0.55, cursor: 'not-allowed' }
+                        : undefined
+                    }
+                  >
+                    {!isSupported
+                      ? '현재 브라우저 미지원'
+                      : permission === 'denied'
+                        ? '브라우저에서 차단됨'
+                        : '알림 켜기'}
+                  </button>
+                </div>
               )}
             </div>
 

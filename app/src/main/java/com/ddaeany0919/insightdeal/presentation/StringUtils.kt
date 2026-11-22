@@ -32,6 +32,10 @@ private val FREE_DEAL_KEYWORD_REGEX = Regex(
 private val NUMERIC_DEC_ENTITY_REGEX = Regex("&#(\\d{1,7});")
 private val NUMERIC_HEX_ENTITY_REGEX = Regex("&#[xX]([0-9a-fA-F]{1,6});")
 private val LEADING_BRACKET_REGEX = Regex("^\\s*\\[([^\\[\\]]{1,20})]\\s*")
+private val LEADING_PROMO_BRACKET_REGEX = Regex(
+    "^\\s*\\[\\s*(선착순특가|오늘끝딜|타임딜|긴급특가|게릴라특가|단독특가|번개딜)(?:\\s*(?:[:·\\-]\\s*)?[0-9,.$₩원만%~\\-+]+){0,2}\\s*]\\s*",
+    RegexOption.IGNORE_CASE
+)
 
 private val NON_MALL_BRACKET_WORDS = setOf(
     "특가", "초특가", "타임특가", "재입고", "기타", "역대가", "브랜드데이",
@@ -249,7 +253,13 @@ fun resolveShopBadgeAndCleanTitle(
     shopName: String? = null,
     ecommerceUrl: String? = null
 ): ResolvedShopTitle {
-    val decodedTitle = decodeHtmlEntities(rawTitle).trim()
+    val rawDecoded = decodeHtmlEntities(rawTitle).trim()
+    val promoMatch = LEADING_PROMO_BRACKET_REGEX.find(rawDecoded)
+    val decodedTitle = if (promoMatch != null) {
+        rawDecoded.substring(promoMatch.range.last + 1).trimStart().ifBlank { rawDecoded }
+    } else {
+        rawDecoded
+    }
     val bracketMatch = LEADING_BRACKET_REGEX.find(decodedTitle)
     val bracketContent = bracketMatch?.groupValues?.getOrNull(1)?.trim()
     val normalizedFromBracket = normalizeMallBadgeName(bracketContent)

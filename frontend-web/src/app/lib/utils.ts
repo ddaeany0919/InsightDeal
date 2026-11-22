@@ -3174,7 +3174,10 @@ export function stripPromoPrefixForDisplay(title: string): {
   if (!decoded) return { cleanTitle: "", urgentBadge: null };
 
   for (const promo of _URGENT_PROMO_LABELS) {
-    const bracketRe = new RegExp(`^\\s*\\[\\s*${promo}\\s*\\]\\s*`, "i");
+    const bracketRe = new RegExp(
+      `^\\s*\\[\\s*${promo}(?:\\s*(?:[:·\\-]\\s*)?[0-9,.$₩원만%~\\-+]+){0,2}\\s*\\]\\s*`,
+      "i"
+    );
     if (bracketRe.test(decoded)) {
       return {
         cleanTitle: decoded.replace(bracketRe, "").trim() || decoded,

@@ -92,6 +92,10 @@ describe("v1.1f 실사용자 100대 개선 웹 회귀 테스트", () => {
     expect(promo.urgentBadge).toBe("타임딜");
     expect(promo.cleanTitle).toBe("오뚜기 진라면 20봉");
 
+    const promoWithPrice = stripPromoPrefixForDisplay("[오늘끝딜 668400원] 삼성공식파트너 JBL 바 1000");
+    expect(promoWithPrice.urgentBadge).toBe("오늘끝딜");
+    expect(promoWithPrice.cleanTitle).toBe("삼성공식파트너 JBL 바 1000");
+
     const nowMs = Date.UTC(2026, 10, 21, 12, 0, 0);
     expect(getDealAgeDays("2026-11-18T12:00:00Z", nowMs)).toBe(3);
 
@@ -131,6 +135,30 @@ describe("v1.1f 실사용자 100대 개선 웹 회귀 테스트", () => {
 
     expect(container.querySelector(".deal-card--compact")).toBeTruthy();
     expect(screen.getByText("옵션·할인율 확인")).toBeInTheDocument();
+
+    const likeFallbackDeal = makeDeal(509, {
+      title: "[오늘끝딜 668400원] 삼성공식파트너 JBL 바 1000",
+      likeCount: 17,
+      commentCount: 9,
+    });
+    const { container: c2 } = render(
+      <DealCard
+        deal={likeFallbackDeal}
+        appliedSearch=""
+        isMounted={true}
+        currentTime={Date.now()}
+        isWishlisted={false}
+        isAlertSet={false}
+        viewMode="compact"
+        onSelectDeal={vi.fn()}
+        onShareDeal={vi.fn()}
+        onToggleAlert={vi.fn()}
+        onToggleWishlist={vi.fn()}
+        onShowToast={vi.fn()}
+      />
+    );
+    expect(c2.querySelector('[aria-label="추천 17 댓글 9"]')).toBeTruthy();
+    expect(screen.getByText(/삼성공식파트너 JBL 바 1000/)).toBeInTheDocument();
 
     const article = container.querySelector("article.deal-card") as HTMLElement;
     expect(article).toBeTruthy();

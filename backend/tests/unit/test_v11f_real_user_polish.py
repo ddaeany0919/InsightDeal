@@ -205,6 +205,54 @@ def test_hot_deals_extended_filters_sorts_similar_deals_and_push_test(v11f_db):
             post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=504",
             ecommerce_link="https://www.amazon.com/dp/504",
         ),
+        models.Deal(
+            id=505,
+            source_community_id=1,
+            title="[롯데온] 오뚜기 옛날 삼계탕 (30일 전 레거시 인기글)",
+            shop_name="롯데온",
+            category="음식",
+            price="14900",
+            shipping_fee="무료",
+            currency="KRW",
+            like_count=500,
+            comment_count=300,
+            honey_score=999,
+            indexed_at=now - timedelta(days=30),
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=505",
+            ecommerce_link="https://www.lotteon.com/p/product/505",
+        ),
+        models.Deal(
+            id=506,
+            source_community_id=1,
+            title="[카카오쇼핑] 도미노 피자 슈퍼디럭스 L 기프티콘",
+            shop_name="카카오쇼핑",
+            category="음식",
+            price="21900",
+            shipping_fee="무료",
+            currency="KRW",
+            like_count=40,
+            comment_count=25,
+            honey_score=400,
+            indexed_at=now - timedelta(hours=5),
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=506",
+            ecommerce_link="https://store.kakao.com/brand/products/506",
+        ),
+        models.Deal(
+            id=507,
+            source_community_id=1,
+            title="[쿠팡] 벤션 블루투스 무선 이어폰 ANC",
+            shop_name="쿠팡",
+            category="PC제품",
+            price="19900",
+            shipping_fee="무료",
+            currency="KRW",
+            like_count=15,
+            comment_count=8,
+            honey_score=110,
+            indexed_at=now - timedelta(hours=2),
+            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=507",
+            ecommerce_link="https://www.coupang.com/vp/products/507",
+        ),
     ]
     db.add_all(deals)
     db.commit()
@@ -216,34 +264,54 @@ def test_hot_deals_extended_filters_sorts_similar_deals_and_push_test(v11f_db):
     assert 501 in fs_ids
     assert 502 not in fs_ids
 
+    # v1.1g list dual keys (comments / recommendations / score)
+    deal_501 = next(d for d in res_fs.json()["deals"] if d["id"] == 501)
+    assert deal_501["comments"] == deal_501["comment_count"] == 30
+    assert deal_501["recommendations"] == deal_501["like_count"] == 45
+    assert deal_501["score"] == deal_501["honey_score"]
+
     # shop filter
     res_shop = client.get("/api/community/hot-deals?shop=쿠팡")
     assert res_shop.status_code == 200
-    assert [d["id"] for d in res_shop.json()["deals"]] == [501]
+    assert 501 in [d["id"] for d in res_shop.json()["deals"]]
 
-    # sort variants
+    # sort variants + v1.1g recency decay (30d old 505 must lose to fresh deals)
     res_desc = client.get("/api/community/hot-deals?sort=price_desc&category=음식")
     assert res_desc.status_code == 200
-    assert res_desc.json()["deals"][0]["id"] == 502
+    assert res_desc.json()["deals"][0]["id"] == 506
 
     res_comments = client.get("/api/community/hot-deals?sort=comments&category=음식")
     assert res_comments.status_code == 200
-    assert res_comments.json()["deals"][0]["id"] == 502
+    comment_ids = [d["id"] for d in res_comments.json()["deals"]]
+    assert comment_ids[0] == 502
+    assert comment_ids.index(505) > comment_ids.index(502)
 
     res_recs = client.get("/api/community/hot-deals?sort=recommendations&category=음식")
     assert res_recs.status_code == 200
-    assert res_recs.json()["deals"][0]["id"] == 503
+    rec_ids = [d["id"] for d in res_recs.json()["deals"]]
+    assert rec_ids[0] == 503
+    assert rec_ids.index(505) > rec_ids.index(503)
 
     # category guard on 육아/유아용품 should exclude 애플TV
     res_baby = client.get("/api/community/hot-deals?category=육아/유아용품")
     assert res_baby.status_code == 200
     assert 504 not in [d["id"] for d in res_baby.json()["deals"]]
 
-    # detail endpoint includes similar_deals
+    # v1.1g 가전제품 vs PC용품 오디오 중복 차단
+    res_pc_audio = client.get("/api/community/hot-deals?category=PC용품")
+    assert res_pc_audio.status_code == 200
+    assert 507 in [d["id"] for d in res_pc_audio.json()["deals"]]
+
+    res_app_audio = client.get("/api/community/hot-deals?category=가전제품")
+    assert res_app_audio.status_code == 200
+    assert 507 not in [d["id"] for d in res_app_audio.json()["deals"]]
+
+    # detail endpoint includes matching similar_deals (502), excludes unrelated pizza (506)
     res_detail = client.get("/api/community/deals/501")
     assert res_detail.status_code == 200
     sim_ids = [item["id"] for item in res_detail.json().get("similar_deals", [])]
     assert 502 in sim_ids
+    assert 506 not in sim_ids
 
     # POST /api/push/test + rate limit
     reg = client.post("/api/push/device", json={"device_uuid": "default", "fcm_token": ""})

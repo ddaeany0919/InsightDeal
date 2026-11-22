@@ -130,7 +130,7 @@ export default function DealCard({
     !deal.isFree && !deal.isClosed
       ? computeShippingTotal(deal.price, deal.currency, displayShipping)
       : null;
-  const recommendTotal = deal.recommendations ?? deal.buyCount ?? 0;
+  const recommendTotal = deal.recommendations ?? deal.likeCount ?? deal.buyCount ?? 0;
   const commentTotal = deal.comments ?? deal.commentCount ?? 0;
   const isSearchFallback = Boolean(
     deal.isSearchFallback || deal.is_search_fallback

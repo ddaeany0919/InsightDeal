@@ -21,6 +21,7 @@ import {
   EyeOff,
   LayoutGrid,
   List,
+  SlidersHorizontal,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -190,6 +191,7 @@ export default function Home() {
   const minPriceRef = useRef("");
   const maxPriceRef = useRef("");
   const [viewMode, setViewMode] = useState<"card" | "compact">("card");
+  const [showMobileQuickFilters, setShowMobileQuickFilters] = useState(false);
   const [popularKeywords, setPopularKeywords] = useState<string[]>([
     "제로콜라",
     "로봇청소기",
@@ -3324,15 +3326,138 @@ export default function Home() {
             </div>
           </div>
 
+          <div className="feed-quick-filter-mobile-bar">
+            <button
+              type="button"
+              aria-expanded={showMobileQuickFilters}
+              aria-controls="feed-quick-filter-panel"
+              onClick={() => setShowMobileQuickFilters((v) => !v)}
+              className="filter-chip-btn bounce-click"
+              style={{
+                background:
+                  showMobileQuickFilters ||
+                  freeShippingOnly ||
+                  shopFilter ||
+                  minPriceInput.trim() ||
+                  maxPriceInput.trim()
+                    ? "var(--accent-soft-bg)"
+                    : "var(--card-bg)",
+                color:
+                  showMobileQuickFilters ||
+                  freeShippingOnly ||
+                  shopFilter ||
+                  minPriceInput.trim() ||
+                  maxPriceInput.trim()
+                    ? "var(--accent)"
+                    : "var(--text-main)",
+                border:
+                  showMobileQuickFilters ||
+                  freeShippingOnly ||
+                  shopFilter ||
+                  minPriceInput.trim() ||
+                  maxPriceInput.trim()
+                    ? "1px solid var(--accent)"
+                    : "1px solid var(--card-border)",
+              }}
+            >
+              <SlidersHorizontal size={13} aria-hidden="true" />
+              <span>
+                상세 필터
+                {(() => {
+                  const cnt =
+                    (freeShippingOnly ? 1 : 0) +
+                    (shopFilter ? 1 : 0) +
+                    (minPriceInput.trim() || maxPriceInput.trim() ? 1 : 0);
+                  return cnt > 0 ? ` (${cnt})` : "";
+                })()}
+              </span>
+              {showMobileQuickFilters ? (
+                <ChevronUp size={13} aria-hidden="true" />
+              ) : (
+                <ChevronDown size={13} aria-hidden="true" />
+              )}
+            </button>
+
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+              <div
+                role="group"
+                aria-label="모바일 보기 방식"
+                style={{
+                  display: "inline-flex",
+                  borderRadius: "10px",
+                  border: "1px solid var(--card-border)",
+                  overflow: "hidden",
+                }}
+              >
+                <button
+                  type="button"
+                  aria-pressed={viewMode === "card"}
+                  onClick={() => handleViewModeChange("card")}
+                  style={{
+                    minHeight: "34px",
+                    padding: "4px 8px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "3px",
+                    fontSize: "0.76rem",
+                    fontWeight: 600,
+                    border: "none",
+                    background: viewMode === "card" ? "var(--accent)" : "var(--card-bg)",
+                    color: viewMode === "card" ? "var(--on-accent)" : "var(--text-sub)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <LayoutGrid size={12} aria-hidden="true" />
+                  <span>카드</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={viewMode === "compact"}
+                  onClick={() => handleViewModeChange("compact")}
+                  style={{
+                    minHeight: "34px",
+                    padding: "4px 8px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "3px",
+                    fontSize: "0.76rem",
+                    fontWeight: 600,
+                    border: "none",
+                    background: viewMode === "compact" ? "var(--accent)" : "var(--card-bg)",
+                    color: viewMode === "compact" ? "var(--on-accent)" : "var(--text-sub)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <List size={12} aria-hidden="true" />
+                  <span>컴팩트</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                aria-expanded={showRecentDealsPanel}
+                onClick={() => setShowRecentDealsPanel((v) => !v)}
+                className="filter-chip-btn bounce-click"
+                style={{
+                  minHeight: "34px",
+                  padding: "4px 9px",
+                  fontSize: "0.76rem",
+                  background: showRecentDealsPanel ? "var(--accent-soft-bg)" : "var(--card-bg)",
+                  color: showRecentDealsPanel ? "var(--accent)" : "var(--text-sub)",
+                  border: "1px solid var(--card-border)",
+                }}
+              >
+                <Clock size={12} aria-hidden="true" />
+                <span>최근 본 ({recentDeals.length})</span>
+              </button>
+            </div>
+          </div>
+
           <div
-            className="feed-quick-filter-row"
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "center",
-              gap: "8px",
-              marginBottom: "12px",
-            }}
+            id="feed-quick-filter-panel"
+            className={`feed-quick-filter-row ${
+              showMobileQuickFilters ? "" : "feed-quick-filter-row--collapsed"
+            }`}
           >
             <button
               type="button"
@@ -3378,6 +3503,9 @@ export default function Home() {
                 "롯데온",
                 "카카오쇼핑",
                 "토스쇼핑",
+                "오늘의집",
+                "올리브영",
+                "컬리",
                 "알리익스프레스",
                 "아마존",
                 "CJ온스타일",
@@ -3448,11 +3576,62 @@ export default function Home() {
               >
                 가격 적용
               </button>
+              <button
+                type="button"
+                className="filter-chip-btn bounce-click"
+                onClick={() => {
+                  setMinPriceInput("");
+                  setMaxPriceInput("10000");
+                  handleApplyPriceRange("", "10000");
+                }}
+                style={{
+                  background:
+                    !minPriceInput && maxPriceInput === "10000"
+                      ? "var(--accent-soft-bg)"
+                      : "var(--card-bg)",
+                  color:
+                    !minPriceInput && maxPriceInput === "10000"
+                      ? "var(--accent)"
+                      : "var(--text-sub)",
+                  border:
+                    !minPriceInput && maxPriceInput === "10000"
+                      ? "1px solid var(--accent)"
+                      : "1px solid var(--card-border)",
+                }}
+              >
+                1만원 이하
+              </button>
+              <button
+                type="button"
+                className="filter-chip-btn bounce-click"
+                onClick={() => {
+                  setMinPriceInput("");
+                  setMaxPriceInput("30000");
+                  handleApplyPriceRange("", "30000");
+                }}
+                style={{
+                  background:
+                    !minPriceInput && maxPriceInput === "30000"
+                      ? "var(--accent-soft-bg)"
+                      : "var(--card-bg)",
+                  color:
+                    !minPriceInput && maxPriceInput === "30000"
+                      ? "var(--accent)"
+                      : "var(--text-sub)",
+                  border:
+                    !minPriceInput && maxPriceInput === "30000"
+                      ? "1px solid var(--accent)"
+                      : "1px solid var(--card-border)",
+                }}
+              >
+                3만원 이하
+              </button>
             </form>
 
             <div
               role="group"
               aria-label="보기 방식"
+              className="feed-quick-filter-desktop-only"
               style={{
                 display: "inline-flex",
                 borderRadius: "10px",
@@ -3510,7 +3689,7 @@ export default function Home() {
               type="button"
               aria-expanded={showRecentDealsPanel}
               onClick={() => setShowRecentDealsPanel((v) => !v)}
-              className="filter-chip-btn bounce-click"
+              className="filter-chip-btn bounce-click feed-quick-filter-desktop-only"
               style={{
                 background: showRecentDealsPanel ? "var(--accent-soft-bg)" : "var(--card-bg)",
                 color: showRecentDealsPanel ? "var(--accent)" : "var(--text-sub)",
@@ -3582,29 +3761,54 @@ export default function Home() {
                 </span>
               ) : (
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  {recentDeals.slice(0, 10).map((rd) => (
-                    <button
-                      key={rd.id}
-                      type="button"
-                      onClick={() => openDealWithHistory(rd)}
-                      style={{
-                        padding: "6px 12px",
-                        borderRadius: "999px",
-                        border: "1px solid var(--card-border)",
-                        background: "var(--card-bg)",
-                        color: "var(--text-main)",
-                        fontSize: "0.8rem",
-                        fontWeight: 600,
-                        maxWidth: "240px",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {decodeHtmlEntities(rd.title)}
-                    </button>
-                  ))}
+                  {recentDeals.slice(0, 10).map((rd) => {
+                    const rdPriceLabel = rd.isFree
+                      ? "무료"
+                      : formatPrice(rd.price, rd.currency, rd.title);
+                    return (
+                      <button
+                        key={rd.id}
+                        type="button"
+                        onClick={() => openDealWithHistory(rd)}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: "999px",
+                          border: "1px solid var(--card-border)",
+                          background: "var(--card-bg)",
+                          color: "var(--text-main)",
+                          fontSize: "0.8rem",
+                          fontWeight: 600,
+                          maxWidth: "280px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <span
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            minWidth: 0,
+                          }}
+                        >
+                          {decodeHtmlEntities(rd.title)}
+                        </span>
+                        <span
+                          style={{
+                            flexShrink: 0,
+                            color: "var(--accent)",
+                            fontWeight: 800,
+                            fontSize: "0.75rem",
+                            fontVariantNumeric: "tabular-nums",
+                          }}
+                        >
+                          {rdPriceLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

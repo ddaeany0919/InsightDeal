@@ -1359,6 +1359,14 @@ class InsightDealV11bUnitTest {
 
         assertEquals("유니버스클럽 조건", extractPaymentConditionBadge("[G마켓] 생수 특가", "유클무료"))
         assertEquals("스마일클럽 조건", extractPaymentConditionBadge("[옥션] 휴지 특가", "스클무료"))
+
+        val cleanedPromo = com.ddaeany0919.insightdeal.presentation.resolveShopBadgeAndCleanTitle(
+            "[오늘끝딜 668400원] [네이버] 삼성공식파트너 JBL 사운드바",
+            shopName = "네이버",
+            ecommerceUrl = "https://brand.naver.com/samsung/products/123"
+        )
+        assertEquals("네이버", cleanedPromo.shopBadge)
+        assertEquals("삼성공식파트너 JBL 사운드바", cleanedPromo.cleanTitle)
     }
 
     @OptIn(ExperimentalPagingApi::class)

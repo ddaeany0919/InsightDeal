@@ -838,7 +838,7 @@ def _warm_default_feeds_sync() -> None:
                 hide_closed=False,
                 db=db,
             )
-        for hot_cat in ("음식", "PC용품", "가전제품", "생활용품"):
+        for hot_cat in ("음식", "PC용품", "가전제품", "생활용품", "패션", "해외직구", "육아/유아용품", "뷰티", "SW/게임"):
             community_router.get_hot_deals(
                 limit=20,
                 offset=0,

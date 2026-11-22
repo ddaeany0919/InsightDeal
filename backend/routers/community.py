@@ -2214,13 +2214,22 @@ def _build_single_category_clause(models, single_cat: str, or_, and_, not_):
         appliance_title_kws = [
             "선풍기", "에어컨", "청소기", "로봇청소기", "냉장고", "세탁기", "건조기", "공기청정기",
             "제습기", "가습기", "전자레인지", "오븐", "에어프라이어", "밥솥", "식기세척기", "블렌더",
-            "믹서기", "다리미", "안마", "드라이기", "면도기", "전동칫솔", "이어폰", "헤드폰", "스피커",
-            "사운드바", "버즈", "에어팟", "빔프로젝터", "TV", "티비",
+            "믹서기", "다리미", "안마", "드라이기", "면도기", "전동칫솔", "스피커",
+            "사운드바", "빔프로젝터", "TV", "티비",
         ]
         return and_(
             or_(
                 *[models.Deal.category.ilike(f"%{kw}%") for kw in target_keywords],
-                *[models.Deal.title.ilike(f"%{kw}%") for kw in appliance_title_kws],
+                and_(
+                    or_(*[models.Deal.title.ilike(f"%{kw}%") for kw in appliance_title_kws]),
+                    or_(
+                        models.Deal.category.is_(None),
+                        and_(
+                            not_(models.Deal.category.ilike("%PC%")),
+                            not_(models.Deal.category.ilike("%컴퓨터%")),
+                        ),
+                    ),
+                ),
             ),
             not_(models.Deal.title.ilike("%오븐구이%")),
             not_(models.Deal.title.ilike("%오븐베이크%")),
@@ -2879,10 +2888,22 @@ def get_hot_deals(
                                     existing["site_name"] = ", ".join(existing["site_names"])
                                 extend_unique_sources(existing["sources"], get_deal_sources(deal, comp_name, parsed_price_int, db, currency_override=resolved_currency))
 
+                    cand_like_cnt = deal.like_count or 0
+                    if hasattr(deal, 'deal_reactions') and deal.deal_reactions:
+                        cand_like_cnt += deal.deal_reactions[0].positive_reactions
+                    cand_comment_cnt = deal.comment_count or 0
+                    merged_like_cnt = max(int(existing.get("like_count") or 0), int(cand_like_cnt))
+                    merged_comment_cnt = max(int(existing.get("comment_count") or 0), int(cand_comment_cnt))
+                    existing["like_count"] = merged_like_cnt
+                    existing["recommendations"] = merged_like_cnt
+                    existing["comment_count"] = merged_comment_cnt
+                    existing["comments"] = merged_comment_cnt
+
                     existing["is_closed"] = existing.get("is_closed", True) and getattr(deal, 'is_closed', False)
                     existing["has_options"] = existing.get("has_options", False) or bool(getattr(deal, "has_options", False)) or bool(serialized_opts)
                     if getattr(deal, 'honey_score', 0) >= 100:
                         existing["honey_score"] = max(existing.get("honey_score", 0), 100)
+                        existing["score"] = existing["honey_score"]
                     if getattr(deal, 'is_super_hotdeal', False):
                         existing["is_super_hotdeal"] = True
                     if deal.ai_summary and ("🔥" in deal.ai_summary or "인증 핫딜" in deal.ai_summary):
@@ -2934,6 +2955,7 @@ def get_hot_deals(
                         "options_data": serialized_opts,
                         "category": normalize_category_key(deal.category),
                         "honey_score": final_honey_score,
+                        "score": final_honey_score,
                         "is_super_hotdeal": is_hot,
                         "ai_summary": _clean_ai_summary(deal.ai_summary or ""),
                         "content_html": _clean_content_text(loaded_html, clean_title),
@@ -2941,7 +2963,9 @@ def get_hot_deals(
                         "created_at": to_utc_iso(deal.indexed_at),
                         "view_count": deal.view_count or 0,
                         "comment_count": deal.comment_count or 0,
+                        "comments": deal.comment_count or 0,
                         "like_count": buy_count,
+                        "recommendations": buy_count,
                         "dislike_count": save_count,
                         "tags": extract_deal_benefit_tags(deal.title, loaded_html),
                         "has_options": bool(getattr(deal, "has_options", False) or serialized_opts),
@@ -3097,16 +3121,27 @@ def get_hot_deals(
             has_narrow_filter = bool(
                 min_price or max_price or free_shipping or normalized_shop_key
             )
-            if sort_mode == "popular":
-                raw_limit = min(2000, max(260, offset + limit * 5 + 150))
+            if sort_mode in ("popular", "comments", "recommendations"):
+                raw_limit = min(
+                    2000,
+                    max(
+                        260 if sort_mode == "popular" else 320,
+                        offset + limit * 5 + (150 if sort_mode == "popular" else 180),
+                    ),
+                )
+                if sort_mode == "popular":
+                    metric_order = (models.Deal.honey_score.desc(), models.Deal.like_count.desc())
+                elif sort_mode == "comments":
+                    metric_order = (models.Deal.comment_count.desc(), models.Deal.like_count.desc())
+                else:
+                    metric_order = (models.Deal.like_count.desc(), models.Deal.honey_score.desc())
                 ref_max_dt = db.query(func.max(models.Deal.indexed_at)).scalar()
                 if ref_max_dt is not None:
                     recent_pop_cutoff = _to_utc_naive(ref_max_dt) - timedelta(days=14)
                     raw_seed_deals = query.filter(
                         order_ts_expr >= recent_pop_cutoff
                     ).order_by(
-                        models.Deal.honey_score.desc(),
-                        models.Deal.like_count.desc(),
+                        *metric_order,
                         order_ts_expr.desc(),
                         models.Deal.id.desc(),
                     ).limit(raw_limit).all()
@@ -3115,35 +3150,17 @@ def get_hot_deals(
                         more_pop = query.filter(
                             order_ts_expr < recent_pop_cutoff
                         ).order_by(
-                            models.Deal.honey_score.desc(),
-                            models.Deal.like_count.desc(),
+                            *metric_order,
                             order_ts_expr.desc(),
                             models.Deal.id.desc(),
                         ).limit(raw_limit - len(raw_seed_deals)).all()
                         raw_seed_deals.extend([d for d in more_pop if d.id not in existing_pop_ids])
                 else:
                     raw_seed_deals = query.order_by(
-                        models.Deal.honey_score.desc(),
-                        models.Deal.like_count.desc(),
+                        *metric_order,
                         order_ts_expr.desc(),
                         models.Deal.id.desc(),
                     ).limit(raw_limit).all()
-            elif sort_mode == "comments":
-                raw_limit = min(2000, max(320, offset + limit * 5 + 180))
-                raw_seed_deals = query.order_by(
-                    models.Deal.comment_count.desc(),
-                    models.Deal.like_count.desc(),
-                    order_ts_expr.desc(),
-                    models.Deal.id.desc(),
-                ).limit(raw_limit).all()
-            elif sort_mode == "recommendations":
-                raw_limit = min(2000, max(320, offset + limit * 5 + 180))
-                raw_seed_deals = query.order_by(
-                    models.Deal.like_count.desc(),
-                    models.Deal.honey_score.desc(),
-                    order_ts_expr.desc(),
-                    models.Deal.id.desc(),
-                ).limit(raw_limit).all()
             else:
                 base_raw_limit = 650 if has_narrow_filter else 450
                 raw_limit = min(1500, max(base_raw_limit, offset + limit * 6 + 260))
@@ -3154,7 +3171,7 @@ def get_hot_deals(
             db_exhausted = len(raw_seed_deals) < raw_limit
             grouped_result, dsu, cluster_meta_by_gid = _build_grouped_from_raw(raw_seed_deals)
 
-            if sort_mode == "popular":
+            if sort_mode in ("popular", "comments", "recommendations"):
                 def _parse_created_naive(iso_str) -> Optional[datetime]:
                     if not iso_str:
                         return None
@@ -3168,46 +3185,64 @@ def get_hot_deals(
                     default=datetime.utcnow(),
                 )
 
-                def _popular_sort_key(item: dict) -> tuple:
-                    h_score = int(item.get("honey_score") or 0)
-                    l_cnt = int(item.get("like_count") or 0)
-                    c_cnt = int(item.get("comment_count") or 0)
+                def _calc_age_penalty(item: dict) -> float:
                     dt_val = _parse_created_naive(item.get("created_at"))
                     if dt_val is None:
-                        return (float(h_score), float(l_cnt), float(c_cnt))
+                        return 1.0
                     age_days = max(0.0, (ref_now_dt - dt_val).total_seconds() / 86400.0)
                     if age_days <= 3.0:
-                        return (float(h_score), float(l_cnt), float(c_cnt))
+                        return 1.0
                     penalty = 1.0 + ((age_days - 3.0) ** 1.5) * 1.5
                     if age_days > 7.0:
                         penalty *= 5.0
-                    return (
-                        round(h_score / penalty, 4),
-                        round(l_cnt / penalty, 4),
-                        round(c_cnt / penalty, 4),
-                    )
+                    return penalty
 
-                grouped_result.sort(key=_popular_sort_key, reverse=True)
-            elif sort_mode == "comments":
-                grouped_result.sort(
-                    key=lambda x: (
-                        int(x.get("comment_count") or 0),
-                        int(x.get("like_count") or 0),
-                        int(x.get("honey_score") or 0),
-                        int(x.get("id") or 0),
-                    ),
-                    reverse=True,
-                )
-            elif sort_mode == "recommendations":
-                grouped_result.sort(
-                    key=lambda x: (
-                        int(x.get("like_count") or 0),
-                        int(x.get("honey_score") or 0),
-                        int(x.get("comment_count") or 0),
-                        int(x.get("id") or 0),
-                    ),
-                    reverse=True,
-                )
+                if sort_mode == "popular":
+                    suppress_zero_event = not normalized_cat_key and not (keyword or "").strip()
+
+                    def _popular_sort_key(item: dict) -> tuple:
+                        h_score = int(item.get("honey_score") or 0)
+                        l_cnt = int(item.get("like_count") or 0)
+                        c_cnt = int(item.get("comment_count") or 0)
+                        penalty = _calc_age_penalty(item)
+                        if suppress_zero_event and int(item.get("price") or 0) <= 0:
+                            title_low = str(item.get("title") or "").lower()
+                            cat_val = str(item.get("category") or "")
+                            is_free_gift = any(ft in title_low for ft in ("무료배포", "무료 배포", "일시무료", "일시 무료"))
+                            if not is_free_gift and (
+                                cat_val in ("이벤트", "적립", "상품권")
+                                or any(et in title_low for et in ("출석체크", "적립금", "쿠폰 모음", "이벤트 안내"))
+                            ):
+                                penalty *= 2.2
+                        return (
+                            round(h_score / penalty, 4),
+                            round(l_cnt / penalty, 4),
+                            round(c_cnt / penalty, 4),
+                        )
+
+                    grouped_result.sort(key=_popular_sort_key, reverse=True)
+                elif sort_mode == "comments":
+                    def _comments_sort_key(item: dict) -> tuple:
+                        penalty = _calc_age_penalty(item)
+                        return (
+                            round(int(item.get("comment_count") or 0) / penalty, 4),
+                            round(int(item.get("like_count") or 0) / penalty, 4),
+                            round(int(item.get("honey_score") or 0) / penalty, 4),
+                            int(item.get("id") or 0),
+                        )
+
+                    grouped_result.sort(key=_comments_sort_key, reverse=True)
+                else:
+                    def _recs_sort_key(item: dict) -> tuple:
+                        penalty = _calc_age_penalty(item)
+                        return (
+                            round(int(item.get("like_count") or 0) / penalty, 4),
+                            round(int(item.get("honey_score") or 0) / penalty, 4),
+                            round(int(item.get("comment_count") or 0) / penalty, 4),
+                            int(item.get("id") or 0),
+                        )
+
+                    grouped_result.sort(key=_recs_sort_key, reverse=True)
             elif sort_mode == "price_desc":
                 grouped_result.sort(
                     key=lambda x: (
@@ -3970,22 +4005,64 @@ def get_deal(
     similar_deals_payload: list[dict] = []
     try:
         from sqlalchemy import not_ as _sa_not
-        sim_q = (
-            db.query(models.Deal)
-            .options(joinedload(models.Deal.community), defer(models.Deal.content_html), defer(models.Deal.search_keywords))
-            .filter(
-                models.Deal.id != deal.id,
-                models.Deal.is_closed == False,
-                _sa_not(models.Deal.title.like("%블라인드%")),
+        _SIMILAR_EXTRA_STOPWORDS = {
+            "할인", "쿠폰", "이벤트", "선착순", "공식", "추천", "배송", "세트",
+            "무료배송", "오늘", "특가", "쇼핑", "마켓", "스토어", "브랜드", "정품",
+            "기획전", "페스타", "타임딜", "오늘끝딜", "핫딜", "공동구매", "네이버",
+            "쿠팡", "지마켓", "옥션", "11번가", "롯데온", "알리", "아마존", "토스", "카카오",
+        }
+
+        def _extract_sim_tokens(d_obj) -> set[str]:
+            toks = {
+                t for t in get_core_product_tokens(d_obj)
+                if t not in _SIMILAR_EXTRA_STOPWORDS
+            }
+            if toks:
+                return toks
+            cleaned = clean_deal_title(getattr(d_obj, "title", "") or "").lower()
+            fallback = set()
+            for raw_w in re.split(r"[^가-힣a-z0-9]+", cleaned):
+                if len(raw_w) < 2 or raw_w in _SIMILAR_EXTRA_STOPWORDS or _CORE_UNIT_OR_GENERIC_RE.match(raw_w):
+                    continue
+                if raw_w.isdigit():
+                    continue
+                fallback.add(raw_w)
+            return fallback
+
+        target_sim_tokens = _extract_sim_tokens(best_deal) | _extract_sim_tokens(deal)
+        if target_sim_tokens:
+            sim_q = (
+                db.query(models.Deal)
+                .options(joinedload(models.Deal.community), defer(models.Deal.content_html), defer(models.Deal.search_keywords))
+                .filter(
+                    models.Deal.id != deal.id,
+                    models.Deal.is_closed == False,
+                    _sa_not(models.Deal.title.like("%블라인드%")),
+                )
             )
-        )
-        if detail_category_key and detail_category_key != "기타":
-            sim_q = sim_q.filter(models.Deal.category.ilike(f"%{_escape_like(detail_category_key)}%", escape="\\"))
-        sim_rows = (
-            sim_q.order_by(models.Deal.honey_score.desc(), models.Deal.indexed_at.desc(), models.Deal.id.desc())
-            .limit(4)
-            .all()
-        )
+            if detail_category_key and detail_category_key != "기타":
+                sim_q = sim_q.filter(models.Deal.category.ilike(f"%{_escape_like(detail_category_key)}%", escape="\\"))
+            cand_rows = (
+                sim_q.order_by(models.Deal.indexed_at.desc(), models.Deal.honey_score.desc(), models.Deal.id.desc())
+                .limit(160)
+                .all()
+            )
+            scored_sims = []
+            for sd in cand_rows:
+                cand_tokens = _extract_sim_tokens(sd)
+                overlap = len(target_sim_tokens & cand_tokens)
+                if overlap >= 1:
+                    scored_sims.append((
+                        overlap,
+                        int(sd.honey_score or 0),
+                        _to_utc_naive(sd.indexed_at) or datetime.min,
+                        sd.id,
+                        sd,
+                    ))
+            scored_sims.sort(key=lambda r: (r[0], r[1], r[2], r[3]), reverse=True)
+            sim_rows = [r[4] for r in scored_sims[:4]]
+        else:
+            sim_rows = []
         for sd in sim_rows:
             sp, sc = resolve_deal_price_and_currency(sd)
             s_comp = (
