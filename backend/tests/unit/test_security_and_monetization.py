@@ -147,6 +147,7 @@ def test_admin_routes_require_key_and_fail_closed(isolated_app_and_db, monkeypat
 
     # (A) ADMIN_API_KEY 미설정 시 외부 IP 요청은 대시보드(/admin/)와 로그(/admin/logs) 모두 503 차단
     monkeypatch.delenv("ADMIN_API_KEY", raising=False)
+    monkeypatch.delenv("ENV", raising=False)
     for path in ("/admin/", "/admin/logs"):
         res = external_client.get(path)
         assert res.status_code == 503
@@ -168,6 +169,91 @@ def test_admin_routes_require_key_and_fail_closed(isolated_app_and_db, monkeypat
 
     assert external_client.get("/admin/", headers={"X-Admin-Key": "super-admin-key-999"}).status_code == 200
     assert external_client.get("/admin/logs", headers={"X-Admin-Key": "super-admin-key-999"}).status_code == 200
+
+
+@pytest.mark.parametrize("prod_env", ["production", "PRODUCTION", "prod", "Prod", "prod-gcp"])
+def test_admin_and_force_scrape_fail_closed_in_production_even_for_loopback(
+    isolated_app_and_db, monkeypatch, prod_env
+):
+    test_app, _ = isolated_app_and_db
+    monkeypatch.delenv("ADMIN_API_KEY", raising=False)
+    monkeypatch.setenv("ENV", prod_env)
+
+    protected_requests = (
+        ("GET", "/admin/"),
+        ("GET", "/admin/logs"),
+        ("POST", "/admin/backup-db"),
+        ("POST", "/admin/renormalize-deals"),
+        ("POST", "/admin/trigger-update"),
+        ("POST", "/api/community/force-scrape"),
+    )
+
+    for host in ("127.0.0.1", "::1", "localhost", "testclient"):
+        client = _client_with_ip(test_app, host, 52010)
+        for method, path in protected_requests:
+            res = client.request(method, path)
+            assert res.status_code == 503, f"{prod_env} 환경 {host} -> {method} {path} 차단 실패: {res.status_code}"
+            assert res.json()["detail"] == "ADMIN_API_KEY is not configured"
+        res_proxied_loopback = client.post(
+            "/api/community/force-scrape",
+            headers={"X-Forwarded-For": "127.0.0.1", "X-Real-IP": "127.0.0.1"},
+        )
+        assert res_proxied_loopback.status_code == 503
+        assert res_proxied_loopback.json()["detail"] == "ADMIN_API_KEY is not configured"
+
+    # ADMIN_API_KEY가 설정되어 있으면 프로덕션에서도 X-Admin-Key 검증(403/200)으로 정상 동작
+    monkeypatch.setenv("ADMIN_API_KEY", "prod-admin-secret-123")
+    scrape_calls = []
+    monkeypatch.setattr(community, "run_scraper_script", lambda: scrape_calls.append(True))
+    monkeypatch.setattr(community, "_LAST_SCRAPE_TRIGGER_TS", 0.0)
+    monkeypatch.setattr(community, "_SCRAPE_RUNNING_LOCK", False)
+
+    loopback_client = _client_with_ip(test_app, "127.0.0.1", 52011)
+    assert loopback_client.get("/admin/").status_code == 403
+    assert loopback_client.get("/admin/", headers={"X-Admin-Key": "wrong"}).status_code == 403
+    assert loopback_client.post("/api/community/force-scrape").status_code == 403
+    assert loopback_client.post("/api/community/force-scrape", headers={"X-Admin-Key": "wrong"}).status_code == 403
+
+    assert loopback_client.get("/admin/", headers={"X-Admin-Key": "prod-admin-secret-123"}).status_code == 200
+    res_scrape_ok = loopback_client.post(
+        "/api/community/force-scrape",
+        headers={"X-Admin-Key": "prod-admin-secret-123"},
+    )
+    assert res_scrape_ok.status_code == 200
+    assert res_scrape_ok.json()["status"] == "success"
+    assert len(scrape_calls) == 1
+
+
+@pytest.mark.parametrize("dev_env", [None, "development", "test"])
+def test_admin_and_force_scrape_allow_loopback_in_non_production_when_key_unset(
+    isolated_app_and_db, monkeypatch, dev_env
+):
+    test_app, _ = isolated_app_and_db
+    monkeypatch.delenv("ADMIN_API_KEY", raising=False)
+    if dev_env is None:
+        monkeypatch.delenv("ENV", raising=False)
+    else:
+        monkeypatch.setenv("ENV", dev_env)
+
+    scrape_calls = []
+    monkeypatch.setattr(community, "run_scraper_script", lambda: scrape_calls.append(True))
+    monkeypatch.setattr(community, "_SCRAPE_RUNNING_LOCK", False)
+
+    for host in ("127.0.0.1", "::1", "localhost", "testclient"):
+        client = _client_with_ip(test_app, host, 52020)
+        monkeypatch.setattr(community, "_LAST_SCRAPE_TRIGGER_TS", 0.0)
+
+        assert client.get("/admin/").status_code == 200
+        assert client.get("/admin/logs").status_code == 200
+        res_scrape = client.post("/api/community/force-scrape")
+        assert res_scrape.status_code == 200
+        assert res_scrape.json()["status"] == "success"
+
+    assert len(scrape_calls) == 4
+
+    external_client = _client_with_ip(test_app, "198.51.100.77", 52021)
+    assert external_client.get("/admin/").status_code == 503
+    assert external_client.post("/api/community/force-scrape").status_code == 503
 
 
 # ---------------------------------------------------------------------------

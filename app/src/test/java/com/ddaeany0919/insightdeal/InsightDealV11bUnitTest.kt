@@ -644,6 +644,30 @@ class InsightDealV11bUnitTest {
             throw UnsupportedOperationException("단위 테스트에서는 orderedDeals()를 사용합니다.")
         }
 
+        override fun getPagedDeals(
+            category: String?,
+            keyword: String?,
+            platform: String?,
+            sort: String,
+            freeShippingOnly: Boolean,
+            shop: String?,
+            minPrice: Int?,
+            maxPrice: Int?
+        ): PagingSource<Int, DealEntity> {
+            throw UnsupportedOperationException("단위 테스트에서는 orderedDeals()를 사용합니다.")
+        }
+
+        private fun toKrwEquiv(entity: DealEntity): Double {
+            val rate = when (entity.currency.trim().uppercase()) {
+                "USD" -> 14.0
+                "EUR" -> 15.2
+                "CNY" -> 1.95
+                "JPY" -> 9.3
+                else -> 1.0
+            }
+            return entity.price * rate
+        }
+
         fun orderedDeals(sort: String): List<DealEntity> {
             return when (sort) {
                 "popular" -> deals.values.sortedWith(
@@ -653,7 +677,48 @@ class InsightDealV11bUnitTest {
                         .thenByDescending { it.createdAt ?: "" }
                         .thenByDescending { it.id }
                 )
-                else -> deals.values.toList()
+                "comments" -> deals.values.sortedWith(
+                    compareByDescending<DealEntity> { it.commentCount }
+                        .thenByDescending { it.likeCount }
+                        .thenByDescending { it.honeyScore }
+                        .thenByDescending { it.createdAt ?: "" }
+                        .thenByDescending { it.id }
+                )
+                "recommendations" -> deals.values.sortedWith(
+                    compareByDescending<DealEntity> { it.likeCount }
+                        .thenByDescending { it.honeyScore }
+                        .thenByDescending { it.commentCount }
+                        .thenByDescending { it.createdAt ?: "" }
+                        .thenByDescending { it.id }
+                )
+                "price_asc" -> deals.values.sortedWith(
+                    compareBy<DealEntity> { if (it.price > 0L) 0 else 1 }
+                        .thenBy { toKrwEquiv(it) }
+                        .thenByDescending { it.createdAt ?: "" }
+                        .thenByDescending { it.id }
+                )
+                "price_desc" -> deals.values.sortedWith(
+                    compareBy<DealEntity> { if (it.price > 0L) 0 else 1 }
+                        .thenByDescending { toKrwEquiv(it) }
+                        .thenByDescending { it.createdAt ?: "" }
+                        .thenByDescending { it.id }
+                )
+                else -> deals.values.sortedWith(
+                    compareByDescending<DealEntity> { it.createdAt ?: "" }
+                        .thenByDescending { it.id }
+                )
+            }
+        }
+
+        override suspend fun updateVoteCounts(dealId: Int, buyCount: Int, passCount: Int) {
+            deals[dealId]?.let { existing ->
+                deals[dealId] = existing.copy(buyCount = buyCount, passCount = passCount)
+            }
+        }
+
+        override suspend fun updateAppCommentCount(dealId: Int, appCommentCount: Int) {
+            deals[dealId]?.let { existing ->
+                deals[dealId] = existing.copy(appCommentCount = appCommentCount)
             }
         }
 

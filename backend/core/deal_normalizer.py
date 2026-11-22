@@ -381,14 +381,25 @@ _COMMUNITY_HOSTS = (
 )
 
 
+_NEGATIVE_PRICE_RE = re.compile(
+    r"^(?:(?:KRW|USD|EUR|CNY|JPY)\s+|[₩￦$¥￥€]\s*)?[-−]\s*(?:[₩￦$¥￥€]\s*)?\d",
+    re.IGNORECASE,
+)
+
+
 def extract_numeric_price(price_val: Any) -> int:
-    if price_val is None:
+    if price_val is None or isinstance(price_val, bool):
         return 0
     if isinstance(price_val, (int, float)):
+        if not (0 < price_val <= 15000000.5):
+            return 0
         v = int(round(price_val))
         return v if 0 < v <= 15000000 else 0
     s = str(price_val).strip()
     if not s or "http://" in s or "https://" in s or "products/" in s:
+        return 0
+    # 선행 음수 부호(통화 기호/코드 포함)가 붙은 비정상 가격 문자열 차단
+    if _NEGATIVE_PRICE_RE.match(s):
         return 0
     nums = re.findall(r"\d+", s)
     if not nums:
@@ -904,7 +915,7 @@ def is_micro_point_deal(price: int, raw_title: str) -> bool:
 
 def is_collection_dummy_price(price: int, raw_title: str, currency: str = "KRW") -> bool:
     p = int(price or 0)
-    if (currency or "KRW").upper() != "KRW" or p not in COLLECTION_DUMMY_PRICES:
+    if (currency or "KRW").strip().upper() != "KRW" or p not in COLLECTION_DUMMY_PRICES:
         return False
     t = html.unescape(raw_title or "")
     if is_micro_point_deal(p, t):

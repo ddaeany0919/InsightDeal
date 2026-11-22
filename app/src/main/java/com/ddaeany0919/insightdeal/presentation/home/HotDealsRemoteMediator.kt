@@ -37,6 +37,10 @@ class HotDealsRemoteMediator(
     private val onlyHot: Boolean = false,
     private val hideClosed: Boolean = false,
     private val includeClosed: Boolean = false,
+    private val freeShippingOnly: Boolean = false,
+    private val shop: String? = null,
+    private val minPrice: Int? = null,
+    private val maxPrice: Int? = null,
     private val clockMs: () -> Long = { System.currentTimeMillis() }
 ) : RemoteMediator<Int, DealEntity>() {
 
@@ -49,7 +53,11 @@ class HotDealsRemoteMediator(
         sort: String = "latest",
         onlyHot: Boolean = false,
         hideClosed: Boolean = false,
-        includeClosed: Boolean = false
+        includeClosed: Boolean = false,
+        freeShippingOnly: Boolean = false,
+        shop: String? = null,
+        minPrice: Int? = null,
+        maxPrice: Int? = null
     ) : this(
         dealDao = database.dealDao(),
         dealRemoteKeysDao = database.dealRemoteKeysDao(),
@@ -61,21 +69,35 @@ class HotDealsRemoteMediator(
         sort = sort,
         onlyHot = onlyHot,
         hideClosed = hideClosed,
-        includeClosed = includeClosed
+        includeClosed = includeClosed,
+        freeShippingOnly = freeShippingOnly,
+        shop = shop,
+        minPrice = minPrice,
+        maxPrice = maxPrice
     )
 
-    private fun buildCacheKey(): String = listOf(
+    internal fun buildCacheKey(): String = listOf(
         CategoryCatalog.normalizeCategoryQuery(category).orEmpty(),
         normalizePlatformQuery(platform).orEmpty(),
         keyword?.trim().orEmpty(),
         sort,
         onlyHot.toString(),
         hideClosed.toString(),
-        includeClosed.toString()
-    ).joinToString("|")
+        includeClosed.toString(),
+        freeShippingOnly.toString(),
+        normalizeShopQuery(shop).orEmpty(),
+        minPrice?.takeIf { it > 0 }?.toString().orEmpty(),
+        maxPrice?.takeIf { it > 0 }?.toString().orEmpty()
+    ).joinToString("|") { it.replace("%", "%25").replace("|", "%7C") }
 
     override suspend fun initialize(): InitializeAction {
-        val lastSuccessMs = lastRefreshSuccessMsByKey[buildCacheKey()] ?: return InitializeAction.LAUNCH_INITIAL_REFRESH
+        val currentKey = buildCacheKey()
+        val lastSuccessMs = synchronized(refreshCacheLock) {
+            if (activeRefreshCacheKey != currentKey) {
+                return@synchronized null
+            }
+            lastRefreshSuccessMsByKey[currentKey]
+        } ?: return InitializeAction.LAUNCH_INITIAL_REFRESH
         val elapsedMs = clockMs() - lastSuccessMs
         if (elapsedMs !in 0L until REFRESH_TTL_MS) {
             return InitializeAction.LAUNCH_INITIAL_REFRESH
@@ -123,19 +145,27 @@ class HotDealsRemoteMediator(
             val limit = state.config.pageSize
             val resolvedPlatform = normalizePlatformQuery(platform)
             val resolvedCategory = CategoryCatalog.normalizeCategoryQuery(category)
+            val resolvedKeyword = keyword?.trim()?.takeIf { it.isNotEmpty() }
+            val resolvedShop = normalizeShopQuery(shop)
+            val resolvedMinPrice = minPrice?.takeIf { it > 0 }
+            val resolvedMaxPrice = maxPrice?.takeIf { it > 0 }
 
             val response = apiService.getCommunityHotDeals(
                 limit = limit,
                 offset = offset,
                 category = resolvedCategory,
-                keyword = if (keyword.isNullOrBlank()) null else keyword,
+                keyword = resolvedKeyword,
                 platform = resolvedPlatform,
                 sort = sort,
                 cursorIndexedAt = cursorIndexedAt,
                 cursorId = cursorId,
                 includeClosed = if (includeClosed) true else null,
                 onlyHot = if (onlyHot) true else null,
-                hideClosed = if (hideClosed) true else null
+                hideClosed = if (hideClosed) true else null,
+                freeShipping = if (freeShippingOnly) true else null,
+                shop = resolvedShop,
+                minPrice = resolvedMinPrice,
+                maxPrice = resolvedMaxPrice
             )
 
             if (response.isSuccessful) {
@@ -201,12 +231,26 @@ class HotDealsRemoteMediator(
 
                     dealRemoteKeysDao.insertAll(dealKeys + sentinelKey)
                     if (deals.isNotEmpty()) {
-                        dealDao.insertAll(deals.map { toCachedEntityForCategory(it, resolvedCategory) })
+                        dealDao.insertAll(
+                            deals.map { deal ->
+                                val baseEntity = toCachedEntityForCategory(deal, resolvedCategory)
+                                if (resolvedShop != null && baseEntity.shopName.isNullOrBlank()) {
+                                    baseEntity.copy(shopName = resolvedShop)
+                                } else {
+                                    baseEntity
+                                }
+                            }
+                        )
                     }
                 }
 
                 if (loadType == LoadType.REFRESH) {
-                    lastRefreshSuccessMsByKey[buildCacheKey()] = clockMs()
+                    val currentKey = buildCacheKey()
+                    synchronized(refreshCacheLock) {
+                        lastRefreshSuccessMsByKey.clear()
+                        lastRefreshSuccessMsByKey[currentKey] = clockMs()
+                        activeRefreshCacheKey = currentKey
+                    }
                 }
 
                 MediatorResult.Success(endOfPaginationReached = endOfPaginationReached)
@@ -225,10 +269,15 @@ class HotDealsRemoteMediator(
     companion object {
         const val STREAM_CURSOR_SENTINEL_ID = -1
         internal const val REFRESH_TTL_MS = 5 * 60 * 1000L
+        private val refreshCacheLock = Any()
         private val lastRefreshSuccessMsByKey = ConcurrentHashMap<String, Long>()
+        private var activeRefreshCacheKey: String? = null
 
         internal fun clearRefreshCache() {
-            lastRefreshSuccessMsByKey.clear()
+            synchronized(refreshCacheLock) {
+                lastRefreshSuccessMsByKey.clear()
+                activeRefreshCacheKey = null
+            }
         }
 
         internal fun toCachedEntityForCategory(deal: DealItem, resolvedCategory: String?): DealEntity {
@@ -252,6 +301,10 @@ class HotDealsRemoteMediator(
                 baseEntity
             }
         }
+    }
+
+    private fun normalizeShopQuery(rawShop: String?): String? {
+        return rawShop?.trim()?.takeIf { it.isNotEmpty() && it != "전체" }
     }
 
     private fun normalizePlatformQuery(rawPlatform: String?): String? {

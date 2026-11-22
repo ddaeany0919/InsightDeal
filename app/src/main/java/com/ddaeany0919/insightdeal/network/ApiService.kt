@@ -103,7 +103,7 @@ interface ApiService {
         @Body request: UpdateDndReq
     ): Response<ApiResponse>
 
-    @POST("fcm/test")
+    @POST("api/push/test")
     suspend fun sendTestPush(
         @Body request: Map<String, String>
     ): Response<ApiResponse>
@@ -235,7 +235,11 @@ interface ApiService {
         @Query("cursor_id") cursorId: Int? = null,
         @Query("include_closed") includeClosed: Boolean? = null,
         @Query("only_hot") onlyHot: Boolean? = null,
-        @Query("hide_closed") hideClosed: Boolean? = null
+        @Query("hide_closed") hideClosed: Boolean? = null,
+        @Query("free_shipping") freeShipping: Boolean? = null,
+        @Query("shop") shop: String? = null,
+        @Query("min_price") minPrice: Int? = null,
+        @Query("max_price") maxPrice: Int? = null
     ): Response<HotDealsResponse>
 
     // 원클릭 품절/종료 제보 API (P1-06)

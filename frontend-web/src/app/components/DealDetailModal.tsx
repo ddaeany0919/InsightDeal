@@ -59,6 +59,7 @@ import {
   extractPaymentConditionBadge,
   getCachedDealDetail,
   setCachedDealDetail,
+  invalidateDealDetailCache,
   estimateKrwFromForeign,
   isCustomsDutyRisk,
   computeShippingTotal,
@@ -87,6 +88,10 @@ interface DealDetailModalProps {
   showToast: (message: string) => void;
   onTargetAlertSaved?: (dealId: number) => void;
   onDealClosed?: (dealId: number, isClosed: boolean, reportCount: number) => void;
+  onDealInteractionChange?: (
+    dealId: number,
+    patch: { buyCount?: number; passCount?: number; appCommentCount?: number }
+  ) => void;
   onNavigateDeal?: (delta: -1 | 1) => void;
   onSelectRelatedDeal?: (deal: Deal) => void;
 }
@@ -104,6 +109,7 @@ export default function DealDetailModal({
   showToast,
   onTargetAlertSaved,
   onDealClosed,
+  onDealInteractionChange,
   onNavigateDeal,
   onSelectRelatedDeal,
 }: DealDetailModalProps) {
@@ -138,9 +144,6 @@ export default function DealDetailModal({
   const [saveCount, setSaveCount] = useState<number>(0);
   const [userVote, setUserVote] = useState<string | null>(null);
   const [commentCount, setCommentCount] = useState<number>(0);
-  const [origRecCount, setOrigRecCount] = useState<number>(0);
-  const [origCommentCount, setOrigCommentCount] = useState<number>(0);
-  const [origViewCount, setOrigViewCount] = useState<number>(0);
   const [historyCount, setHistoryCount] = useState<number>(0);
   const [isSearchFallback, setIsSearchFallback] = useState<boolean>(false);
   const [isFreeDeal, setIsFreeDeal] = useState<boolean>(false);
@@ -178,10 +181,12 @@ export default function DealDetailModal({
   const dealId = deal?.id ?? null;
   const latestDealRef = useRef<Deal | null>(deal);
   const onCloseRef = useRef(onClose);
+  const onDealInteractionChangeRef = useRef(onDealInteractionChange);
 
   useEffect(() => {
     latestDealRef.current = deal;
     onCloseRef.current = onClose;
+    onDealInteractionChangeRef.current = onDealInteractionChange;
     lightboxIndexRef.current = lightboxIndex;
   });
 
@@ -272,10 +277,7 @@ export default function DealDetailModal({
     setBuyCount(currentDeal?.buyCount ?? 0);
     setSaveCount(currentDeal?.passCount ?? 0);
     setUserVote(currentDeal?.userVote ?? null);
-    setCommentCount(currentDeal?.commentCount ?? 0);
-    setOrigRecCount(0);
-    setOrigCommentCount(0);
-    setOrigViewCount(0);
+    setCommentCount(currentDeal?.appCommentCount ?? 0);
     setHistoryCount(currentDeal?.historyCount ?? 0);
     setIsSearchFallback(Boolean(currentDeal?.isSearchFallback));
     setIsFreeDeal(Boolean(currentDeal?.isFree));
@@ -360,27 +362,32 @@ export default function DealDetailModal({
         setDetailShopName(String(d.shop_name || d.shopName));
       }
 
-      const nextBuy = d.buy_count ?? d.buyCount ?? d.like_count;
+      const nextBuy = d.buy_count ?? d.buyCount;
       if (nextBuy !== undefined) setBuyCount(Number(nextBuy) || 0);
 
       const nextPass =
-        d.pass_count ?? d.passCount ?? d.save_count ?? d.saveCount ?? d.dislike_count;
+        d.pass_count ?? d.passCount ?? d.save_count ?? d.saveCount;
       if (nextPass !== undefined) setSaveCount(Number(nextPass) || 0);
 
       const nextVote = d.user_vote ?? d.userVote;
       if (nextVote !== undefined) setUserVote(nextVote ?? null);
 
-      const nextCommentCnt = d.comment_count ?? d.commentCount ?? d.comments;
+      const nextCommentCnt =
+        d.app_comment_count ?? d.appCommentCount ?? d.comment_count ?? d.commentCount;
       if (nextCommentCnt !== undefined) setCommentCount(Number(nextCommentCnt) || 0);
 
-      if (d.recommendations !== undefined || d.like_count !== undefined) {
-        setOrigRecCount(Number(d.recommendations ?? d.like_count ?? 0) || 0);
-      }
-      if (d.comments !== undefined) {
-        setOrigCommentCount(Number(d.comments ?? 0) || 0);
-      }
-      if (d.views !== undefined || d.view_count !== undefined) {
-        setOrigViewCount(Number(d.views ?? d.view_count ?? 0) || 0);
+      if (
+        nextBuy !== undefined ||
+        nextPass !== undefined ||
+        nextCommentCnt !== undefined
+      ) {
+        onDealInteractionChangeRef.current?.(dealId, {
+          ...(nextBuy !== undefined ? { buyCount: Number(nextBuy) || 0 } : {}),
+          ...(nextPass !== undefined ? { passCount: Number(nextPass) || 0 } : {}),
+          ...(nextCommentCnt !== undefined
+            ? { appCommentCount: Number(nextCommentCnt) || 0 }
+            : {}),
+        });
       }
 
       const nextHistoryCnt = d.history_count ?? d.historyCount;
@@ -632,10 +639,18 @@ export default function DealDetailModal({
         return;
       }
       const v = (await res.json()) as DealVoteApiResponse;
-      setBuyCount(Number(v.buy_count ?? v.buyCount ?? 0));
-      setSaveCount(Number(v.pass_count ?? v.passCount ?? v.save_count ?? v.saveCount ?? 0));
+      const nextBuy = Number(v.buy_count ?? v.buyCount ?? 0);
+      const nextPass = Number(
+        v.pass_count ?? v.passCount ?? v.save_count ?? v.saveCount ?? 0
+      );
+      setBuyCount(nextBuy);
+      setSaveCount(nextPass);
       setUserVote((v.user_vote ?? v.userVote ?? null) as string | null);
       setVotesLoaded(true);
+      onDealInteractionChangeRef.current?.(targetDealId, {
+        buyCount: nextBuy,
+        passCount: nextPass,
+      });
     } catch {
       setVotesError("투표 현황을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
     } finally {
@@ -667,6 +682,9 @@ export default function DealDetailModal({
         setComments(normalized);
         setCommentCount(normalized.length);
         setCommentsLoaded(true);
+        onDealInteractionChangeRef.current?.(targetDealId, {
+          appCommentCount: normalized.length,
+        });
       } else {
         setCommentsError("의견 형식이 올바르지 않아요. 잠시 후 다시 시도해 주세요.");
       }
@@ -904,13 +922,20 @@ export default function DealDetailModal({
         return;
       }
       const data = (await res.json()) as DealVoteApiResponse;
-      setBuyCount(Number(data.buy_count ?? data.buyCount ?? 0));
-      setSaveCount(
-        Number(data.pass_count ?? data.passCount ?? data.save_count ?? data.saveCount ?? 0)
+      const nextBuy = Number(data.buy_count ?? data.buyCount ?? 0);
+      const nextPass = Number(
+        data.pass_count ?? data.passCount ?? data.save_count ?? data.saveCount ?? 0
       );
+      setBuyCount(nextBuy);
+      setSaveCount(nextPass);
       setUserVote((data.user_vote ?? data.userVote ?? voteType) as string | null);
       setVotesError(null);
       setVotesLoaded(true);
+      invalidateDealDetailCache(deal.id);
+      onDealInteractionChangeRef.current?.(deal.id, {
+        buyCount: nextBuy,
+        passCount: nextPass,
+      });
       showToast(voteType === "buy" ? "'살까'에 투표했어요" : "'말까'에 투표했어요");
     } catch {
       showToast("잠시 후 다시 시도해 주세요");
@@ -948,11 +973,19 @@ export default function DealDetailModal({
         userId: created.userId ?? created.user_id ?? latestUuid,
         createdAt: created.createdAt ?? created.created_at ?? new Date().toISOString(),
       };
-      setComments((prev) => [normalized, ...prev]);
-      setCommentCount((c) => c + 1);
+      const nextComments = [normalized, ...comments];
+      const nextCommentCount = commentsLoaded
+        ? nextComments.length
+        : Math.max(commentCount + 1, nextComments.length);
+      setComments(nextComments);
+      setCommentCount(nextCommentCount);
       setCommentsError(null);
       setCommentsLoaded(true);
       setCommentInput("");
+      invalidateDealDetailCache(deal.id);
+      onDealInteractionChangeRef.current?.(deal.id, {
+        appCommentCount: nextCommentCount,
+      });
       showToast("의견을 남겼어요");
     } catch {
       showToast("의견을 등록하지 못했어요");
@@ -976,8 +1009,16 @@ export default function DealDetailModal({
         showToast("의견을 삭제하지 못했어요. 잠시 후 다시 시도해 주세요.");
         return;
       }
-      setComments((prev) => prev.filter((c) => c.id !== commentId));
-      setCommentCount((c) => Math.max(0, c - 1));
+      const nextComments = comments.filter((c) => c.id !== commentId);
+      const nextCommentCount = commentsLoaded
+        ? nextComments.length
+        : Math.max(0, commentCount - 1);
+      setComments(nextComments);
+      setCommentCount(nextCommentCount);
+      invalidateDealDetailCache(deal.id);
+      onDealInteractionChangeRef.current?.(deal.id, {
+        appCommentCount: nextCommentCount,
+      });
       showToast("내 의견을 삭제했어요");
     } catch {
       showToast("네트워크 오류로 의견을 삭제하지 못했어요");
@@ -1729,28 +1770,6 @@ export default function DealDetailModal({
               </button>
             )}
           </div>
-
-          {(origRecCount > 0 || origCommentCount > 0 || origViewCount > 0) && (
-            <div
-              className="deal-detail-coldstart-stats"
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                alignItems: "center",
-                gap: "6px 10px",
-                fontSize: "0.75rem",
-                color: "var(--text-sub)",
-                fontWeight: 600,
-              }}
-            >
-              <span>원문 커뮤니티 반응</span>
-              <span style={{ color: "var(--text-main)", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                추천 {origRecCount.toLocaleString("ko-KR")}
-                {origCommentCount > 0 ? ` · 댓글 ${origCommentCount.toLocaleString("ko-KR")}` : ""}
-                {origViewCount > 0 ? ` · 조회 ${origViewCount.toLocaleString("ko-KR")}` : ""}
-              </span>
-            </div>
-          )}
 
           {(detailUnitPriceBadge || detailPaymentCondBadge) && (
             <div

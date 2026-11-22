@@ -190,7 +190,13 @@ data class DealItem(
     val reportCount: Int = 0,
 
     @SerializedName(value = "initial_history", alternate = ["initialHistory"])
-    val initialHistory: List<PriceHistoryPoint>? = null
+    val initialHistory: List<PriceHistoryPoint>? = null,
+
+    @SerializedName(value = "similar_deals", alternate = ["similarDeals"])
+    val similarDeals: List<DealItem>? = emptyList(),
+
+    @SerializedName(value = "app_comment_count", alternate = ["appCommentCount"])
+    val appCommentCount: Int = 0
 ) {
     /**
      * 할인된 가격 계산
@@ -314,7 +320,9 @@ data class DealItem(
         isFree = isFree,
         bodyImages = bodyImages ?: emptyList(),
         reportCount = count,
-        initialHistory = initialHistory
+        initialHistory = initialHistory,
+        similarDeals = similarDeals ?: emptyList(),
+        appCommentCount = appCommentCount
     )
 }
 

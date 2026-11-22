@@ -81,6 +81,8 @@ export interface RawDealApiResponse {
   userVote?: string | null;
   comment_count?: number;
   commentCount?: number;
+  app_comment_count?: number;
+  appCommentCount?: number;
   comments?: number;
   views?: number;
   view_count?: number;
@@ -133,6 +135,7 @@ export interface Deal {
   passCount?: number;
   userVote?: string | null;
   commentCount?: number;
+  appCommentCount?: number;
   comments?: number;
   recommendations?: number;
   historyCount?: number;

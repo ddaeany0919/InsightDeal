@@ -161,11 +161,6 @@ dependencies {
     androidTestImplementation platform('androidx.compose:compose-bom:2024.06.00')
     androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
 
-    // Charts
-    implementation 'com.github.PhilJay:MPAndroidChart:v3.1.0'
-    implementation "com.patrykandpatrick.vico:compose:1.15.0"
-    implementation "com.patrykandpatrick.vico:core:1.15.0"
-
     // DataStore & WorkManager
     implementation 'androidx.datastore:datastore-preferences:1.0.0'
     implementation "androidx.work:work-runtime-ktx:2.8.0"

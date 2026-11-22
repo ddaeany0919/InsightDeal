@@ -26,6 +26,9 @@ def _verify_admin_key(
         if not hmac.compare_digest(provided_key, expected_key):
             raise HTTPException(status_code=403, detail="관리자 인증 키가 유효하지 않습니다.")
     else:
+        env = os.getenv("ENV", "development").strip().lower()
+        if env in ("production", "prod") or env.startswith("prod"):
+            raise HTTPException(status_code=503, detail="ADMIN_API_KEY is not configured")
         forwarded_for = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip().lower() if request else ""
         real_ip = (request.headers.get("x-real-ip") or "").strip().lower() if request else ""
         client_host = ((request.client.host if request and request.client else "") or "").strip().lower()

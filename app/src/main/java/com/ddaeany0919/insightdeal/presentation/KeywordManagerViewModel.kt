@@ -1,16 +1,21 @@
 package com.ddaeany0919.insightdeal.presentation
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ddaeany0919.insightdeal.data.KeywordPreferencesDataSource
 import com.ddaeany0919.insightdeal.data.LocalDataProvider
+import com.ddaeany0919.insightdeal.local.db.KeywordDao
 import com.ddaeany0919.insightdeal.local.db.KeywordEntity
 import com.ddaeany0919.insightdeal.network.AddKeywordRequest
 import com.ddaeany0919.insightdeal.network.ApiService
 import com.ddaeany0919.insightdeal.network.NetworkModule
 import com.ddaeany0919.insightdeal.network.UpdateDndReq
 import com.google.gson.Gson
+import com.google.gson.JsonParser
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,12 +23,27 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class KeywordManagerViewModel(
-    private val preferencesDataSource: KeywordPreferencesDataSource = KeywordPreferencesDataSource()
+@Immutable
+data class TestPushState(
+    val isSending: Boolean = false,
+    val isSuccess: Boolean? = null,
+    val message: String? = null,
+    val feedbackSeq: Int = 0
+)
+
+class KeywordManagerViewModel @JvmOverloads constructor(
+    private val preferencesDataSource: KeywordPreferencesDataSource = KeywordPreferencesDataSource(),
+    private val apiService: ApiService = NetworkModule.createService<ApiService>(),
+    private val keywordDaoProvider: () -> KeywordDao = { LocalDataProvider.keywordDao },
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val coroutineScopeOverride: CoroutineScope? = null,
+    autoInitialize: Boolean = (coroutineScopeOverride == null)
 ) : ViewModel() {
 
-    private val apiService = NetworkModule.createService<ApiService>()
-    private val keywordDao = LocalDataProvider.keywordDao
+    private val vmScope: CoroutineScope
+        get() = coroutineScopeOverride ?: viewModelScope
+
+    private val keywordDao: KeywordDao by lazy { keywordDaoProvider() }
     private val gson = Gson()
 
     val deviceUuid: String by lazy {
@@ -67,16 +87,21 @@ class KeywordManagerViewModel(
     private val _weekDndSettings = MutableStateFlow(WeekDndSettings())
     val weekDndSettings: StateFlow<WeekDndSettings> = _weekDndSettings.asStateFlow()
 
+    private val _testPushState = MutableStateFlow(TestPushState())
+    val testPushState: StateFlow<TestPushState> = _testPushState.asStateFlow()
+
     init {
-        loadLocalSettings()
+        if (autoInitialize) {
+            loadLocalSettings()
 
-        viewModelScope.launch {
-            keywordDao.getAllKeywordsFlow().collect { localEntities ->
-                _keywords.value = localEntities
+            vmScope.launch {
+                keywordDao.getAllKeywordsFlow().collect { localEntities ->
+                    _keywords.value = localEntities
+                }
             }
-        }
 
-        fetchKeywords()
+            fetchKeywords()
+        }
     }
 
     private fun loadLocalSettings() {
@@ -161,7 +186,7 @@ class KeywordManagerViewModel(
     }
 
     private fun syncDndWithServer() {
-        viewModelScope.launch {
+        vmScope.launch {
             try {
                 val json = gson.toJson(_weekDndSettings.value)
                 val req = UpdateDndReq(
@@ -171,7 +196,9 @@ class KeywordManagerViewModel(
                     dnd_end_time = _dndEndTime.value,
                     dnd_settings_json = json
                 )
-                val response = apiService.updateDndSettings(req)
+                val response = withContext(ioDispatcher) {
+                    apiService.updateDndSettings(req)
+                }
                 if (!response.isSuccessful) {
                     _errorMessage.value = "알림 시간 설정 동기화에 실패했어요."
                 }
@@ -184,17 +211,19 @@ class KeywordManagerViewModel(
     }
 
     fun fetchKeywords() {
-        viewModelScope.launch {
+        vmScope.launch {
             _isLoading.value = true
             try {
                 val userOrDevice = preferencesDataSource.resolveUserOrDeviceKey(deviceUuid)
-                val response = apiService.getUserKeywords(userOrDevice)
+                val response = withContext(ioDispatcher) {
+                    apiService.getUserKeywords(userOrDevice)
+                }
                 if (response.isSuccessful) {
                     val responseBody = response.body()
                     val detailedList = responseBody?.detailed_keywords
                     val keywordsList = responseBody?.keywords ?: emptyList()
 
-                    withContext(Dispatchers.IO) {
+                    withContext(ioDispatcher) {
                         val currentLocal = keywordDao.getAllKeywords()
                         currentLocal.forEach { keywordDao.deleteKeyword(it) }
 
@@ -248,14 +277,16 @@ class KeywordManagerViewModel(
         val trimmed = keyword.trim()
         if (trimmed.isBlank() || _keywords.value.any { it.keyword == trimmed }) return
 
-        viewModelScope.launch {
+        vmScope.launch {
             _isLoading.value = true
             try {
                 val userOrDevice = preferencesDataSource.resolveUserOrDeviceKey(deviceUuid)
                 val request = AddKeywordRequest(device_uuid = userOrDevice, keyword = trimmed)
-                val response = apiService.addUserKeyword(request)
+                val response = withContext(ioDispatcher) {
+                    apiService.addUserKeyword(request)
+                }
                 if (response.isSuccessful && response.body()?.success == true) {
-                    withContext(Dispatchers.IO) {
+                    withContext(ioDispatcher) {
                         if (!keywordDao.isKeywordExists(trimmed)) {
                             keywordDao.insertKeyword(KeywordEntity(keyword = trimmed, isActive = true))
                         }
@@ -275,20 +306,22 @@ class KeywordManagerViewModel(
     }
 
     fun toggleKeyword(entity: KeywordEntity) {
-        viewModelScope.launch {
+        vmScope.launch {
             val originalState = entity.isActive
             val newState = !originalState
 
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 keywordDao.updateKeywordActive(entity.id, newState)
             }
 
             try {
                 val userOrDevice = preferencesDataSource.resolveUserOrDeviceKey(deviceUuid)
                 val request = AddKeywordRequest(device_uuid = userOrDevice, keyword = entity.keyword)
-                val response = apiService.toggleUserKeyword(request)
+                val response = withContext(ioDispatcher) {
+                    apiService.toggleUserKeyword(request)
+                }
                 if (!response.isSuccessful || response.body()?.success != true) {
-                    withContext(Dispatchers.IO) {
+                    withContext(ioDispatcher) {
                         keywordDao.updateKeywordActive(entity.id, originalState)
                     }
                     _errorMessage.value = response.body()?.message ?: "알림 상태를 변경하지 못했어요."
@@ -296,7 +329,7 @@ class KeywordManagerViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     keywordDao.updateKeywordActive(entity.id, originalState)
                 }
                 _errorMessage.value = "네트워크 연결을 확인해 주세요."
@@ -305,10 +338,10 @@ class KeywordManagerViewModel(
     }
 
     fun deleteKeyword(keyword: String) {
-        viewModelScope.launch {
+        vmScope.launch {
             _isLoading.value = true
             try {
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     val currentLocal = keywordDao.getAllKeywords()
                     currentLocal.filter { it.keyword == keyword }.forEach { target ->
                         keywordDao.deleteKeyword(target)
@@ -317,10 +350,14 @@ class KeywordManagerViewModel(
 
                 val userOrDevice = preferencesDataSource.resolveUserOrDeviceKey(deviceUuid)
                 val request = AddKeywordRequest(device_uuid = userOrDevice, keyword = keyword)
-                val response = apiService.deleteUserKeyword(request)
+                val response = withContext(ioDispatcher) {
+                    apiService.deleteUserKeyword(request)
+                }
                 if (userOrDevice != deviceUuid) {
                     try {
-                        apiService.deleteUserKeyword(AddKeywordRequest(device_uuid = deviceUuid, keyword = keyword))
+                        withContext(ioDispatcher) {
+                            apiService.deleteUserKeyword(AddKeywordRequest(device_uuid = deviceUuid, keyword = keyword))
+                        }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {
@@ -336,6 +373,95 @@ class KeywordManagerViewModel(
                 _isLoading.value = false
             }
         }
+    }
+
+    /**
+     * 테스트 푸시 알림 발송 (POST /api/push/test)
+     * 모달 오류(_errorMessage)와 분리된 전용 testPushState로 로딩·성공·실패 피드백을 노출합니다.
+     */
+    fun sendTestPush() {
+        val current = _testPushState.value
+        if (current.isSending) return
+
+        _testPushState.value = current.copy(isSending = true)
+        vmScope.launch {
+            try {
+                val response = withContext(ioDispatcher) {
+                    apiService.sendTestPush(mapOf("device_uuid" to deviceUuid))
+                }
+                val latest = _testPushState.value
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    val bodyMessage = body?.message?.trim()?.takeIf { it.isNotEmpty() }
+                    if (body?.success == true) {
+                        val successMsg = bodyMessage ?: "테스트 푸시 알림을 발송했어요!"
+                        _testPushState.value = latest.copy(
+                            isSending = false,
+                            isSuccess = true,
+                            message = successMsg,
+                            feedbackSeq = latest.feedbackSeq + 1
+                        )
+                    } else {
+                        val failMsg = bodyMessage ?: "테스트 알림 발송에 실패했어요."
+                        _testPushState.value = latest.copy(
+                            isSending = false,
+                            isSuccess = false,
+                            message = failMsg,
+                            feedbackSeq = latest.feedbackSeq + 1
+                        )
+                    }
+                } else {
+                    val rawError = runCatching { response.errorBody()?.string() }.getOrNull()
+                    val parsedDetail = extractApiErrorMessage(rawError)
+                    val code = response.code()
+                    val fallbackMsg = when (code) {
+                        404 -> "등록된 알림 기기를 찾지 못했어요. 알림 설정을 먼저 저장해 주세요."
+                        429 -> "테스트 알림은 1분에 최대 6회까지 보낼 수 있어요. 잠시 후 다시 시도해 주세요."
+                        401, 403 -> "기기 인증에 실패했어요. 앱을 다시 실행한 후 시도해 주세요."
+                        else -> "테스트 알림 발송에 실패했어요. ($code)"
+                    }
+                    // 401/403 인증 오류 및 5xx 서버 오류에서는 영문 detail 노출을 막고 사용자 친화적 한국어 안내를 우선한다.
+                    val resolvedMessage = when {
+                        code == 401 || code == 403 || code >= 500 -> fallbackMsg
+                        else -> parsedDetail ?: fallbackMsg
+                    }
+                    _testPushState.value = latest.copy(
+                        isSending = false,
+                        isSuccess = false,
+                        message = resolvedMessage,
+                        feedbackSeq = latest.feedbackSeq + 1
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                val latest = _testPushState.value
+                _testPushState.value = latest.copy(
+                    isSending = false,
+                    isSuccess = false,
+                    message = "네트워크 연결을 확인해 주세요.",
+                    feedbackSeq = latest.feedbackSeq + 1
+                )
+            }
+        }
+    }
+
+    fun clearTestPushFeedback() {
+        val current = _testPushState.value
+        if (current.message != null || current.isSuccess != null) {
+            _testPushState.value = current.copy(isSuccess = null, message = null)
+        }
+    }
+
+    private fun extractApiErrorMessage(rawBody: String?): String? {
+        val trimmed = rawBody?.trim().orEmpty()
+        if (trimmed.isEmpty()) return null
+        return runCatching {
+            val obj = JsonParser.parseString(trimmed).asJsonObject
+            val detail = obj.get("detail")?.takeIf { !it.isJsonNull && it.isJsonPrimitive }?.asString?.trim()
+            val message = obj.get("message")?.takeIf { !it.isJsonNull && it.isJsonPrimitive }?.asString?.trim()
+            detail?.takeIf { it.isNotEmpty() } ?: message?.takeIf { it.isNotEmpty() }
+        }.getOrNull()
     }
 
     fun clearError() {

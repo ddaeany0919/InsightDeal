@@ -64,6 +64,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
 
@@ -88,7 +89,20 @@ fun KeywordManagerScreen(
 
     // 🗓️ 요일별 DND 설정을 위한 StateFlow 구독
     val weekDndSettings by viewModel.weekDndSettings.collectAsState()
+    val testPushState by viewModel.testPushState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
     var selectedDayKey by remember { mutableStateOf("mon") }
+
+    LaunchedEffect(testPushState.feedbackSeq) {
+        val feedback = testPushState.message
+        if (testPushState.feedbackSeq > 0 && !feedback.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(
+                message = feedback,
+                duration = SnackbarDuration.Short
+            )
+            viewModel.clearTestPushFeedback()
+        }
+    }
 
     var keywordInput by remember { mutableStateOf("") }
 
@@ -368,6 +382,7 @@ fun KeywordManagerScreen(
 
     Scaffold(
         modifier = Modifier.imePadding(),
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("키워드 및 알림 설정", fontWeight = FontWeight.Bold, fontSize = 20.sp) },
@@ -776,6 +791,75 @@ fun KeywordManagerScreen(
                                             )
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 테스트 푸시 알림 발송 카드
+                item(key = "test_push_card") {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp)),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        ),
+                        border = CardDefaults.outlinedCardBorder(enabled = true)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Column {
+                                Text(
+                                    text = "푸시 알림 수신 테스트",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.semantics { heading() }
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "현재 기기로 테스트 알림을 발송해 수신 상태를 바로 확인해 보세요.",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.sendTestPush()
+                                },
+                                enabled = !testPushState.isSending,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            ) {
+                                if (testPushState.isSending) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("테스트 알림 발송 중...", fontWeight = FontWeight.Bold)
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.NotificationsActive,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("테스트 알림 보내기", fontWeight = FontWeight.Bold)
                                 }
                             }
                         }

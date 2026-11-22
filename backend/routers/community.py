@@ -2256,6 +2256,120 @@ def _build_single_category_clause(models, single_cat: str, or_, and_, not_):
     return base_clause
 
 
+def _attach_app_interaction_counts_inplace(db: Session, items: list[dict]) -> None:
+    """
+    목록 캐시 적재 직전 얼만데 자체 투표(DealVote)·한줄 의견(DealComment) 실집계를 배치 오버레이합니다.
+    캐시 히트 경로에서는 추가 SQL을 실행하지 않고, 투표/의견 변이 시 캐시를 인메모리로 동기화합니다.
+    """
+    deal_ids = [int(d["id"]) for d in items if d.get("id") is not None]
+    if not deal_ids:
+        return
+
+    buy_map: dict[int, int] = {}
+    pass_map: dict[int, int] = {}
+    vote_rows = (
+        db.query(
+            models.DealVote.deal_id,
+            models.DealVote.vote_type,
+            func.count(models.DealVote.id),
+        )
+        .filter(models.DealVote.deal_id.in_(deal_ids))
+        .group_by(models.DealVote.deal_id, models.DealVote.vote_type)
+        .all()
+    )
+    for did, v_type, cnt in vote_rows:
+        did_int = int(did)
+        cnt_int = int(cnt or 0)
+        if v_type == "buy":
+            buy_map[did_int] = buy_map.get(did_int, 0) + cnt_int
+        elif v_type in ("save", "pass"):
+            pass_map[did_int] = pass_map.get(did_int, 0) + cnt_int
+
+    comment_map: dict[int, int] = {}
+    comment_rows = (
+        db.query(
+            models.DealComment.deal_id,
+            func.count(models.DealComment.id),
+        )
+        .filter(
+            models.DealComment.deal_id.in_(deal_ids),
+            models.DealComment.is_deleted == False,
+        )
+        .group_by(models.DealComment.deal_id)
+        .all()
+    )
+    for did, cnt in comment_rows:
+        comment_map[int(did)] = int(cnt or 0)
+
+    for d in items:
+        did_raw = d.get("id")
+        if did_raw is None:
+            continue
+        did_int = int(did_raw)
+        buy_cnt = buy_map.get(did_int, 0)
+        pass_cnt = pass_map.get(did_int, 0)
+        app_cmt_cnt = comment_map.get(did_int, 0)
+        d["buy_count"] = buy_cnt
+        d["buyCount"] = buy_cnt
+        d["pass_count"] = pass_cnt
+        d["passCount"] = pass_cnt
+        d["save_count"] = pass_cnt
+        d["saveCount"] = pass_cnt
+        d["app_comment_count"] = app_cmt_cnt
+        d["appCommentCount"] = app_cmt_cnt
+
+
+def _sync_feed_cache_app_counts(
+    deal_id: int,
+    buy_count: Optional[int] = None,
+    pass_count: Optional[int] = None,
+    app_comment_count: Optional[int] = None,
+) -> None:
+    """투표/의견 작성·삭제 직후 활성 피드·커서 캐시 내 해당 딜의 자체 반응 카운트를 무SQL로 동기화합니다."""
+    import sys as _sys
+
+    def _patch_entry_list(items: list[dict]) -> None:
+        for item in items:
+            if item.get("id") != deal_id:
+                continue
+            if buy_count is not None:
+                item["buy_count"] = buy_count
+                item["buyCount"] = buy_count
+            if pass_count is not None:
+                item["pass_count"] = pass_count
+                item["passCount"] = pass_count
+                item["save_count"] = pass_count
+                item["saveCount"] = pass_count
+            if app_comment_count is not None:
+                item["app_comment_count"] = app_comment_count
+                item["appCommentCount"] = app_comment_count
+
+    current_mod = _sys.modules.get(__name__)
+    modules = [current_mod] if current_mod is not None else []
+    for _alias in ("routers.community", "backend.routers.community"):
+        _mod = _sys.modules.get(_alias)
+        if _mod is not None and _mod not in modules:
+            modules.append(_mod)
+
+    for _mod in modules:
+        lock = getattr(_mod, "_HOT_DEALS_CACHE_LOCK", None)
+        api_cache = getattr(_mod, "_HOT_DEALS_API_CACHE", None)
+        cursor_cache = getattr(_mod, "_HOT_DEALS_CURSOR_CACHE", None)
+        if lock is None:
+            continue
+        with lock:
+            if isinstance(api_cache, dict):
+                for entry in api_cache.values():
+                    grouped = entry.get("grouped")
+                    if isinstance(grouped, list):
+                        _patch_entry_list(grouped)
+            if isinstance(cursor_cache, dict):
+                for entry in cursor_cache.values():
+                    deals_slice = entry.get("deals")
+                    if isinstance(deals_slice, list):
+                        _patch_entry_list(deals_slice)
+
+
 @router.get("/hot-deals")
 def get_hot_deals(
     limit: int = 20,
@@ -3367,6 +3481,9 @@ def get_hot_deals(
             else:
                 next_cursor_obj = _compute_next_cursor_for_slice(end_g_idx)
 
+        target_cache_items = grouped_result if cursor_dt is None else final_result
+        _attach_app_interaction_counts_inplace(db, target_cache_items)
+
         if cursor_dt is None:
             primitive_meta = {
                 gid: {
@@ -4119,6 +4236,8 @@ def get_deal(
         "userVote": None,
         "comment_count": active_comment_count,
         "commentCount": active_comment_count,
+        "app_comment_count": active_comment_count,
+        "appCommentCount": active_comment_count,
         "history_count": history_count,
         "historyCount": history_count,
         "initial_history": initial_history,
@@ -4909,6 +5028,16 @@ def add_deal_comment(
 
     db.commit()
     _evict_deal_detail_cache(deal_id)
+    active_comment_count = (
+        db.query(func.count(models.DealComment.id))
+        .filter(
+            models.DealComment.deal_id == deal_id,
+            models.DealComment.is_deleted == False,
+        )
+        .scalar()
+        or 0
+    )
+    _sync_feed_cache_app_counts(deal_id, app_comment_count=int(active_comment_count))
     db.refresh(new_comment)
 
     return _serialize_deal_comment(new_comment)
@@ -4943,6 +5072,16 @@ def delete_deal_comment(
 
     db.commit()
     _evict_deal_detail_cache(deal_id)
+    active_comment_count = (
+        db.query(func.count(models.DealComment.id))
+        .filter(
+            models.DealComment.deal_id == deal_id,
+            models.DealComment.is_deleted == False,
+        )
+        .scalar()
+        or 0
+    )
+    _sync_feed_cache_app_counts(deal_id, app_comment_count=int(active_comment_count))
     return {
         "status": "ok",
         "message": "Comment deleted successfully",
@@ -5030,6 +5169,7 @@ def add_deal_vote(
 
     db.commit()
     _evict_deal_detail_cache(deal_id)
+    _sync_feed_cache_app_counts(deal_id, buy_count=buy_count, pass_count=pass_count)
 
     uv = db.query(models.DealVote).filter(
         models.DealVote.deal_id == deal_id,

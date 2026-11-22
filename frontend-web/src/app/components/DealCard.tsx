@@ -130,8 +130,10 @@ export default function DealCard({
     !deal.isFree && !deal.isClosed
       ? computeShippingTotal(deal.price, deal.currency, displayShipping)
       : null;
-  const recommendTotal = deal.recommendations ?? deal.likeCount ?? deal.buyCount ?? 0;
-  const commentTotal = deal.comments ?? deal.commentCount ?? 0;
+  const appBuyCount = Math.max(0, Number(deal.buyCount ?? 0) || 0);
+  const appPassCount = Math.max(0, Number(deal.passCount ?? 0) || 0);
+  const appVoteTotal = appBuyCount + appPassCount;
+  const appCommentTotal = Math.max(0, Number(deal.appCommentCount ?? 0) || 0);
   const isSearchFallback = Boolean(
     deal.isSearchFallback || deal.is_search_fallback
   );
@@ -401,7 +403,7 @@ export default function DealCard({
               {urgentBadge}
             </span>
           )}
-          {(recommendTotal > 0 || commentTotal > 0) && (
+          {(appVoteTotal > 0 || appCommentTotal > 0) && (
             <span
               style={{
                 fontSize: "0.73rem",
@@ -411,11 +413,11 @@ export default function DealCard({
                 alignItems: "center",
                 gap: "4px",
               }}
-              aria-label={`추천 ${recommendTotal} 댓글 ${commentTotal}`}
+              aria-label={`얼만데 투표 ${appVoteTotal} 의견 ${appCommentTotal}`}
             >
-              {recommendTotal > 0 && `👍 ${recommendTotal}`}
-              {recommendTotal > 0 && commentTotal > 0 && " · "}
-              {commentTotal > 0 && `💬 ${commentTotal}`}
+              {appVoteTotal > 0 && `👍 ${appVoteTotal}`}
+              {appVoteTotal > 0 && appCommentTotal > 0 && " · "}
+              {appCommentTotal > 0 && `💬 ${appCommentTotal}`}
             </span>
           )}
         </div>

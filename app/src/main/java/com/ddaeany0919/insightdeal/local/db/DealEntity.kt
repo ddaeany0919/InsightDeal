@@ -44,7 +44,10 @@ data class DealEntity(
     val bodyImages: List<String> = emptyList(),
     val isSearchFallback: Boolean = false,
     val isFree: Boolean = false,
-    val reportCount: Int = 0
+    val reportCount: Int = 0,
+    val buyCount: Int = 0,
+    val passCount: Int = 0,
+    val appCommentCount: Int = 0
 ) {
     /**
      * Entity -> Domain Model 변환
@@ -83,7 +86,10 @@ data class DealEntity(
             isSearchFallback = isSearchFallback,
             isFree = isFree,
             bodyImages = bodyImages,
-            reportCount = reportCount
+            reportCount = reportCount,
+            buyCount = buyCount,
+            passCount = passCount,
+            appCommentCount = appCommentCount
         )
     }
 
@@ -127,7 +133,10 @@ data class DealEntity(
                 bodyImages = deal.resolvedBodyImages,
                 isSearchFallback = deal.isSearchFallback,
                 isFree = deal.isFree,
-                reportCount = deal.reportCount
+                reportCount = deal.reportCount,
+                buyCount = deal.buyCount,
+                passCount = deal.passCount,
+                appCommentCount = deal.appCommentCount
             )
         }
     }

@@ -83,6 +83,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -278,7 +279,8 @@ fun DealDetailRoute(
     onBack: () -> Unit,
     onOpenUrl: (String) -> Unit,
     onNavigateToCommunity: () -> Unit,
-    onNavigateToWatchlist: () -> Unit
+    onNavigateToWatchlist: () -> Unit,
+    onNavigateToDeal: (Int) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val wishlistState by wishlistViewModel.uiState.collectAsStateWithLifecycle()
@@ -593,7 +595,9 @@ fun DealDetailRoute(
         onRetryComments = { viewModel.loadCommentsIfNeeded(forceRefresh = true) },
         onAddComment = { content -> viewModel.addComment(content) },
         onDeleteComment = { commentId -> viewModel.deleteComment(commentId) },
-        snackbarHostState = snackbarHostState
+        snackbarHostState = snackbarHostState,
+        similarDeals = uiState.similarDeals,
+        onNavigateToDeal = onNavigateToDeal
     )
 }
 
@@ -645,7 +649,9 @@ fun DealDetailScreen(
     onRetryComments: () -> Unit,
     onAddComment: (String) -> Unit,
     onDeleteComment: (Int) -> Unit,
-    snackbarHostState: SnackbarHostState
+    snackbarHostState: SnackbarHostState,
+    similarDeals: List<DealItem> = emptyList(),
+    onNavigateToDeal: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1042,7 +1048,7 @@ fun DealDetailScreen(
             // 2급 [안 B] 아코디언 ②: 살까 · 말까 투표 (초기 접힘)
             item(key = "accordion_vote", contentType = "accordion_vote") {
                 DetailAccordionSection(
-                    title = "살까 · 말까 투표",
+                    title = "얼만데 살까 · 말까 투표",
                     icon = Icons.Default.Poll,
                     summaryBadge = "살까 $effectiveBuyCount · 말까 $effectivePassCount",
                     expanded = voteExpanded,
@@ -1060,10 +1066,10 @@ fun DealDetailScreen(
                 }
             }
 
-            // 2급 [안 B] 아코디언 ③: 한줄평 (초기 접힘, 펼침 시 Lazy-fetch)
+            // 2급 [안 B] 아코디언 ③: 한줄 의견 (초기 접힘, 펼침 시 Lazy-fetch)
             item(key = "accordion_comments", contentType = "accordion_comments") {
                 DetailAccordionSection(
-                    title = "한줄평",
+                    title = "얼만데 한줄 의견",
                     icon = Icons.Default.Forum,
                     summaryBadge = "${effectiveCommentCount}개",
                     expanded = commentsExpanded,
@@ -1130,6 +1136,15 @@ fun DealDetailScreen(
                 }
             }
 
+            if (similarDeals.isNotEmpty()) {
+                item(key = "similar_deals", contentType = "similar_deals") {
+                    SimilarDealsSection(
+                        similarDeals = similarDeals,
+                        onDealClick = onNavigateToDeal
+                    )
+                }
+            }
+
             item(key = "affiliate_notice", contentType = "footer_notice") {
                 Text(
                     text = "쿠팡 파트너스 및 제휴 마케팅 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.",
@@ -1187,7 +1202,7 @@ private fun DealSummaryPillsRow(
         item(key = "pill_comments") {
             SummaryActionPill(
                 icon = Icons.Default.Forum,
-                label = "한줄평 ${commentCount}개",
+                label = "의견 ${commentCount}개",
                 onClick = onCommentsPillClick
             )
         }
@@ -4234,6 +4249,227 @@ private fun DealImageLightboxDialog(
                                 modifier = Modifier.heightIn(min = 48.dp)
                             ) {
                                 Text("원본 크기", color = Color(0xFF34D399), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 비슷한 핫딜 보조 섹션 (백엔드 축소 페이로드 10개 필드만 null-safe 사용, 3대 핵심 뼈대 무침해)
+ */
+@Composable
+private fun SimilarDealsSection(
+    similarDeals: List<DealItem>,
+    onDealClick: (Int) -> Unit
+) {
+    val visibleDeals = remember(similarDeals) {
+        (similarDeals as List<DealItem?>)
+            .filterNotNull()
+            .filter { it.id > 0 }
+            .distinctBy { it.id }
+            .take(4)
+    }
+    if (visibleDeals.isEmpty()) return
+
+    val semantic = LocalInsightDealColors.current
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = "비슷한 핫딜",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { heading() }
+            )
+            Text(
+                text = "같은 카테고리·키워드에서 찾은 관련 특가예요",
+                fontSize = 12.sp,
+                color = semantic.textMuted
+            )
+        }
+
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(vertical = 2.dp)
+        ) {
+            items(
+                items = visibleDeals,
+                key = { it.id },
+                contentType = { "similar_deal_card" }
+            ) { item ->
+                val rawTitle = item.title as String? ?: ""
+                val safeSiteName = item.siteName as String? ?: ""
+                val safeShopName = item.shopName
+                val safeCurrency = (item.currency as String?)?.takeIf { it.isNotBlank() } ?: "KRW"
+                val resolvedTitle = remember(item.id, rawTitle, safeShopName) {
+                    resolveShopBadgeAndCleanTitle(
+                        rawTitle = rawTitle,
+                        shopName = safeShopName,
+                        ecommerceUrl = null
+                    )
+                }
+                val cleanTitle = remember(resolvedTitle.cleanTitle, rawTitle) {
+                    resolvedTitle.cleanTitle.ifBlank { decodeHtmlEntities(rawTitle) }
+                }
+                val badgeText = remember(resolvedTitle.shopBadge, safeSiteName, item.category) {
+                    resolvedTitle.shopBadge?.takeIf { it.isNotBlank() }
+                        ?: safeSiteName.takeIf { it.isNotBlank() }
+                        ?: item.category?.takeIf { it.isNotBlank() }
+                        ?: "핫딜"
+                }
+                val priceText = remember(item.id, item.price, safeCurrency, cleanTitle) {
+                    formatPrice(item.price, safeCurrency, cleanTitle)
+                }
+                val shippingText = remember(item.id, item.shippingFee) {
+                    item.shippingFee
+                        ?.let { decodeHtmlEntities(it).trim() }
+                        ?.takeIf { it.isNotEmpty() && it != "정보 없음" && it != "배송비 확인 필요" }
+                }
+                val relativeTime = rememberRelativeTime(item.createdAt)
+                val rawImageUrl = item.imageUrl?.takeIf { it.isNotBlank() }
+                val primaryImageUrl = remember(item.id, rawImageUrl) {
+                    com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.resolve(rawImageUrl, targetWidth = 200)
+                }
+                val fallbackProxyUrl = remember(item.id, rawImageUrl) {
+                    com.ddaeany0919.insightdeal.data.util.ImageUrlResolver.getFallbackBackendProxyUrl(rawImageUrl)
+                }
+                var activeImageUrl by remember(primaryImageUrl) { mutableStateOf(primaryImageUrl) }
+                var imageFailed by remember(primaryImageUrl) { mutableStateOf(false) }
+
+                Card(
+                    modifier = Modifier
+                        .width(172.dp)
+                        .heightIn(min = 196.dp)
+                        .bounceClick(onClickLabel = "$cleanTitle 상세 보기") {
+                            onDealClick(item.id)
+                        },
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, semantic.cardBorder),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        if (imageFailed || activeImageUrl.isNullOrBlank()) {
+                            BrandPlaceholder(
+                                siteName = safeSiteName,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(94.dp)
+                                    .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)),
+                                textStyle = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            )
+                        } else {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(activeImageUrl)
+                                    .setHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = cleanTitle,
+                                contentScale = ContentScale.Crop,
+                                onError = {
+                                    if (
+                                        fallbackProxyUrl != null &&
+                                        activeImageUrl != fallbackProxyUrl &&
+                                        !activeImageUrl.orEmpty().contains("/api/proxy-image", ignoreCase = true)
+                                    ) {
+                                        activeImageUrl = fallbackProxyUrl
+                                    } else {
+                                        imageFailed = true
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(94.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    Text(
+                                        text = badgeText,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                                if (relativeTime.isNotEmpty()) {
+                                    Text(
+                                        text = relativeTime,
+                                        fontSize = 10.sp,
+                                        color = semantic.textMuted,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            Text(
+                                text = cleanTitle.ifBlank { "관련 핫딜" },
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                lineHeight = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = priceText,
+                                    style = PriceTextStyle.copy(
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    ),
+                                    color = if (item.price > 0L || priceText == "무료") semantic.priceAccent else semantic.textMuted,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                if (shippingText != null) {
+                                    Text(
+                                        text = shippingText,
+                                        fontSize = 10.sp,
+                                        color = semantic.textMuted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }

@@ -498,8 +498,8 @@ fun ShouldIBuyVoteCard(
                         }
                     },
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isBuySelected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f) else Color.Transparent,
-                        contentColor = if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
+                        containerColor = if (isBuySelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                        contentColor = if (isBuySelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     ),
                     border = BorderStroke(
                         1.dp,
@@ -515,7 +515,7 @@ fun ShouldIBuyVoteCard(
                         Icon(
                             imageVector = Icons.Default.ThumbUp,
                             contentDescription = null,
-                            tint = if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (isBuySelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
                                 .size(14.dp)
                                 .graphicsLayer {
@@ -526,7 +526,7 @@ fun ShouldIBuyVoteCard(
                         )
                         Text(
                             text = if (post.bountyPoints > 0) "살까 ${post.bountyPoints}" else "살까",
-                            color = if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isBuySelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = if (isBuySelected) FontWeight.Bold else FontWeight.Medium,
                             fontSize = 13.sp
                         )

@@ -136,14 +136,20 @@ describe("v1.1f 실사용자 100대 개선 웹 회귀 테스트", () => {
     expect(container.querySelector(".deal-card--compact")).toBeTruthy();
     expect(screen.getByText("옵션·할인율 확인")).toBeInTheDocument();
 
-    const likeFallbackDeal = makeDeal(509, {
+    // 원글 스크래핑 수치(likeCount=17, comments=9)만 있고 얼만데 자체 투표/의견이 0건이면 카드에 배지를 숨긴다
+    const scrapedOnlyDeal = makeDeal(509, {
       title: "[오늘끝딜 668400원] 삼성공식파트너 JBL 바 1000",
       likeCount: 17,
+      recommendations: 17,
       commentCount: 9,
+      comments: 9,
+      buyCount: 0,
+      passCount: 0,
+      appCommentCount: 0,
     });
     const { container: c2 } = render(
       <DealCard
-        deal={likeFallbackDeal}
+        deal={scrapedOnlyDeal}
         appliedSearch=""
         isMounted={true}
         currentTime={Date.now()}
@@ -157,8 +163,36 @@ describe("v1.1f 실사용자 100대 개선 웹 회귀 테스트", () => {
         onShowToast={vi.fn()}
       />
     );
-    expect(c2.querySelector('[aria-label="추천 17 댓글 9"]')).toBeTruthy();
+    expect(c2.querySelector('[aria-label^="얼만데 투표"]')).toBeNull();
+    expect(c2.querySelector('[aria-label^="추천 "]')).toBeNull();
     expect(screen.getByText(/삼성공식파트너 JBL 바 1000/)).toBeInTheDocument();
+
+    // 실제 얼만데 사용자 투표/의견이 있을 때만 통일된 배지를 표시한다
+    const appEngagedDeal = makeDeal(510, {
+      title: "[쿠팡] 실사용자 참여 테스트 딜",
+      likeCount: 99,
+      comments: 42,
+      buyCount: 3,
+      passCount: 1,
+      appCommentCount: 2,
+    });
+    const { container: c3 } = render(
+      <DealCard
+        deal={appEngagedDeal}
+        appliedSearch=""
+        isMounted={true}
+        currentTime={Date.now()}
+        isWishlisted={false}
+        isAlertSet={false}
+        viewMode="compact"
+        onSelectDeal={vi.fn()}
+        onShareDeal={vi.fn()}
+        onToggleAlert={vi.fn()}
+        onToggleWishlist={vi.fn()}
+        onShowToast={vi.fn()}
+      />
+    );
+    expect(c3.querySelector('[aria-label="얼만데 투표 4 의견 2"]')).toBeTruthy();
 
     const article = container.querySelector("article.deal-card") as HTMLElement;
     expect(article).toBeTruthy();

@@ -181,7 +181,7 @@ export default function DealDetailSecondarySections({
         >
           <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
             <ThumbsUp size={16} color="var(--accent)" aria-hidden="true" />
-            <span>살까 · 말까 투표</span>
+            <span>얼만데 살까 · 말까 투표</span>
           </span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
             <span className="deal-accordion-pill">
@@ -325,7 +325,7 @@ export default function DealDetailSecondarySections({
         >
           <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
             <MessageSquare size={16} color="var(--accent)" aria-hidden="true" />
-            <span>한줄 의견</span>
+            <span>얼만데 한줄 의견</span>
           </span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
             <span className="deal-accordion-pill">의견 {displayCommentTotal}개</span>

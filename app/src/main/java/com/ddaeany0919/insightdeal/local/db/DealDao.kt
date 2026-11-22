@@ -17,7 +17,7 @@ interface DealDao {
 
     /**
      * 카테고리(15종 표준 키 + 쉼표 구분 다중 선택 + 레거시 별칭 + 서버 제목/커뮤니티 폴백 동치 매칭),
-     * 검색 키워드, 커뮤니티 플랫폼 필터링 및 3종 정렬 지원 PagingSource 쿼리
+     * 검색 키워드, 커뮤니티 플랫폼, 무료배송/쇼핑몰/가격범위 필터링 및 6종 정렬 지원 PagingSource 쿼리
      */
     @Query("""
         SELECT * FROM deals 
@@ -281,20 +281,144 @@ interface DealDao {
               (INSTR(',' || :platform || ',', ',빠삭해외,') > 0 AND INSTR(siteName, '빠삭해외') > 0) OR
               (INSTR(',' || :platform || ',', ',빠삭육아,') > 0 AND INSTR(siteName, '빠삭육아') > 0)
           ))
+          AND (
+              :freeShippingOnly = 0
+              OR COALESCE(shippingFee, '') LIKE '%무료%'
+              OR COALESCE(shippingFee, '') LIKE '%무배%'
+              OR COALESCE(tags, '') LIKE '%무료배송%'
+          )
+          AND (
+              :shop IS NULL
+              OR TRIM(:shop) = ''
+              OR TRIM(:shop) = '전체'
+              OR COALESCE(shopName, '') LIKE '%' || TRIM(:shop) || '%'
+              OR title LIKE '%[' || TRIM(:shop) || '%'
+              OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%' || LOWER(TRIM(:shop)) || '%'
+              OR (TRIM(:shop) IN ('카카오쇼핑', '카카오') AND (
+                  COALESCE(shopName, '') LIKE '%카카오%' OR COALESCE(shopName, '') LIKE '%톡딜%' OR LOWER(COALESCE(shopName, '')) LIKE '%kakao%'
+                  OR title LIKE '%[카카오%' OR title LIKE '%[톡딜%'
+                  OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%kakao%'
+              ))
+              OR (TRIM(:shop) IN ('토스쇼핑', '토스') AND (
+                  COALESCE(shopName, '') LIKE '%토스%' OR LOWER(COALESCE(shopName, '')) LIKE '%toss%'
+                  OR title LIKE '%[토스%'
+                  OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%toss%'
+              ))
+              OR (TRIM(:shop) = '네이버' AND (
+                  COALESCE(shopName, '') LIKE '%네이버%' OR COALESCE(shopName, '') LIKE '%스마트스토어%' OR COALESCE(shopName, '') LIKE '%브랜드스토어%'
+                  OR title LIKE '%[네이버%' OR title LIKE '%[스마트스토어%' OR title LIKE '%[브랜드스토어%'
+                  OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%naver.com%'
+              ))
+              OR (LOWER(TRIM(:shop)) IN ('지마켓', 'g마켓') AND (
+                  COALESCE(shopName, '') LIKE '%지마켓%' OR LOWER(COALESCE(shopName, '')) LIKE '%g마켓%' OR LOWER(COALESCE(shopName, '')) LIKE '%gmarket%'
+                  OR LOWER(title) LIKE '%[지마켓%' OR LOWER(title) LIKE '%[g마켓%' OR LOWER(title) LIKE '%[gmarket%'
+                  OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%gmarket%'
+              ))
+              OR (TRIM(:shop) = '옥션' AND (
+                  COALESCE(shopName, '') LIKE '%옥션%' OR title LIKE '%[옥션%'
+                  OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%auction%'
+              ))
+              OR (TRIM(:shop) IN ('알리익스프레스', '알리') AND (
+                  COALESCE(shopName, '') LIKE '%알리%' OR LOWER(COALESCE(shopName, '')) LIKE '%aliexpress%'
+                  OR title LIKE '%[알리%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%aliexpress%'
+              ))
+              OR (TRIM(:shop) = '11번가' AND (
+                  COALESCE(shopName, '') LIKE '%11번가%' OR LOWER(COALESCE(shopName, '')) LIKE '%11st%'
+                  OR title LIKE '%[11번가%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%11st%'
+              ))
+              OR (TRIM(:shop) = '롯데온' AND (
+                  COALESCE(shopName, '') LIKE '%롯데온%' OR LOWER(COALESCE(shopName, '')) LIKE '%lotteon%'
+                  OR title LIKE '%[롯데온%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%lotteon%'
+              ))
+              OR (TRIM(:shop) = '쿠팡' AND (
+                  COALESCE(shopName, '') LIKE '%쿠팡%' OR LOWER(COALESCE(shopName, '')) LIKE '%coupang%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%coupa.ng%'
+                  OR title LIKE '%[쿠팡%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%coupang%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%coupa.ng%'
+              ))
+              OR (LOWER(TRIM(:shop)) = 'ssg' AND (
+                  UPPER(COALESCE(shopName, '')) LIKE '%SSG%' OR COALESCE(shopName, '') LIKE '%신세계%' OR COALESCE(shopName, '') LIKE '%이마트%'
+                  OR UPPER(title) LIKE '%[SSG%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%ssg.com%'
+              ))
+              OR (TRIM(:shop) = '오늘의집' AND (
+                  COALESCE(shopName, '') LIKE '%오늘의집%' OR title LIKE '%[오늘의집%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%ohou.se%'
+              ))
+              OR (TRIM(:shop) = '올리브영' AND (
+                  COALESCE(shopName, '') LIKE '%올리브영%' OR title LIKE '%[올리브영%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%oliveyoung%'
+              ))
+              OR (TRIM(:shop) = '컬리' AND (
+                  COALESCE(shopName, '') LIKE '%컬리%' OR title LIKE '%[컬리%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%kurly%'
+              ))
+              OR (TRIM(:shop) = '아마존' AND (
+                  COALESCE(shopName, '') LIKE '%아마존%' OR LOWER(COALESCE(shopName, '')) LIKE '%amazon%'
+                  OR title LIKE '%[아마존%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%amazon%'
+              ))
+              OR (LOWER(TRIM(:shop)) = 'cj온스타일' AND (
+                  UPPER(COALESCE(shopName, '')) LIKE '%CJ온%' OR LOWER(COALESCE(shopName, '')) LIKE '%cjonstyle%'
+                  OR UPPER(title) LIKE '%[CJ온%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%cjonstyle%'
+              ))
+              OR (TRIM(:shop) IN ('엑스박스', '엑박') AND (
+                  COALESCE(shopName, '') LIKE '%엑스박스%' OR COALESCE(shopName, '') LIKE '%엑박%' OR LOWER(COALESCE(shopName, '')) LIKE '%xbox%'
+                  OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%xbox%'
+              ))
+          )
+          AND (
+              :minPrice IS NULL
+              OR :minPrice <= 0
+              OR (
+                  CASE UPPER(TRIM(COALESCE(currency, 'KRW')))
+                      WHEN 'USD' THEN price * 14.0
+                      WHEN 'EUR' THEN price * 15.2
+                      WHEN 'CNY' THEN price * 1.95
+                      WHEN 'JPY' THEN price * 9.3
+                      ELSE price * 1.0
+                  END
+              ) >= :minPrice
+          )
+          AND (
+              :maxPrice IS NULL
+              OR :maxPrice <= 0
+              OR (
+                  price > 0
+                  AND (
+                      CASE UPPER(TRIM(COALESCE(currency, 'KRW')))
+                          WHEN 'USD' THEN price * 14.0
+                          WHEN 'EUR' THEN price * 15.2
+                          WHEN 'CNY' THEN price * 1.95
+                          WHEN 'JPY' THEN price * 9.3
+                          ELSE price * 1.0
+                      END
+                  ) <= :maxPrice
+              )
+          )
         ORDER BY
           CASE WHEN :sort = 'popular' THEN honeyScore END DESC,
           CASE WHEN :sort = 'popular' THEN likeCount END DESC,
           CASE WHEN :sort = 'popular' THEN commentCount END DESC,
+          CASE WHEN :sort = 'comments' THEN commentCount END DESC,
+          CASE WHEN :sort = 'comments' THEN likeCount END DESC,
+          CASE WHEN :sort = 'comments' THEN honeyScore END DESC,
+          CASE WHEN :sort = 'recommendations' THEN likeCount END DESC,
+          CASE WHEN :sort = 'recommendations' THEN honeyScore END DESC,
+          CASE WHEN :sort = 'recommendations' THEN commentCount END DESC,
           CASE WHEN :sort = 'price_asc' THEN (CASE WHEN price > 0 THEN 0 ELSE 1 END) END ASC,
           CASE WHEN :sort = 'price_asc' THEN (
               CASE UPPER(TRIM(COALESCE(currency, 'KRW')))
-                  WHEN 'USD' THEN price * 1400.0 / 100.0
-                  WHEN 'EUR' THEN price * 1500.0 / 100.0
-                  WHEN 'CNY' THEN price * 195.0 / 100.0
-                  WHEN 'JPY' THEN price * 9.5
+                  WHEN 'USD' THEN price * 14.0
+                  WHEN 'EUR' THEN price * 15.2
+                  WHEN 'CNY' THEN price * 1.95
+                  WHEN 'JPY' THEN price * 9.3
                   ELSE price * 1.0
               END
           ) END ASC,
+          CASE WHEN :sort = 'price_desc' THEN (CASE WHEN price > 0 THEN 0 ELSE 1 END) END ASC,
+          CASE WHEN :sort = 'price_desc' THEN (
+              CASE UPPER(TRIM(COALESCE(currency, 'KRW')))
+                  WHEN 'USD' THEN price * 14.0
+                  WHEN 'EUR' THEN price * 15.2
+                  WHEN 'CNY' THEN price * 1.95
+                  WHEN 'JPY' THEN price * 9.3
+                  ELSE price * 1.0
+              END
+          ) END DESC,
           createdAt DESC,
           id DESC
     """)
@@ -302,8 +426,34 @@ interface DealDao {
         category: String?,
         keyword: String?,
         platform: String?,
-        sort: String = "latest"
+        sort: String,
+        freeShippingOnly: Boolean,
+        shop: String?,
+        minPrice: Int?,
+        maxPrice: Int?
     ): PagingSource<Int, DealEntity>
+
+    fun getPagedDeals(
+        category: String?,
+        keyword: String?,
+        platform: String?,
+        sort: String = "latest"
+    ): PagingSource<Int, DealEntity> = getPagedDeals(
+        category = category,
+        keyword = keyword,
+        platform = platform,
+        sort = sort,
+        freeShippingOnly = false,
+        shop = null,
+        minPrice = null,
+        maxPrice = null
+    )
+
+    @Query("UPDATE deals SET buyCount = :buyCount, passCount = :passCount WHERE id = :dealId")
+    suspend fun updateVoteCounts(dealId: Int, buyCount: Int, passCount: Int)
+
+    @Query("UPDATE deals SET appCommentCount = :appCommentCount WHERE id = :dealId")
+    suspend fun updateAppCommentCount(dealId: Int, appCommentCount: Int)
 
     @Query("DELETE FROM deals")
     suspend fun clearAllDeals()

@@ -47,19 +47,35 @@ import com.ddaeany0919.insightdeal.core.security.EncryptedPrefsManager
 import com.ddaeany0919.insightdeal.data.LocalDataProvider
 import com.ddaeany0919.insightdeal.models.CategoryCatalog
 import com.ddaeany0919.insightdeal.presentation.A11yIconButton
+import com.ddaeany0919.insightdeal.presentation.TestPushState
 import com.ddaeany0919.insightdeal.presentation.components.PinLockDialog
 
 @OptIn(ExperimentalMaterial3Api::class, coil.annotation.ExperimentalCoilApi::class)
 @Composable
 fun SettingsScreen(
     onBackClick: () -> Unit,
-    onNavigateToKeywordManager: () -> Unit
+    onNavigateToKeywordManager: () -> Unit,
+    testPushState: TestPushState = TestPushState(),
+    onSendTestPush: () -> Unit = {},
+    onClearTestPushFeedback: () -> Unit = {}
 ) {
     val ctx = LocalContext.current
     val tm = remember { ThemeManager.getInstance(ctx) }
     val mode by tm.themeMode.collectAsState()
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(testPushState.feedbackSeq) {
+        val feedback = testPushState.message
+        if (testPushState.feedbackSeq > 0 && !feedback.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(
+                message = feedback,
+                duration = SnackbarDuration.Short
+            )
+            onClearTestPushFeedback()
+        }
+    }
 
     val deviceUuid = remember {
         runCatching { LocalDataProvider.getDeviceUuid() }.getOrDefault("")
@@ -86,6 +102,7 @@ fun SettingsScreen(
     var isSecurityAccordionExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("설정", fontWeight = FontWeight.Bold, fontSize = 19.sp, letterSpacing = (-0.4).sp) },
@@ -143,6 +160,56 @@ fun SettingsScreen(
                             value = "방해금지·08:00 요약",
                             onClick = onNavigateToKeywordManager
                         )
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        // 테스트 알림 보내기
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .clickable(enabled = !testPushState.isSending) {
+                                    onSendTestPush()
+                                }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            SettingsIconBadge(
+                                icon = Icons.Outlined.Notifications,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "테스트 알림 보내기",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (testPushState.isSending) "테스트 알림을 발송하고 있어요..." else "현재 기기 푸시 수신 확인",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (testPushState.isSending) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            } else {
+                                Text(
+                                    text = "발송",
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
 
                         HorizontalDivider(
                             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),

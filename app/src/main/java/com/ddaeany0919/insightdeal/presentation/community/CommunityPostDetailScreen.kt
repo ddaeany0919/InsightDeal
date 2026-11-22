@@ -987,7 +987,8 @@ fun ShouldIBuyDetailVotePanel(
                         }
                     },
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isBuySelected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f) else Color.Transparent
+                        containerColor = if (isBuySelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                        contentColor = if (isBuySelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     ),
                     border = BorderStroke(1.dp, if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outlineVariant),
                     shape = RoundedCornerShape(10.dp),
@@ -996,10 +997,10 @@ fun ShouldIBuyDetailVotePanel(
                         .heightIn(min = 48.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Filled.ThumbUp, contentDescription = null, tint = if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+                        Icon(Icons.Filled.ThumbUp, contentDescription = null, tint = if (isBuySelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
                         Text(
                             text = if (post.bountyPoints > 0) "살까 ${post.bountyPoints}" else "살까",
-                            color = if (isBuySelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isBuySelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = if (isBuySelected) FontWeight.Bold else FontWeight.Medium
                         )
                     }

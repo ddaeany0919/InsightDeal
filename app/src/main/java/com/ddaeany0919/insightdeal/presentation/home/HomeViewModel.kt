@@ -10,7 +10,11 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import androidx.paging.filter
 import androidx.paging.map
+import androidx.room.withTransaction
+import com.ddaeany0919.insightdeal.data.FeedPreferencesDataSource
 import com.ddaeany0919.insightdeal.data.LocalDataProvider
+import com.ddaeany0919.insightdeal.local.db.DealDao
+import com.ddaeany0919.insightdeal.local.db.DealRemoteKeysDao
 import com.ddaeany0919.insightdeal.models.CategoryCatalog
 import com.ddaeany0919.insightdeal.models.DealItem
 import com.ddaeany0919.insightdeal.network.ApiService
@@ -34,7 +38,14 @@ import kotlinx.coroutines.launch
 class HomeViewModel @JvmOverloads constructor(
     private val apiService: ApiService = NetworkModule.createService<ApiService>(),
     private val coroutineScopeOverride: CoroutineScope? = null,
-    autoInitialize: Boolean = (coroutineScopeOverride == null)
+    autoInitialize: Boolean = (coroutineScopeOverride == null),
+    private val feedPreferencesDataSource: FeedPreferencesDataSource = LocalDataProvider.feedPreferencesDataSource,
+    private val dealDaoProvider: () -> DealDao = { LocalDataProvider.database.dealDao() },
+    private val dealRemoteKeysDaoProvider: () -> DealRemoteKeysDao = { LocalDataProvider.database.dealRemoteKeysDao() },
+    private val runInTransactionProvider: suspend (suspend () -> Unit) -> Unit = { block ->
+        LocalDataProvider.database.withTransaction { block() }
+    },
+    private val realtimePollIntervalMs: Long = REALTIME_POLL_INTERVAL_MS
 ) : ViewModel() {
 
     private val vmScope: CoroutineScope
@@ -58,25 +69,57 @@ class HomeViewModel @JvmOverloads constructor(
     private val _newDealsCount = MutableStateFlow(0)
     val newDealsCount: StateFlow<Int> = _newDealsCount.asStateFlow()
 
+    private val _viewMode = MutableStateFlow(feedPreferencesDataSource.getViewMode())
+    val viewMode: StateFlow<String> = _viewMode.asStateFlow()
+
+    private val _mutedKeywords = MutableStateFlow(feedPreferencesDataSource.getMutedKeywords())
+    val mutedKeywords: StateFlow<Set<String>> = _mutedKeywords.asStateFlow()
+
     private var latestKnownDealId: Int = 0
     private var dealWatcherJob: Job? = null
+
+    @Volatile
+    private var isForeground: Boolean = false
 
     init {
         if (autoInitialize) {
             fetchPopularKeywords()
             fetchTopHotDeals()
-            startRealtimeDealWatcher()
             vmScope.launch {
                 CategoryCatalog.syncWithServer(apiService)
             }
         }
     }
 
+    /**
+     * 화면 포그라운드/백그라운드 진입 상태 변경 시 호출합니다.
+     * 포그라운드 상태이면서 최신순("latest") 정렬일 때만 90초 주기 실시간 감시를 활성화합니다.
+     */
+    fun onForegroundChanged(isForeground: Boolean) {
+        if (this.isForeground == isForeground) return
+        this.isForeground = isForeground
+        updateRealtimeDealWatcher()
+    }
+
+    private fun updateRealtimeDealWatcher() {
+        val shouldWatch = isForeground && _filterState.value.sortBy == "latest"
+        if (shouldWatch) {
+            if (dealWatcherJob?.isActive != true) {
+                startRealtimeDealWatcher()
+            }
+        } else {
+            dealWatcherJob?.cancel()
+            dealWatcherJob = null
+        }
+    }
+
     private fun startRealtimeDealWatcher() {
         dealWatcherJob?.cancel()
         dealWatcherJob = vmScope.launch {
-            while (true) {
-                delay(50_000L)
+            val intervalMs = realtimePollIntervalMs.coerceAtLeast(1L)
+            while (isForeground && _filterState.value.sortBy == "latest") {
+                delay(intervalMs)
+                if (!isForeground || _filterState.value.sortBy != "latest") break
                 try {
                     val response = apiService.getCommunityHotDeals(limit = 10, offset = 0)
                     if (response.isSuccessful) {
@@ -191,7 +234,10 @@ class HomeViewModel @JvmOverloads constructor(
         val sortBy: String = "latest",
         val hideClosed: Boolean = false,
         val popularOnly: Boolean = false,
-        val freeShippingOnly: Boolean = false
+        val freeShippingOnly: Boolean = false,
+        val shop: String? = null,
+        val minPrice: Int? = null,
+        val maxPrice: Int? = null
     ) {
         fun effectiveCommunityChips(): Set<String> {
             if (selectedCommunityChips.isNotEmpty()) {
@@ -242,6 +288,14 @@ class HomeViewModel @JvmOverloads constructor(
             }
             return null
         }
+
+        fun resolvedShopQuery(): String? {
+            return shop?.trim()?.takeIf { it.isNotEmpty() && it != "전체" }
+        }
+
+        fun resolvedMinPrice(): Int? = minPrice?.takeIf { it > 0 }
+
+        fun resolvedMaxPrice(): Int? = maxPrice?.takeIf { it > 0 }
     }
 
     private data class PagerQueryKey(
@@ -250,7 +304,11 @@ class HomeViewModel @JvmOverloads constructor(
         val platform: String?,
         val sortBy: String,
         val hideClosed: Boolean,
-        val popularOnly: Boolean
+        val popularOnly: Boolean,
+        val freeShippingOnly: Boolean,
+        val shop: String?,
+        val minPrice: Int?,
+        val maxPrice: Int?
     )
 
     private val _filterState = MutableStateFlow(FilterState())
@@ -265,12 +323,17 @@ class HomeViewModel @JvmOverloads constructor(
                 platform = it.resolvedPlatformQuery(),
                 sortBy = it.sortBy,
                 hideClosed = it.hideClosed,
-                popularOnly = it.popularOnly
+                popularOnly = it.popularOnly,
+                freeShippingOnly = it.freeShippingOnly,
+                shop = it.resolvedShopQuery(),
+                minPrice = it.resolvedMinPrice(),
+                maxPrice = it.resolvedMaxPrice()
             )
         }
         .distinctUntilChanged()
         .flatMapLatest { query ->
-            val db = LocalDataProvider.database
+            val dealDao = dealDaoProvider()
+            val dealRemoteKeysDao = dealRemoteKeysDaoProvider()
             Pager(
                 config = PagingConfig(
                     pageSize = 20,
@@ -278,7 +341,9 @@ class HomeViewModel @JvmOverloads constructor(
                     initialLoadSize = 20
                 ),
                 remoteMediator = HotDealsRemoteMediator(
-                    database = db,
+                    dealDao = dealDao,
+                    dealRemoteKeysDao = dealRemoteKeysDao,
+                    runInTransaction = runInTransactionProvider,
                     apiService = apiService,
                     category = query.category,
                     keyword = query.keyword,
@@ -286,14 +351,22 @@ class HomeViewModel @JvmOverloads constructor(
                     sort = query.sortBy,
                     onlyHot = query.popularOnly,
                     hideClosed = query.hideClosed,
-                    includeClosed = false
+                    includeClosed = false,
+                    freeShippingOnly = query.freeShippingOnly,
+                    shop = query.shop,
+                    minPrice = query.minPrice,
+                    maxPrice = query.maxPrice
                 ),
                 pagingSourceFactory = {
-                    db.dealDao().getPagedDeals(
+                    dealDao.getPagedDeals(
                         category = query.category,
                         keyword = query.keyword,
                         platform = query.platform,
-                        sort = query.sortBy
+                        sort = query.sortBy,
+                        freeShippingOnly = query.freeShippingOnly,
+                        shop = query.shop,
+                        minPrice = query.minPrice,
+                        maxPrice = query.maxPrice
                     )
                 }
             ).flow.map { pagingData ->
@@ -304,16 +377,17 @@ class HomeViewModel @JvmOverloads constructor(
 
     val dealsPagingData: Flow<PagingData<DealItem>> = combine(
         basePagingData,
-        _filterState
-    ) { pagingData, state ->
-        if (!state.hideClosed && !state.popularOnly && !state.freeShippingOnly) {
+        _filterState,
+        _mutedKeywords
+    ) { pagingData, state, muted ->
+        if (!state.hideClosed && !state.popularOnly && muted.isEmpty()) {
             pagingData
         } else {
             pagingData.filter { item ->
                 val passClosed = !state.hideClosed || (!item.isClosed && !item.title.contains("종료") && !item.title.contains("품절"))
                 val passPopular = !state.popularOnly || isPopularDeal(item)
-                val passFreeShip = !state.freeShippingOnly || (item.shippingFee?.contains("무료") == true || item.shippingFee?.contains("무배") == true || item.tags.any { t -> t.contains("무료배송") })
-                passClosed && passPopular && passFreeShip
+                val passMuted = muted.isEmpty() || !matchesMutedKeywords(item, muted)
+                passClosed && passPopular && passMuted
             }
         }
     }.cachedIn(vmScope)
@@ -412,6 +486,7 @@ class HomeViewModel @JvmOverloads constructor(
         val validSort = if (sortBy in SUPPORTED_SORTS) sortBy else "latest"
         if (_filterState.value.sortBy != validSort) {
             _filterState.value = _filterState.value.copy(sortBy = validSort)
+            updateRealtimeDealWatcher()
         }
     }
 
@@ -427,6 +502,39 @@ class HomeViewModel @JvmOverloads constructor(
         _filterState.value = _filterState.value.copy(freeShippingOnly = !_filterState.value.freeShippingOnly)
     }
 
+    fun setShopFilter(shop: String?) {
+        val normalized = shop?.trim()?.takeIf { it.isNotEmpty() && it != "전체" }
+        if (_filterState.value.shop != normalized) {
+            _filterState.value = _filterState.value.copy(shop = normalized)
+        }
+    }
+
+    fun setPriceRangeFilter(minPrice: Int?, maxPrice: Int?) {
+        val normalizedMin = minPrice?.takeIf { it > 0 }
+        val normalizedMax = maxPrice?.takeIf { it > 0 }
+        if (_filterState.value.minPrice != normalizedMin || _filterState.value.maxPrice != normalizedMax) {
+            _filterState.value = _filterState.value.copy(
+                minPrice = normalizedMin,
+                maxPrice = normalizedMax
+            )
+        }
+    }
+
+    fun setViewMode(mode: String) {
+        feedPreferencesDataSource.saveViewMode(mode)
+        _viewMode.value = feedPreferencesDataSource.getViewMode()
+    }
+
+    fun addMutedKeyword(keyword: String) {
+        val updated = feedPreferencesDataSource.addMutedKeyword(keyword)
+        _mutedKeywords.value = updated
+    }
+
+    fun removeMutedKeyword(keyword: String) {
+        val updated = feedPreferencesDataSource.removeMutedKeyword(keyword)
+        _mutedKeywords.value = updated
+    }
+
     fun resetHomeFilters() {
         _filterState.value = _filterState.value.copy(
             category = "전체",
@@ -438,19 +546,54 @@ class HomeViewModel @JvmOverloads constructor(
             sortBy = "latest",
             hideClosed = false,
             popularOnly = false,
-            freeShippingOnly = false
+            freeShippingOnly = false,
+            shop = null,
+            minPrice = null,
+            maxPrice = null
         )
+        updateRealtimeDealWatcher()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        dealWatcherJob?.cancel()
+        dealWatcherJob = null
     }
 
     companion object {
         const val POPULAR_HONEY_SCORE_THRESHOLD = 100
+        const val REALTIME_POLL_INTERVAL_MS = 90_000L
 
         fun isPopularDeal(deal: DealItem): Boolean {
+            val safeTags = (deal.tags as List<String?>?) ?: emptyList()
             return deal.honeyScore >= POPULAR_HONEY_SCORE_THRESHOLD ||
-                deal.tags.any { t -> t.contains("인기") || t.contains("역대") }
+                safeTags.any { t -> t != null && (t.contains("인기") || t.contains("역대")) }
         }
 
-        val SUPPORTED_SORTS = setOf("latest", "popular", "price_asc")
+        fun matchesMutedKeywords(deal: DealItem, mutedKeywords: Set<String>): Boolean {
+            if (mutedKeywords.isEmpty()) return false
+            val safeTags = (deal.tags as List<String?>?) ?: emptyList()
+            return mutedKeywords.any { rawKeyword ->
+                val kw = rawKeyword.trim()
+                if (kw.isEmpty()) {
+                    false
+                } else {
+                    deal.title.contains(kw, ignoreCase = true) ||
+                        (deal.shopName?.contains(kw, ignoreCase = true) == true) ||
+                        (deal.aiSummary?.contains(kw, ignoreCase = true) == true) ||
+                        safeTags.any { tag -> tag?.contains(kw, ignoreCase = true) == true }
+                }
+            }
+        }
+
+        val SUPPORTED_SORTS = setOf(
+            "latest",
+            "popular",
+            "price_asc",
+            "price_desc",
+            "comments",
+            "recommendations"
+        )
         val COMMUNITY_FILTER_CHIPS = CategoryCatalog.STANDARD_SOURCES
         val ALL_COMMUNITY_PLATFORMS = CategoryCatalog.STANDARD_COMMUNITY_PLATFORMS
     }

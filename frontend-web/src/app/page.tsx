@@ -1091,6 +1091,64 @@ export default function Home() {
     []
   );
 
+  const handleDealInteractionChange = useCallback(
+    (
+      dealId: number,
+      patch: { buyCount?: number; passCount?: number; appCommentCount?: number }
+    ) => {
+      let didChange = false;
+      setDeals((prev) => {
+        let listModified = false;
+        const nextList = prev.map((d) => {
+          if (d.id !== dealId) return d;
+          const nextBuy = patch.buyCount ?? d.buyCount;
+          const nextPass = patch.passCount ?? d.passCount;
+          const nextComment = patch.appCommentCount ?? d.appCommentCount;
+          if (
+            nextBuy === d.buyCount &&
+            nextPass === d.passCount &&
+            nextComment === d.appCommentCount
+          ) {
+            return d;
+          }
+          listModified = true;
+          didChange = true;
+          return {
+            ...d,
+            buyCount: nextBuy,
+            passCount: nextPass,
+            appCommentCount: nextComment,
+          };
+        });
+        return listModified ? nextList : prev;
+      });
+      setSelectedDeal((prev) => {
+        if (!prev || prev.id !== dealId) return prev;
+        const nextBuy = patch.buyCount ?? prev.buyCount;
+        const nextPass = patch.passCount ?? prev.passCount;
+        const nextComment = patch.appCommentCount ?? prev.appCommentCount;
+        if (
+          nextBuy === prev.buyCount &&
+          nextPass === prev.passCount &&
+          nextComment === prev.appCommentCount
+        ) {
+          return prev;
+        }
+        didChange = true;
+        return {
+          ...prev,
+          buyCount: nextBuy,
+          passCount: nextPass,
+          appCommentCount: nextComment,
+        };
+      });
+      if (didChange) {
+        feedCacheRef.current.clear();
+      }
+    },
+    []
+  );
+
   const openDealWithHistory = useCallback((deal: Deal) => {
     setSelectedDeal(deal);
     setRecentDeals((prev) => {
@@ -4421,6 +4479,7 @@ export default function Home() {
         showToast={showToast}
         onTargetAlertSaved={handleTargetAlertSaved}
         onDealClosed={handleDealClosed}
+        onDealInteractionChange={handleDealInteractionChange}
         onNavigateDeal={
           filteredDeals.length > 1 && selectedDealIndex >= 0
             ? handleNavigateSelectedDeal

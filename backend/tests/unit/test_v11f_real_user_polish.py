@@ -333,3 +333,50 @@ def test_hot_deals_extended_filters_sorts_similar_deals_and_push_test(v11f_db):
     assert isinstance(direct_res, dict)
     assert "deals" in direct_res
     assert len(direct_res["deals"]) >= 1
+
+    # 목록 API는 원글 스크래핑 수치(like_count=45, comment_count=30)와 무관하게 얼만데 자체 투표/의견 실집계만 노출
+    warmed_res = client.get("/api/community/hot-deals?limit=20&offset=0")
+    assert warmed_res.status_code == 200
+    warmed_501 = next(d for d in warmed_res.json()["deals"] if d["id"] == 501)
+    assert warmed_501["like_count"] == 45
+    assert warmed_501["comment_count"] == 30
+    assert warmed_501["buy_count"] == 0 and warmed_501["buyCount"] == 0
+    assert warmed_501["pass_count"] == 0 and warmed_501["passCount"] == 0 and warmed_501["saveCount"] == 0
+    assert warmed_501["app_comment_count"] == 0 and warmed_501["appCommentCount"] == 0
+
+    # 피드 캐시 워밍 상태에서 투표(POST /votes) 및 댓글 등록/삭제 후에도 목록 실집계가 즉시 반영되어야 함
+    vote_res = client.post(
+        "/api/community/deals/501/votes",
+        json={"user_id": dev_uuid, "vote_type": "buy"},
+        headers=headers,
+    )
+    assert vote_res.status_code == 200
+
+    cmt_res = client.post(
+        "/api/community/deals/501/comments",
+        json={"user_id": dev_uuid, "nickname": "테스터", "content": "직접 확인한 실사용 의견"},
+        headers=headers,
+    )
+    assert cmt_res.status_code == 200
+    created_comment_id = cmt_res.json()["id"]
+
+    after_add_res = client.get("/api/community/hot-deals?limit=20&offset=0")
+    assert after_add_res.status_code == 200
+    after_add_501 = next(d for d in after_add_res.json()["deals"] if d["id"] == 501)
+    assert after_add_501["buy_count"] == 1 and after_add_501["buyCount"] == 1
+    assert after_add_501["pass_count"] == 0
+    assert after_add_501["app_comment_count"] == 1 and after_add_501["appCommentCount"] == 1
+
+    detail_after = client.get("/api/community/deals/501")
+    assert detail_after.status_code == 200
+    assert detail_after.json()["app_comment_count"] == 1
+    assert detail_after.json()["appCommentCount"] == 1
+
+    del_res = client.delete(f"/api/community/deals/501/comments/{created_comment_id}", headers=headers)
+    assert del_res.status_code == 200
+
+    after_del_res = client.get("/api/community/hot-deals?limit=20&offset=0")
+    assert after_del_res.status_code == 200
+    after_del_501 = next(d for d in after_del_res.json()["deals"] if d["id"] == 501)
+    assert after_del_501["buy_count"] == 1
+    assert after_del_501["app_comment_count"] == 0 and after_del_501["appCommentCount"] == 0

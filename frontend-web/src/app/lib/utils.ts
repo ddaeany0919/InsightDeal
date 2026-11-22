@@ -2205,17 +2205,18 @@ export function mapRawDealToDeal(
       d.options_count ?? (optionsDataArr ? optionsDataArr.length : undefined),
     options_data: optionsDataArr,
     buyCount:
-      d.buy_count ?? d.buyCount ?? d.like_count ?? undefined,
+      d.buy_count ?? d.buyCount ?? undefined,
     passCount:
       d.pass_count ??
       d.passCount ??
       d.save_count ??
       d.saveCount ??
-      d.dislike_count ??
       undefined,
     userVote: d.user_vote ?? d.userVote ?? null,
     commentCount:
       d.comment_count ?? d.commentCount ?? d.comments ?? undefined,
+    appCommentCount:
+      d.app_comment_count ?? d.appCommentCount ?? undefined,
     comments:
       d.comments ?? d.comment_count ?? d.commentCount ?? undefined,
     recommendations:
@@ -2993,6 +2994,11 @@ export function setCachedDealDetail(
     }
   }
   _dealDetailCache.set(dealId, { data, cachedAt: Date.now() });
+}
+
+export function invalidateDealDetailCache(dealId: number): void {
+  if (!Number.isFinite(dealId) || dealId <= 0) return;
+  _dealDetailCache.delete(dealId);
 }
 
 export function clearDealDetailCache(): void {

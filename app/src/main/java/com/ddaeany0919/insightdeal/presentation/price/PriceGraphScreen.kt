@@ -18,22 +18,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.ddaeany0919.insightdeal.data.util.ImageUrlResolver
 import com.ddaeany0919.insightdeal.presentation.A11yIconButton
+import com.ddaeany0919.insightdeal.presentation.PriceChart
 import com.ddaeany0919.insightdeal.presentation.theme.LocalInsightDealColors
-import com.github.mikephil.charting.charts.LineChart
-import com.github.mikephil.charting.components.XAxis
-import com.github.mikephil.charting.data.Entry
-import com.github.mikephil.charting.data.LineData
-import com.github.mikephil.charting.data.LineDataSet
 import java.text.NumberFormat
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -156,10 +150,37 @@ fun PriceGraphScreen(
                         }
                     )
                     if (filteredHistory.size >= 2) {
-                        PriceChart(
-                            priceHistory = filteredHistory,
-                            targetPrice = product?.targetPrice ?: 0
-                        )
+                        val chartPrices = remember(filteredHistory) {
+                            filteredHistory.map { it.price.toFloat() }
+                        }
+                        val chartDates = remember(filteredHistory) {
+                            filteredHistory.map { item ->
+                                val raw = item.date.trim()
+                                if (raw.length >= 10) raw.substring(5, 10).replace("-", ".") else raw
+                            }
+                        }
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp)
+                                .padding(horizontal = 16.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp)
+                            ) {
+                                PriceChart(
+                                    prices = chartPrices,
+                                    dates = chartDates,
+                                    modifier = Modifier.fillMaxSize(),
+                                    currency = "KRW"
+                                )
+                            }
+                        }
                     } else {
                         Card(
                             modifier = Modifier
@@ -336,73 +357,6 @@ private fun PeriodSelector(
                 modifier = Modifier.weight(1f)
             )
         }
-    }
-}
-
-@Composable
-@Suppress("UNUSED_PARAMETER")
-private fun PriceChart(
-    priceHistory: List<PriceChartViewModel.PriceHistoryData>,
-    targetPrice: Int
-) {
-    val lineColor = MaterialTheme.colorScheme.primary.toArgb()
-    val axisTextColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
-    val fillAlphaColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f).toArgb()
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(300.dp)
-            .padding(horizontal = 16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        AndroidView(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            factory = { context ->
-                LineChart(context).apply {
-                    description.isEnabled = false
-                    setTouchEnabled(true)
-                    isDragEnabled = true
-                    setScaleEnabled(true)
-                    setPinchZoom(true)
-                    setDrawGridBackground(false)
-
-                    xAxis.position = XAxis.XAxisPosition.BOTTOM
-                    xAxis.setDrawGridLines(false)
-                    xAxis.textColor = axisTextColor
-                    axisLeft.textColor = axisTextColor
-                    axisRight.isEnabled = false
-                    legend.isEnabled = false
-                }
-            },
-            update = { chart ->
-                chart.xAxis.textColor = axisTextColor
-                chart.axisLeft.textColor = axisTextColor
-
-                val entries = priceHistory.mapIndexed { index, item ->
-                    Entry(index.toFloat(), item.price.toFloat())
-                }
-
-                val dataSet = LineDataSet(entries, "Price").apply {
-                    color = lineColor
-                    setCircleColor(lineColor)
-                    lineWidth = 2f
-                    circleRadius = 4f
-                    setDrawValues(false)
-                    mode = LineDataSet.Mode.CUBIC_BEZIER
-                    setDrawFilled(true)
-                    fillColor = fillAlphaColor
-                    fillAlpha = 50
-                }
-
-                chart.data = LineData(dataSet)
-                chart.invalidate()
-            }
-        )
     }
 }
 

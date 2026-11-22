@@ -37,10 +37,9 @@ from typing import Optional
 import weakref
 import httpx
 from backend.core.url_utils import is_public_ip as _is_public_ip, is_safe_external_url as _is_safe_external_url
-from backend.routers import wishlist, product, community, health, push, admin, auth, users, coupang
+from backend.routers import wishlist, community, health, push, admin, auth, users, coupang
 for _router_mod_name, _router_mod in (
     ("wishlist", wishlist),
-    ("product", product),
     ("community", community),
     ("health", health),
     ("push", push),
@@ -122,7 +121,6 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # 라우터 등록
 app.include_router(wishlist.router, prefix="/api/wishlist", tags=["wishlist"])
-app.include_router(product.router, prefix="/api/product", tags=["product"])
 app.include_router(community.router, prefix="/api/community", tags=["community"])
 app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(push.router, prefix="/api/push", tags=["push"])

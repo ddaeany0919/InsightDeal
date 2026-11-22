@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -459,9 +460,15 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                 )
             }
             composable("settings") {
+                val keywordViewModel: com.ddaeany0919.insightdeal.presentation.KeywordManagerViewModel =
+                    androidx.lifecycle.viewmodel.compose.viewModel()
+                val testPushState by keywordViewModel.testPushState.collectAsStateWithLifecycle()
                 com.ddaeany0919.insightdeal.presentation.settings.SettingsScreen(
                     onBackClick = { navController.popBackStack() },
-                    onNavigateToKeywordManager = { navController.navigate("keyword_alarm") }
+                    onNavigateToKeywordManager = { navController.navigate("keyword_alarm") },
+                    testPushState = testPushState,
+                    onSendTestPush = { keywordViewModel.sendTestPush() },
+                    onClearTestPushFeedback = { keywordViewModel.clearTestPushFeedback() }
                 )
             }
             composable("keyword_alarm") {
@@ -487,6 +494,12 @@ fun MainApp(deviceUserId: String, currentIntent: android.content.Intent?) {
                     },
                     onNavigateToWatchlist = {
                         navController.navigate("watchlist")
+                    },
+                    onNavigateToDeal = { targetDealId ->
+                        val activeDealId = navController.currentBackStackEntry?.arguments?.getString("dealId")?.toIntOrNull()
+                        if (targetDealId > 0 && targetDealId != dealId && targetDealId != activeDealId) {
+                            navController.navigate("deal_detail/$targetDealId")
+                        }
                     }
                 )
             }

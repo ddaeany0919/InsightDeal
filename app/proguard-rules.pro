@@ -68,14 +68,6 @@
 -keep class io.coilkt.** { *; }
 -dontwarn coil.**
 
-# MPAndroidChart
--keep class com.github.mikephil.charting.** { *; }
--dontwarn com.github.mikephil.charting.**
-
-# Vico Charts
--keep class com.patrykandpatrick.vico.** { *; }
--dontwarn com.patrykandpatrick.vico.**
-
 # Kotlinx Serialization (Release R8 난독화 시 Companion Serializer 보호)
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.AnnotationsKt

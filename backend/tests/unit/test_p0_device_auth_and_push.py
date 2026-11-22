@@ -34,6 +34,7 @@ for _p in (_PROJECT_ROOT, _BACKEND_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from backend.core.deal_normalizer import extract_numeric_price, is_collection_dummy_price
 from backend.core.device_auth import create_device_token
 from backend.database.models import Base as CommunityBase, Community, Deal, DeviceToken, NotificationAlert, PushKeyword
 from backend.database.session import get_db, get_db_session
@@ -535,3 +536,433 @@ def test_push_worker_dnd_drop_with_history_and_vapid_guard(isolated_env, monkeyp
         assert dev.web_push_subscription is None
     finally:
         db.close()
+
+
+def test_wishlist_check_price_uses_internal_deals_and_guards_idor(isolated_env, monkeypatch):
+    client, SessionCls, _ = isolated_env
+    monkeypatch.setenv("ENV", "development")
+    monkeypatch.setenv("SERVER_DEVICE_SECRET", "unit-test-device-secret")
+
+    user_a = client.post("/api/push/device", json={}).json()
+    user_b = client.post("/api/push/device", json={}).json()
+    headers_a = {"X-Device-Token": user_a["device_token"]}
+    headers_b = {"X-Device-Token": user_b["device_token"]}
+
+    # 1. 위시리스트 등록 (문자열 정렬 함정/종료딜/0원/외화/다중단어 검증용)
+    wl_ssd = client.post(
+        "/api/wishlist/item-alert",
+        json={"keyword": "삼성SSD", "target_price": 35000},
+        headers=headers_a,
+    ).json()
+    wl_usd = client.post(
+        "/api/wishlist/item-alert",
+        json={"keyword": "소니헤드폰", "target_price": 135000},
+        headers=headers_a,
+    ).json()
+    wl_mac = client.post(
+        "/api/wishlist/item-alert",
+        json={"keyword": "맥북 에어", "target_price": 1200000},
+        headers=headers_a,
+    ).json()
+
+    # 인증/IDOR/404 방어 검증
+    assert client.post(f"/api/wishlist/{wl_ssd['id']}/check-price").status_code == 401
+    assert client.post(f"/api/wishlist/{wl_ssd['id']}/check-price", headers=headers_b).status_code == 403
+    assert client.post("/api/wishlist/999999/check-price", headers=headers_a).status_code == 404
+
+    db = SessionCls()
+    try:
+        db.add_all([
+            # 종료 딜(10000원) 및 0원/무효가 딜 -> 반드시 제외되어야 함
+            Deal(
+                source_community_id=1,
+                title="[쿠팡] 삼성SSD 990 PRO 종료특가 (10,000원)",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=91001",
+                ecommerce_link="https://www.coupang.com/vp/products/91001",
+                price="10000",
+                shop_name="쿠팡",
+                is_closed=True,
+            ),
+            Deal(
+                source_community_id=1,
+                title="[쿠팡] 삼성SSD 0원 오류 딜",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=91002",
+                ecommerce_link="https://www.coupang.com/vp/products/91002",
+                price="0",
+                shop_name="쿠팡",
+                is_closed=False,
+            ),
+            Deal(
+                source_community_id=1,
+                title="[쿠팡] 삼성SSD 가격미정 안내",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=91003",
+                ecommerce_link="https://www.coupang.com/vp/products/91003",
+                price="가격미정",
+                shop_name="쿠팡",
+                is_closed=False,
+            ),
+            # 문자열 정렬 함정("120000" < "29000") 방어: 수치상 최저가 29000원이 선택되어야 함
+            Deal(
+                source_community_id=1,
+                title="[11번가] 삼성SSD 1TB 특가 (120,000원)",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=91004",
+                ecommerce_link="https://www.11st.co.kr/products/91004",
+                price="120000",
+                shop_name="11번가",
+                is_closed=False,
+            ),
+            Deal(
+                source_community_id=1,
+                title="[지마켓] 삼성SSD 방열판 특가 (29,000원)",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=91005",
+                ecommerce_link="https://item.gmarket.co.kr/Item?goodscode=91005",
+                price="29000",
+                shop_name="지마켓",
+                is_closed=False,
+            ),
+            # 외화 USD($100.00 = 10000센트 -> 140,000원) vs KRW(150,000원) 비교
+            Deal(
+                source_community_id=1,
+                title="[아마존] 소니헤드폰 XM5 직구 ($100.00)",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=91006",
+                ecommerce_link="https://www.amazon.com/dp/B000091006",
+                price="10000",
+                currency="USD",
+                shop_name="아마존",
+                is_closed=False,
+            ),
+            Deal(
+                source_community_id=1,
+                title="[쿠팡] 소니헤드폰 XM5 국내정발 (150,000원)",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=91007",
+                ecommerce_link="https://www.coupang.com/vp/products/91007",
+                price="150000",
+                currency="KRW",
+                shop_name="쿠팡",
+                is_closed=False,
+            ),
+            # 다중 단어 + 띄어쓰기 무시 매칭 ("맥북 에어" <-> "맥북에어")
+            Deal(
+                source_community_id=1,
+                title="[쿠팡] 애플 맥북에어 M3 13인치 (1,290,000원/무료)",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=91008",
+                ecommerce_link="https://www.coupang.com/vp/products/91008",
+                price="1290000",
+                currency="KRW",
+                shop_name="쿠팡",
+                is_closed=False,
+            ),
+        ])
+        db.commit()
+    finally:
+        db.close()
+
+    # 2. 삼성SSD 최저가(29,000원) 및 PriceCheckResponse 9필드 검증
+    res_ssd = client.post(f"/api/wishlist/{wl_ssd['id']}/check-price", headers=headers_a)
+    assert res_ssd.status_code == 200
+    body_ssd = res_ssd.json()
+    assert set(body_ssd.keys()) == {
+        "message",
+        "keyword",
+        "current_price",
+        "target_price",
+        "platform",
+        "product_url",
+        "title",
+        "is_target_reached",
+        "updated_at",
+    }
+    assert body_ssd["message"] == "가격 체크 완료"
+    assert body_ssd["keyword"] == "삼성SSD"
+    assert body_ssd["current_price"] == 29000
+    assert body_ssd["target_price"] == 35000
+    assert body_ssd["platform"] == "지마켓"
+    assert body_ssd["product_url"] == "https://item.gmarket.co.kr/Item?goodscode=91005"
+    assert "삼성SSD 방열판 특가" in body_ssd["title"]
+    assert body_ssd["is_target_reached"] is True
+    assert body_ssd["updated_at"].endswith("Z")
+
+    # 3. USD -> KRW 환산 최저가(140,000원) 검증
+    res_usd = client.post(f"/api/wishlist/{wl_usd['id']}/check-price", headers=headers_a)
+    assert res_usd.status_code == 200
+    body_usd = res_usd.json()
+    assert body_usd["current_price"] == 140000
+    assert body_usd["platform"] == "아마존"
+    assert body_usd["is_target_reached"] is False
+
+    # 4. 다중 단어/공백 무시 매칭 및 target_price 변경에 따른 is_target_reached 전환 검증
+    res_mac_miss = client.post(f"/api/wishlist/{wl_mac['id']}/check-price", headers=headers_a)
+    assert res_mac_miss.status_code == 200
+    assert res_mac_miss.json()["current_price"] == 1290000
+    assert res_mac_miss.json()["is_target_reached"] is False
+
+    assert (
+        client.patch(
+            f"/api/wishlist/{wl_mac['id']}",
+            json={"target_price": 1300000},
+            headers=headers_a,
+        ).status_code
+        == 200
+    )
+    res_mac_hit = client.post(f"/api/wishlist/{wl_mac['id']}/check-price", headers=headers_a)
+    assert res_mac_hit.status_code == 200
+    assert res_mac_hit.json()["current_price"] == 1290000
+    assert res_mac_hit.json()["is_target_reached"] is True
+
+
+def test_wishlist_check_price_multiword_and_empty_match(isolated_env, monkeypatch):
+    client, SessionCls, _ = isolated_env
+    monkeypatch.setenv("ENV", "development")
+    monkeypatch.setenv("SERVER_DEVICE_SECRET", "unit-test-device-secret")
+
+    user = client.post("/api/push/device", json={}).json()
+    headers = {"X-Device-Token": user["device_token"]}
+
+    wl_missing = client.post(
+        "/api/wishlist/item-alert",
+        json={"keyword": "존재하지않는초희귀상품", "target_price": 50000},
+        headers=headers,
+    ).json()
+    wl_like_literal = client.post(
+        "/api/wishlist/item-alert",
+        json={"keyword": "100%_테스트", "target_price": 20000},
+        headers=headers,
+    ).json()
+
+    db = SessionCls()
+    try:
+        db.add(
+            Deal(
+                source_community_id=1,
+                title="[쿠팡] 1000ABC테스트 상품 (9,900원)",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=92001",
+                ecommerce_link="https://www.coupang.com/vp/products/92001",
+                price="9900",
+                shop_name="쿠팡",
+                is_closed=False,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    # 1. 매칭 실패 시에도 PriceCheckResponse 9필드 계약 유지
+    res_missing = client.post(f"/api/wishlist/{wl_missing['id']}/check-price", headers=headers)
+    assert res_missing.status_code == 200
+    body_missing = res_missing.json()
+    assert set(body_missing.keys()) == {
+        "message",
+        "keyword",
+        "current_price",
+        "target_price",
+        "platform",
+        "product_url",
+        "title",
+        "is_target_reached",
+        "updated_at",
+    }
+    assert body_missing["message"] == "최저가를 찾을 수 없습니다"
+    assert body_missing["keyword"] == "존재하지않는초희귀상품"
+    assert body_missing["current_price"] is None
+    assert body_missing["target_price"] == 50000
+    assert body_missing["platform"] is None
+    assert body_missing["product_url"] is None
+    assert body_missing["title"] is None
+    assert body_missing["is_target_reached"] is False
+    assert body_missing["updated_at"].endswith("Z")
+
+    # 2. LIKE 와일드카드('%', '_') 리터럴 이스케이프 검증: "1000ABC테스트"는 매칭되면 안 됨
+    res_no_wild = client.post(f"/api/wishlist/{wl_like_literal['id']}/check-price", headers=headers)
+    assert res_no_wild.status_code == 200
+    assert res_no_wild.json()["message"] == "최저가를 찾을 수 없습니다"
+    assert res_no_wild.json()["current_price"] is None
+
+    # 실제 "100%_테스트" 리터럴 포함 딜 추가 시에는 정상 매칭
+    db = SessionCls()
+    try:
+        db.add(
+            Deal(
+                source_community_id=1,
+                title="[네이버] 100%_테스트 리터럴 상품 (15,000원)",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=92002",
+                ecommerce_link="https://smartstore.naver.com/test/92002",
+                price="15000",
+                shop_name="네이버",
+                is_closed=False,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    res_literal_hit = client.post(f"/api/wishlist/{wl_like_literal['id']}/check-price", headers=headers)
+    assert res_literal_hit.status_code == 200
+    assert res_literal_hit.json()["message"] == "가격 체크 완료"
+    assert res_literal_hit.json()["current_price"] == 15000
+    assert res_literal_hit.json()["is_target_reached"] is True
+
+
+def test_wishlist_check_price_rejects_negative_prices_and_currency_whitespace(isolated_env, monkeypatch):
+    client, SessionCls, _ = isolated_env
+    monkeypatch.setenv("ENV", "development")
+    monkeypatch.setenv("SERVER_DEVICE_SECRET", "unit-test-device-secret")
+
+    # 1. extract_numeric_price 음수 문자열/수치 차단 및 정상 문자열 파싱 검증
+    for neg in ("-1000", "- 1,000원", "$-100", "-$100", "−500", "USD -100", "-", -1000, -0.5, 0):
+        assert extract_numeric_price(neg) == 0
+    assert extract_numeric_price("19,900원") == 19900
+
+    # 2. is_collection_dummy_price 통화 공백 정규화(" krw ") 검증
+    assert is_collection_dummy_price(100, "네거티브테스트 브랜드 모음전", " krw ") is True
+
+    user = client.post("/api/push/device", json={}).json()
+    headers = {"X-Device-Token": user["device_token"]}
+    wl = client.post(
+        "/api/wishlist/item-alert",
+        json={"keyword": "네거티브테스트", "target_price": 20000},
+        headers=headers,
+    ).json()
+
+    db = SessionCls()
+    try:
+        db.add_all([
+            Deal(
+                source_community_id=1,
+                title="[쿠팡] 네거티브테스트 음수가격 딜1",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=93001",
+                ecommerce_link="https://www.coupang.com/vp/products/93001",
+                price="-1000",
+                currency="KRW",
+                shop_name="쿠팡",
+                is_closed=False,
+            ),
+            Deal(
+                source_community_id=1,
+                title="[쿠팡] 네거티브테스트 음수가격 딜2",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=93002",
+                ecommerce_link="https://www.coupang.com/vp/products/93002",
+                price="- 1,000원",
+                currency="KRW",
+                shop_name="쿠팡",
+                is_closed=False,
+            ),
+            Deal(
+                source_community_id=1,
+                title="[아마존] 네거티브테스트 외화음수 딜3",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=93003",
+                ecommerce_link="https://www.amazon.com/dp/B000093003",
+                price="$-100",
+                currency="USD",
+                shop_name="아마존",
+                is_closed=False,
+            ),
+            Deal(
+                source_community_id=1,
+                title="[지마켓] 네거티브테스트 브랜드 모음전",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=93004",
+                ecommerce_link="https://www.gmarket.co.kr/n/plan?id=93004",
+                price="100",
+                currency=" krw ",
+                shop_name="지마켓",
+                is_closed=False,
+            ),
+            Deal(
+                source_community_id=1,
+                title="[네이버] 네거티브테스트 정상 상품 (19,900원)",
+                post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=93005",
+                ecommerce_link="https://smartstore.naver.com/test/93005",
+                price="19,900원",
+                currency="KRW",
+                shop_name="네이버",
+                is_closed=False,
+            ),
+        ])
+        db.commit()
+    finally:
+        db.close()
+
+    res = client.post(f"/api/wishlist/{wl['id']}/check-price", headers=headers)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["message"] == "가격 체크 완료"
+    assert body["current_price"] == 19900
+    assert body["platform"] == "네이버"
+    assert body["is_target_reached"] is True
+
+
+def test_wishlist_check_price_scans_past_300_deals_for_older_lowest_and_after_invalid_prices(isolated_env, monkeypatch):
+    client, SessionCls, _ = isolated_env
+    monkeypatch.setenv("ENV", "development")
+    monkeypatch.setenv("SERVER_DEVICE_SECRET", "unit-test-device-secret")
+
+    user = client.post("/api/push/device", json={}).json()
+    headers = {"X-Device-Token": user["device_token"]}
+
+    wl_cheaper_older = client.post(
+        "/api/wishlist/item-alert",
+        json={"keyword": "대량스캔고가선행", "target_price": 15000},
+        headers=headers,
+    ).json()
+    wl_invalid_newer = client.post(
+        "/api/wishlist/item-alert",
+        json={"keyword": "대량스캔무효선행", "target_price": 15000},
+        headers=headers,
+    ).json()
+
+    base_time = datetime(2026, 1, 1, 0, 0, 0)
+    db = SessionCls()
+    try:
+        bulk_deals = []
+        # 1) 최신 305건이 50,000원이고 구형 5건이 10,000원인 대량 딜 310건
+        for idx in range(310):
+            is_older_cheaper = idx < 5
+            bulk_deals.append(
+                Deal(
+                    source_community_id=1,
+                    title=f"[쿠팡] 대량스캔고가선행 상품 #{idx}",
+                    post_link=f"https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=94{idx:03d}",
+                    ecommerce_link=f"https://www.coupang.com/vp/products/94{idx:03d}",
+                    price="10000" if is_older_cheaper else "50000",
+                    currency="KRW",
+                    shop_name="쿠팡",
+                    is_closed=False,
+                    indexed_at=base_time + timedelta(minutes=idx),
+                )
+            )
+
+        # 2) 최신 305건이 "가격미정"이고 구형 5건이 10,000원인 대량 딜 310건
+        for idx in range(310):
+            is_older_valid = idx < 5
+            bulk_deals.append(
+                Deal(
+                    source_community_id=1,
+                    title=f"[네이버] 대량스캔무효선행 상품 #{idx}",
+                    post_link=f"https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=95{idx:03d}",
+                    ecommerce_link=f"https://smartstore.naver.com/test/95{idx:03d}",
+                    price="10000" if is_older_valid else "가격미정",
+                    currency="KRW",
+                    shop_name="네이버",
+                    is_closed=False,
+                    indexed_at=base_time + timedelta(minutes=idx),
+                )
+            )
+
+        db.add_all(bulk_deals)
+        db.commit()
+    finally:
+        db.close()
+
+    res_older = client.post(f"/api/wishlist/{wl_cheaper_older['id']}/check-price", headers=headers)
+    assert res_older.status_code == 200
+    body_older = res_older.json()
+    assert body_older["message"] == "가격 체크 완료"
+    assert body_older["current_price"] == 10000
+    assert body_older["is_target_reached"] is True
+
+    res_invalid = client.post(f"/api/wishlist/{wl_invalid_newer['id']}/check-price", headers=headers)
+    assert res_invalid.status_code == 200
+    body_invalid = res_invalid.json()
+    assert body_invalid["message"] == "가격 체크 완료"
+    assert body_invalid["current_price"] == 10000
+    assert body_invalid["platform"] == "네이버"
+    assert body_invalid["is_target_reached"] is True

@@ -62,10 +62,11 @@ data class DealDetailUiState(
     val isSubmittingComment: Boolean = false,
     val deletingCommentId: Int? = null,
     val commentActionError: String? = null,
-    val commentSubmitSuccessSeq: Int = 0
+    val commentSubmitSuccessSeq: Int = 0,
+    val similarDeals: List<DealItem> = emptyList()
 )
 
-class DealDetailViewModel(
+class DealDetailViewModel @JvmOverloads constructor(
     private val apiService: ApiService = NetworkModule.createService<ApiService>(),
     private val deviceUuidProvider: () -> String = {
         runCatching { LocalDataProvider.getDeviceUuid() }.getOrDefault("")
@@ -91,6 +92,22 @@ class DealDetailViewModel(
 
     private fun resolveDeviceUuid(): String {
         return runCatching { deviceUuidProvider().trim() }.getOrDefault("")
+    }
+
+    private suspend fun syncRoomVoteCounts(dealId: Int, buyCount: Int, passCount: Int) {
+        withContext(ioDispatcher) {
+            runCatching {
+                LocalDataProvider.database.dealDao().updateVoteCounts(dealId, buyCount, passCount)
+            }
+        }
+    }
+
+    private suspend fun syncRoomAppCommentCount(dealId: Int, appCommentCount: Int) {
+        withContext(ioDispatcher) {
+            runCatching {
+                LocalDataProvider.database.dealDao().updateAppCommentCount(dealId, appCommentCount)
+            }
+        }
     }
 
     fun setPeriod(period: String) {
@@ -288,6 +305,14 @@ class DealDetailViewModel(
                         user_vote = deal.userVote
                     )
 
+                    val resolvedSimilarDeals = (deal.similarDeals as List<DealItem?>?)
+                        .orEmpty()
+                        .filterNotNull()
+                        .filter { it.id > 0 && it.id != deal.id }
+                        .distinctBy { it.id }
+
+                    val effectiveCommentCount = if (deal.appCommentCount > 0) deal.appCommentCount else deal.commentCount
+
                     _uiState.value = DealDetailUiState(
                         isLoading = false,
                         deal = deal,
@@ -300,7 +325,7 @@ class DealDetailViewModel(
                         buyCount = deal.buyCount,
                         passCount = deal.passCount,
                         userVote = deal.userVote,
-                        commentCount = deal.commentCount,
+                        commentCount = effectiveCommentCount,
                         historyCount = maxOf(deal.historyCount, history.size),
                         isSearchFallback = deal.isSearchFallback,
                         isFree = deal.isFree,
@@ -310,8 +335,11 @@ class DealDetailViewModel(
                         commentsLoaded = false,
                         isCommentsLoading = false,
                         commentsError = null,
-                        votes = summaryVotes
+                        votes = summaryVotes,
+                        similarDeals = resolvedSimilarDeals
                     )
+                    syncRoomVoteCounts(dealId, deal.buyCount, deal.passCount)
+                    syncRoomAppCommentCount(dealId, effectiveCommentCount)
                 } else {
                     _uiState.value = DealDetailUiState(
                         isLoading = false,
@@ -359,6 +387,7 @@ class DealDetailViewModel(
                         isCommentsLoading = false,
                         commentsError = null
                     )
+                    syncRoomAppCommentCount(dealId, body.size)
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isCommentsLoading = false,
@@ -404,6 +433,7 @@ class DealDetailViewModel(
                         isVoting = false,
                         voteError = null
                     )
+                    syncRoomVoteCounts(dealId, body.buy_count, body.pass_count)
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isVoting = false,
@@ -459,6 +489,7 @@ class DealDetailViewModel(
                         commentActionError = null,
                         commentSubmitSuccessSeq = currentState.commentSubmitSuccessSeq + 1
                     )
+                    syncRoomAppCommentCount(dealId, nextCommentCount)
                     if (shouldRecoverComments) {
                         loadCommentsIfNeeded(forceRefresh = true)
                     }
@@ -496,12 +527,14 @@ class DealDetailViewModel(
                 }
                 if (response.isSuccessful) {
                     val updatedComments = _uiState.value.comments.filterNot { it.id == commentId }
+                    val nextCommentCount = (_uiState.value.commentCount - 1).coerceAtLeast(0)
                     _uiState.value = _uiState.value.copy(
                         comments = updatedComments,
-                        commentCount = (_uiState.value.commentCount - 1).coerceAtLeast(0),
+                        commentCount = nextCommentCount,
                         deletingCommentId = null,
                         commentActionError = null
                     )
+                    syncRoomAppCommentCount(dealId, nextCommentCount)
                 } else {
                     val errorMsg = if (response.code() == 403) {
                         "본인이 작성한 의견만 삭제할 수 있어요."
@@ -595,6 +628,7 @@ class DealDetailViewModel(
                         isVoting = false,
                         voteError = null
                     )
+                    syncRoomVoteCounts(dealId, serverVotes.buy_count, serverVotes.pass_count)
                 } else {
                     _uiState.value = _uiState.value.copy(
                         buyCount = prevBuy,
