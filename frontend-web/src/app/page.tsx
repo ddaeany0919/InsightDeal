@@ -3334,6 +3334,12 @@ export default function Home() {
               onClick={() => setShowMobileQuickFilters((v) => !v)}
               className="filter-chip-btn bounce-click"
               style={{
+                minHeight: "34px",
+                padding: "0 9px",
+                fontSize: "0.74rem",
+                gap: "4px",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
                 background:
                   showMobileQuickFilters ||
                   freeShippingOnly ||
@@ -3360,7 +3366,7 @@ export default function Home() {
                     : "1px solid var(--card-border)",
               }}
             >
-              <SlidersHorizontal size={13} aria-hidden="true" />
+              <SlidersHorizontal size={12} aria-hidden="true" />
               <span>
                 상세 필터
                 {(() => {
@@ -3372,18 +3378,19 @@ export default function Home() {
                 })()}
               </span>
               {showMobileQuickFilters ? (
-                <ChevronUp size={13} aria-hidden="true" />
+                <ChevronUp size={12} aria-hidden="true" />
               ) : (
-                <ChevronDown size={13} aria-hidden="true" />
+                <ChevronDown size={12} aria-hidden="true" />
               )}
             </button>
 
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
               <div
                 role="group"
                 aria-label="모바일 보기 방식"
                 style={{
                   display: "inline-flex",
+                  flexShrink: 0,
                   borderRadius: "10px",
                   border: "1px solid var(--card-border)",
                   overflow: "hidden",
@@ -3395,12 +3402,13 @@ export default function Home() {
                   onClick={() => handleViewModeChange("card")}
                   style={{
                     minHeight: "34px",
-                    padding: "4px 8px",
+                    padding: "4px 7px",
                     display: "inline-flex",
                     alignItems: "center",
                     gap: "3px",
-                    fontSize: "0.76rem",
+                    fontSize: "0.73rem",
                     fontWeight: 600,
+                    whiteSpace: "nowrap",
                     border: "none",
                     background: viewMode === "card" ? "var(--accent)" : "var(--card-bg)",
                     color: viewMode === "card" ? "var(--on-accent)" : "var(--text-sub)",
@@ -3416,12 +3424,13 @@ export default function Home() {
                   onClick={() => handleViewModeChange("compact")}
                   style={{
                     minHeight: "34px",
-                    padding: "4px 8px",
+                    padding: "4px 7px",
                     display: "inline-flex",
                     alignItems: "center",
                     gap: "3px",
-                    fontSize: "0.76rem",
+                    fontSize: "0.73rem",
                     fontWeight: 600,
+                    whiteSpace: "nowrap",
                     border: "none",
                     background: viewMode === "compact" ? "var(--accent)" : "var(--card-bg)",
                     color: viewMode === "compact" ? "var(--on-accent)" : "var(--text-sub)",
@@ -3436,19 +3445,23 @@ export default function Home() {
               <button
                 type="button"
                 aria-expanded={showRecentDealsPanel}
+                aria-label={`최근 본 핫딜 (${recentDeals.length})`}
                 onClick={() => setShowRecentDealsPanel((v) => !v)}
                 className="filter-chip-btn bounce-click"
                 style={{
                   minHeight: "34px",
-                  padding: "4px 9px",
-                  fontSize: "0.76rem",
+                  padding: "0 8px",
+                  fontSize: "0.73rem",
+                  gap: "4px",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
                   background: showRecentDealsPanel ? "var(--accent-soft-bg)" : "var(--card-bg)",
                   color: showRecentDealsPanel ? "var(--accent)" : "var(--text-sub)",
                   border: "1px solid var(--card-border)",
                 }}
               >
                 <Clock size={12} aria-hidden="true" />
-                <span>최근 본 ({recentDeals.length})</span>
+                <span>최근 ({recentDeals.length})</span>
               </button>
             </div>
           </div>
