@@ -260,6 +260,8 @@ def test_cors_allows_cloudflare_pages_and_gcp_and_blocks_untrusted():
     for allowed_origin in (
         "https://insightdeal.pages.dev",
         "https://abc123.insightdeal.pages.dev",
+        "https://insightdeal-2ai.pages.dev",
+        "https://98710e1d.insightdeal-2ai.pages.dev",
         "https://34.59.208.14.sslip.io",
     ):
         res = client.options(
@@ -276,6 +278,7 @@ def test_cors_allows_cloudflare_pages_and_gcp_and_blocks_untrusted():
     for evil_origin in (
         "https://evil.pages.dev",
         "https://evil-insightdeal.pages.dev",
+        "https://evil-insightdeal-2ai.pages.dev",
     ):
         res = client.options(
             "/api/meta/categories",

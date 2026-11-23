@@ -1,0 +1,6 @@
+name = "insightdeal-relay"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+
+[vars]
+BACKEND_URL = "https://34.59.208.14.sslip.io"

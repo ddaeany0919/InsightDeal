@@ -101,12 +101,13 @@ if not ALLOWED_ORIGINS:
         "https://insightdeal.vercel.app",
         "https://34.59.208.14.sslip.io",
         "https://insightdeal.pages.dev",
+        "https://insightdeal-2ai.pages.dev",
     ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"^https://([a-z0-9-]+\.)*(toss\.im|tossmini\.com|insightdeal\.pages\.dev)$",
+    allow_origin_regex=r"^https://([a-z0-9-]+\.)*(toss\.im|tossmini\.com|insightdeal\.pages\.dev|insightdeal-2ai\.pages\.dev)$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
