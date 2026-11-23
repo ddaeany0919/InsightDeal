@@ -2,6 +2,12 @@
 
 type TossHostWindow = Window & {
   __appsInTossConstants?: Record<string, unknown>;
+  __appsInToss?: {
+    ads?: {
+      initialize?: { isSupported?: () => boolean };
+      attachBanner?: { isSupported?: () => boolean };
+    };
+  };
 };
 
 export type TossEventParams = Record<
@@ -9,13 +15,20 @@ export type TossEventParams = Record<
   string | number | boolean | null | undefined
 >;
 
-type TossSdkModule = typeof import("@apps-in-toss/web-framework");
+export type TossSdkModule = typeof import("@apps-in-toss/web-framework");
 
 let sdkPromise: Promise<TossSdkModule | null> | null = null;
+let tossAdsInitPromise: Promise<TossSdkModule | null> | null = null;
 
 const REVIEW_SESSION_KEY = "insightdeal_toss_review_prompted";
 const REVIEW_COOLDOWN_KEY = "insightdeal_toss_review_prompted_at";
 const REVIEW_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const TOSS_ADS_INIT_TIMEOUT_MS = 8000;
+
+export const TOSS_HOME_BANNER_AD_GROUP_ID = (
+  process.env.NEXT_PUBLIC_TOSS_BANNER_AD_GROUP_ID ||
+  "ait.v2.live.b3a879ee2cbd4df8"
+).trim();
 
 /**
  * 실제 토스 앱(Apps in Toss 호스트 WebView) 브릿지가 주입된 런타임인지 판별합니다.
@@ -25,6 +38,14 @@ const REVIEW_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 export function hasTossBridge(): boolean {
   if (typeof window === "undefined") return false;
   return Boolean((window as TossHostWindow).__appsInTossConstants);
+}
+
+/**
+ * 토스 인앱 광고(TossAds) 호스트 객체가 주입된 런타임인지 판별합니다.
+ */
+export function hasTossAdsHost(): boolean {
+  if (typeof window === "undefined") return false;
+  return Boolean((window as TossHostWindow).__appsInToss?.ads);
 }
 
 /**
@@ -44,11 +65,78 @@ export function isTossMiniAppEnv(): boolean {
 }
 
 function loadTossSdk(): Promise<TossSdkModule | null> {
-  if (!hasTossBridge()) return Promise.resolve(null);
+  if (!hasTossBridge() && !hasTossAdsHost()) return Promise.resolve(null);
   if (!sdkPromise) {
-    sdkPromise = import("@apps-in-toss/web-framework").catch(() => null);
+    sdkPromise = import("@apps-in-toss/web-framework").catch(() => {
+      sdkPromise = null;
+      return null;
+    });
   }
   return sdkPromise;
+}
+
+/**
+ * 토스 인앱 광고 SDK(TossAds)를 세션당 1회만 싱글톤으로 초기화합니다.
+ * 미지원·실패·타임아웃 시 null을 반환하고 캐시를 비워 다음 시도에서 복구할 수 있게 합니다.
+ */
+export function ensureTossAdsInitialized(): Promise<TossSdkModule | null> {
+  if (!hasTossAdsHost()) return Promise.resolve(null);
+  if (tossAdsInitPromise) return tossAdsInitPromise;
+
+  const pending = (async (): Promise<TossSdkModule | null> => {
+    const sdk = await loadTossSdk();
+    const ads = sdk?.TossAds;
+    if (
+      !ads ||
+      !ads.initialize?.isSupported?.() ||
+      !ads.attachBanner?.isSupported?.()
+    ) {
+      tossAdsInitPromise = null;
+      return null;
+    }
+
+    return await new Promise<TossSdkModule | null>((resolve) => {
+      let settled = false;
+      const timerId = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        tossAdsInitPromise = null;
+        resolve(null);
+      }, TOSS_ADS_INIT_TIMEOUT_MS);
+
+      const finish = (result: TossSdkModule | null) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timerId);
+        if (!result) {
+          tossAdsInitPromise = null;
+        }
+        resolve(result);
+      };
+
+      try {
+        ads.initialize({
+          callbacks: {
+            onInitialized: () => finish(sdk),
+            onInitializationFailed: () => finish(null),
+          },
+        });
+      } catch {
+        finish(null);
+      }
+    });
+  })();
+
+  tossAdsInitPromise = pending;
+  return pending;
+}
+
+/**
+ * 테스트 격리를 위해 TossAds 초기화 싱글톤 캐시를 비웁니다.
+ */
+export function resetTossAdsInitState(): void {
+  tossAdsInitPromise = null;
+  sdkPromise = null;
 }
 
 function sanitizeLogParams(

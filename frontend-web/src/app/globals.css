@@ -2869,3 +2869,30 @@ mark.search-highlight {
     height: 44px;
   }
 }
+
+/* 토스 인앱 배너 광고 슬롯 (토스 호스트 외/노필 시 높이 0·비노출 유지) */
+.toss-ad-banner-slot {
+  grid-column: 1 / -1;
+  width: 100%;
+  overflow: hidden;
+  transition: opacity 0.2s ease;
+}
+
+.toss-ad-banner-slot--loading {
+  min-height: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toss-ad-banner-slot--rendered {
+  min-height: 96px;
+  border-radius: var(--radius-md);
+  opacity: 1;
+}
+
+.toss-ad-banner-target {
+  width: 100%;
+}

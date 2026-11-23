@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { Fragment, useEffect, useState, useRef, useCallback } from "react";
 import {
   Download,
   Heart,
@@ -69,6 +69,7 @@ import ThemeToggle from "./components/ThemeToggle";
 import InAppBrowserBanner from "./components/InAppBrowserBanner";
 import DealCard from "./components/DealCard";
 import FeedbackModal from "./components/FeedbackModal";
+import TossAdBanner from "./components/TossAdBanner";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -4320,26 +4321,34 @@ export default function Home() {
                 )}
               </div>
             ) : (
-              filteredDeals.map((deal, idx) => (
-                <DealCard
-                  key={deal.id}
-                  deal={deal}
-                  appliedSearch={appliedSearch}
-                  isMounted={isMounted}
-                  currentTime={currentTime}
-                  isWishlisted={wishlist.includes(deal.id)}
-                  isAlertSet={alerts.includes(deal.id)}
-                  priority={idx < 6}
-                  viewMode={viewMode}
-                  showCategoryPill={selectedCategories.length === 0}
-                  onHideDeal={handleHideDeal}
-                  onSelectDeal={(selected) => openDealWithHistory(selected)}
-                  onShareDeal={handleShareDeal}
-                  onToggleAlert={toggleAlert}
-                  onToggleWishlist={toggleWishlist}
-                  onShowToast={showToast}
-                />
-              ))
+              (() => {
+                const bannerInsertIdx =
+                  filteredDeals.length >= 2
+                    ? Math.min(4, filteredDeals.length - 1)
+                    : -1;
+                return filteredDeals.map((deal, idx) => (
+                  <Fragment key={deal.id}>
+                    <DealCard
+                      deal={deal}
+                      appliedSearch={appliedSearch}
+                      isMounted={isMounted}
+                      currentTime={currentTime}
+                      isWishlisted={wishlist.includes(deal.id)}
+                      isAlertSet={alerts.includes(deal.id)}
+                      priority={idx < 6}
+                      viewMode={viewMode}
+                      showCategoryPill={selectedCategories.length === 0}
+                      onHideDeal={handleHideDeal}
+                      onSelectDeal={(selected) => openDealWithHistory(selected)}
+                      onShareDeal={handleShareDeal}
+                      onToggleAlert={toggleAlert}
+                      onToggleWishlist={toggleWishlist}
+                      onShowToast={showToast}
+                    />
+                    {idx === bannerInsertIdx && <TossAdBanner />}
+                  </Fragment>
+                ));
+              })()
             )}
           </div>
 
