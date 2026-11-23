@@ -601,7 +601,8 @@ class AsyncBaseScraper(ABC):
                 'common/', 'btn_', 'button', 'share_', 'footer', 'header', 'avatar', 'lazyload',
                 '11st_', 'gmarket_logo', 'auction_logo', 'naver_logo',
                 'lookaside.fbsbx.com', 'facebook.com', 'instagram.com',
-                'close.jpg', 'close.png', 'close.gif', 'tvcast', 'sstatic/search', 'cafefiles.naver', '아이콘'
+                'close.jpg', 'close.png', 'close.gif', 'tvcast', 'sstatic/search', 'cafefiles.naver', '아이콘',
+                'skin/', 'customizing/', 'sns_', 'bnr_', 'design/', 'popup/'
             ]
             return not any(tok in low for tok in bad_tokens)
 

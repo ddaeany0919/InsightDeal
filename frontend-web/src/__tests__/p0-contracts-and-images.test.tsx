@@ -71,6 +71,18 @@ describe("DTO 1-RTT/이중 키/이미지 전 구간/DND 표준 카피 계약 검
     expect(getProxyImageUrl("https://img.fmkorea.com/b.png")).toBe(
       `/api/proxy-image?url=${encodeURIComponent("https://img.fmkorea.com/b.png")}`
     );
+    expect(
+      getProxyImageUrl("https://seorincomputer.co.kr/data/pimg/163/163082_600.jpg", {
+        width: 400,
+      })
+    ).toBe(
+      `/api/proxy-image?url=${encodeURIComponent("https://seorincomputer.co.kr/data/pimg/163/163082_600.jpg")}`
+    );
+    expect(
+      getProxyImageUrl("https://www.seorincomputer.co.kr/data/pimg/163/163082_600.jpg")
+    ).toBe(
+      `/api/proxy-image?url=${encodeURIComponent("https://www.seorincomputer.co.kr/data/pimg/163/163082_600.jpg")}`
+    );
     // 평문 http:// -> 백엔드 프록시 직행
     expect(getProxyImageUrl("http://shop.example.com/item.jpg")).toBe(
       `/api/proxy-image?url=${encodeURIComponent("http://shop.example.com/item.jpg")}`

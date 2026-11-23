@@ -910,6 +910,7 @@ export const BLOCKED_COMMUNITY_DOMAINS = [
   "clien.net",
   "coolenjoy.net",
   "damoang.net",
+  "seorincomputer.co.kr",
 ];
 
 export const isBlockedCommunityUrl = (url: string): boolean => {

@@ -70,6 +70,7 @@ import InAppBrowserBanner from "./components/InAppBrowserBanner";
 import DealCard from "./components/DealCard";
 import FeedbackModal from "./components/FeedbackModal";
 import TossAdBanner from "./components/TossAdBanner";
+import RecentDealsTray from "./components/RecentDealsTray";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -1163,6 +1164,31 @@ export default function Home() {
       }
       return next;
     });
+  }, []);
+
+  const handleRemoveRecentDeal = useCallback((dealId: number) => {
+    setRecentDeals((prev) => {
+      const next = prev.filter((item) => item.id !== dealId);
+      if (typeof window !== "undefined") {
+        try {
+          if (next.length === 0) {
+            localStorage.removeItem(RECENT_DEALS_STORAGE_KEY);
+          } else {
+            localStorage.setItem(RECENT_DEALS_STORAGE_KEY, JSON.stringify(next));
+          }
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearRecentDeals = useCallback(() => {
+    setRecentDeals([]);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(RECENT_DEALS_STORAGE_KEY);
+      } catch {}
+    }
   }, []);
 
   const handleHideDeal = useCallback(
@@ -2412,7 +2438,26 @@ export default function Home() {
         const savedRecentDeals = localStorage.getItem(RECENT_DEALS_STORAGE_KEY);
         if (savedRecentDeals) {
           const parsed = JSON.parse(savedRecentDeals);
-          if (Array.isArray(parsed)) setRecentDeals(parsed.slice(0, 30));
+          if (Array.isArray(parsed)) {
+            const seenIds = new Set<number>();
+            const validRecentDeals = parsed
+              .filter((item): item is Deal => {
+                if (
+                  !item ||
+                  typeof item !== "object" ||
+                  typeof item.id !== "number" ||
+                  !Number.isFinite(item.id) ||
+                  typeof item.title !== "string"
+                ) {
+                  return false;
+                }
+                if (seenIds.has(item.id)) return false;
+                seenIds.add(item.id);
+                return true;
+              })
+              .slice(0, 30);
+            setRecentDeals(validRecentDeals);
+          }
         }
       } catch {}
       try {
@@ -3791,101 +3836,12 @@ export default function Home() {
           </div>
 
           {showRecentDealsPanel && (
-            <div
-              className="glass-panel"
-              style={{
-                padding: "12px 14px",
-                borderRadius: "14px",
-                marginBottom: "12px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <strong style={{ fontSize: "0.85rem", color: "var(--text-main)" }}>
-                  최근 본 핫딜 ({recentDeals.length}건)
-                </strong>
-                {recentDeals.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRecentDeals([]);
-                      if (typeof window !== "undefined") {
-                        try {
-                          localStorage.removeItem(RECENT_DEALS_STORAGE_KEY);
-                        } catch {}
-                      }
-                    }}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: "var(--text-muted)",
-                      fontSize: "0.78rem",
-                      cursor: "pointer",
-                    }}
-                  >
-                    전체 비우기
-                  </button>
-                )}
-              </div>
-              {recentDeals.length === 0 ? (
-                <span style={{ fontSize: "0.82rem", color: "var(--text-sub)" }}>
-                  아직 열어본 핫딜이 없어요. 카드를 누르면 최근 기록이 여기에 쌓여요.
-                </span>
-              ) : (
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  {recentDeals.slice(0, 10).map((rd) => {
-                    const rdPriceLabel = rd.isFree
-                      ? "무료"
-                      : formatPrice(rd.price, rd.currency, rd.title);
-                    return (
-                      <button
-                        key={rd.id}
-                        type="button"
-                        onClick={() => openDealWithHistory(rd)}
-                        style={{
-                          padding: "6px 12px",
-                          borderRadius: "999px",
-                          border: "1px solid var(--card-border)",
-                          background: "var(--card-bg)",
-                          color: "var(--text-main)",
-                          fontSize: "0.8rem",
-                          fontWeight: 600,
-                          maxWidth: "280px",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <span
-                          style={{
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            minWidth: 0,
-                          }}
-                        >
-                          {decodeHtmlEntities(rd.title)}
-                        </span>
-                        <span
-                          style={{
-                            flexShrink: 0,
-                            color: "var(--accent)",
-                            fontWeight: 800,
-                            fontSize: "0.75rem",
-                            fontVariantNumeric: "tabular-nums",
-                          }}
-                        >
-                          {rdPriceLabel}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <RecentDealsTray
+              deals={recentDeals}
+              onSelectDeal={openDealWithHistory}
+              onRemoveDeal={handleRemoveRecentDeal}
+              onClearAll={handleClearRecentDeals}
+            />
           )}
 
           {showHiddenManagePanel && (
