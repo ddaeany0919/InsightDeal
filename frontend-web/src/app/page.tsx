@@ -129,6 +129,55 @@ const RECENT_DEALS_STORAGE_KEY = "insightdeal_recent_deals";
 const HIDDEN_DEALS_STORAGE_KEY = "insightdeal_hidden_deal_ids";
 const MUTED_KEYWORDS_STORAGE_KEY = "insightdeal_muted_keywords";
 
+const RECENT_DEAL_SYNC_KEYS = [
+  "image_url",
+  "title",
+  "price",
+  "currency",
+  "isFree",
+  "isClosed",
+  "shop_name",
+  "ecommerce_url",
+  "category",
+  "reportCount",
+  "shipping_fee",
+  "community_name",
+] as const satisfies ReadonlyArray<keyof Deal>;
+
+function mergeRecentDealUpdates(
+  prev: Deal[],
+  patches: Map<number, Partial<Deal>>
+): { next: Deal[]; changed: boolean } {
+  if (prev.length === 0 || patches.size === 0) {
+    return { next: prev, changed: false };
+  }
+  let changed = false;
+  const next = prev.map((item) => {
+    const patch = patches.get(item.id);
+    if (!patch) return item;
+    const updates: Partial<Deal> = {};
+    let itemChanged = false;
+    for (const key of RECENT_DEAL_SYNC_KEYS) {
+      const nextVal = patch[key];
+      if (nextVal !== undefined && item[key] !== nextVal) {
+        (updates as Record<string, unknown>)[key] = nextVal;
+        itemChanged = true;
+      }
+    }
+    if (!itemChanged) return item;
+    changed = true;
+    return { ...item, ...updates };
+  });
+  return { next: changed ? next : prev, changed };
+}
+
+function persistRecentDealsToStorage(next: Deal[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(RECENT_DEALS_STORAGE_KEY, JSON.stringify(next));
+  } catch {}
+}
+
 function formatCompactPriceLabel(rawNum: string): string {
   const num = parseInt(rawNum.replace(/[^0-9]/g, ""), 10);
   if (!Number.isFinite(num) || num <= 0) return "";
@@ -275,6 +324,18 @@ export default function Home() {
   useEffect(() => {
     dealsRef.current = deals;
     maxKnownDealIdRef.current = deals.reduce((acc, item) => (item.id > acc ? item.id : acc), 0);
+    if (deals.length === 0) return;
+
+    const freshMap = new Map<number, Deal>();
+    for (const dealItem of deals) {
+      freshMap.set(dealItem.id, dealItem);
+    }
+    setRecentDeals((prev) => {
+      const { next, changed } = mergeRecentDealUpdates(prev, freshMap);
+      if (!changed) return prev;
+      persistRecentDealsToStorage(next);
+      return next;
+    });
   }, [deals]);
 
   useEffect(() => {
@@ -1091,6 +1152,28 @@ export default function Home() {
       setSelectedDeal((prev) =>
         prev && prev.id === dealId ? { ...prev, isClosed, reportCount } : prev
       );
+      setRecentDeals((prev) => {
+        const patches = new Map<number, Partial<Deal>>([
+          [dealId, { isClosed, reportCount }],
+        ]);
+        const { next, changed } = mergeRecentDealUpdates(prev, patches);
+        if (!changed) return prev;
+        persistRecentDealsToStorage(next);
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleDealDetailSynced = useCallback(
+    (dealId: number, patch: Partial<Deal>) => {
+      setRecentDeals((prev) => {
+        const patches = new Map<number, Partial<Deal>>([[dealId, patch]]);
+        const { next, changed } = mergeRecentDealUpdates(prev, patches);
+        if (!changed) return prev;
+        persistRecentDealsToStorage(next);
+        return next;
+      });
     },
     []
   );
@@ -2295,13 +2378,13 @@ export default function Home() {
       })
       .catch(() => {});
 
-    // /?dealId= 딥링크 진입 시 상세 모달 자동 오픈
+    // /?dealId= 딥링크 진입 시 상세 모달 자동 오픈 + 최근 본 히스토리/캐시 최신화
     if (initialDealId !== null) {
       fetch(apiUrl(`/api/community/deals/${initialDealId}`))
         .then((r) => (r.ok ? (r.json() as Promise<RawDealApiResponse>) : null))
         .then((detail) => {
           if (detail && detail.id) {
-            setSelectedDeal(mapRawDealToDeal(detail));
+            openDealWithHistory(mapRawDealToDeal(detail));
           }
         })
         .catch(() => {});
@@ -2531,7 +2614,7 @@ export default function Home() {
         window.removeEventListener("keydown", handleGlobalKeyDown);
       }
     };
-  }, [clearSearchDebounce, fetchLiveDeals, getOrCreateBrowserUserId, hydrateFromServer, updateAppliedSearch]);
+  }, [clearSearchDebounce, fetchLiveDeals, getOrCreateBrowserUserId, hydrateFromServer, openDealWithHistory, updateAppliedSearch]);
 
   useEffect(() => {
     if (!isMounted || !urlSyncReadyRef.current || typeof window === "undefined") {
@@ -4448,6 +4531,7 @@ export default function Home() {
         onTargetAlertSaved={handleTargetAlertSaved}
         onDealClosed={handleDealClosed}
         onDealInteractionChange={handleDealInteractionChange}
+        onDealSynced={handleDealDetailSynced}
         onNavigateDeal={
           filteredDeals.length > 1 && selectedDealIndex >= 0
             ? handleNavigateSelectedDeal

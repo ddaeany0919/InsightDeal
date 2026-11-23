@@ -92,6 +92,7 @@ interface DealDetailModalProps {
     dealId: number,
     patch: { buyCount?: number; passCount?: number; appCommentCount?: number }
   ) => void;
+  onDealSynced?: (dealId: number, patch: Partial<Deal>) => void;
   onNavigateDeal?: (delta: -1 | 1) => void;
   onSelectRelatedDeal?: (deal: Deal) => void;
 }
@@ -110,6 +111,7 @@ export default function DealDetailModal({
   onTargetAlertSaved,
   onDealClosed,
   onDealInteractionChange,
+  onDealSynced,
   onNavigateDeal,
   onSelectRelatedDeal,
 }: DealDetailModalProps) {
@@ -129,6 +131,7 @@ export default function DealDetailModal({
   const [detailSources, setDetailSources] = useState<DealSource[]>([]);
   const [detailOptionsData, setDetailOptionsData] = useState<DealOptionItem[]>([]);
   const [detailShopName, setDetailShopName] = useState<string>("");
+  const [detailImageUrl, setDetailImageUrl] = useState<string | null | undefined>(undefined);
   const [detailBodyImages, setDetailBodyImages] = useState<string[]>([]);
   const [similarDeals, setSimilarDeals] = useState<Deal[]>([]);
   const [isClosedState, setIsClosedState] = useState<boolean>(false);
@@ -182,11 +185,13 @@ export default function DealDetailModal({
   const latestDealRef = useRef<Deal | null>(deal);
   const onCloseRef = useRef(onClose);
   const onDealInteractionChangeRef = useRef(onDealInteractionChange);
+  const onDealSyncedRef = useRef(onDealSynced);
 
   useEffect(() => {
     latestDealRef.current = deal;
     onCloseRef.current = onClose;
     onDealInteractionChangeRef.current = onDealInteractionChange;
+    onDealSyncedRef.current = onDealSynced;
     lightboxIndexRef.current = lightboxIndex;
   });
 
@@ -265,6 +270,7 @@ export default function DealDetailModal({
     setDetailSources(currentDeal?.sources || []);
     setDetailOptionsData(currentDeal?.options_data || []);
     setDetailShopName(currentDeal?.shop_name || "");
+    setDetailImageUrl(undefined);
     setDetailBodyImages(currentDeal?.bodyImages || []);
     setSimilarDeals([]);
     setIsClosedState(Boolean(currentDeal?.isClosed));
@@ -429,6 +435,60 @@ export default function DealDetailModal({
       const rawSimilar = d.similar_deals ?? d.similarDeals;
       if (Array.isArray(rawSimilar)) {
         setSimilarDeals(rawSimilar.slice(0, 4).map((item) => mapRawDealToDeal(item)));
+      }
+
+      const rawDetailImg = d.image_url !== undefined ? d.image_url : d.imageUrl;
+      const syncedPatch: Partial<Deal> = {};
+      if (rawDetailImg !== undefined) {
+        const normalizedImg =
+          typeof rawDetailImg === "string" && rawDetailImg.trim() !== ""
+            ? rawDetailImg.trim()
+            : null;
+        setDetailImageUrl(normalizedImg);
+        syncedPatch.image_url = normalizedImg;
+      }
+      if (typeof d.title === "string" && d.title.trim() !== "") {
+        syncedPatch.title = decodeHtmlEntities(d.title);
+      }
+      if (d.price !== undefined && d.price !== null && String(d.price).trim() !== "") {
+        syncedPatch.price = String(d.price);
+      }
+      if (typeof d.currency === "string" && d.currency.trim() !== "") {
+        syncedPatch.currency = d.currency.trim();
+      }
+      if (nextFree !== undefined) {
+        const freeFlag = Boolean(nextFree);
+        syncedPatch.isFree = freeFlag;
+        if (freeFlag) {
+          syncedPatch.price = "0";
+        }
+      }
+      if (nextClosed !== undefined) {
+        syncedPatch.isClosed = Boolean(nextClosed);
+      }
+      if (nextReportCnt !== undefined) {
+        syncedPatch.reportCount = Number(nextReportCnt) || 0;
+      }
+      if (d.shop_name !== undefined || d.shopName !== undefined) {
+        const resolvedShop = resolveDealShopName({
+          shop_name: d.shop_name ?? d.shopName,
+          title: syncedPatch.title ?? currentDeal.title,
+          ecommerce_url: d.ecommerce_url ?? currentDeal.ecommerce_url,
+        });
+        if (resolvedShop) {
+          syncedPatch.shop_name = resolvedShop;
+        }
+      }
+      if (typeof d.ecommerce_url === "string" && d.ecommerce_url.trim() !== "") {
+        syncedPatch.ecommerce_url = d.ecommerce_url.trim();
+      }
+      if (typeof d.category === "string" && d.category.trim() !== "") {
+        syncedPatch.category = d.category.includes("해외핫딜")
+          ? "해외직구"
+          : d.category.trim();
+      }
+      if (Object.keys(syncedPatch).length > 0) {
+        onDealSyncedRef.current?.(dealId, syncedPatch);
       }
     };
 
@@ -770,10 +830,12 @@ export default function DealDetailModal({
       ? selectedOption.price
       : deal.price;
   const activeCurrency = selectedOption?.currency || deal.currency || "KRW";
+  const fallbackDealImageUrl =
+    detailImageUrl !== undefined ? detailImageUrl : deal.image_url;
   const activeImageUrl =
     selectedOption?.image_url && selectedOption.image_url.trim() !== ""
       ? selectedOption.image_url
-      : deal.image_url;
+      : fallbackDealImageUrl;
 
   const activeEcommerceUrl =
     selectedOption?.ecommerce_url &&

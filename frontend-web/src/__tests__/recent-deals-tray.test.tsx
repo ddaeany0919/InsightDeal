@@ -308,4 +308,295 @@ describe("RecentDealsTray 컴포넌트 및 최근 본 핫딜 E2E 상태 동기�
       `/api/proxy-image?url=${encodeURIComponent(url)}`
     );
   });
+
+  it("localStorage에 과거 오염 이미지가 남아 있어도 피드 로드 시 RecentDealsTray 썸네일과 localStorage를 자동 치유한다", async () => {
+    const pollutedUrl = "https://seorincomputer.co.kr/skin/shop/basic/customizing/sns_blog_v3.png";
+    const healedUrl = "https://seorincomputer.co.kr/data/pimg/163/163082_600.jpg";
+    localStorage.setItem(
+      "insightdeal_recent_deals",
+      JSON.stringify([
+        makeRecentDeal(25827, {
+          shop_name: "서린컴퓨터",
+          title: "9850X3D + Astral RTX 5090 + 2TB + 48G",
+          price: "14999000",
+          image_url: pollutedUrl,
+          ecommerce_url: "https://seorincomputer.co.kr/shop/system_detail.html?pd_no=163082",
+        }),
+      ])
+    );
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.includes("/api/meta/categories")) {
+        return new Response(JSON.stringify({ categories: [], sources: [] }), { status: 200 });
+      }
+      if (url.includes("/api/community/popular-keywords")) {
+        return new Response(JSON.stringify({ keywords: [], rankings: [] }), { status: 200 });
+      }
+      if (url.includes("/api/push/device")) {
+        return new Response(
+          JSON.stringify({
+            status: "ok",
+            device_uuid: "web_recent_sync_uuid",
+            device_token: "web_recent_sync_token",
+          }),
+          { status: 200 }
+        );
+      }
+      if (url.includes("/api/users/notifications")) {
+        return new Response(JSON.stringify({ notifications: [] }), { status: 200 });
+      }
+      if (url.includes("/api/wishlist")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.includes("/api/community/hot-deals")) {
+        return new Response(
+          JSON.stringify({
+            deals: [
+              {
+                id: 25827,
+                title: "9850X3D + Astral RTX 5090 + 2TB + 48G",
+                price: 14999000,
+                currency: "KRW",
+                shop_name: "서린컴퓨터",
+                site_name: "퀘이사존",
+                image_url: healedUrl,
+                ecommerce_url: "https://seorincomputer.co.kr/shop/system_detail.html?pd_no=163082",
+                post_url: "https://quasarzone.com/bbs/qb_saleinfo/views/2003743",
+                category: "PC/하드웨어",
+                is_closed: false,
+                is_free: false,
+                scraped_at: "2026-11-24T00:00:00Z",
+              },
+            ],
+            has_more: false,
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+
+    render(<Home />);
+
+    await waitFor(() => {
+      const stored = JSON.parse(
+        localStorage.getItem("insightdeal_recent_deals") || "[]"
+      ) as Deal[];
+      expect(stored).toHaveLength(1);
+      expect(stored[0].image_url).toBe(healedUrl);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "최근 본 핫딜 (1)" }));
+
+    const trayImgs = screen.getAllByAltText(
+      "9850X3D + Astral RTX 5090 + 2TB + 48G"
+    ) as HTMLImageElement[];
+    const trayThumb = trayImgs.find((el) =>
+      el.classList.contains("recent-deals-thumb-img")
+    );
+    expect(trayThumb).toBeDefined();
+    expect(trayThumb?.getAttribute("src")).toBe(
+      `/api/proxy-image?url=${encodeURIComponent(healedUrl)}`
+    );
+  });
+
+  it("/?dealId= 딥링크 진입 시 단건 상세 응답으로 recentDeals와 localStorage를 최신화한다", async () => {
+    const pollutedUrl = "https://seorincomputer.co.kr/skin/shop/basic/customizing/sns_blog_v3.png";
+    const healedUrl = "https://seorincomputer.co.kr/data/pimg/163/163082_600.jpg";
+    localStorage.setItem(
+      "insightdeal_recent_deals",
+      JSON.stringify([
+        makeRecentDeal(25828, {
+          shop_name: "서린컴퓨터",
+          title: "딥링크 치유 대상 핫딜",
+          price: "59000",
+          image_url: pollutedUrl,
+        }),
+      ])
+    );
+    window.history.replaceState(null, "", "/?dealId=25828");
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.includes("/api/community/deals/25828")) {
+        return new Response(
+          JSON.stringify({
+            id: 25828,
+            title: "딥링크 치유 완료 핫딜",
+            price: 55000,
+            currency: "KRW",
+            shop_name: "서린컴퓨터",
+            site_name: "퀘이사존",
+            image_url: healedUrl,
+            ecommerce_url: "https://seorincomputer.co.kr/shop/system_detail.html?pd_no=163082",
+            post_url: "https://quasarzone.com/bbs/qb_saleinfo/views/2003744",
+            category: "PC/하드웨어",
+            is_closed: false,
+            is_free: false,
+            content_html: "<p>딥링크 상세</p>",
+          }),
+          { status: 200 }
+        );
+      }
+      if (url.includes("/api/meta/categories")) {
+        return new Response(JSON.stringify({ categories: [], sources: [] }), { status: 200 });
+      }
+      if (url.includes("/api/community/popular-keywords")) {
+        return new Response(JSON.stringify({ keywords: [], rankings: [] }), { status: 200 });
+      }
+      if (url.includes("/api/push/device")) {
+        return new Response(
+          JSON.stringify({
+            status: "ok",
+            device_uuid: "web_deeplink_uuid",
+            device_token: "web_deeplink_token",
+          }),
+          { status: 200 }
+        );
+      }
+      if (url.includes("/api/users/notifications")) {
+        return new Response(JSON.stringify({ notifications: [] }), { status: 200 });
+      }
+      if (url.includes("/api/wishlist")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.includes("/api/community/hot-deals")) {
+        return new Response(JSON.stringify({ deals: [], has_more: false }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+
+    try {
+      render(<Home />);
+
+      await waitFor(() => {
+        const stored = JSON.parse(
+          localStorage.getItem("insightdeal_recent_deals") || "[]"
+        ) as Deal[];
+        expect(stored).toHaveLength(1);
+        expect(stored[0].image_url).toBe(healedUrl);
+        expect(stored[0].title).toBe("딥링크 치유 완료 핫딜");
+        expect(stored[0].price).toBe("55000");
+      });
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("피드에 없는 오래된 recentDeals 항목을 열면 모달 1-RTT 상세 응답으로 image_url과 isClosed를 자동 치유한다", async () => {
+    const oldPolluted = "https://seorincomputer.co.kr/skin/shop/basic/customizing/sns_blog_v3.png";
+    const freshHealed = "https://seorincomputer.co.kr/data/pimg/163/163082_600.jpg";
+    localStorage.setItem(
+      "insightdeal_recent_deals",
+      JSON.stringify([
+        makeRecentDeal(25829, {
+          shop_name: "서린컴퓨터",
+          title: "피드 밖 오래된 최근 본 딜",
+          price: "89000",
+          image_url: oldPolluted,
+          isClosed: false,
+        }),
+      ])
+    );
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.includes("/api/community/deals/25829")) {
+        return new Response(
+          JSON.stringify({
+            id: 25829,
+            title: "피드 밖 오래된 최근 본 딜",
+            price: 89000,
+            currency: "KRW",
+            shop_name: "서린컴퓨터",
+            site_name: "퀘이사존",
+            image_url: freshHealed,
+            is_closed: true,
+            report_count: 4,
+            content_html: "<p>품절 및 이미지 치유 상세</p>",
+          }),
+          { status: 200 }
+        );
+      }
+      if (url.includes("/api/meta/categories")) {
+        return new Response(JSON.stringify({ categories: [], sources: [] }), { status: 200 });
+      }
+      if (url.includes("/api/community/popular-keywords")) {
+        return new Response(JSON.stringify({ keywords: [], rankings: [] }), { status: 200 });
+      }
+      if (url.includes("/api/push/device")) {
+        return new Response(
+          JSON.stringify({
+            status: "ok",
+            device_uuid: "web_stale_modal_uuid",
+            device_token: "web_stale_modal_token",
+          }),
+          { status: 200 }
+        );
+      }
+      if (url.includes("/api/users/notifications")) {
+        return new Response(JSON.stringify({ notifications: [] }), { status: 200 });
+      }
+      if (url.includes("/api/wishlist")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.includes("/api/community/hot-deals")) {
+        return new Response(JSON.stringify({ deals: [], has_more: false }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+
+    render(<Home />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "최근 본 핫딜 (1)" })
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "최근 본 핫딜 (1)" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /피드 밖 오래된 최근 본 딜.*상세 보기/,
+      })
+    );
+
+    await waitFor(() => {
+      const stored = JSON.parse(
+        localStorage.getItem("insightdeal_recent_deals") || "[]"
+      ) as Deal[];
+      expect(stored).toHaveLength(1);
+      expect(stored[0].image_url).toBe(freshHealed);
+      expect(stored[0].isClosed).toBe(true);
+      expect(stored[0].reportCount).toBe(4);
+    });
+
+    const healedImgs = screen.getAllByAltText(
+      "피드 밖 오래된 최근 본 딜"
+    ) as HTMLImageElement[];
+    expect(
+      healedImgs.some((img) =>
+        (img.getAttribute("src") || "").includes(encodeURIComponent(freshHealed))
+      )
+    ).toBe(true);
+  });
 });

@@ -93,6 +93,7 @@ export default function RecentDealsTray({
                     {!isImgFailed && rd.image_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
+                        key={imgKey}
                         src={primarySrc}
                         alt={displayTitle}
                         className={`recent-deals-thumb-img${rd.isClosed ? " is-closed" : ""}`}
