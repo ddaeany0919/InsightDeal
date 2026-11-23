@@ -6,7 +6,7 @@ const isTossMiniApp = process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true";
 const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('insightdeal_theme');var r=document.documentElement;if(t==='light'||t==='dark'||t==='amoled'){r.dataset.theme=t;r.style.colorScheme=(t==='light'?'light':'dark');}else{delete r.dataset.theme;r.style.colorScheme=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}}catch(e){}})();`;
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://insightdeal.vercel.app"),
+  metadataBase: new URL("https://eolmande.pages.dev"),
   title: "얼만데 - 실시간 핫딜 모아보기",
   description: "주요 커뮤니티 10곳의 실시간 핫딜을 한눈에 모아보세요 — 얼만데",
   keywords: [

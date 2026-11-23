@@ -262,6 +262,8 @@ def test_cors_allows_cloudflare_pages_and_gcp_and_blocks_untrusted():
         "https://abc123.insightdeal.pages.dev",
         "https://insightdeal-2ai.pages.dev",
         "https://98710e1d.insightdeal-2ai.pages.dev",
+        "https://eolmande.pages.dev",
+        "https://abc123.eolmande.pages.dev",
         "https://34.59.208.14.sslip.io",
     ):
         res = client.options(
@@ -279,6 +281,7 @@ def test_cors_allows_cloudflare_pages_and_gcp_and_blocks_untrusted():
         "https://evil.pages.dev",
         "https://evil-insightdeal.pages.dev",
         "https://evil-insightdeal-2ai.pages.dev",
+        "https://evil-eolmande.pages.dev",
     ):
         res = client.options(
             "/api/meta/categories",
