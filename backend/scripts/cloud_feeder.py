@@ -318,7 +318,12 @@ async def scrape_and_push_once():
     _rotate_cron_log_if_needed()
     from datetime import datetime, timedelta, timezone
     from backend.core.url_utils import normalize_url
-    from backend.scrapers.base_scraper import build_scraper_relay_headers
+    from backend.scrapers.base_scraper import (
+        SCRAPER_RELAY_URL,
+        build_scraper_relay_headers,
+        is_relay_blocked,
+        record_relay_status,
+    )
     from backend.scrapers.ppomppu_scraper import PpomppuScraper
     from backend.scrapers.ppomppu_overseas_scraper import PpomppuOverseasScraper
     from backend.scrapers.alippomppu_scraper import AlippomppuScraper
@@ -365,29 +370,40 @@ async def scrape_and_push_once():
                         items = []
                         seen_page_urls = set()
 
-                        # 1. 뽐뿌 계열 클라우드 모드 시 Vercel 서울 릴레이 RSS 1-RTT 일괄 수집
+                        # 1. 뽐뿌 계열 클라우드 모드 시 서울 리전 릴레이 RSS 1-RTT 일괄 수집
                         if "ppomppu" in name and IS_CLOUD_ENV:
                             board_id = "ppomppu8" if name == "ali_ppomppu" else ("ppomppu4" if name == "ppomppu_overseas" else "ppomppu")
                             rss_target = f"https://www.ppomppu.co.kr/rss.php?id={board_id}"
-                            rss_relay_url = f"https://insightdeal.vercel.app/api/scraper-relay?url={urllib.parse.quote(rss_target, safe='')}"
-                            try:
-                                rss_headers = build_scraper_relay_headers(rss_target)
-                                res = await http_client.get(rss_relay_url, headers=rss_headers or None, timeout=10.0)
-                                if res.status_code in (401, 403, 503):
-                                    logger.warning(f"⚠️ [{display_name}] 클라우드 RSS 릴레이 인증/설정 오류 (HTTP {res.status_code})")
-                                if res.status_code == 200 and "<item>" in res.text:
-                                    rss_items = await sc.parse_list(res.text)
-                                    if rss_items:
-                                        logger.info(f"⚡ [{display_name}] 클라우드 RSS 릴레이로 {len(rss_items)}건 초고속 1-RTT 수집 완료 (0.5s)")
-                                        for pit in rss_items:
-                                            norm_u = normalize_url(pit["url"])
-                                            if norm_u not in seen_page_urls:
-                                                seen_page_urls.add(norm_u)
-                                                pit["url"] = norm_u
-                                                pit["_page_no"] = 1
-                                                items.append(pit)
-                            except Exception as rss_err:
-                                logger.warning(f"⚠️ [{display_name}] 클라우드 RSS 수집 실패 ({rss_err}), 웹 크롤링 폴백")
+                            rss_blocked, rss_reason = is_relay_blocked(rss_target)
+                            if rss_blocked:
+                                logger.info(f"⛔ [{display_name}] 서울 릴레이 회로 차단({rss_reason})으로 클라우드 RSS 릴레이 생략")
+                            else:
+                                relay_base = (
+                                    os.environ.get("SCRAPER_RELAY_URL", SCRAPER_RELAY_URL).strip()
+                                    or "https://insightdeal.vercel.app/api/scraper-relay"
+                                ).rstrip("/")
+                                rss_relay_url = f"{relay_base}?url={urllib.parse.quote(rss_target, safe='')}"
+                                try:
+                                    rss_headers = build_scraper_relay_headers(rss_target)
+                                    res = await http_client.get(rss_relay_url, headers=rss_headers or None, timeout=10.0)
+                                    record_relay_status(rss_target, res.status_code)
+                                    if res.status_code in (402, 429):
+                                        logger.warning(f"⛔ [{display_name}] 클라우드 RSS 릴레이 HTTP {res.status_code} 감지 -> 글로벌 릴레이 60분 회로 차단 발동")
+                                    elif res.status_code in (401, 403, 503):
+                                        logger.warning(f"⚠️ [{display_name}] 클라우드 RSS 릴레이 인증/설정 오류 (HTTP {res.status_code})")
+                                    if res.status_code == 200 and "<item>" in res.text:
+                                        rss_items = await sc.parse_list(res.text)
+                                        if rss_items:
+                                            logger.info(f"⚡ [{display_name}] 클라우드 RSS 릴레이로 {len(rss_items)}건 초고속 1-RTT 수집 완료 (0.5s)")
+                                            for pit in rss_items:
+                                                norm_u = normalize_url(pit["url"])
+                                                if norm_u not in seen_page_urls:
+                                                    seen_page_urls.add(norm_u)
+                                                    pit["url"] = norm_u
+                                                    pit["_page_no"] = 1
+                                                    items.append(pit)
+                                except Exception as rss_err:
+                                    logger.warning(f"⚠️ [{display_name}] 클라우드 RSS 수집 실패 ({rss_err}), 웹 크롤링 폴백")
 
                         # 2. 일반 목록 페이지네이션 수집 (RSS로 수집되지 않았거나 타 커뮤니티인 경우)
                         if not items:
@@ -576,7 +592,18 @@ async def scrape_and_push_once():
                                         or is_truncated_ppomppu
                                     )
                                 )
-                                if is_truncated_ppomppu or is_truncated_on_local:
+                                retry_count = int(cached_detail.get("detail_retry_count") or 0)
+                                last_attempt_ts = float(cached_detail.get("detail_last_attempt_ts") or 0.0)
+                                can_retry_truncated = (
+                                    retry_count < 2
+                                    and (time.time() - last_attempt_ts) >= 1800
+                                    and not is_relay_blocked(item_url)[0]
+                                )
+                                if (is_truncated_ppomppu or is_truncated_on_local) and can_retry_truncated:
+                                    cached_detail["detail_retry_count"] = retry_count + 1
+                                    cached_detail["detail_last_attempt_ts"] = int(time.time())
+                                    item["_detail_retry_count"] = cached_detail["detail_retry_count"]
+                                    item["_detail_last_attempt_ts"] = cached_detail["detail_last_attempt_ts"]
                                     items_needing_detail.append(item)
                                     continue
                                 status_changed = (
@@ -708,6 +735,21 @@ async def scrape_and_push_once():
                                                     it["image_url"] = img_fb
                                             except Exception:
                                                 pass
+                                        # 뽐뿌 상세 재시도 백오프/상한 메타 기록 (차회 크론 영구 폭주 방지)
+                                        if "ppomppu.co.kr" in (it.get("url") or ""):
+                                            cur_html = str(it.get("content_html") or "").strip()
+                                            if len(cur_html) >= 150 and not cur_html.endswith("..."):
+                                                it["_detail_retry_count"] = 0
+                                                it["_detail_last_attempt_ts"] = 0
+                                            elif "_detail_retry_count" not in it:
+                                                prev_c = _SEEN_DETAIL_CACHE.get((cache_pf, it["url"]), {})
+                                                next_cnt = int(prev_c.get("detail_retry_count") or 0) + 1
+                                                now_ts = int(time.time())
+                                                it["_detail_retry_count"] = next_cnt
+                                                it["_detail_last_attempt_ts"] = now_ts
+                                                if prev_c:
+                                                    prev_c["detail_retry_count"] = next_cnt
+                                                    prev_c["detail_last_attempt_ts"] = now_ts
                                     except Exception as de:
                                         logger.warning(f"[{display_name}] detail warning: {de}")
                                 return it
@@ -736,8 +778,14 @@ async def scrape_and_push_once():
 
                         # 4. 내용 및 메타데이터 정규화, 캐시 등록
                         final_enriched = []
+                        transient_retry_meta = {}
                         for item in enriched:
                             cache_key = (cache_pf, item["url"])
+                            if "_detail_retry_count" in item or "_detail_last_attempt_ts" in item:
+                                transient_retry_meta[cache_key] = (
+                                    int(item.pop("_detail_retry_count", 0) or 0),
+                                    int(item.pop("_detail_last_attempt_ts", 0) or 0),
+                                )
                             if not item.get("content_html"):
                                 shop_txt = item.get("shop_name") or display_name
                                 ship_txt = item.get("shipping_fee") or ""
@@ -775,6 +823,18 @@ async def scrape_and_push_once():
                                             total_processed += res.json().get("processed", len(chunk))
                                             for ch_item in chunk:
                                                 ch_key = (cache_pf, ch_item["url"])
+                                                prev_meta = _SEEN_DETAIL_CACHE.get(ch_key, {})
+                                                retry_meta = transient_retry_meta.get(ch_key)
+                                                d_retry_cnt = (
+                                                    retry_meta[0]
+                                                    if retry_meta is not None
+                                                    else int(prev_meta.get("detail_retry_count") or 0)
+                                                )
+                                                d_last_ts = (
+                                                    retry_meta[1]
+                                                    if retry_meta is not None
+                                                    else int(prev_meta.get("detail_last_attempt_ts") or 0)
+                                                )
                                                 _SEEN_DETAIL_CACHE[ch_key] = {
                                                     "title": ch_item["title"],
                                                     "price": int(ch_item.get("price") or 0),
@@ -791,6 +851,8 @@ async def scrape_and_push_once():
                                                     "created_at": ch_item.get("posted_at") or now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
                                                     "options_data": ch_item.get("options_data"),
                                                     "has_options": bool(ch_item.get("has_options", False)),
+                                                    "detail_retry_count": d_retry_cnt,
+                                                    "detail_last_attempt_ts": d_last_ts,
                                                 }
                                             break
                                     except Exception:

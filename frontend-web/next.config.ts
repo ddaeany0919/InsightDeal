@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
 
 const isTossMiniApp = process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true";
+const isStaticExport =
+  isTossMiniApp || process.env.NEXT_PUBLIC_STATIC_EXPORT === "true";
 
 const withPWA = withPWAInit({
   dest: "public",
@@ -27,12 +29,12 @@ const backendUrl = (
 console.log(`[Next.js Rewrite Engine] Configured rewrite destination to: ${backendUrl}`);
 
 const nextConfig: NextConfig = {
-  ...(isTossMiniApp
+  ...(isStaticExport
     ? { output: "export" as const, images: { unoptimized: true } }
     : {}),
   turbopack: {},
-  // CORS 문제를 해결하기 위해 백엔드로 프록시합니다. (앱인토스 정적 빌드 시에는 apiUrl()이 직접 백엔드 HTTPS를 호출)
-  ...(isTossMiniApp
+  // CORS 문제를 해결하기 위해 백엔드로 프록시합니다. (정적/앱인토스 빌드 시에는 apiUrl()이 직접 백엔드 HTTPS를 호출)
+  ...(isStaticExport
     ? {}
     : {
         async rewrites() {

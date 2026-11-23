@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 import os
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
@@ -45,6 +46,7 @@ from backend.database.session import SessionLocal, db_manager
 _SCRAPER_BG_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="scraper-bg")
 _COMMUNITY_CONCURRENCY_SEM = asyncio.Semaphore(2)
 _INITIAL_STARTUP_DELAY_DONE = False
+_PPOMPPU_DETAIL_BACKOFF: dict[str, tuple[int, float]] = {}
 
 
 async def _run_bg_blocking(fn, *args, **kwargs):
@@ -150,18 +152,29 @@ def _prepare_worker_item_sync(item: dict) -> tuple[str, bool]:
             )
         )
 
-        if time_diff > timedelta(hours=12) and not is_truncated_ppomppu:
+        if time_diff > timedelta(hours=12):
             return "skip", True
+
+        from backend.scrapers.base_scraper import is_relay_blocked
+
+        now_epoch = time.time()
+        attempts, last_ts = _PPOMPPU_DETAIL_BACKOFF.get(normalized_url, (0, 0.0))
+        can_retry_ppomppu_detail = (
+            is_truncated_ppomppu
+            and attempts < 2
+            and (now_epoch - last_ts) >= 1800
+            and not is_relay_blocked(normalized_url, now_ts=now_epoch)[0]
+        )
 
         reaction = local_db.query(DealReaction).filter(DealReaction.deal_id == existing_deal.id).first()
         if reaction and reaction.last_updated:
             rx_time = reaction.last_updated
             rx_now = datetime.now(rx_time.tzinfo) if rx_time.tzinfo is not None else datetime.now(timezone.utc).replace(tzinfo=None)
             rx_diff = rx_now - rx_time
-            if time_diff > timedelta(hours=3) and rx_diff < timedelta(minutes=20) and not is_truncated_ppomppu:
+            if time_diff > timedelta(hours=3) and rx_diff < timedelta(minutes=20) and not can_retry_ppomppu_detail:
                 return "skip", True
 
-        if existing_deal.content_html and existing_deal.image_url and not is_truncated_ppomppu:
+        if existing_deal.content_html and existing_deal.image_url and not can_retry_ppomppu_detail:
             new_closed = bool(item.get("is_closed", False))
             new_super = bool(item.get("is_super_hotdeal", False))
             new_likes = int(item.get("like_count") or 0)
@@ -176,6 +189,13 @@ def _prepare_worker_item_sync(item: dict) -> tuple[str, bool]:
             ):
                 return "skip", True
             return "update_no_detail", True
+        if is_truncated_ppomppu:
+            if not can_retry_ppomppu_detail:
+                return "skip", True
+            if len(_PPOMPPU_DETAIL_BACKOFF) >= 2000:
+                oldest_key = next(iter(_PPOMPPU_DETAIL_BACKOFF))
+                _PPOMPPU_DETAIL_BACKOFF.pop(oldest_key, None)
+            _PPOMPPU_DETAIL_BACKOFF[normalized_url] = (attempts + 1, now_epoch)
         return "update_need_detail", True
     finally:
         local_db.close()

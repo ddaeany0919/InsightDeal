@@ -100,6 +100,8 @@ backend/.venv/
 .agents/ORIGINAL_REQUEST.md
 ORIGINAL_REQUEST.md
 backend/logs/feeder_seen_cache.json
+backend/logs/relay_circuit_breaker.json
+frontend-web/.web-static-api-stash/
 
 # Backups & Keystore
 backend/backups/
