@@ -341,6 +341,24 @@ async def _fetch_jsmon_and_hotgusa_enrichment(http_client: httpx.AsyncClient) ->
                         entry["shop_name"] = str(row["mall_name"]).strip()
                     if row.get("has_thumb") and not entry.get("image_url"):
                         entry["image_url"] = f"https://d2w999htn2iva3.cloudfront.net/thumbs/{cid}/{pno}.jpg"
+                    if row.get("title") and not entry.get("title"):
+                        entry["title"] = str(row["title"]).strip()
+                    if row.get("price") is not None and not entry.get("price"):
+                        try:
+                            hg_price = int(float(row["price"]))
+                            if hg_price > 0:
+                                entry["price"] = hg_price
+                                entry["currency"] = "USD" if int(row.get("currency_code") or 0) == 1 else "KRW"
+                        except (TypeError, ValueError):
+                            pass
+                    if row.get("delivery_price") is not None and not entry.get("shipping_fee"):
+                        try:
+                            dp = int(float(row["delivery_price"]))
+                            entry["shipping_fee"] = "무료배송" if dp == 0 else f"{dp:,}원"
+                        except (TypeError, ValueError):
+                            pass
+                    if row.get("reg_date") and not entry.get("posted_at"):
+                        entry["posted_at"] = str(row["reg_date"]).strip()
     except Exception as he:
         logger.warning(f"⚠️ [hotgusa API] 보강 데이터 페칭 경고: {he}")
 
@@ -443,6 +461,38 @@ async def scrape_and_push_once():
                                 except Exception as rss_err:
                                     logger.warning(f"⚠️ [{display_name}] 클라우드 RSS 수집 실패 ({relay_base}: {rss_err}), 다음 경로 폴백")
 
+                        # 1-b. 뽐뿌 계열 RSS 릴레이 실패 시 직접 RSS / 모바일 목록 1회 경량 폴백
+                        if not items and "ppomppu" in name and IS_CLOUD_ENV:
+                            board_id = "ppomppu8" if name == "ali_ppomppu" else ("ppomppu4" if name == "ppomppu_overseas" else "ppomppu")
+                            for fb_u in (
+                                f"https://www.ppomppu.co.kr/rss.php?id={board_id}",
+                                f"https://m.ppomppu.co.kr/new/bbs_list.php?id={board_id}",
+                            ):
+                                try:
+                                    fb_html = await sc.fetch_html(fb_u) if "m.ppomppu" in fb_u else None
+                                    if fb_html is None:
+                                        r_fb = await http_client.get(
+                                            fb_u,
+                                            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0"},
+                                            timeout=6.0,
+                                        )
+                                        if r_fb.status_code == 200:
+                                            fb_html = r_fb.text
+                                    if fb_html:
+                                        fb_items = await sc.parse_list(fb_html)
+                                        if fb_items:
+                                            logger.info(f"⚡ [{display_name}] 직접/모바일 폴백으로 {len(fb_items)}건 수집 성공 ({fb_u})")
+                                            for pit in fb_items:
+                                                norm_u = normalize_url(pit["url"])
+                                                if norm_u not in seen_page_urls:
+                                                    seen_page_urls.add(norm_u)
+                                                    pit["url"] = norm_u
+                                                    pit["_page_no"] = 1
+                                                    items.append(pit)
+                                            break
+                                except Exception as fb_err:
+                                    logger.debug(f"[{display_name}] 직접/모바일 폴백 실패 ({fb_u}): {fb_err}")
+
                         # 2. 일반 목록 페이지네이션 수집 (RSS로 수집되지 않았거나 타 커뮤니티인 경우)
                         if not items:
                             for page_no in range(1, max_pages + 1):
@@ -456,6 +506,18 @@ async def scrape_and_push_once():
                                     page_url = f"{sc.list_url}{sep}page={page_no}"
 
                                 page_items = await sc.run(page_url)
+                                if not page_items and name == "clien" and page_no == 1:
+                                    # 클리앙 릴레이 간헐적 0건(빈 응답/부분 HTML) 시 curl_cffi 직접 1회 재시도
+                                    try:
+                                        from curl_cffi.requests import AsyncSession
+                                        async with AsyncSession(impersonate="chrome124", timeout=8.0) as _cl_sess:
+                                            _cl_resp = await _cl_sess.get(page_url, headers=sc._get_headers())
+                                            if _cl_resp.status_code == 200 and len(_cl_resp.text) > 500:
+                                                page_items = await sc.parse_list(_cl_resp.text)
+                                                if page_items:
+                                                    logger.info(f"🔄 [{display_name}] 0건 재시도로 {len(page_items)}건 직접 복구 완료")
+                                    except Exception as _cl_err:
+                                        logger.debug(f"[{display_name}] 0건 직접 재시도 실패: {_cl_err}")
                                 if not page_items:
                                     break
 
@@ -478,6 +540,36 @@ async def scrape_and_push_once():
 
                                 if page_no >= 1 and (unseen_today_on_page == 0 or today_on_page == 0):
                                     break
+
+                        # 2.4 뽐뿌(국내) 전 경로 403 차단 시 jsmon+hotgusa 브릿지로 무중단 대체 수집
+                        if not items and name == "ppomppu" and enrichment_map:
+                            for e_url, ext in enrichment_map.items():
+                                if "ppomppu.co.kr" in e_url and "id=ppomppu&" in e_url and ext.get("title"):
+                                    if e_url in seen_page_urls:
+                                        continue
+                                    seen_page_urls.add(e_url)
+                                    items.append({
+                                        "category": None,
+                                        "title": ext["title"],
+                                        "url": e_url,
+                                        "price": int(ext.get("price") or 0),
+                                        "currency": ext.get("currency") or "KRW",
+                                        "shop_name": ext.get("shop_name") or "",
+                                        "image_url": ext.get("image_url") or "",
+                                        "ecommerce_link": ext.get("ecommerce_link") or "",
+                                        "is_closed": bool(ext.get("is_closed", False)),
+                                        "shipping_fee": ext.get("shipping_fee") or "",
+                                        "is_super_hotdeal": bool(ext.get("is_super_hotdeal", False)),
+                                        "posted_at": ext.get("posted_at") or "",
+                                        "view_count": int(ext.get("view_count") or 0),
+                                        "like_count": int(ext.get("like_count") or 0),
+                                        "comment_count": int(ext.get("comment_count") or 0),
+                                        "content_html": ext.get("content_html") or "",
+                                        "_from_bridge": True,
+                                        "_page_no": 1,
+                                    })
+                            if items:
+                                logger.info(f"⚡ [{display_name}] 403 차단으로 jsmon+hotgusa 브릿지에서 {len(items)}건 무중단 대체 수집 완료")
 
                         # 2.5 외부 브릿지(jsmon + hotgusa) 보강 데이터 즉시 병합
                         for pit in items:
@@ -502,6 +594,31 @@ async def scrape_and_push_once():
                                     pit["view_count"] = int(ext["view_count"])
                                 if int(ext.get("comment_count") or 0) > int(pit.get("comment_count") or 0):
                                     pit["comment_count"] = int(ext["comment_count"])
+
+                        # 2.55 캐시된 기존 딜 중 브릿지(hotgusa)에서 종료(is_end)로 전환된 항목 즉시 마감 전파
+                        for (c_pf, c_url), c_val in list(_SEEN_DETAIL_CACHE.items()):
+                            if c_pf != cache_pf or c_val.get("is_closed") or not c_val.get("title"):
+                                continue
+                            ext_c = enrichment_map.get(c_url)
+                            if ext_c and ext_c.get("is_closed") and c_url not in seen_page_urls:
+                                seen_page_urls.add(c_url)
+                                items.append({
+                                    "title": c_val["title"],
+                                    "url": c_url,
+                                    "price": int(c_val.get("price") or 0),
+                                    "currency": c_val.get("currency") or "KRW",
+                                    "content_html": c_val.get("content_html") or "",
+                                    "ecommerce_link": c_val.get("ecommerce_link") or "",
+                                    "image_url": c_val.get("image_url") or "",
+                                    "shipping_fee": c_val.get("shipping_fee") or "",
+                                    "is_closed": True,
+                                    "is_super_hotdeal": bool(c_val.get("is_super_hotdeal", False)),
+                                    "like_count": int(c_val.get("like_count") or 0),
+                                    "view_count": int(c_val.get("view_count") or 1500),
+                                    "comment_count": int(c_val.get("comment_count") or 0),
+                                    "_from_bridge": True,
+                                    "_page_no": 1,
+                                })
 
                         # 2.6 [게시글 삭제(Post Vanished) 감지 - 고유 Post ID 단조 증가 범위 기반]:
                         # 각 게시판의 고유 게시글 번호(Post ID)는 단조 증가하므로, 현재 1페이지 목록의 (최소 ID ~ 최대 ID) 범위 사이에

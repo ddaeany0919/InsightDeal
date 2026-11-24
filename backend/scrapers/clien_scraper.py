@@ -117,6 +117,17 @@ class ClienScraper(AsyncBaseScraper):
         if any(k in html for k in ("삭제되었거나 존재하지 않는", "존재하지 않는 게시물", "삭제된 게시물")):
             return {"is_closed": True}
         soup = BeautifulSoup(html, 'html.parser')
+
+        is_closed = False
+        sold_badge = soup.select_one('.post_subject .icon_info, .post_subject .sold_out, .sold_out')
+        if sold_badge and re.search(r'(품절|종료|마감)', sold_badge.get_text(" ", strip=True)):
+            is_closed = True
+        subject_el = soup.select_one('.post_subject')
+        if not is_closed and subject_el:
+            subj_txt = subject_el.get_text(" ", strip=True)
+            subj_html = str(subject_el).lower()
+            if '품절' in subj_txt or re.search(r'\[(?:종료|마감|품절)\]', subj_txt) or 'line-through' in subj_html:
+                is_closed = True
         
         image_url = ""
         # 클리앙 본문 이미지
@@ -151,7 +162,6 @@ class ClienScraper(AsyncBaseScraper):
         body_text = soup.get_text(separator=' ')
         
         # 가격 휴리스틱 추출 (문맥 숫자 마스킹 포함 단일 정규화 모듈 위임)
-        import re
         from backend.core.deal_normalizer import extract_body_fallback_price
         price_fallback, extracted_currency = extract_body_fallback_price(body_text, full_title or "")
                 
@@ -176,4 +186,4 @@ class ClienScraper(AsyncBaseScraper):
                 logger.info(f"✨ [클리앙 og:image] 외부 아웃링크/상품명에서 고화질 썸네일 확보: {og_img}")
                 image_url = og_img
 
-        return {"ecommerce_link": ecommerce_link, "image_url": image_url, "price": price_fallback, "currency": extracted_currency, "shipping_fee": shipping_fee, "content_html": content_html}
+        return {"ecommerce_link": ecommerce_link, "image_url": image_url, "price": price_fallback, "currency": extracted_currency, "shipping_fee": shipping_fee, "content_html": content_html, "is_closed": is_closed}

@@ -623,7 +623,11 @@ class AsyncBaseScraper(ABC):
                                 )
                                 continue
                             if res.status_code in (401, 403, 503):
-                                logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 릴레이 인증/설정 오류 (HTTP {res.status_code}, {relay_base}): {url}")
+                                is_upstream = str(res.headers.get("x-relay-upstream", "")).strip() == "1"
+                                if res.status_code == 403 and is_upstream:
+                                    logger.warning(f"⚠️ [{self.platform_name}] 업스트림 403 차단 (릴레이 경유, {relay_base}): {url}")
+                                else:
+                                    logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 릴레이 인증/설정 오류 (HTTP {res.status_code}, {relay_base}): {url}")
                             if res.status_code == 200 and len(res.text) > 500:
                                 is_cf_blocked = any(sig in res.text for sig in cf_blocked_signals)
                                 if not is_cf_blocked:
@@ -660,7 +664,11 @@ class AsyncBaseScraper(ABC):
                                 )
                                 continue
                             if rss_res.status_code in (401, 403, 503):
-                                logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 RSS 릴레이 인증/설정 오류 (HTTP {rss_res.status_code}): {rss_target}")
+                                is_rss_upstream = str(rss_res.headers.get("x-relay-upstream", "")).strip() == "1"
+                                if rss_res.status_code == 403 and is_rss_upstream:
+                                    logger.warning(f"⚠️ [{self.platform_name}] RSS 업스트림 403 차단 (릴레이 경유, {relay_base}): {rss_target}")
+                                else:
+                                    logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 RSS 릴레이 인증/설정 오류 (HTTP {rss_res.status_code}): {rss_target}")
                             if rss_res.status_code == 200 and "<item>" in rss_res.text:
                                 logger.info(f"🌐 [{self.platform_name}] 서울 리전 RSS 릴레이 우회 페칭 성공: {rss_target}")
                                 return rss_res.text

@@ -375,7 +375,8 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
 
                 logger.info(f"✅ [{community_display_name}] 스크래핑 성공 (신규: {success_count}건, 갱신(중복): {update_count}건)")
 
-                stats_file = os.path.join(root_dir, "scraper_stats.json")
+                stats_file = os.path.join(root_dir, "logs", "scraper_stats.json")
+                os.makedirs(os.path.dirname(stats_file), exist_ok=True)
                 await _run_bg_blocking(
                     _write_scraper_stats_sync,
                     stats_file,
@@ -394,7 +395,7 @@ async def scrape_community(community_name: str, ScraperClass, pages: int = 1):
 def _load_recent_open_deals_sync() -> list[tuple[int, str, str | None, str]]:
     db = SessionLocal()
     try:
-        target_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=3)
+        target_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
         rows = (
             db.query(Deal.id, Deal.post_link, Deal.merged_communities, Deal.title)
             .filter(Deal.is_closed == False, Deal.indexed_at >= target_date)
@@ -407,16 +408,86 @@ def _load_recent_open_deals_sync() -> list[tuple[int, str, str | None, str]]:
         db.close()
 
 
-def _detect_closed_soup_sync(resp_content: bytes) -> bool:
+def _decode_validator_html(resp_content: bytes, url: str = "") -> str:
+    if not resp_content:
+        return ""
+    if "ppomppu.co.kr" in (url or "").lower():
+        try:
+            decoded_euc = resp_content.decode("euc-kr", errors="replace")
+            head_low = decoded_euc[:1200].lower()
+            if "charset=utf-8" in head_low or 'charset="utf-8"' in head_low:
+                return resp_content.decode("utf-8", errors="replace")
+            return decoded_euc
+        except Exception:
+            pass
+    return resp_content.decode("utf-8", errors="replace")
+
+
+def _detect_closed_soup_sync(resp_content: bytes, url: str = "") -> bool:
     from bs4 import BeautifulSoup
-    soup = BeautifulSoup(resp_content, 'html.parser')
+    html_text = _decode_validator_html(resp_content, url)
+    soup = BeautifulSoup(html_text, 'html.parser')
     title_tag = soup.title.string if soup.title and soup.title.string else ""
     if any(kw in title_tag for kw in ["종료", "마감", "품절", "블라인드", "삭제", "완료"]):
         return True
-    header_el = soup.select_one('h1, h3, .board-title, .view_title, .subject, span.end, .market-end')
+    header_el = soup.select_one('h1, h3, .board-title, .view_title .tit, .view_title2, #topTitle, .subject, span.end, .market-end')
     if header_el and any(kw in header_el.get_text(" ", strip=True) for kw in ["종료", "마감", "품절", "블라인드", "삭제"]):
         return True
+
+    url_low = (url or "").lower()
+    if "ppomppu.co.kr" in url_low or soup.select_one("#topTitle, .view_title2"):
+        if soup.select_one("img[src*='end_icon'], img[src*='end.gif'], .end2"):
+            return True
+        pp_top = soup.select_one("#topTitle, .view_title2, .topTitle-mainbox")
+        if pp_top and ("line-through" in str(pp_top).lower() or any(kw in pp_top.get_text(" ", strip=True) for kw in ("종료", "품절", "마감"))):
+            return True
+
+    if "clien.net" in url_low or soup.select_one(".post_subject"):
+        cl_badge = soup.select_one(".post_subject .icon_info, .post_subject .sold_out, .sold_out")
+        if cl_badge and any(kw in cl_badge.get_text(" ", strip=True) for kw in ("품절", "종료", "마감")):
+            return True
+        cl_subj = soup.select_one(".post_subject")
+        if cl_subj and ("품절" in cl_subj.get_text(" ", strip=True) or "line-through" in str(cl_subj).lower()):
+            return True
+
+    if "ruliweb.com" in url_low or soup.select_one(".subject_inner_text"):
+        rl_subj = soup.select_one("span.subject_inner_text, .subject_text, h4.subject")
+        if rl_subj and (any(kw in rl_subj.get_text(" ", strip=True) for kw in ("종료", "품절", "마감")) or rl_subj.select_one("del, strike, .subject_end") or "line-through" in str(rl_subj).lower()):
+            return True
+        if soup.select_one(".subject_end"):
+            return True
+
+    if "bbasak.com" in url_low or soup.select_one("#bo_v_title, .bo_v_tit, .view_title .tit"):
+        bb_tit = soup.select_one("#bo_v_title, .bo_v_tit, .bo_v_title, .view_title .tit, .view_title p.s_tit")
+        if bb_tit and (any(kw in bb_tit.get_text(" ", strip=True) for kw in ("종료", "품절", "마감")) or "line-through" in str(bb_tit).lower() or bb_tit.select_one("img[src*='end'], img[src*='soldout'], .end")):
+            return True
+
+    if "quasarzone.com" in url_low or soup.select_one(".v2-list-row, .market-info-view-top"):
+        if soup.select_one(".label.done, .v2-thumb-done, .market-info-view-top .done"):
+            return True
+
     return False
+
+
+def _auto_expire_stale_deals_sync(max_age_days: int = 14) -> int:
+    """장기(14일+) 미갱신 활성 딜을 자동 마감 처리하여 좀비 핫딜 노출을 방지합니다."""
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max_age_days)
+        updated = (
+            db.query(Deal)
+            .filter(Deal.is_closed == False, Deal.indexed_at < cutoff)
+            .update({Deal.is_closed: True}, synchronize_session=False)
+        )
+        if updated:
+            db.commit()
+            logger.info(f"🧹 [Auto-Expire] {max_age_days}일 경과 장기 미갱신 딜 {updated}건 자동 마감 완료")
+        return int(updated or 0)
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 def _apply_validator_result_db_sync(
@@ -511,12 +582,22 @@ async def validate_closed_deals():
                                 req_headers["Referer"] = "https://bbs.ruliweb.com/"
 
                             resp = await client.get(url, headers=req_headers)
+                            if resp.status_code in [403, 430] and "ppomppu.co.kr" in url and "m.ppomppu.co.kr" not in url:
+                                import re as _re
+                                m_bid = _re.search(r"id=([a-zA-Z0-9_]+)", url)
+                                m_bno = _re.search(r"no=(\d+)", url)
+                                if m_bno:
+                                    bid = m_bid.group(1) if m_bid else "ppomppu"
+                                    mob_u = f"https://m.ppomppu.co.kr/new/bbs_view.php?id={bid}&no={m_bno.group(1)}"
+                                    mob_headers = req_headers.copy()
+                                    mob_headers["Referer"] = "https://m.ppomppu.co.kr/"
+                                    resp = await client.get(mob_u, headers=mob_headers)
                             if resp.status_code == 404:
                                 return True
                             elif resp.status_code in [403, 430]:
                                 return False
 
-                            resp_text = resp.text
+                            resp_text = _decode_validator_html(resp.content, str(resp.url))
 
                             if "quasarzone" in url:
                                 if "history.back();" in resp_text and "location.href = redirect;" in resp_text:
@@ -535,7 +616,7 @@ async def validate_closed_deals():
                             ]):
                                 return True
 
-                            is_closed_html = await _run_bg_blocking(_detect_closed_soup_sync, resp.content)
+                            is_closed_html = await _run_bg_blocking(_detect_closed_soup_sync, resp.content, url)
                             await asyncio.sleep(0)
                             return is_closed_html
                         except Exception as e:
@@ -583,7 +664,8 @@ async def validate_closed_deals():
                 except Exception as deal_err:
                     logger.error(f"[Validator Deal Error] Deal ID {deal_id}: {deal_err}")
 
-        logger.info(f"✅ 상태 검증 완료: 총 {len(deal_targets)}개 핑(Ping) 테스트 수행 -> {closed_count}개 품절 처리")
+        stale_expired = await _run_bg_blocking(_auto_expire_stale_deals_sync, 14)
+        logger.info(f"✅ 상태 검증 완료: 총 {len(deal_targets)}개 핑(Ping) 테스트 수행 -> {closed_count}개 품절 처리 (장기만료 {stale_expired}건)")
     except Exception as e:
         logger.error(f"❌ 상태 검증 데몬 에러: {e}")
 
@@ -704,7 +786,12 @@ def db_maintenance_job():
                 cleaned_pairing = cleanup_expired_pairing_codes(cleanup_db, force=True)
         except Exception as pairing_err:
             logger.warning(f"⚠️ 만료 기기 동기화 코드 정리 건너뜀: {pairing_err}")
-        logger.info(f"✅ [새벽 4시 통합 유지보수 성공] {summary} | pairing_cleaned={cleaned_pairing}")
+        stale_expired = 0
+        try:
+            stale_expired = _auto_expire_stale_deals_sync(14)
+        except Exception as stale_err:
+            logger.warning(f"⚠️ 장기 미갱신 딜 자동 마감 건너뜀: {stale_err}")
+        logger.info(f"✅ [새벽 4시 통합 유지보수 성공] {summary} | pairing_cleaned={cleaned_pairing} | stale_expired={stale_expired}")
     except Exception as e:
         logger.error(f"❌ DB 일일 안전 백업 및 최적화 작업 중 오류: {e}")
 
@@ -726,7 +813,7 @@ async def dispatch_github_cloud_feeder_job():
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "InsightDeal-Scheduler"
     }
-    payload = {"ref": "master"}
+    payload = {"ref": "main"}
     try:
         import httpx
         async with httpx.AsyncClient(timeout=10.0) as client:

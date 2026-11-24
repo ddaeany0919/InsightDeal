@@ -140,6 +140,20 @@ class RuliwebScraper(AsyncBaseScraper):
             return {"is_closed": True}
         soup = BeautifulSoup(html, 'html.parser')
 
+        is_closed = False
+        closed_subj_el = soup.select_one('span.subject_inner_text, .subject_text, h4.subject')
+        if closed_subj_el:
+            closed_subj_txt = closed_subj_el.get_text(" ", strip=True)
+            closed_subj_html = str(closed_subj_el).lower()
+            if (
+                any(kw in closed_subj_txt for kw in ("종료", "품절", "마감"))
+                or bool(closed_subj_el.select_one('del, strike, .subject_end'))
+                or 'line-through' in closed_subj_html
+            ):
+                is_closed = True
+        elif soup.select_one('.subject_end'):
+            is_closed = True
+
         from urllib.parse import urlparse, parse_qs, unquote
 
         def unwrap_ruliweb_link(raw_href: str) -> str:
@@ -257,6 +271,7 @@ class RuliwebScraper(AsyncBaseScraper):
             "currency": extracted_currency,
             "shipping_fee": shipping_fee,
             "content_html": content_html,
+            "is_closed": is_closed,
         }
         if detail_title:
             result["title"] = detail_title

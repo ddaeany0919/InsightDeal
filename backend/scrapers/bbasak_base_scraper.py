@@ -145,6 +145,24 @@ class BbasakBaseScraper(AsyncBaseScraper):
         if any(k in html for k in ("글이 존재하지 않습니다", "삭제되었거나 이동된", "존재하지 않는 게시물")):
             return {"is_closed": True}
         soup = BeautifulSoup(html, 'html.parser')
+
+        is_closed = False
+        header_area = soup.select_one('#bo_v_title, .bo_v_tit, .bo_v_title, .view_title .tit, .view_title p.s_tit')
+        if header_area:
+            h_txt = header_area.get_text(" ", strip=True)
+            h_html = str(header_area).lower()
+            if (
+                any(kw in h_txt for kw in ("종료", "품절", "마감"))
+                or 'line-through' in h_html
+                or bool(header_area.select_one('img[src*="end"], img[src*="soldout"], .end'))
+            ):
+                is_closed = True
+        if not is_closed:
+            for li in soup.select('#view_content .detailTxt li, .detailTxt li'):
+                li_txt = li.get_text(" ", strip=True)
+                if ('상태' in li_txt or '진행' in li_txt) and any(kw in li_txt for kw in ("종료", "품절", "마감")):
+                    is_closed = True
+                    break
         
         import re
         # 이미지 필터 정의 (기존 필터와 동일)
@@ -304,5 +322,6 @@ class BbasakBaseScraper(AsyncBaseScraper):
             "currency": extracted_currency,
             "shipping_fee": shipping_fee,
             "content_html": content_html,
+            "is_closed": is_closed,
         }
 

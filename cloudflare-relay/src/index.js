@@ -346,6 +346,7 @@ const worker = {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-store, max-age=0",
+          "X-Relay-Upstream": "1",
         },
       });
     } catch (err) {

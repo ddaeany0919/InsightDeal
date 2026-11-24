@@ -81,7 +81,6 @@ class QuasarzoneScraper(AsyncBaseScraper):
             if not image_url:
                 span_img = row.select_one('span.img-background-wrap, a.img-background-wrap')
                 if span_img and span_img.has_attr('style'):
-                    import re
                     match = re.search(r"url\(['\"]?(.*?)['\"]?\)", span_img['style'])
                     if match:
                         image_url = match.group(1).strip()
@@ -217,9 +216,24 @@ class QuasarzoneScraper(AsyncBaseScraper):
         """상세 페이지 데이터 파싱 로직"""
         html = await self.fetch_html(url)
         if not html: return {}
-        if any(k in html for k in ("존재하지 않는 게시물", "삭제된 게시물", "블라인드 처리된", "해당 게시물이 존재하지 않습니다")):
+        if any(k in html for k in ("존재하지 않는 게시물", "삭제된 게시물", "해당 게시물이 존재하지 않습니다")):
             return {"is_closed": True}
         soup = BeautifulSoup(html, 'html.parser')
+        if "블라인드 처리된" in html:
+            title_s = (soup.title.string or "") if soup.title else ""
+            vc = soup.select_one('.view-content, .market-info-view-content')
+            vc_txt = vc.get_text(" ", strip=True) if vc else ""
+            if "블라인드" in title_s or "블라인드 처리된" in vc_txt or (not vc and not soup.select_one('table.market-info-view-table')):
+                return {"is_closed": True}
+
+        is_closed = False
+        top_view = soup.select_one('.market-info-view-top, .common-view-head, h1.title')
+        if top_view:
+            for badge in top_view.select('.label, .v2-badge, span.done, .done'):
+                b_txt = badge.get_text(" ", strip=True)
+                if 'done' in (badge.get('class') or []) or any(kw in b_txt for kw in ("종료", "마감", "품절")):
+                    is_closed = True
+                    break
 
         detail_title = ""
         og_t = soup.select_one('meta[property="og:title"]')
@@ -357,7 +371,8 @@ class QuasarzoneScraper(AsyncBaseScraper):
             "ecommerce_link": ecommerce_link, 
             "shipping_fee": shipping_fee, 
             "content_html": content_html,
-            "image_url": image_url
+            "image_url": image_url,
+            "is_closed": is_closed,
         }
         if detail_title:
             result["title"] = detail_title
