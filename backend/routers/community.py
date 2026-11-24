@@ -5709,6 +5709,7 @@ async def ingest_scraped_deals_batch(
     inserted = 0
     has_feed_change = False
     new_inserted_images: list[str] = []
+    new_inserted_ids: list[int] = []
     for item in payload.deals:
         await asyncio.sleep(0.01)
         try:
@@ -5719,6 +5720,7 @@ async def ingest_scraped_deals_batch(
                 d_id = getattr(deal, "id", None)
                 if d_id is not None and d_id > prev_max_id:
                     has_feed_change = True
+                    new_inserted_ids.append(int(d_id))
                     if img_u:
                         new_inserted_images.append(img_u)
                 elif d_id is not None:
@@ -5769,6 +5771,12 @@ async def ingest_scraped_deals_batch(
             schedule_thumbnail_prewarm(new_inserted_images)
         except Exception as exc:
             logger.debug("Thumbnail prewarm scheduling skipped: %s", exc)
+    if new_inserted_ids:
+        try:
+            from backend.scheduler.batch_ai_worker import schedule_ai_summary_microbatch
+            schedule_ai_summary_microbatch(new_inserted_ids)
+        except Exception as exc:
+            logger.debug("AI microbatch scheduling skipped: %s", exc)
     return {"status": "ok", "community": payload.display_name, "processed": inserted}
 
 
