@@ -90,14 +90,17 @@ fun RecommendationScreen(
                 .padding(paddingValues)
                 .background(MaterialTheme.colorScheme.background),
             state = listState,
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(start = 0.dp, end = 0.dp, top = 8.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             insights?.let { info ->
                 if (info.topCategories.isNotEmpty()) {
                     item(key = "recommendation_summary_header") {
                         Surface(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 12.dp),
                             shape = RoundedCornerShape(12.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                             border = BorderStroke(
@@ -137,6 +140,7 @@ fun RecommendationScreen(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
                                 .height(220.dp),
                             shape = RoundedCornerShape(16.dp),
                             border = BorderStroke(
@@ -183,6 +187,7 @@ fun RecommendationScreen(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
                                 .height(220.dp),
                             shape = RoundedCornerShape(16.dp),
                             border = BorderStroke(

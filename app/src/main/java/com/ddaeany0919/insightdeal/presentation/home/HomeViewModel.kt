@@ -237,7 +237,8 @@ class HomeViewModel @JvmOverloads constructor(
         val freeShippingOnly: Boolean = false,
         val shop: String? = null,
         val minPrice: Int? = null,
-        val maxPrice: Int? = null
+        val maxPrice: Int? = null,
+        val includeClosed: Boolean = false
     ) {
         fun effectiveCommunityChips(): Set<String> {
             if (selectedCommunityChips.isNotEmpty()) {
@@ -304,6 +305,7 @@ class HomeViewModel @JvmOverloads constructor(
         val platform: String?,
         val sortBy: String,
         val hideClosed: Boolean,
+        val includeClosed: Boolean,
         val popularOnly: Boolean,
         val freeShippingOnly: Boolean,
         val shop: String?,
@@ -323,6 +325,7 @@ class HomeViewModel @JvmOverloads constructor(
                 platform = it.resolvedPlatformQuery(),
                 sortBy = it.sortBy,
                 hideClosed = it.hideClosed,
+                includeClosed = it.includeClosed,
                 popularOnly = it.popularOnly,
                 freeShippingOnly = it.freeShippingOnly,
                 shop = it.resolvedShopQuery(),
@@ -351,7 +354,7 @@ class HomeViewModel @JvmOverloads constructor(
                     sort = query.sortBy,
                     onlyHot = query.popularOnly,
                     hideClosed = query.hideClosed,
-                    includeClosed = false,
+                    includeClosed = query.includeClosed,
                     freeShippingOnly = query.freeShippingOnly,
                     shop = query.shop,
                     minPrice = query.minPrice,
@@ -491,7 +494,19 @@ class HomeViewModel @JvmOverloads constructor(
     }
 
     fun toggleHideClosed() {
-        _filterState.value = _filterState.value.copy(hideClosed = !_filterState.value.hideClosed)
+        val nextHide = !_filterState.value.hideClosed
+        _filterState.value = _filterState.value.copy(
+            hideClosed = nextHide,
+            includeClosed = if (nextHide) false else _filterState.value.includeClosed
+        )
+    }
+
+    fun toggleIncludeClosed() {
+        val nextInclude = !_filterState.value.includeClosed
+        _filterState.value = _filterState.value.copy(
+            includeClosed = nextInclude,
+            hideClosed = if (nextInclude) false else _filterState.value.hideClosed
+        )
     }
 
     fun togglePopularOnly() {
@@ -545,6 +560,7 @@ class HomeViewModel @JvmOverloads constructor(
             selectedCommunityChips = emptySet(),
             sortBy = "latest",
             hideClosed = false,
+            includeClosed = false,
             popularOnly = false,
             freeShippingOnly = false,
             shop = null,

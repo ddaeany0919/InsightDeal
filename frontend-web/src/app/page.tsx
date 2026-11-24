@@ -1,29 +1,18 @@
 "use client";
 
-import { Fragment, useEffect, useState, useRef, useCallback } from "react";
+import { Fragment, useEffect, useId, useState, useRef, useCallback } from "react";
 import {
-  Download,
   Heart,
   Bell,
   RefreshCw,
-  Settings,
   Search,
   X,
   Flame,
   RotateCcw,
   AlertCircle,
-  Smartphone,
-  Check,
-  ChevronDown,
-  ChevronUp,
   ArrowUp,
-  Clock,
-  EyeOff,
-  LayoutGrid,
-  List,
   SlidersHorizontal,
 } from "lucide-react";
-import Link from "next/link";
 
 import type {
   Deal,
@@ -49,13 +38,13 @@ import {
   saveWishlistIdEntry,
   removeWishlistIdEntry,
   resolveServerWishlistId,
+  normalizePriceRange,
 } from "./lib/utils";
 import {
-  hasTossBridge,
+  isTossMiniAppEnv,
   logTossScreen,
   logTossClick,
   maybeRequestTossReview,
-  copyTextSafe,
 } from "./lib/tossBridge";
 
 import PrivacyModal from "./components/PrivacyModal";
@@ -64,13 +53,16 @@ import DealDetailModal from "./components/DealDetailModal";
 import DeviceSyncModal from "./components/DeviceSyncModal";
 import WishlistDrawer from "./components/WishlistDrawer";
 import NotificationDrawer from "./components/NotificationDrawer";
-import TrendingKeywordsTicker from "./components/TrendingKeywordsTicker";
-import ThemeToggle from "./components/ThemeToggle";
 import InAppBrowserBanner from "./components/InAppBrowserBanner";
 import DealCard from "./components/DealCard";
 import FeedbackModal from "./components/FeedbackModal";
 import TossAdBanner from "./components/TossAdBanner";
 import RecentDealsTray from "./components/RecentDealsTray";
+import HeaderSearchPopover from "./components/HeaderSearchPopover";
+import HeaderMoreMenu from "./components/HeaderMoreMenu";
+import FilterDrawerModal, {
+  type AppliedFilterDraft,
+} from "./components/FilterDrawerModal";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -179,8 +171,10 @@ function persistRecentDealsToStorage(next: Deal[]): void {
 }
 
 function formatCompactPriceLabel(rawNum: string): string {
-  const num = parseInt(rawNum.replace(/[^0-9]/g, ""), 10);
-  if (!Number.isFinite(num) || num <= 0) return "";
+  const digits = rawNum.replace(/[^0-9]/g, "");
+  if (!digits) return "";
+  const num = parseInt(digits, 10);
+  if (!Number.isFinite(num) || num < 0) return "";
   return `${num.toLocaleString("ko-KR")}원`;
 }
 
@@ -195,8 +189,6 @@ export default function Home() {
   const selectedCategoriesRef = useRef<string[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const selectedPlatformsRef = useRef<string[]>([]);
-  const [isPlatformsExpanded, setIsPlatformsExpanded] = useState(false);
-  const [isCategoriesExpanded, setIsCategoriesExpanded] = useState(false);
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -213,6 +205,11 @@ export default function Home() {
   const dealsRef = useRef<Deal[]>([]);
   const feedCacheRef = useRef<Map<string, FeedCacheEntry>>(new Map());
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchWrapperRef = useRef<HTMLDivElement | null>(null);
+  const searchPopoverId = useId();
+  const filterDrawerId = useId();
+  const [isSearchPopoverOpen, setIsSearchPopoverOpen] = useState(false);
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const wishlistRef = useRef<number[]>([]);
   const wishlistItemsMapRef = useRef<Record<number, Deal>>({});
   const alertsRef = useRef<number[]>([]);
@@ -229,11 +226,8 @@ export default function Home() {
   const appliedSearchRef = useRef("");
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [recentDeals, setRecentDeals] = useState<Deal[]>([]);
-  const [showRecentDealsPanel, setShowRecentDealsPanel] = useState(false);
   const [hiddenDealIds, setHiddenDealIds] = useState<number[]>([]);
   const [mutedKeywords, setMutedKeywords] = useState<string[]>([]);
-  const [muteKeywordInput, setMuteKeywordInput] = useState("");
-  const [showHiddenManagePanel, setShowHiddenManagePanel] = useState(false);
   const [freeShippingOnly, setFreeShippingOnly] = useState(false);
   const freeShippingOnlyRef = useRef(false);
   const [shopFilter, setShopFilter] = useState("");
@@ -243,7 +237,6 @@ export default function Home() {
   const minPriceRef = useRef("");
   const maxPriceRef = useRef("");
   const [viewMode, setViewMode] = useState<"card" | "compact">("card");
-  const [showMobileQuickFilters, setShowMobileQuickFilters] = useState(false);
   const [popularKeywords, setPopularKeywords] = useState<string[]>([
     "제로콜라",
     "로봇청소기",
@@ -273,6 +266,7 @@ export default function Home() {
 
   const [hasMore, setHasMore] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
 
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
@@ -669,37 +663,6 @@ export default function Home() {
       maybeRequestTossReview();
     } catch {
       showToast("알림을 등록하지 못했어요. 잠시 후 다시 시도해 주세요");
-    }
-  };
-
-  const handleShareDeal = async (e: React.MouseEvent, deal: Deal) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const cleanShareTitle = decodeHtmlEntities(deal.title);
-    const shareUrl =
-      typeof window !== "undefined"
-        ? `${window.location.origin}/?dealId=${deal.id}`
-        : deal.post_link;
-    const sharePrice = deal.isFree
-      ? "0원 (무료)"
-      : formatPrice(deal.price, deal.currency, cleanShareTitle);
-    const shareText = `${cleanShareTitle} (${sharePrice})`;
-
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share({
-          title: cleanShareTitle,
-          text: shareText,
-          url: shareUrl,
-        });
-        return;
-      } catch {
-        // 사용자 공유 취소 시 클립보드 복사로 폴백
-      }
-    }
-    const copied = await copyTextSafe(`${shareText}\n${shareUrl}`);
-    if (copied) {
-      showToast("상품 링크를 복사했어요");
     }
   };
 
@@ -1330,7 +1293,6 @@ export default function Home() {
         }
         return next;
       });
-      setMuteKeywordInput("");
       showToast(`'${trimmed}' 포함 핫딜을 숨겼어요`);
     },
     [showToast]
@@ -1347,6 +1309,16 @@ export default function Home() {
       return next;
     });
   }, []);
+
+  const handleRestoreAllHiddenDeals = useCallback(() => {
+    setHiddenDealIds([]);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(HIDDEN_DEALS_STORAGE_KEY);
+      } catch {}
+    }
+    showToast("숨긴 핫딜을 모두 복구했어요");
+  }, [showToast]);
 
   const fetchLiveDeals = useCallback(
     async (
@@ -1385,7 +1357,10 @@ export default function Home() {
       try {
         if (offset === 0) {
           setFetchError(null);
+          setLoadMoreError(null);
           nextCursorRef.current = null;
+        } else {
+          setLoadMoreError(null);
         }
 
         const apiCategory =
@@ -1428,6 +1403,7 @@ export default function Home() {
               nextCursorRef.current = cached.nextCursor;
               setLoading(false);
               setFetchError(null);
+              setLoadMoreError(null);
               return true;
             }
             if (ageMs <= FEED_SWR_STALE_MS && cached.deals.length > 0) {
@@ -1436,6 +1412,7 @@ export default function Home() {
               setHasMore(cached.hasMore);
               nextCursorRef.current = cached.nextCursor;
               setLoading(false);
+              setLoadMoreError(null);
               servedStaleCache = true;
             }
           }
@@ -1640,6 +1617,7 @@ export default function Home() {
         }
 
         setFetchError(null);
+        setLoadMoreError(null);
         return true;
       } catch (err) {
         if (
@@ -1687,7 +1665,9 @@ export default function Home() {
           }
           setHasMore(false);
         } else {
-          showToast("추가 딜을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
+          const msg = "추가 딜을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.";
+          setLoadMoreError(msg);
+          showToast(msg);
         }
         return false;
       } finally {
@@ -1706,6 +1686,7 @@ export default function Home() {
     if (isRefreshing) return;
     setIsRefreshing(true);
     setNewDealsCount(0);
+    setLoadMoreError(null);
     feedCacheRef.current.clear();
     const ok = await fetchLiveDeals(
       false,
@@ -1718,6 +1699,24 @@ export default function Home() {
     );
     setIsRefreshing(false);
     showToast(ok ? "최신 딜을 불러왔어요" : HOT_DEALS_ERROR_COPY);
+  };
+
+  const handleRetryLoadMore = () => {
+    if (isFetchingMore || !hasMore || loading || isRefreshing) return;
+    setLoadMoreError(null);
+    setIsFetchingMore(true);
+    const currentOffset = dealsRef.current.length;
+    void fetchLiveDeals(
+      false,
+      currentOffset,
+      selectedCategoriesRef.current,
+      selectedPlatformsRef.current,
+      undefined,
+      undefined,
+      { cursor: nextCursorRef.current }
+    ).finally(() => {
+      setIsFetchingMore(false);
+    });
   };
 
   const handleScrollToTopAndRefresh = async () => {
@@ -2099,16 +2098,20 @@ export default function Home() {
   };
 
   const handleApplyPriceRange = (rawMin: string, rawMax: string) => {
-    const cleanMin = rawMin.replace(/[^0-9]/g, "");
-    const cleanMax = rawMax.replace(/[^0-9]/g, "");
+    const { minPrice: cleanMin, maxPrice: cleanMax, swapped } =
+      normalizePriceRange(rawMin, rawMax);
     minPriceRef.current = cleanMin;
     maxPriceRef.current = cleanMax;
     setMinPriceInput(cleanMin);
     setMaxPriceInput(cleanMax);
     setIsFetchingMore(false);
+    setLoadMoreError(null);
     dealsRef.current = [];
     setDeals([]);
     setHasMore(true);
+    if (swapped) {
+      showToast("최소·최대 가격을 자동으로 맞췄어요");
+    }
     void fetchLiveDeals(
       true,
       0,
@@ -2152,6 +2155,7 @@ export default function Home() {
     maxPriceRef.current = "";
     setMinPriceInput("");
     setMaxPriceInput("");
+    handleViewModeChange("card");
     sortByRef.current = "latest";
     setSortBy("latest");
     feedCacheRef.current.clear();
@@ -2172,18 +2176,90 @@ export default function Home() {
     showToast("필터를 초기화했어요");
   };
 
+  const handleApplyDrawerFilters = (next: AppliedFilterDraft) => {
+    clearSearchDebounce();
+    const { minPrice: normMin, maxPrice: normMax, swapped } =
+      normalizePriceRange(next.minPrice, next.maxPrice);
+    selectedPlatformsRef.current = next.platforms;
+    setSelectedPlatforms(next.platforms);
+    shopFilterRef.current = next.shop;
+    setShopFilter(next.shop);
+    minPriceRef.current = normMin;
+    maxPriceRef.current = normMax;
+    setMinPriceInput(normMin);
+    setMaxPriceInput(normMax);
+    freeShippingOnlyRef.current = next.freeShipping;
+    setFreeShippingOnly(next.freeShipping);
+    hideClosedDealsRef.current = next.hideClosed;
+    setHideClosedDeals(next.hideClosed);
+    includeClosedDealsRef.current = next.includeClosed;
+    setIncludeClosedDeals(next.includeClosed);
+    handleViewModeChange(next.viewMode);
+    setNewDealsCount(0);
+    setIsFetchingMore(false);
+    setLoadMoreError(null);
+    dealsRef.current = [];
+    setDeals([]);
+    setHasMore(true);
+    if (swapped) {
+      showToast("최소·최대 가격을 자동으로 맞췄어요");
+    }
+    void fetchLiveDeals(
+      true,
+      0,
+      selectedCategoriesRef.current,
+      next.platforms,
+      undefined,
+      undefined,
+      {
+        freeShipping: next.freeShipping,
+        shop: next.shop,
+        minPrice: normMin,
+        maxPrice: normMax,
+        hideClosed: next.hideClosed,
+        includeClosed: next.includeClosed,
+      }
+    );
+  };
+
+  const secondaryActiveFilterCount =
+    selectedPlatforms.length +
+    (shopFilter ? 1 : 0) +
+    (minPriceInput || maxPriceInput ? 1 : 0) +
+    (freeShippingOnly ? 1 : 0) +
+    (hideClosedDeals ? 1 : 0) +
+    (includeClosedDeals ? 1 : 0);
+  const hasSecondaryActiveFilters = secondaryActiveFilterCount > 0;
+
   const hasActiveFilters =
+    hasSecondaryActiveFilters ||
     appliedSearch !== "" ||
-    selectedPlatforms.length > 0 ||
     selectedCategories.length > 0 ||
     onlyHotDeals ||
-    hideClosedDeals ||
-    includeClosedDeals ||
-    freeShippingOnly ||
-    shopFilter !== "" ||
-    minPriceInput !== "" ||
-    maxPriceInput !== "" ||
     sortBy !== "latest";
+
+  useEffect(() => {
+    if (!isSearchPopoverOpen) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      if (
+        searchWrapperRef.current &&
+        !searchWrapperRef.current.contains(e.target as Node)
+      ) {
+        setIsSearchPopoverOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsSearchPopoverOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isSearchPopoverOpen]);
 
   const handleCloseDealModal = useCallback(() => {
     setSelectedDeal(null);
@@ -2315,18 +2391,21 @@ export default function Home() {
         setShopFilter(initialShop);
       }
 
-      const minPRaw = (urlParams.get("minPrice") || "").replace(/[^0-9]/g, "");
-      if (minPRaw) {
-        initialMinPrice = minPRaw;
-        minPriceRef.current = minPRaw;
-        setMinPriceInput(minPRaw);
+      const { minPrice: normInitMin, maxPrice: normInitMax } =
+        normalizePriceRange(
+          urlParams.get("minPrice") || "",
+          urlParams.get("maxPrice") || ""
+        );
+      if (normInitMin) {
+        initialMinPrice = normInitMin;
+        minPriceRef.current = normInitMin;
+        setMinPriceInput(normInitMin);
       }
 
-      const maxPRaw = (urlParams.get("maxPrice") || "").replace(/[^0-9]/g, "");
-      if (maxPRaw) {
-        initialMaxPrice = maxPRaw;
-        maxPriceRef.current = maxPRaw;
-        setMaxPriceInput(maxPRaw);
+      if (normInitMax) {
+        initialMaxPrice = normInitMax;
+        maxPriceRef.current = normInitMax;
+        setMaxPriceInput(normInitMax);
       }
 
       const hotRaw = urlParams.get("hot") ?? urlParams.get("onlyHot");
@@ -2358,10 +2437,9 @@ export default function Home() {
         }
       }
 
-      const ua = navigator.userAgent || "";
+      // 토스 미니앱 환경 판별 (브릿지·UA·도메인·디버그 쿼리)
       if (
-        hasTossBridge() ||
-        ua.includes("TossApp") ||
+        isTossMiniAppEnv() ||
         window.location.hostname.includes("toss") ||
         urlParams.get("toss") === "1"
       ) {
@@ -2525,7 +2603,19 @@ export default function Home() {
       if (savedRecent) {
         try {
           const parsed = JSON.parse(savedRecent);
-          if (Array.isArray(parsed)) setRecentSearches(parsed.slice(0, 5));
+          if (Array.isArray(parsed)) {
+            const validRecent = Array.from(
+              new Set(
+                parsed
+                  .filter(
+                    (item): item is string =>
+                      typeof item === "string" && item.trim().length > 0
+                  )
+                  .map((item) => item.trim())
+              )
+            ).slice(0, 5);
+            setRecentSearches(validRecent);
+          }
         } catch {}
       }
       try {
@@ -2713,11 +2803,11 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!isMounted || !hasMore || loading || isRefreshing) return;
+    if (!isMounted || !hasMore || loading || isRefreshing || loadMoreError) return;
 
     const observer = new IntersectionObserver(
       async (entries) => {
-        if (entries[0].isIntersecting && !isFetchingMore) {
+        if (entries[0].isIntersecting && !isFetchingMore && !loadMoreError) {
           setIsFetchingMore(true);
           try {
             const currentOffset = deals.length;
@@ -2752,6 +2842,7 @@ export default function Home() {
     loading,
     isRefreshing,
     isFetchingMore,
+    loadMoreError,
     fetchLiveDeals,
   ]);
 
@@ -2781,12 +2872,20 @@ export default function Home() {
           activePlatforms.length > 0
             ? `&platform=${encodeURIComponent(activePlatforms.join(","))}`
             : "";
-        const queryParam = appliedSearch
-          ? `&keyword=${encodeURIComponent(appliedSearch)}`
+        const trimmedKw = appliedSearch.trim();
+        const queryParam = trimmedKw
+          ? `&keyword=${encodeURIComponent(trimmedKw)}`
           : "";
+        const cleanShop = shopFilter.trim();
+        const cleanMinPrice = minPriceInput.replace(/[^0-9]/g, "");
+        const cleanMaxPrice = maxPriceInput.replace(/[^0-9]/g, "");
         const filterParams = `${onlyHotDeals ? "&only_hot=true" : ""}${
           hideClosedDeals ? "&hide_closed=true" : ""
-        }${includeClosedDeals ? "&include_closed=true" : ""}`;
+        }${includeClosedDeals ? "&include_closed=true" : ""}${
+          freeShippingOnly ? "&free_shipping=true" : ""
+        }${cleanShop ? `&shop=${encodeURIComponent(cleanShop)}` : ""}${
+          cleanMinPrice ? `&min_price=${encodeURIComponent(cleanMinPrice)}` : ""
+        }${cleanMaxPrice ? `&max_price=${encodeURIComponent(cleanMaxPrice)}` : ""}`;
         const checkUrl = apiUrl(
           `/api/community/hot-deals?limit=8&offset=0${
             apiCategory ? `&category=${encodeURIComponent(apiCategory)}` : ""
@@ -2831,6 +2930,10 @@ export default function Home() {
     onlyHotDeals,
     hideClosedDeals,
     includeClosedDeals,
+    freeShippingOnly,
+    shopFilter,
+    minPriceInput,
+    maxPriceInput,
   ]);
 
   const toApproxKrw = (item: Deal) => {
@@ -2960,38 +3063,138 @@ export default function Home() {
           onClick={handleScrollToTopAndRefresh}
           className="floating-new-deals-pill bounce-click"
         >
-          <RefreshCw size={14} aria-hidden="true" />
-          <span>새 핫딜 {newDealsCount}건 보기</span>
+          <span className="floating-new-deals-dot" aria-hidden="true" />
+          <span>방금 새 핫딜 {newDealsCount}건 도착 ↑</span>
         </button>
       )}
 
       <header
         className={`navbar glass-panel ${
           isHeaderCollapsed ? "navbar--scrolled" : ""
-        }`}
+        }${isTossMiniApp ? " navbar--toss" : ""}`}
       >
-        <button
-          type="button"
-          className="nav-logo"
-          style={{
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
+        {!isTossMiniApp && (
+          <button
+            type="button"
+            className="nav-logo"
+            style={{
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+            }}
+            onClick={handleResetAllFilters}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/brand-logo.png"
+              alt=""
+              aria-hidden="true"
+              width={30}
+              height={30}
+              style={{ width: 30, height: 30, objectFit: "contain", display: "block" }}
+            />
+            <span>얼만데</span>
+          </button>
+        )}
+
+        <div
+          ref={searchWrapperRef}
+          className="header-search-shell"
+          onBlur={(e) => {
+            const nextTarget = e.relatedTarget;
+            if (
+              nextTarget instanceof Node &&
+              !searchWrapperRef.current?.contains(nextTarget)
+            ) {
+              setIsSearchPopoverOpen(false);
+            }
           }}
-          onClick={handleResetAllFilters}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/brand-logo.png"
-            alt=""
-            aria-hidden="true"
-            width={30}
-            height={30}
-            style={{ width: 30, height: 30, objectFit: "contain", display: "block" }}
+          <form
+            onSubmit={(e) => {
+              handleSearchSubmit(e);
+              setIsSearchPopoverOpen(false);
+            }}
+            className="search-container"
+          >
+            <div className="search-bar-wrapper">
+              <Search size={17} className="search-icon" aria-hidden="true" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-label="핫딜 검색어 입력"
+                aria-expanded={isSearchPopoverOpen}
+                aria-controls={searchPopoverId}
+                placeholder={
+                  isUltraCompactViewport
+                    ? "핫딜 검색 (-제외, :가격)"
+                    : isCompactViewport
+                      ? "핫딜 검색 (맥북 -파우치, :15000)"
+                      : "주요 커뮤니티 10곳 핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
+                }
+                value={searchQuery}
+                onFocus={() => setIsSearchPopoverOpen(true)}
+                onClick={() => setIsSearchPopoverOpen(true)}
+                onCompositionStart={() => {
+                  isComposingRef.current = true;
+                  clearSearchDebounce();
+                }}
+                onCompositionEnd={(e) => {
+                  isComposingRef.current = false;
+                  const composedVal = e.currentTarget.value;
+                  setSearchQuery(composedVal);
+                  scheduleDebouncedSearch(composedVal);
+                }}
+                onChange={(e) => {
+                  const nextVal = e.target.value;
+                  setSearchQuery(nextVal);
+                  const nativeEvt = e.nativeEvent as InputEvent;
+                  if (nativeEvt?.isComposing || isComposingRef.current) {
+                    return;
+                  }
+                  scheduleDebouncedSearch(nextVal);
+                }}
+                className="search-input"
+              />
+              {(searchQuery || appliedSearch) && (
+                <button
+                  type="button"
+                  aria-label="검색어 지우기"
+                  onClick={() => {
+                    handleClearSearch();
+                    setIsSearchPopoverOpen(false);
+                  }}
+                  className="search-clear-btn"
+                >
+                  <X size={16} aria-hidden="true" />
+                </button>
+              )}
+              <button type="submit" className="search-submit-btn">
+                검색
+              </button>
+            </div>
+          </form>
+
+          <HeaderSearchPopover
+            isOpen={isSearchPopoverOpen}
+            popoverId={searchPopoverId}
+            searchQuery={searchQuery}
+            appliedSearch={appliedSearch}
+            isAutoSearchable={isAutoSearchableQuery(searchQuery)}
+            recentSearches={recentSearches}
+            popularKeywords={popularKeywords}
+            popularRankings={popularRankings}
+            popularUpdatedAt={popularUpdatedAt}
+            onSelectRecentKeyword={handleSelectRecentKeyword}
+            onRemoveRecentSearch={removeRecentSearch}
+            onClearRecentSearches={clearRecentSearches}
+            onSelectPopularKeyword={handleSelectPopularKeyword}
+            onQuickSubscribeKeyword={handleQuickSubscribeKeyword}
+            onClose={() => setIsSearchPopoverOpen(false)}
           />
-          <span>얼만데</span>
-          <span className="live-badge">LIVE</span>
-        </button>
+        </div>
 
         <div className="nav-actions">
           <div className="nav-group nav-group-feed global-counters">
@@ -3041,41 +3244,11 @@ export default function Home() {
                 </span>
               )}
             </button>
-            <Link
-              href="/settings/notifications"
-              className="counter-item bounce-click"
-              aria-label="키워드 알림 설정"
-              style={{ textDecoration: "none" }}
-            >
-              <Settings size={16} color="var(--text-sub)" aria-hidden="true" />
-              <span className="counter-label">키워드 알림</span>
-            </Link>
-          </div>
-
-          <span className="nav-divider" aria-hidden="true" />
-
-          <div className="nav-group nav-group-env">
-            <button
-              type="button"
-              className="counter-item counter-item-env bounce-click"
-              aria-label="기기 동기화 및 계정 연결"
-              onClick={() => setShowSyncModal(true)}
-            >
-              <Smartphone size={16} color="var(--text-sub)" aria-hidden="true" />
-              <span className="counter-label">기기 동기화</span>
-            </button>
-            <ThemeToggle />
-            {!isTossMiniApp && (
-              <button
-                type="button"
-                className="btn-primary nav-install-btn"
-                aria-label="앱 설치"
-                onClick={handleInstallApp}
-              >
-                <Download size={16} aria-hidden="true" />
-                <span>앱 설치</span>
-              </button>
-            )}
+            <HeaderMoreMenu
+              isTossMiniApp={isTossMiniApp}
+              onOpenSyncModal={() => setShowSyncModal(true)}
+              onInstallApp={handleInstallApp}
+            />
           </div>
         </div>
       </header>
@@ -3085,386 +3258,37 @@ export default function Home() {
         <section style={{ padding: "4px 0 80px 0" }}>
           <h1 className="sr-only">실시간 핫딜 모아보기</h1>
 
-          <div className="discovery-bar-grid">
-            <form onSubmit={handleSearchSubmit} className="search-container">
-              <div className="search-bar-wrapper">
-                <Search size={18} className="search-icon" aria-hidden="true" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  aria-label="핫딜 검색어 입력"
-                  placeholder={
-                    isUltraCompactViewport
-                      ? "핫딜 검색 (-제외, :가격)"
-                      : isCompactViewport
-                        ? "핫딜 검색 (맥북 -파우치, :15000)"
-                        : "주요 커뮤니티 10곳 핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
-                  }
-                  value={searchQuery}
-                  onCompositionStart={() => {
-                    isComposingRef.current = true;
-                    clearSearchDebounce();
-                  }}
-                  onCompositionEnd={(e) => {
-                    isComposingRef.current = false;
-                    const composedVal = e.currentTarget.value;
-                    setSearchQuery(composedVal);
-                    scheduleDebouncedSearch(composedVal);
-                  }}
-                  onChange={(e) => {
-                    const nextVal = e.target.value;
-                    setSearchQuery(nextVal);
-                    const nativeEvt = e.nativeEvent as InputEvent;
-                    if (nativeEvt?.isComposing || isComposingRef.current) {
-                      return;
-                    }
-                    scheduleDebouncedSearch(nextVal);
-                  }}
-                  className="search-input"
-                />
-                {(searchQuery || appliedSearch) && (
-                  <button
-                    type="button"
-                    aria-label="검색어 지우기"
-                    onClick={handleClearSearch}
-                    className="search-clear-btn"
-                  >
-                    <X size={16} />
-                  </button>
-                )}
-                <button type="submit" className="search-submit-btn">
-                  검색
-                </button>
-              </div>
-            </form>
-
-            <TrendingKeywordsTicker
-              keywords={popularKeywords}
-              rankings={popularRankings}
-              updatedAt={popularUpdatedAt}
-              selectedKeyword={appliedSearch}
-              onSelectKeyword={handleSelectPopularKeyword}
-            />
-          </div>
-
-          {recentSearches.length > 0 && (
+          <div className="category-action-bar">
             <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "8px",
-                flexWrap: "wrap",
-                marginBottom: "10px",
-              }}
+              className="category-underline-tabs"
+              role="group"
+              aria-label="카테고리 필터"
             >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  flexWrap: "wrap",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: "0.76rem",
-                    fontWeight: 700,
-                    color: "var(--text-sub)",
-                    marginRight: "2px",
-                  }}
-                >
-                  최근 검색어
-                </span>
-                {recentSearches.map((kw) => {
-                  const isSelected = appliedSearch === kw;
-                  return (
-                    <div
-                      key={kw}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        minHeight: "44px",
-                        padding: "0 4px 0 12px",
-                        borderRadius: "999px",
-                        fontSize: "0.78rem",
-                        fontWeight: isSelected ? 700 : 600,
-                        background: isSelected
-                          ? "rgba(var(--accent-rgb), 0.1)"
-                          : "var(--card-bg)",
-                        color: isSelected ? "var(--accent)" : "var(--text-main)",
-                        border: isSelected
-                          ? "1px solid var(--accent)"
-                          : "1px solid var(--card-border)",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleSelectRecentKeyword(kw)}
-                        style={{
-                          cursor: "pointer",
-                          minWidth: "44px",
-                          minHeight: "44px",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          paddingRight: "4px",
-                          fontWeight: "inherit",
-                          fontSize: "inherit",
-                        }}
-                      >
-                        {kw}
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`${kw} 최근 검색어 삭제`}
-                        title={`${kw} 삭제`}
-                        onClick={() => removeRecentSearch(kw)}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          width: "44px",
-                          height: "44px",
-                          minWidth: "44px",
-                          minHeight: "44px",
-                          borderRadius: "50%",
-                          border: "none",
-                          background: "transparent",
-                          color: "var(--text-muted)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <X size={13} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-              <button
-                type="button"
-                onClick={clearRecentSearches}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "var(--text-muted)",
-                  fontSize: "0.76rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  minHeight: "44px",
-                  padding: "0 8px",
-                }}
-              >
-                전체 삭제
-              </button>
-            </div>
-          )}
-
-          {searchQuery.trim() && isAutoSearchableQuery(searchQuery) && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: "10px",
-                padding: "10px 14px",
-                marginBottom: "10px",
-                borderRadius: "12px",
-                background: "rgba(var(--accent-rgb), 0.06)",
-                border: "1px solid rgba(var(--accent-rgb), 0.2)",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: "var(--fs-control)",
-                  color: "var(--text-main)",
-                  fontWeight: 600,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <Bell size={15} color="var(--accent)" aria-hidden="true" />
-                <span>
-                  <strong>&lsquo;{searchQuery.trim()}&rsquo;</strong> 새 핫딜이
-                  뜨면 바로 알려드릴까요?
-                </span>
-              </span>
-              <button
-                type="button"
-                onClick={() => handleQuickSubscribeKeyword(searchQuery)}
-                className="bounce-click"
-                style={{
-                  minHeight: "var(--control-h-lg)",
-                  minWidth: "var(--touch-target-min)",
-                  padding: "8px 14px",
-                  borderRadius: "var(--radius-sm)",
-                  background: "var(--accent)",
-                  color: "var(--on-accent)",
-                  fontWeight: 700,
-                  fontSize: "var(--fs-control)",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                키워드 알림 받기
-              </button>
-            </div>
-          )}
-
-          <div className="filter-scope-dock">
-            <div className="filter-scope-row">
-              <span className="filter-scope-label">출처</span>
-              <div className="platform-rail-wrapper">
-                <div
-                  id="platform-filter-rail"
-                  className={`platform-chips-row ${isPlatformsExpanded ? "expanded" : ""}`}
-                  role="group"
-                  aria-label="커뮤니티 필터"
-                >
-                  {PLATFORMS.map((platform) => {
-                    const isSelected =
-                      platform === "전체"
-                        ? selectedPlatforms.length === 0
-                        : selectedPlatforms.includes(platform);
-                    return (
-                      <button
-                        key={platform}
-                        type="button"
-                        aria-pressed={isSelected}
-                        onClick={() => handlePlatformToggle(platform)}
-                        className={`platform-chip bounce-click ${isSelected ? "active" : ""}`}
-                      >
-                        {isSelected && (
-                          <Check size={13} strokeWidth={2.5} aria-hidden="true" />
-                        )}
-                        <span>{platform === "전체" ? "전체 커뮤니티" : platform}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  type="button"
-                  className="platform-expand-btn bounce-click"
-                  onClick={() => setIsPlatformsExpanded((prev) => !prev)}
-                  aria-expanded={isPlatformsExpanded}
-                  aria-controls="platform-filter-rail"
-                >
-                  {isPlatformsExpanded ? (
-                    <>
-                      <span>출처 접기</span>
-                      <ChevronUp size={13} aria-hidden="true" />
-                    </>
-                  ) : (
-                    <>
-                      <span>출처 더보기</span>
-                      <ChevronDown size={13} aria-hidden="true" />
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="filter-scope-row filter-scope-row--category">
-              <span className="filter-scope-label">카테고리</span>
-              <div className="category-rail-wrapper">
-                <div
-                  id="category-filter-rail"
-                  className={`tabs-container ${isCategoriesExpanded ? "expanded" : ""}`}
-                >
-                  <div
-                    className={`tabs ${isCategoriesExpanded ? "expanded" : ""}`}
-                    role="group"
-                    aria-label="카테고리 필터"
-                  >
-                    {categories.map((cat) => {
-                      const isCatActive =
-                        cat.key === "전체"
-                          ? selectedCategories.length === 0
-                          : selectedCategories.includes(cat.key);
-                      return (
-                        <button
-                          key={cat.key}
-                          type="button"
-                          aria-pressed={isCatActive}
-                          className={`tab bounce-click ${isCatActive ? "active" : ""}`}
-                          onClick={() => handleCategoryToggle(cat.key)}
-                        >
-                          {isCatActive && (
-                            <Check size={13} strokeWidth={2.5} aria-hidden="true" />
-                          )}
-                          <span>{cat.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="category-expand-btn bounce-click"
-                  aria-expanded={isCategoriesExpanded}
-                  aria-controls="category-filter-rail"
-                  onClick={() => setIsCategoriesExpanded((prev) => !prev)}
-                >
-                  <span>{isCategoriesExpanded ? "접기" : "전체 펼치기"}</span>
-                  {isCategoriesExpanded ? (
-                    <ChevronUp size={13} aria-hidden="true" />
-                  ) : (
-                    <ChevronDown size={13} aria-hidden="true" />
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="feed-control-toolbar">
-            <div className="sort-segment-group" role="group" aria-label="정렬 기준">
-              {(
-                [
-                  { key: "latest", label: "최신순" },
-                  { key: "popular", label: "인기순" },
-                  { key: "price_asc", label: "낮은가격순" },
-                  { key: "price_desc", label: "높은가격순" },
-                  { key: "comments", label: "댓글순" },
-                  { key: "recommendations", label: "추천순" },
-                ] as const
-              ).map((opt) => {
-                const active = sortBy === opt.key;
+              {categories.map((cat) => {
+                const isCatActive =
+                  cat.key === "전체"
+                    ? selectedCategories.length === 0
+                    : selectedCategories.includes(cat.key);
                 return (
                   <button
-                    key={opt.key}
+                    key={cat.key}
                     type="button"
-                    aria-pressed={active}
-                    className="sort-segment-btn"
-                    onClick={() => handleSortChange(opt.key)}
-                    style={{
-                      background: active ? "var(--accent)" : "transparent",
-                      color: active ? "var(--on-accent)" : "var(--text-sub)",
-                      fontWeight: active ? 700 : 600,
-                    }}
+                    aria-pressed={isCatActive}
+                    className={`category-underline-tab ${isCatActive ? "active" : ""}`}
+                    onClick={() => handleCategoryToggle(cat.key)}
                   >
-                    {opt.label}
+                    <span>{cat.label}</span>
                   </button>
                 );
               })}
             </div>
 
-            <div className="feed-control-toggles">
+            <div className="category-right-actions">
               <button
                 type="button"
                 aria-pressed={onlyHotDeals}
                 onClick={handleToggleOnlyHot}
-                className="filter-chip-btn bounce-click"
-                style={{
-                  background: onlyHotDeals
-                    ? "var(--deal-orange-bg)"
-                    : "var(--card-bg)",
-                  color: onlyHotDeals ? "var(--deal-orange)" : "var(--text-sub)",
-                  border: onlyHotDeals
-                    ? "1px solid var(--deal-orange)"
-                    : "1px solid var(--card-border)",
-                }}
+                className={`category-action-pill bounce-click ${onlyHotDeals ? "is-hot-active" : ""}`}
               >
                 <Flame size={14} aria-hidden="true" />
                 <span>인기 딜만</span>
@@ -3472,601 +3296,27 @@ export default function Home() {
 
               <button
                 type="button"
-                aria-pressed={hideClosedDeals}
-                onClick={handleToggleHideClosed}
-                className="filter-chip-btn bounce-click"
-                style={{
-                  background: hideClosedDeals
-                    ? "var(--accent-soft-bg)"
-                    : "var(--card-bg)",
-                  color: hideClosedDeals ? "var(--accent)" : "var(--text-sub)",
-                  border: hideClosedDeals
-                    ? "1px solid var(--accent)"
-                    : "1px solid var(--card-border)",
-                }}
+                aria-expanded={isFilterDrawerOpen}
+                aria-controls={filterDrawerId}
+                onClick={() => setIsFilterDrawerOpen(true)}
+                className={`category-action-pill bounce-click ${
+                  secondaryActiveFilterCount > 0 ? "is-filter-active" : ""
+                }`}
               >
-                품절 제외
-              </button>
-
-              <button
-                type="button"
-                aria-pressed={includeClosedDeals}
-                onClick={handleToggleIncludeClosed}
-                className="filter-chip-btn bounce-click"
-                style={{
-                  background: includeClosedDeals
-                    ? "var(--secondary-soft-bg)"
-                    : "var(--card-bg)",
-                  color: includeClosedDeals ? "var(--secondary)" : "var(--text-sub)",
-                  border: includeClosedDeals
-                    ? "1px solid var(--secondary)"
-                    : "1px solid var(--card-border)",
-                }}
-              >
-                종료 포함
-              </button>
-
-              <button
-                type="button"
-                className="filter-chip-btn bounce-click"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                style={{
-                  background: "var(--card-bg)",
-                  color: "var(--text-main)",
-                  border: "1px solid var(--card-border)",
-                  cursor: isRefreshing ? "not-allowed" : "pointer",
-                  opacity: isRefreshing ? 0.7 : 1,
-                }}
-              >
-                <RefreshCw
-                  size={14}
-                  color="var(--accent)"
-                  aria-hidden="true"
-                  className={isRefreshing ? "spin-animation" : ""}
-                />
-                <span>새로고침</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="feed-quick-filter-mobile-bar">
-            <button
-              type="button"
-              aria-expanded={showMobileQuickFilters}
-              aria-controls="feed-quick-filter-panel"
-              onClick={() => setShowMobileQuickFilters((v) => !v)}
-              className="filter-chip-btn bounce-click"
-              style={{
-                minHeight: "34px",
-                padding: "0 9px",
-                fontSize: "0.74rem",
-                gap: "4px",
-                whiteSpace: "nowrap",
-                flexShrink: 0,
-                background:
-                  showMobileQuickFilters ||
-                  freeShippingOnly ||
-                  shopFilter ||
-                  minPriceInput.trim() ||
-                  maxPriceInput.trim()
-                    ? "var(--accent-soft-bg)"
-                    : "var(--card-bg)",
-                color:
-                  showMobileQuickFilters ||
-                  freeShippingOnly ||
-                  shopFilter ||
-                  minPriceInput.trim() ||
-                  maxPriceInput.trim()
-                    ? "var(--accent)"
-                    : "var(--text-main)",
-                border:
-                  showMobileQuickFilters ||
-                  freeShippingOnly ||
-                  shopFilter ||
-                  minPriceInput.trim() ||
-                  maxPriceInput.trim()
-                    ? "1px solid var(--accent)"
-                    : "1px solid var(--card-border)",
-              }}
-            >
-              <SlidersHorizontal size={12} aria-hidden="true" />
-              <span>
-                상세 필터
-                {(() => {
-                  const cnt =
-                    (freeShippingOnly ? 1 : 0) +
-                    (shopFilter ? 1 : 0) +
-                    (minPriceInput.trim() || maxPriceInput.trim() ? 1 : 0);
-                  return cnt > 0 ? ` (${cnt})` : "";
-                })()}
-              </span>
-              {showMobileQuickFilters ? (
-                <ChevronUp size={12} aria-hidden="true" />
-              ) : (
-                <ChevronDown size={12} aria-hidden="true" />
-              )}
-            </button>
-
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-              <div
-                role="group"
-                aria-label="모바일 보기 방식"
-                style={{
-                  display: "inline-flex",
-                  flexShrink: 0,
-                  borderRadius: "10px",
-                  border: "1px solid var(--card-border)",
-                  overflow: "hidden",
-                }}
-              >
-                <button
-                  type="button"
-                  aria-pressed={viewMode === "card"}
-                  onClick={() => handleViewModeChange("card")}
-                  style={{
-                    minHeight: "34px",
-                    padding: "4px 7px",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "3px",
-                    fontSize: "0.73rem",
-                    fontWeight: 600,
-                    whiteSpace: "nowrap",
-                    border: "none",
-                    background: viewMode === "card" ? "var(--accent)" : "var(--card-bg)",
-                    color: viewMode === "card" ? "var(--on-accent)" : "var(--text-sub)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <LayoutGrid size={12} aria-hidden="true" />
-                  <span>카드</span>
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={viewMode === "compact"}
-                  onClick={() => handleViewModeChange("compact")}
-                  style={{
-                    minHeight: "34px",
-                    padding: "4px 7px",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "3px",
-                    fontSize: "0.73rem",
-                    fontWeight: 600,
-                    whiteSpace: "nowrap",
-                    border: "none",
-                    background: viewMode === "compact" ? "var(--accent)" : "var(--card-bg)",
-                    color: viewMode === "compact" ? "var(--on-accent)" : "var(--text-sub)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <List size={12} aria-hidden="true" />
-                  <span>컴팩트</span>
-                </button>
-              </div>
-
-              <button
-                type="button"
-                aria-expanded={showRecentDealsPanel}
-                aria-label={`최근 본 핫딜 (${recentDeals.length})`}
-                onClick={() => setShowRecentDealsPanel((v) => !v)}
-                className="filter-chip-btn bounce-click"
-                style={{
-                  minHeight: "34px",
-                  padding: "0 8px",
-                  fontSize: "0.73rem",
-                  gap: "4px",
-                  whiteSpace: "nowrap",
-                  flexShrink: 0,
-                  background: showRecentDealsPanel ? "var(--accent-soft-bg)" : "var(--card-bg)",
-                  color: showRecentDealsPanel ? "var(--accent)" : "var(--text-sub)",
-                  border: "1px solid var(--card-border)",
-                }}
-              >
-                <Clock size={12} aria-hidden="true" />
-                <span>최근 ({recentDeals.length})</span>
-              </button>
-            </div>
-          </div>
-
-          <div
-            id="feed-quick-filter-panel"
-            className={`feed-quick-filter-row ${
-              showMobileQuickFilters ? "" : "feed-quick-filter-row--collapsed"
-            }`}
-          >
-            <button
-              type="button"
-              aria-pressed={freeShippingOnly}
-              onClick={handleToggleFreeShipping}
-              className="filter-chip-btn bounce-click"
-              style={{
-                background: freeShippingOnly ? "var(--accent-soft-bg)" : "var(--card-bg)",
-                color: freeShippingOnly ? "var(--accent)" : "var(--text-sub)",
-                border: freeShippingOnly
-                  ? "1px solid var(--accent)"
-                  : "1px solid var(--card-border)",
-              }}
-            >
-              무료배송만
-            </button>
-
-            <select
-              aria-label="쇼핑몰 필터"
-              value={shopFilter}
-              onChange={(e) => handleShopFilterChange(e.target.value)}
-              style={{
-                minHeight: "36px",
-                padding: "4px 10px",
-                borderRadius: "10px",
-                background: "var(--card-bg)",
-                color: "var(--text-main)",
-                border: shopFilter
-                  ? "1px solid var(--accent)"
-                  : "1px solid var(--card-border)",
-                fontSize: "0.82rem",
-                fontWeight: 600,
-              }}
-            >
-              <option value="">전체 쇼핑몰</option>
-              {[
-                "쿠팡",
-                "네이버",
-                "지마켓",
-                "옥션",
-                "11번가",
-                "SSG",
-                "롯데온",
-                "카카오쇼핑",
-                "토스쇼핑",
-                "오늘의집",
-                "올리브영",
-                "컬리",
-                "알리익스프레스",
-                "아마존",
-                "CJ온스타일",
-                "무신사",
-                "스팀",
-                "에픽게임즈",
-              ].map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleApplyPriceRange(minPriceInput, maxPriceInput);
-              }}
-              style={{ display: "inline-flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}
-            >
-              <input
-                type="number"
-                min={0}
-                step={1000}
-                aria-label="최소 가격"
-                placeholder="최소 원"
-                value={minPriceInput}
-                onChange={(e) => setMinPriceInput(e.target.value)}
-                style={{
-                  width: "86px",
-                  minHeight: "36px",
-                  padding: "4px 8px",
-                  borderRadius: "10px",
-                  background: "var(--card-bg)",
-                  color: "var(--text-main)",
-                  border: "1px solid var(--card-border)",
-                  fontSize: "0.8rem",
-                }}
-              />
-              <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>~</span>
-              <input
-                type="number"
-                min={0}
-                step={1000}
-                aria-label="최대 가격"
-                placeholder="최대 원"
-                value={maxPriceInput}
-                onChange={(e) => setMaxPriceInput(e.target.value)}
-                style={{
-                  width: "86px",
-                  minHeight: "36px",
-                  padding: "4px 8px",
-                  borderRadius: "10px",
-                  background: "var(--card-bg)",
-                  color: "var(--text-main)",
-                  border: "1px solid var(--card-border)",
-                  fontSize: "0.8rem",
-                }}
-              />
-              <button
-                type="submit"
-                className="filter-chip-btn bounce-click"
-                style={{
-                  background: "var(--card-bg)",
-                  color: "var(--text-main)",
-                  border: "1px solid var(--card-border)",
-                }}
-              >
-                가격 적용
-              </button>
-              <button
-                type="button"
-                className="filter-chip-btn bounce-click"
-                onClick={() => {
-                  setMinPriceInput("");
-                  setMaxPriceInput("10000");
-                  handleApplyPriceRange("", "10000");
-                }}
-                style={{
-                  background:
-                    !minPriceInput && maxPriceInput === "10000"
-                      ? "var(--accent-soft-bg)"
-                      : "var(--card-bg)",
-                  color:
-                    !minPriceInput && maxPriceInput === "10000"
-                      ? "var(--accent)"
-                      : "var(--text-sub)",
-                  border:
-                    !minPriceInput && maxPriceInput === "10000"
-                      ? "1px solid var(--accent)"
-                      : "1px solid var(--card-border)",
-                }}
-              >
-                1만원 이하
-              </button>
-              <button
-                type="button"
-                className="filter-chip-btn bounce-click"
-                onClick={() => {
-                  setMinPriceInput("");
-                  setMaxPriceInput("30000");
-                  handleApplyPriceRange("", "30000");
-                }}
-                style={{
-                  background:
-                    !minPriceInput && maxPriceInput === "30000"
-                      ? "var(--accent-soft-bg)"
-                      : "var(--card-bg)",
-                  color:
-                    !minPriceInput && maxPriceInput === "30000"
-                      ? "var(--accent)"
-                      : "var(--text-sub)",
-                  border:
-                    !minPriceInput && maxPriceInput === "30000"
-                      ? "1px solid var(--accent)"
-                      : "1px solid var(--card-border)",
-                }}
-              >
-                3만원 이하
-              </button>
-            </form>
-
-            <div
-              role="group"
-              aria-label="보기 방식"
-              className="feed-quick-filter-desktop-only"
-              style={{
-                display: "inline-flex",
-                borderRadius: "10px",
-                border: "1px solid var(--card-border)",
-                overflow: "hidden",
-              }}
-            >
-              <button
-                type="button"
-                aria-pressed={viewMode === "card"}
-                aria-label="카드 보기"
-                onClick={() => handleViewModeChange("card")}
-                style={{
-                  minHeight: "36px",
-                  padding: "4px 10px",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  fontSize: "0.8rem",
-                  fontWeight: 600,
-                  border: "none",
-                  background: viewMode === "card" ? "var(--accent)" : "var(--card-bg)",
-                  color: viewMode === "card" ? "var(--on-accent)" : "var(--text-sub)",
-                  cursor: "pointer",
-                }}
-              >
-                <LayoutGrid size={13} aria-hidden="true" />
-                <span>카드</span>
-              </button>
-              <button
-                type="button"
-                aria-pressed={viewMode === "compact"}
-                aria-label="한줄 컴팩트 보기"
-                onClick={() => handleViewModeChange("compact")}
-                style={{
-                  minHeight: "36px",
-                  padding: "4px 10px",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  fontSize: "0.8rem",
-                  fontWeight: 600,
-                  border: "none",
-                  background: viewMode === "compact" ? "var(--accent)" : "var(--card-bg)",
-                  color: viewMode === "compact" ? "var(--on-accent)" : "var(--text-sub)",
-                  cursor: "pointer",
-                }}
-              >
-                <List size={13} aria-hidden="true" />
-                <span>컴팩트</span>
-              </button>
-            </div>
-
-            <button
-              type="button"
-              aria-expanded={showRecentDealsPanel}
-              onClick={() => setShowRecentDealsPanel((v) => !v)}
-              className="filter-chip-btn bounce-click feed-quick-filter-desktop-only"
-              style={{
-                background: showRecentDealsPanel ? "var(--accent-soft-bg)" : "var(--card-bg)",
-                color: showRecentDealsPanel ? "var(--accent)" : "var(--text-sub)",
-                border: "1px solid var(--card-border)",
-              }}
-            >
-              <Clock size={13} aria-hidden="true" />
-              <span>최근 본 ({recentDeals.length})</span>
-            </button>
-
-            <button
-              type="button"
-              aria-expanded={showHiddenManagePanel}
-              onClick={() => setShowHiddenManagePanel((v) => !v)}
-              className="filter-chip-btn bounce-click"
-              style={{
-                background: showHiddenManagePanel ? "var(--accent-soft-bg)" : "var(--card-bg)",
-                color: showHiddenManagePanel ? "var(--accent)" : "var(--text-sub)",
-                border: "1px solid var(--card-border)",
-              }}
-            >
-              <EyeOff size={13} aria-hidden="true" />
-              <span>숨김·뮤트 ({hiddenDealIds.length + mutedKeywords.length})</span>
-            </button>
-          </div>
-
-          {showRecentDealsPanel && (
-            <RecentDealsTray
-              deals={recentDeals}
-              onSelectDeal={openDealWithHistory}
-              onRemoveDeal={handleRemoveRecentDeal}
-              onClearAll={handleClearRecentDeals}
-            />
-          )}
-
-          {showHiddenManagePanel && (
-            <div
-              className="glass-panel"
-              style={{
-                padding: "12px 14px",
-                borderRadius: "14px",
-                marginBottom: "12px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "10px",
-              }}
-            >
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleAddMutedKeyword(muteKeywordInput);
-                }}
-                style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}
-              >
-                <input
-                  type="text"
-                  value={muteKeywordInput}
-                  onChange={(e) => setMuteKeywordInput(e.target.value)}
-                  placeholder="피드에서 가릴 키워드 추가 (예: 휴대폰 케이스)"
-                  aria-label="뮤트 키워드 입력"
-                  style={{
-                    flex: 1,
-                    minWidth: "200px",
-                    minHeight: "38px",
-                    padding: "6px 12px",
-                    borderRadius: "10px",
-                    border: "1px solid var(--card-border)",
-                    background: "var(--card-bg)",
-                    color: "var(--text-main)",
-                    fontSize: "0.84rem",
-                  }}
-                />
-                <button type="submit" className="btn-primary" style={{ minHeight: "38px", padding: "0 14px" }}>
-                  뮤트 추가
-                </button>
-              </form>
-              {mutedKeywords.length > 0 && (
-                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
-                  <span style={{ fontSize: "0.78rem", color: "var(--text-sub)", fontWeight: 700 }}>
-                    뮤트 키워드:
+                <SlidersHorizontal size={14} aria-hidden="true" />
+                <span>상세 필터</span>
+                {secondaryActiveFilterCount > 0 && (
+                  <span className="filter-count-badge">
+                    {secondaryActiveFilterCount}
                   </span>
-                  {mutedKeywords.map((kw) => (
-                    <button
-                      key={kw}
-                      type="button"
-                      onClick={() => handleRemoveMutedKeyword(kw)}
-                      className="applied-filter-chip"
-                    >
-                      <span>{kw}</span>
-                      <X size={12} aria-hidden="true" />
-                    </button>
-                  ))}
-                </div>
-              )}
-              {hiddenDealIds.length > 0 && (
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-                  <span style={{ fontSize: "0.78rem", color: "var(--text-sub)", fontWeight: 700 }}>
-                    숨긴 핫딜 {hiddenDealIds.length}건
-                  </span>
-                  {hiddenDealIds.slice(0, 12).map((id) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => handleUnhideDeal(id)}
-                      className="applied-filter-chip"
-                    >
-                      <span>#{id} 복구</span>
-                      <X size={12} aria-hidden="true" />
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setHiddenDealIds([]);
-                      if (typeof window !== "undefined") {
-                        try {
-                          localStorage.removeItem(HIDDEN_DEALS_STORAGE_KEY);
-                        } catch {}
-                      }
-                      showToast("숨긴 핫딜을 모두 복구했어요");
-                    }}
-                    className="applied-filter-chip"
-                  >
-                    전체 복구
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {hasActiveFilters && (
-            <div className="applied-filters-bar">
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  flexWrap: "wrap",
-                  fontSize: "var(--fs-caption)",
-                }}
-              >
-                <span
-                  style={{
-                    fontWeight: 700,
-                    color: "var(--text-sub)",
-                    marginRight: "2px",
-                  }}
-                >
-                  적용 필터
-                </span>
-                {appliedSearch && (
-                  <button
-                    type="button"
-                    onClick={handleClearSearch}
-                    className="applied-filter-chip applied-filter-chip--accent"
-                  >
-                    <span>검색: {appliedSearch}</span>
-                    <X size={12} aria-hidden="true" />
-                  </button>
                 )}
+              </button>
+            </div>
+          </div>
+
+          {hasSecondaryActiveFilters && (
+            <div className="applied-filters-bar">
+              <div className="applied-filters-track">
                 {selectedPlatforms.map((platform) => (
                   <button
                     key={platform}
@@ -4078,31 +3328,6 @@ export default function Home() {
                     <X size={12} aria-hidden="true" />
                   </button>
                 ))}
-                {selectedCategories.map((catKey) => {
-                  const catLabel =
-                    categories.find((c) => c.key === catKey)?.label || catKey;
-                  return (
-                    <button
-                      key={catKey}
-                      type="button"
-                      onClick={() => handleCategoryToggle(catKey)}
-                      className="applied-filter-chip"
-                    >
-                      <span>카테고리: {catLabel}</span>
-                      <X size={12} aria-hidden="true" />
-                    </button>
-                  );
-                })}
-                {onlyHotDeals && (
-                  <button
-                    type="button"
-                    onClick={handleToggleOnlyHot}
-                    className="applied-filter-chip applied-filter-chip--orange"
-                  >
-                    <span>인기 딜만</span>
-                    <X size={12} aria-hidden="true" />
-                  </button>
-                )}
                 {hideClosedDeals && (
                   <button
                     type="button"
@@ -4151,29 +3376,9 @@ export default function Home() {
                   >
                     <span>
                       가격:{" "}
-                      {minPriceInput ? formatCompactPriceLabel(minPriceInput) : "0원"}
+                      {formatCompactPriceLabel(minPriceInput) || "0원"}
                       {" ~ "}
-                      {maxPriceInput ? formatCompactPriceLabel(maxPriceInput) : "제한없음"}
-                    </span>
-                    <X size={12} aria-hidden="true" />
-                  </button>
-                )}
-                {sortBy !== "latest" && (
-                  <button
-                    type="button"
-                    onClick={() => handleSortChange("latest")}
-                    className="applied-filter-chip"
-                  >
-                    <span>
-                      정렬:{" "}
-                      {{
-                        latest: "최신순",
-                        popular: "인기순",
-                        price_asc: "낮은가격순",
-                        price_desc: "높은가격순",
-                        comments: "댓글순",
-                        recommendations: "추천순",
-                      }[sortBy]}
+                      {formatCompactPriceLabel(maxPriceInput) || "제한없음"}
                     </span>
                     <X size={12} aria-hidden="true" />
                   </button>
@@ -4182,13 +3387,21 @@ export default function Home() {
               <button
                 type="button"
                 onClick={handleResetAllFilters}
+                aria-label="적용 필터 초기화"
                 className="applied-filter-reset-btn bounce-click"
               >
                 <RotateCcw size={12} aria-hidden="true" />
-                <span>필터 초기화</span>
+                <span>초기화</span>
               </button>
             </div>
           )}
+
+          <RecentDealsTray
+            deals={recentDeals}
+            onSelectDeal={openDealWithHistory}
+            onRemoveDeal={handleRemoveRecentDeal}
+            onClearAll={handleClearRecentDeals}
+          />
 
           {fetchError && filteredDeals.length > 0 && (
             <div
@@ -4236,7 +3449,57 @@ export default function Home() {
             </div>
           )}
 
-          <h2 className="sr-only">실시간 핫딜 목록</h2>
+          <div className="feed-header-bar">
+            <h2 className="feed-header-title">
+              <span>실시간 핫딜</span>
+              <span className="feed-header-count">{filteredDeals.length}</span>
+            </h2>
+
+            <div className="feed-header-controls">
+              <div className="sort-segment-group" role="group" aria-label="정렬 기준">
+                {(
+                  [
+                    { key: "latest", label: "최신순" },
+                    { key: "popular", label: "인기순" },
+                    { key: "price_asc", label: "낮은가격순" },
+                    { key: "price_desc", label: "높은가격순" },
+                    { key: "comments", label: "댓글순" },
+                    { key: "recommendations", label: "추천순" },
+                  ] as const
+                ).map((opt) => {
+                  const active = sortBy === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      aria-pressed={active}
+                      className={`sort-segment-btn ${active ? "is-active" : ""}`}
+                      onClick={() => handleSortChange(opt.key)}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                className="feed-refresh-btn bounce-click"
+                aria-label="새로고침"
+                title="새로고침"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+              >
+                <RefreshCw
+                  size={14}
+                  color="var(--accent)"
+                  aria-hidden="true"
+                  className={isRefreshing ? "spin-animation" : ""}
+                />
+              </button>
+            </div>
+          </div>
+
           <div className={viewMode === "compact" ? "deal-list deal-list--compact" : "deal-list"}>
             {loading && filteredDeals.length === 0 && !fetchError ? (
               <>
@@ -4249,20 +3512,20 @@ export default function Home() {
                     className="glass-panel deal-card deal-skeleton-card"
                     aria-hidden="true"
                   >
-                    <div className="deal-image-wrapper skeleton-shimmer" />
-                    <div className="skeleton-shimmer skeleton-line skeleton-line--title" />
-                    <div className="skeleton-shimmer skeleton-line skeleton-line--title-short" />
-                    <div className="skeleton-row">
-                      <span className="skeleton-shimmer skeleton-pill" />
-                      <span className="skeleton-shimmer skeleton-pill skeleton-pill--sm" />
+                    <div className="deal-card-media-shell">
+                      <div className="deal-image-wrapper skeleton-shimmer" />
                     </div>
-                    <div className="skeleton-price-row">
-                      <div className="skeleton-shimmer skeleton-line skeleton-line--price" />
-                      <div className="skeleton-shimmer skeleton-pill skeleton-pill--sm" />
-                    </div>
-                    <div className="deal-card-footer-actions">
-                      <div className="skeleton-shimmer skeleton-btn" />
-                      <div className="skeleton-shimmer skeleton-btn" />
+                    <div className="deal-info">
+                      <div className="skeleton-shimmer skeleton-line skeleton-line--meta" />
+                      <div className="skeleton-shimmer skeleton-line skeleton-line--title" />
+                      <div className="skeleton-shimmer skeleton-line skeleton-line--title-short" />
+                      <div className="skeleton-price-row">
+                        <div className="skeleton-shimmer skeleton-line skeleton-line--price" />
+                      </div>
+                      <div className="skeleton-row">
+                        <span className="skeleton-shimmer skeleton-pill" />
+                        <span className="skeleton-shimmer skeleton-pill skeleton-pill--sm" />
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -4392,9 +3655,7 @@ export default function Home() {
                       priority={idx < 6}
                       viewMode={viewMode}
                       showCategoryPill={selectedCategories.length === 0}
-                      onHideDeal={handleHideDeal}
                       onSelectDeal={(selected) => openDealWithHistory(selected)}
-                      onShareDeal={handleShareDeal}
                       onToggleAlert={toggleAlert}
                       onToggleWishlist={toggleWishlist}
                       onShowToast={showToast}
@@ -4422,6 +3683,39 @@ export default function Home() {
                   className="ai-loader"
                   style={{ width: "32px", height: "32px" }}
                 />
+              ) : loadMoreError ? (
+                <div
+                  role="alert"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexWrap: "wrap",
+                    gap: "10px",
+                    background: "var(--card-bg)",
+                    padding: "10px 16px",
+                    borderRadius: "var(--radius-pill)",
+                    border: "1px solid var(--danger-border)",
+                    color: "var(--danger-text)",
+                    fontSize: "var(--fs-control)",
+                    fontWeight: 700,
+                  }}
+                >
+                  <span>{loadMoreError}</span>
+                  <button
+                    type="button"
+                    onClick={handleRetryLoadMore}
+                    className="btn-primary bounce-click"
+                    style={{
+                      minHeight: "36px",
+                      padding: "6px 14px",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: "var(--fs-control)",
+                    }}
+                  >
+                    다시 시도
+                  </button>
+                </div>
               ) : (
                 <div
                   style={{
@@ -4467,32 +3761,14 @@ export default function Home() {
           >
             <button
               type="button"
-              aria-expanded={showMobileQuickFilters}
-              aria-controls="feed-quick-filter-panel"
+              aria-expanded={isFilterDrawerOpen}
+              aria-controls={filterDrawerId}
               aria-label={
-                showMobileQuickFilters ? "상세 필터 닫기" : "빠른 상세 필터 열기"
+                isFilterDrawerOpen ? "빠른 상세 필터 닫기" : "빠른 상세 필터 열기"
               }
-              onClick={() => {
-                const nextOpen = !showMobileQuickFilters;
-                setShowMobileQuickFilters(nextOpen);
-                if (
-                  nextOpen &&
-                  typeof window !== "undefined" &&
-                  window.scrollY > 220
-                ) {
-                  window.requestAnimationFrame(() => {
-                    document
-                      .getElementById("feed-quick-filter-panel")
-                      ?.scrollIntoView({ behavior: "smooth", block: "center" });
-                  });
-                }
-              }}
+              onClick={() => setIsFilterDrawerOpen((v) => !v)}
               className={`mobile-thumb-dock-btn bounce-click ${
-                showMobileQuickFilters ||
-                freeShippingOnly ||
-                shopFilter ||
-                minPriceInput.trim() ||
-                maxPriceInput.trim()
+                isFilterDrawerOpen || secondaryActiveFilterCount > 0
                   ? "is-active"
                   : ""
               }`}
@@ -4500,13 +3776,9 @@ export default function Home() {
               <SlidersHorizontal size={15} aria-hidden="true" />
               <span>
                 상세 필터
-                {(() => {
-                  const cnt =
-                    (freeShippingOnly ? 1 : 0) +
-                    (shopFilter ? 1 : 0) +
-                    (minPriceInput.trim() || maxPriceInput.trim() ? 1 : 0);
-                  return cnt > 0 ? ` (${cnt})` : "";
-                })()}
+                {secondaryActiveFilterCount > 0
+                  ? ` (${secondaryActiveFilterCount})`
+                  : ""}
               </span>
             </button>
             {showScrollTop && (
@@ -4613,12 +3885,35 @@ export default function Home() {
         onDealClosed={handleDealClosed}
         onDealInteractionChange={handleDealInteractionChange}
         onDealSynced={handleDealDetailSynced}
+        onHideDeal={handleHideDeal}
         onNavigateDeal={
           filteredDeals.length > 1 && selectedDealIndex >= 0
             ? handleNavigateSelectedDeal
             : undefined
         }
         onSelectRelatedDeal={(rel) => openDealWithHistory(rel)}
+      />
+
+      <FilterDrawerModal
+        isOpen={isFilterDrawerOpen}
+        drawerId={filterDrawerId}
+        onClose={() => setIsFilterDrawerOpen(false)}
+        selectedPlatforms={selectedPlatforms}
+        shopFilter={shopFilter}
+        minPriceInput={minPriceInput}
+        maxPriceInput={maxPriceInput}
+        freeShippingOnly={freeShippingOnly}
+        hideClosedDeals={hideClosedDeals}
+        includeClosedDeals={includeClosedDeals}
+        viewMode={viewMode}
+        hiddenDealIds={hiddenDealIds}
+        mutedKeywords={mutedKeywords}
+        onApplyFilters={handleApplyDrawerFilters}
+        onResetAll={handleResetAllFilters}
+        onAddMutedKeyword={handleAddMutedKeyword}
+        onRemoveMutedKeyword={handleRemoveMutedKeyword}
+        onUnhideDeal={handleUnhideDeal}
+        onRestoreAllHiddenDeals={handleRestoreAllHiddenDeals}
       />
 
       <NotificationDrawer

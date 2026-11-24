@@ -20,9 +20,17 @@ vi.mock("next/link", () => ({
   default: ({
     href,
     children,
+    prefetch,
     ...rest
-  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
-    <a href={href} {...rest}>
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+    href: string;
+    prefetch?: boolean;
+  }) => (
+    <a
+      href={href}
+      data-prefetch={prefetch !== undefined ? String(prefetch) : undefined}
+      {...rest}
+    >
       {children}
     </a>
   ),
@@ -1250,7 +1258,8 @@ describe("M2 Iteration 4 회귀 테스트 (Challenger 1·2 Iter3 지적 전량)"
 
     fireEvent.click(screen.getByRole("button", { name: "상세 모달 닫기" }));
 
-    // DeviceSyncModal 열기 -> 6자리 동기화 실행(hydrateFromServer 트리거)
+    // HeaderMoreMenu -> DeviceSyncModal 열기 -> 6자리 동기화 실행(hydrateFromServer 트리거)
+    fireEvent.click(screen.getByRole("button", { name: "더보기 메뉴" }));
     fireEvent.click(
       screen.getByRole("button", { name: "기기 동기화 및 계정 연결" })
     );
@@ -1509,15 +1518,15 @@ describe("M2 Iteration 4 회귀 테스트 (Challenger 1·2 Iter3 지적 전량)"
 
     // 연속 클릭 시 첫 번째(hang) 요청은 AbortController로 즉시 취소되고 에러 문구가 뜨지 않음
     hangMode = true;
-    const ppomBtn = screen.getByRole("button", { name: "뽐뿌" });
-    const fmBtn = screen.getByRole("button", { name: "펨코" });
+    const tvCatBtn = screen.getByRole("button", { name: "가전/TV" });
+    const livingCatBtn = screen.getByRole("button", { name: "생활용품" });
 
-    fireEvent.click(ppomBtn);
+    fireEvent.click(tvCatBtn);
     const firstFilterReq = signals[signals.length - 1];
     expect(firstFilterReq.signal?.aborted).toBe(false);
 
     hangMode = false;
-    fireEvent.click(fmBtn);
+    fireEvent.click(livingCatBtn);
     expect(firstFilterReq.signal?.aborted).toBe(true);
     expect(
       screen.queryByText("핫딜 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.")
@@ -1525,7 +1534,9 @@ describe("M2 Iteration 4 회귀 테스트 (Challenger 1·2 Iter3 지적 전량)"
 
     await waitFor(() => {
       expect(
-        signals.some((s) => s.url.includes(`platform=${encodeURIComponent("뽐뿌,펨코")}`))
+        signals.some((s) =>
+          s.url.includes(`category=${encodeURIComponent("가전제품,생활용품")}`)
+        )
       ).toBe(true);
     });
 
@@ -1534,7 +1545,7 @@ describe("M2 Iteration 4 회귀 테스트 (Challenger 1·2 Iter3 지적 전량)"
     try {
       hangMode = true;
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "루리웹" }));
+        fireEvent.click(screen.getByRole("button", { name: "식품/건강" }));
       });
       await act(async () => {
         await vi.advanceTimersByTimeAsync(8500);

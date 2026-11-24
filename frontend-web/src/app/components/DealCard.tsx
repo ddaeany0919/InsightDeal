@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Bell, ExternalLink, EyeOff, Heart, Share2 } from "lucide-react";
+import { Bell, ExternalLink, Heart } from "lucide-react";
 import type { Deal, DealSource } from "../lib/types";
 import {
   computeShippingTotal,
@@ -13,8 +13,6 @@ import {
   formatRelativeTimeKo,
   getOptionSources,
   getProxyImageUrl,
-  isNonMallLabel,
-  normalizeMallAlias,
   prefetchDealDetail,
   resolveDealShopName,
   resolveOutboundUrl,
@@ -39,10 +37,42 @@ interface DealCardProps {
   showCategoryPill?: boolean;
   onHideDeal?: (dealId: number) => void;
   onSelectDeal: (deal: Deal) => void;
-  onShareDeal: (e: React.MouseEvent, deal: Deal) => void;
+  onShareDeal?: (e: React.MouseEvent, deal: Deal) => void;
   onToggleAlert: (e: React.MouseEvent, dealId: number) => void;
   onToggleWishlist: (e: React.MouseEvent, dealId: number) => void;
   onShowToast: (message: string) => void;
+}
+
+const EMERALD_BRAND_SHOPS = new Set([
+  "네이버",
+  "지마켓",
+  "올리브영",
+  "컬리",
+  "오늘의집",
+  "이마트몰",
+  "컴퓨존",
+  "스타벅스",
+]);
+
+const CORAL_BRAND_SHOPS = new Set([
+  "쿠팡",
+  "11번가",
+  "롯데온",
+  "알리익스프레스",
+  "옥션",
+  "하이마트",
+  "롯데하이마트",
+  "CJ온스타일",
+  "티몬",
+  "위메프",
+]);
+
+// 쇼핑몰명 배경 박스 없이 브랜드 톤 텍스트 컬러만 적용한다.
+function getShopToneClass(shopName: string): string {
+  const normalized = shopName.trim();
+  if (EMERALD_BRAND_SHOPS.has(normalized)) return "deal-meta-shop--emerald";
+  if (CORAL_BRAND_SHOPS.has(normalized)) return "deal-meta-shop--coral";
+  return "deal-meta-shop--accent";
 }
 
 export default function DealCard({
@@ -54,10 +84,7 @@ export default function DealCard({
   isAlertSet,
   priority = false,
   viewMode = "card",
-  showCategoryPill = false,
-  onHideDeal,
   onSelectDeal,
-  onShareDeal,
   onToggleAlert,
   onToggleWishlist,
   onShowToast,
@@ -116,8 +143,7 @@ export default function DealCard({
     ecommerce_url: deal.ecommerce_url,
   });
   const titleWithoutShop = stripLeadingShopBracket(deal.title, shopBadge);
-  const { cleanTitle: displayTitle, urgentBadge } =
-    stripPromoPrefixForDisplay(titleWithoutShop);
+  const { cleanTitle: displayTitle } = stripPromoPrefixForDisplay(titleWithoutShop);
   const displayShipping = deal.shipping_fee
     ? decodeHtmlEntities(deal.shipping_fee)
     : null;
@@ -237,102 +263,173 @@ export default function DealCard({
       }}
       onTouchStart={() => prefetchDealDetail(deal.id)}
     >
-      {/* 1. 본문 클릭 영역 (비인터랙티브 자식만 포함 -> 상세 모달 오픈) */}
-      <div
-        role="button"
-        tabIndex={0}
-        className="deal-card-body-trigger"
-        aria-label={`${displayTitle} 상세 정보 보기`}
-        onClick={() => {
-          if (
-            typeof window !== "undefined" &&
-            window.getSelection()?.toString().trim()
-          ) {
-            return;
-          }
-          onSelectDeal(deal);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
+      {/* 1. 썸네일 미디어 쉘 (비-중첩 트리거 + 형제 하트/바로구매 오버레이) */}
+      <div className="deal-card-media-shell">
+        <div
+          role="button"
+          tabIndex={0}
+          className="deal-card-body-trigger"
+          aria-label={`${displayTitle} 상세 정보 보기`}
+          onClick={() => {
+            if (
+              typeof window !== "undefined" &&
+              window.getSelection()?.toString().trim()
+            ) {
+              return;
+            }
             onSelectDeal(deal);
-          }
-        }}
-      >
-        <div className="deal-image-wrapper">
-          {!imgFailed && deal.image_url ? (
-            <>
-              {!imgLoaded && (
-                <div
-                  className="skeleton-shimmer"
-                  aria-hidden="true"
-                  style={{ position: "absolute", inset: 0 }}
-                />
-              )}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                ref={imgRef}
-                src={getProxyImageUrl(deal.image_url, { width: 400 })}
-                alt={displayTitle}
-                className={`deal-image ${imgLoaded ? "is-loaded" : ""}`}
-                loading={priority ? "eager" : "lazy"}
-                fetchPriority={priority ? "high" : undefined}
-                decoding="async"
-                referrerPolicy="no-referrer"
-                style={
-                  deal.isClosed
-                    ? { filter: "grayscale(0.85)", opacity: 0.72 }
-                    : undefined
-                }
-                onLoad={() => setLoadedImageUrl(deal.image_url)}
-                onError={(e) => {
-                  const primarySrc = getProxyImageUrl(deal.image_url, { width: 400 });
-                  if (tryApplyFallbackProxyImage(e.currentTarget, deal.image_url, primarySrc)) {
-                    return;
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onSelectDeal(deal);
+            }
+          }}
+        >
+          <div className="deal-image-wrapper">
+            {!imgFailed && deal.image_url ? (
+              <>
+                {!imgLoaded && (
+                  <div
+                    className="skeleton-shimmer"
+                    aria-hidden="true"
+                    style={{ position: "absolute", inset: 0 }}
+                  />
+                )}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  ref={imgRef}
+                  src={getProxyImageUrl(deal.image_url, { width: 400 })}
+                  alt={displayTitle}
+                  className={`deal-image ${imgLoaded ? "is-loaded" : ""}`}
+                  loading={priority ? "eager" : "lazy"}
+                  fetchPriority={priority ? "high" : undefined}
+                  decoding="async"
+                  referrerPolicy="no-referrer"
+                  style={
+                    deal.isClosed
+                      ? { filter: "grayscale(0.85)", opacity: 0.72 }
+                      : undefined
                   }
-                  setFailedImageUrl(deal.image_url);
-                }}
-              />
-            </>
-          ) : (
-            <BrandImagePlaceholder />
-          )}
+                  onLoad={() => setLoadedImageUrl(deal.image_url)}
+                  onError={(e) => {
+                    const primarySrc = getProxyImageUrl(deal.image_url, {
+                      width: 400,
+                    });
+                    if (
+                      tryApplyFallbackProxyImage(
+                        e.currentTarget,
+                        deal.image_url,
+                        primarySrc
+                      )
+                    ) {
+                      return;
+                    }
+                    setFailedImageUrl(deal.image_url);
+                  }}
+                />
+              </>
+            ) : (
+              <BrandImagePlaceholder />
+            )}
 
-          {isMultiDeal && (
-            <div
-              style={{
-                position: "absolute",
-                bottom: "8px",
-                left: "8px",
-                background: "rgba(25, 31, 40, 0.82)",
-                backdropFilter: "blur(6px)",
-                color: "#FFFFFF",
-                border: "1px solid rgba(255, 255, 255, 0.14)",
-                padding: "3px 8px",
-                borderRadius: "var(--radius-xs)",
-                fontSize: "var(--fs-caption)",
-                fontWeight: 700,
-                display: "inline-flex",
-                alignItems: "center",
-                zIndex: 2,
-              }}
-            >
-              <span>
+            {/* 좌상단 핵심 배지 최대 1개 ('품절·종료' 우선, 아니면 honeyScore >= 100 시 '인기') */}
+            {deal.isClosed ? (
+              <span className="deal-thumb-badge deal-thumb-badge--closed">
+                품절·종료
+              </span>
+            ) : (deal.honeyScore || 0) >= 100 ? (
+              <span className="deal-thumb-badge deal-thumb-badge--hot">
+                인기
+              </span>
+            ) : null}
+
+            {/* 다중 옵션 안내 (비인터랙티브 span) */}
+            {isMultiDeal && (
+              <span className="deal-thumb-option-badge">
                 {displayCount >= 2 ? `${displayCount}종 옵션` : "옵션 상품"}
               </span>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
-        <h3 className="deal-title">
-          <HighlightedTitle title={displayTitle} query={appliedSearch} />
-        </h3>
+        {/* 형제 1: 우상단 원형 반투명 하트(찜하기) 오버레이 */}
+        <button
+          type="button"
+          onClick={(e) => {
+            setHeartPopping(true);
+            if (typeof window !== "undefined") {
+              if (heartPopTimerRef.current !== null) {
+                window.clearTimeout(heartPopTimerRef.current);
+              }
+              heartPopTimerRef.current = window.setTimeout(() => {
+                setHeartPopping(false);
+                heartPopTimerRef.current = null;
+              }, 420);
+            }
+            onToggleWishlist(e, deal.id);
+          }}
+          className={`deal-card-wish-overlay bounce-click ${
+            heartPopping ? "deal-action-btn--heart-pop" : ""
+          }`}
+          aria-label="찜하기"
+          aria-pressed={isWishlisted}
+          title="찜하기"
+        >
+          <Heart
+            size={16}
+            color={isWishlisted ? "var(--danger-text)" : "#FFFFFF"}
+            fill={isWishlisted ? "var(--danger-text)" : "rgba(25, 31, 40, 0.25)"}
+            aria-hidden="true"
+          />
+        </button>
+
+        {/* 형제 2: 데스크톱 호버/포커스 우하단 슬림 바로구매 필 (display: none 금지) */}
+        <a
+          href={outboundTarget}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="deal-card-buy-link bounce-click"
+          aria-label={`${displayTitle} ${
+            isSearchFallback ? "쇼핑몰 검색 결과 보기" : "바로구매"
+          } (새 창)`}
+          onClick={(e) => {
+            if (!outboundTarget || outboundTarget === "#") {
+              e.preventDefault();
+              onShowToast("이동할 수 있는 상품 주소를 찾지 못했어요");
+              return;
+            }
+            if (!hasValidEcommerceLink) {
+              onShowToast("구매처 바로가기가 없어 원본 게시글로 이동해요");
+            }
+            trackOutboundClick(
+              outboundTarget,
+              deal.id,
+              deal.price,
+              deal.currency
+            );
+            openExternalUrlInToss(outboundTarget, e);
+          }}
+        >
+          <span>{isSearchFallback ? "검색 결과 보기" : "바로구매"}</span>
+          <ExternalLink size={12} aria-hidden="true" />
+        </a>
       </div>
 
-      {/* 2. 출처 링크 + 쇼핑몰 + 시간 메타 바 (본문 트리거의 형제 요소) */}
+      {/* 2. 텍스트 4줄 스택: 메타 -> 제목 -> 가격 -> 하단 1줄 */}
       <div className="deal-info">
         <div className="deal-meta">
-          {uniqueBadgeSources.map((source: DealSource, idx: number) => {
+          {shopBadge && (
+            <>
+              <span className={`deal-meta-shop ${getShopToneClass(shopBadge)}`}>
+                {shopBadge}
+              </span>
+              <span className="deal-meta-dot" aria-hidden="true">
+                ·
+              </span>
+            </>
+          )}
+          {uniqueBadgeSources.slice(0, 1).map((source: DealSource, idx: number) => {
             const displaySiteName = source.site_name
               ? source.site_name.replace(/ - .*$/, "").trim()
               : "";
@@ -352,9 +449,6 @@ export default function DealCard({
                 onClick={(e) => {
                   openExternalUrlInToss(resolvedPostUrl, e);
                 }}
-                style={{
-                  border: "1px solid var(--accent-soft-border)",
-                }}
               >
                 {displaySiteName}
               </a>
@@ -364,55 +458,16 @@ export default function DealCard({
               </span>
             );
           })}
-          {shopBadge && (
-            <span className="deal-shop-badge">{shopBadge}</span>
-          )}
-          <span aria-hidden="true">·</span>
-          <span>{liveTimeAgo}</span>
-          {showCategoryPill && deal.category && deal.category !== "기타" && (
-            <span
-              className="deal-tag"
-              style={{
-                background: "var(--badge-bg)",
-                color: "var(--text-sub)",
-                border: "1px solid var(--card-border)",
-              }}
-            >
-              {deal.category}
-            </span>
-          )}
-          {urgentBadge && !deal.isClosed && (
-            <span
-              className="deal-tag"
-              style={{
-                background: "var(--danger-bg)",
-                color: "var(--danger-text)",
-                border: "1px solid var(--danger-border)",
-              }}
-            >
-              {urgentBadge}
-            </span>
-          )}
-          {(appVoteTotal > 0 || appCommentTotal > 0) && (
-            <span
-              style={{
-                fontSize: "0.73rem",
-                color: "var(--text-sub)",
-                fontWeight: 700,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "4px",
-              }}
-              aria-label={`얼만데 투표 ${appVoteTotal} 의견 ${appCommentTotal}`}
-            >
-              {appVoteTotal > 0 && `👍 ${appVoteTotal}`}
-              {appVoteTotal > 0 && appCommentTotal > 0 && " · "}
-              {appCommentTotal > 0 && `💬 ${appCommentTotal}`}
-            </span>
-          )}
+          <span className="deal-meta-dot" aria-hidden="true">
+            ·
+          </span>
+          <span className="deal-meta-time">{liveTimeAgo}</span>
         </div>
 
-        {/* 3. 가격 + 배지 + 찜/알림/공유 액션 */}
+        <h3 className="deal-title">
+          <HighlightedTitle title={displayTitle} query={appliedSearch} />
+        </h3>
+
         <div className="price-section">
           <div className="deal-price-group">
             <span className="deal-price">{displayPriceText}</span>
@@ -426,13 +481,30 @@ export default function DealCard({
                 {shippingTotalHint.label}
               </span>
             )}
-            {deal.isClosed ? (
-              <span className="badge badge-danger">품절·종료</span>
-            ) : (
-              (deal.honeyScore || 0) >= 100 && (
-                <span className="deal-tag">인기</span>
-              )
+          </div>
+        </div>
+
+        <div className="deal-card-bottom-row">
+          <div className="deal-card-bottom-meta">
+            {unitPriceBadge && (
+              <span className="deal-unit-price-inline" title={unitPriceBadge.detail}>
+                {unitPriceBadge.label}
+              </span>
             )}
+            {unitPriceBadge && displayShipping && !deal.isClosed && (
+              <span className="deal-meta-dot" aria-hidden="true">
+                ·
+              </span>
+            )}
+            {displayShipping && !deal.isClosed && (
+              <span className="deal-shipping-inline">{displayShipping}</span>
+            )}
+            {isSearchFallback &&
+              (unitPriceBadge || (displayShipping && !deal.isClosed)) && (
+                <span className="deal-meta-dot" aria-hidden="true">
+                  ·
+                </span>
+              )}
             {isSearchFallback && (
               <span
                 className="deal-tag search-fallback-badge"
@@ -441,165 +513,45 @@ export default function DealCard({
                 검색이동
               </span>
             )}
-            {displayShipping && !deal.isClosed && (
-              <span className="badge badge-mint">{displayShipping}</span>
-            )}
-            {unitPriceBadge && (
+            {!unitPriceBadge && !displayShipping && paymentCondBadge && (
               <span
-                className="deal-tag deal-unit-price-badge"
-                title={unitPriceBadge.detail}
-              >
-                {unitPriceBadge.label}
-              </span>
-            )}
-            {paymentCondBadge && (
-              <span
-                className="deal-tag deal-payment-cond-badge"
+                className="deal-payment-inline"
                 title={`특정 결제수단·멤버십 조건: ${paymentCondBadge}`}
               >
                 {paymentCondBadge}
               </span>
             )}
-            {!deal.isClosed &&
-              deal.tags &&
-              deal.tags.map((tag, tIdx) => {
-                const cleanTag = decodeHtmlEntities(String(tag))
-                  .replace(
-                    /^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]+\s*/gu,
-                    ""
-                  )
-                  .trim();
-                if (!cleanTag) return null;
-                if (shopBadge && normalizeMallAlias(cleanTag) === shopBadge) {
-                  return null;
-                }
-                if (
-                  isNonMallLabel(cleanTag) &&
-                  cleanTag !== "역대가" &&
-                  cleanTag !== "할인코드"
-                ) {
-                  return null;
-                }
-                return (
-                  <span
-                    key={tIdx}
-                    className="deal-tag deal-tag--subtle"
-                  >
-                    {cleanTag}
-                  </span>
-                );
-              })}
           </div>
 
-          <div className="deal-card-actions">
-            {onHideDeal && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onHideDeal(deal.id);
-                }}
-                className="deal-card-icon-btn bounce-click"
-                aria-label="이 핫딜 숨기기"
-                title="이 핫딜 숨기기"
+          <div className="deal-card-bottom-actions">
+            {(appVoteTotal > 0 || appCommentTotal > 0) && (
+              <span
+                className="deal-engagement-inline"
+                aria-label={`얼만데 투표 ${appVoteTotal} 의견 ${appCommentTotal}`}
               >
-                <EyeOff size={17} color="var(--text-muted)" aria-hidden="true" />
-              </button>
+                {appVoteTotal > 0 && `👍 ${appVoteTotal}`}
+                {appVoteTotal > 0 && appCommentTotal > 0 && "  "}
+                {appCommentTotal > 0 && `💬 ${appCommentTotal}`}
+              </span>
             )}
             <button
               type="button"
-              onClick={(e) => onShareDeal(e, deal)}
-              className="deal-card-icon-btn bounce-click"
-              aria-label="공유하기"
-              title="공유하기"
-            >
-              <Share2 size={18} color="var(--text-sub)" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
               onClick={(e) => onToggleAlert(e, deal.id)}
-              className="deal-card-icon-btn bounce-click"
+              className={`deal-card-bell-btn bounce-click ${
+                isAlertSet ? "is-active" : ""
+              }`}
               aria-label="가격 알림 설정"
               aria-pressed={isAlertSet}
-              title="가격 알림"
+              title="가격 알림 설정"
             >
               <Bell
-                size={18}
+                size={13}
                 color={isAlertSet ? "var(--accent)" : "var(--text-sub)"}
                 fill={isAlertSet ? "var(--accent)" : "none"}
                 aria-hidden="true"
               />
             </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                setHeartPopping(true);
-                if (typeof window !== "undefined") {
-                  if (heartPopTimerRef.current !== null) {
-                    window.clearTimeout(heartPopTimerRef.current);
-                  }
-                  heartPopTimerRef.current = window.setTimeout(() => {
-                    setHeartPopping(false);
-                    heartPopTimerRef.current = null;
-                  }, 420);
-                }
-                onToggleWishlist(e, deal.id);
-              }}
-              className={`deal-card-icon-btn bounce-click ${
-                heartPopping ? "deal-action-btn--heart-pop" : ""
-              }`}
-              aria-label="찜하기"
-              aria-pressed={isWishlisted}
-              title="찜하기"
-            >
-              <Heart
-                size={18}
-                color={isWishlisted ? "var(--danger-text)" : "var(--text-sub)"}
-                fill={isWishlisted ? "var(--danger-text)" : "none"}
-                aria-hidden="true"
-              />
-            </button>
           </div>
-        </div>
-
-        {/* 4. 하단 독립 2버튼 */}
-        <div className="deal-card-footer-actions">
-          <button
-            type="button"
-            onClick={() => onSelectDeal(deal)}
-            className="deal-card-detail-btn bounce-click"
-          >
-            <span>상세 · 의견 보기</span>
-          </button>
-          <a
-            href={outboundTarget}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-primary bounce-click deal-card-buy-link"
-            aria-label={`${displayTitle} ${
-              isSearchFallback ? "쇼핑몰 검색 결과 보기" : "바로구매"
-            } (새 창)`}
-            onClick={(e) => {
-              if (!outboundTarget || outboundTarget === "#") {
-                e.preventDefault();
-                onShowToast("이동할 수 있는 상품 주소를 찾지 못했어요");
-                return;
-              }
-              if (!hasValidEcommerceLink) {
-                onShowToast("구매처 바로가기가 없어 원본 게시글로 이동해요");
-              }
-              trackOutboundClick(
-                outboundTarget,
-                deal.id,
-                deal.price,
-                deal.currency
-              );
-              openExternalUrlInToss(outboundTarget, e);
-            }}
-          >
-            <span>{isSearchFallback ? "검색 결과 보기" : "바로구매"}</span>
-            <ExternalLink size={14} aria-hidden="true" />
-          </a>
         </div>
       </div>
     </article>

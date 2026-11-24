@@ -359,6 +359,21 @@ interface DealDao {
                   COALESCE(shopName, '') LIKE '%엑스박스%' OR COALESCE(shopName, '') LIKE '%엑박%' OR LOWER(COALESCE(shopName, '')) LIKE '%xbox%'
                   OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%xbox%'
               ))
+              OR (TRIM(:shop) = '무신사' AND (
+                  COALESCE(shopName, '') LIKE '%무신사%' OR LOWER(COALESCE(shopName, '')) LIKE '%musinsa%'
+                  OR title LIKE '%[무신사%' OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%musinsa%'
+              ))
+              OR (LOWER(TRIM(:shop)) IN ('스팀', 'steam') AND (
+                  COALESCE(shopName, '') LIKE '%스팀%' OR LOWER(COALESCE(shopName, '')) LIKE '%steam%'
+                  OR title LIKE '%[스팀%' OR LOWER(title) LIKE '%[steam%'
+                  OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%steampowered.com%'
+                  OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%steamcommunity.com%'
+              ))
+              OR (LOWER(TRIM(:shop)) IN ('에픽게임즈', '에픽', 'epic', 'epicgames') AND (
+                  COALESCE(shopName, '') LIKE '%에픽%' OR LOWER(COALESCE(shopName, '')) LIKE '%epic%'
+                  OR title LIKE '%[에픽%' OR LOWER(title) LIKE '%[epic%'
+                  OR LOWER(COALESCE(ecommerceUrl, '')) LIKE '%epicgames%'
+              ))
           )
           AND (
               :minPrice IS NULL

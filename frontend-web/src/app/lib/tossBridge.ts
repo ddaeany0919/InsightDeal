@@ -279,3 +279,22 @@ export async function copyTextSafe(text: string): Promise<boolean> {
   }
   return false;
 }
+
+/**
+ * URL 파라미터 디버그 모드(`?toss=1`)로 접근한 경우 내부 라우트 이동 시에도 `?toss=1`을 유지합니다.
+ */
+export function appendTossDebugQuery(path: string): string {
+  if (typeof window === "undefined") return path;
+  try {
+    const currentParams = new URLSearchParams(window.location.search);
+    if (currentParams.get("toss") !== "1") return path;
+    const [baseAndQuery, hash = ""] = path.split("#");
+    const [pathname, search = ""] = baseAndQuery.split("?");
+    const nextParams = new URLSearchParams(search);
+    nextParams.set("toss", "1");
+    const qs = nextParams.toString();
+    return `${pathname}${qs ? `?${qs}` : ""}${hash ? `#${hash}` : ""}`;
+  } catch {
+    return path;
+  }
+}

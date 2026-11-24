@@ -13,7 +13,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -79,8 +78,8 @@ fun RecentDealsScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(paddingValues),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                contentPadding = PaddingValues(start = 0.dp, end = 0.dp, top = 8.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
                 // [jetpack-compose-performance] 고유 key 및 contentType 명시
                 items(
@@ -140,7 +139,6 @@ fun RecentDealsScreen(
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .clip(MaterialTheme.shapes.medium)
                                     .background(color)
                                     .padding(horizontal = 24.dp),
                                 contentAlignment = Alignment.CenterEnd
@@ -158,7 +156,8 @@ fun RecentDealsScreen(
                                 DealCardComposable(
                                     deal = currentDeal,
                                     onDetailClick = { onDealClick(currentDeal.id) },
-                                    onOpenUrl = onOpenUrl
+                                    onOpenUrl = onOpenUrl,
+                                    reserveBottomEndSpace = true
                                 )
                                 
                                 // 사용자가 요청한 우측 하단 휴지통 단추 추가 (48.dp 최소 터치 영역 보장)

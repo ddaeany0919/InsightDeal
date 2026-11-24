@@ -711,7 +711,7 @@ fun MyPageScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DeviceSyncBottomSheet(
+fun DeviceSyncBottomSheet(
     uiState: DeviceSyncUiState,
     onIssueCode: () -> Unit,
     onClaimCode: (String) -> Unit,
@@ -815,7 +815,7 @@ private fun DeviceSyncBottomSheet(
                             )
                             Text(
                                 text = if (uiState.remainingSec > 0) {
-                                    String.format("남은 시간 %02d:%02d", mins, secs)
+                                    String.format(java.util.Locale.ROOT, "남은 시간 %02d:%02d", mins, secs)
                                 } else {
                                     "코드가 만료되었어요. 새로 발급해 주세요."
                                 },

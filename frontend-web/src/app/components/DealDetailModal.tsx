@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  EyeOff,
 } from "lucide-react";
 import type {
   Deal,
@@ -95,6 +96,7 @@ interface DealDetailModalProps {
   onDealSynced?: (dealId: number, patch: Partial<Deal>) => void;
   onNavigateDeal?: (delta: -1 | 1) => void;
   onSelectRelatedDeal?: (deal: Deal) => void;
+  onHideDeal?: (dealId: number) => void;
 }
 
 const INITIAL_ACCORDION_STATE: Record<AccordionSectionKey, boolean> = {
@@ -114,6 +116,7 @@ export default function DealDetailModal({
   onDealSynced,
   onNavigateDeal,
   onSelectRelatedDeal,
+  onHideDeal,
 }: DealDetailModalProps) {
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number>(0);
   const [chartStats, setChartStats] = useState<PriceTrendStats | null>(null);
@@ -177,6 +180,7 @@ export default function DealDetailModal({
   const dragStartYRef = useRef<number | null>(null);
   const closedByPopRef = useRef<boolean>(false);
   const openedWithPushRef = useRef<boolean>(false);
+  const activeModalSessionRef = useRef<boolean>(false);
   const lightboxIndexRef = useRef<number | null>(lightboxIndex);
   const lightboxPushedRef = useRef<boolean>(false);
   const suppressNextPopRef = useRef<boolean>(false);
@@ -541,32 +545,63 @@ export default function DealDetailModal({
   }, [dealId, propIsClosed, propReportCount]);
 
   useEffect(() => {
-    if (dealId === null || typeof window === "undefined") return;
+    if (dealId === null) {
+      openedWithPushRef.current = false;
+      closedByPopRef.current = false;
+      activeModalSessionRef.current = false;
+      return;
+    }
+    if (typeof window === "undefined") return;
 
     closedByPopRef.current = false;
-    openedWithPushRef.current = false;
+    const isSwitchingWithinModal = activeModalSessionRef.current;
+    activeModalSessionRef.current = true;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     try {
       const currUrl = new URL(window.location.href);
       const urlHasSameDeal = currUrl.searchParams.get("dealId") === String(dealId);
-      if (!urlHasSameDeal && window.history.state?.insightDealModal !== dealId) {
+      if (isSwitchingWithinModal) {
+        // 모달이 이미 열린 상태에서 내부 탐색으로 dealId가 전환될 때는 pushState 중복 적재 대신 replaceState로 교체
         currUrl.searchParams.set("dealId", String(dealId));
         currUrl.searchParams.delete("_og");
-        window.history.pushState(
-          { insightDealModal: dealId },
+        const nextHref = `${currUrl.pathname}${currUrl.search}${currUrl.hash}`;
+        window.history.replaceState(
+          openedWithPushRef.current
+            ? { insightDealModal: dealId }
+            : window.history.state,
           "",
-          `${currUrl.pathname}${currUrl.search}${currUrl.hash}`
+          nextHref
         );
-        openedWithPushRef.current = true;
+      } else {
+        openedWithPushRef.current = false;
+        if (!urlHasSameDeal && window.history.state?.insightDealModal !== dealId) {
+          currUrl.searchParams.set("dealId", String(dealId));
+          currUrl.searchParams.delete("_og");
+          window.history.pushState(
+            { insightDealModal: dealId },
+            "",
+            `${currUrl.pathname}${currUrl.search}${currUrl.hash}`
+          );
+          openedWithPushRef.current = true;
+        }
       }
     } catch {
-      if (!window.history.state?.insightDealModal) {
-        try {
-          window.history.pushState({ insightDealModal: dealId }, "");
-          openedWithPushRef.current = true;
-        } catch {}
+      if (isSwitchingWithinModal) {
+        if (openedWithPushRef.current) {
+          try {
+            window.history.replaceState({ insightDealModal: dealId }, "");
+          } catch {}
+        }
+      } else {
+        openedWithPushRef.current = false;
+        if (!window.history.state?.insightDealModal) {
+          try {
+            window.history.pushState({ insightDealModal: dealId }, "");
+            openedWithPushRef.current = true;
+          } catch {}
+        }
       }
     }
 
@@ -1798,39 +1833,78 @@ export default function DealDetailModal({
               )}
             </div>
 
-            {!isClosedState && (
-              <button
-                type="button"
-                onClick={() => void handleReportClosed()}
-                disabled={reportingClosed}
-                aria-pressed={hasReportedClosed}
-                className="bounce-click"
-                style={{
-                  minHeight: "44px",
-                  minWidth: "44px",
-                  padding: "8px 12px",
-                  borderRadius: "10px",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "5px",
-                  fontSize: "0.78rem",
-                  fontWeight: 700,
-                  cursor: reportingClosed ? "not-allowed" : "pointer",
-                  background: hasReportedClosed ? "var(--danger-bg)" : "var(--card-bg)",
-                  color: hasReportedClosed ? "var(--danger-text)" : "var(--text-sub)",
-                  border: hasReportedClosed
-                    ? "1px solid var(--danger-border)"
-                    : "1px solid var(--card-border)",
-                }}
-              >
-                <Flag size={13} aria-hidden="true" />
-                <span>
-                  {hasReportedClosed
-                    ? `품절 제보 완료${reportCount > 0 ? ` (${reportCount})` : ""}`
-                    : `품절 제보${reportCount > 0 ? ` (${reportCount})` : ""}`}
-                </span>
-              </button>
-            )}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                flexWrap: "wrap",
+                justifyContent: "flex-end",
+              }}
+            >
+              {!isClosedState && (
+                <button
+                  type="button"
+                  onClick={() => void handleReportClosed()}
+                  disabled={reportingClosed}
+                  aria-pressed={hasReportedClosed}
+                  className="bounce-click"
+                  style={{
+                    minHeight: "44px",
+                    minWidth: "44px",
+                    padding: "8px 12px",
+                    borderRadius: "10px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    fontSize: "0.78rem",
+                    fontWeight: 700,
+                    cursor: reportingClosed ? "not-allowed" : "pointer",
+                    background: hasReportedClosed ? "var(--danger-bg)" : "var(--card-bg)",
+                    color: hasReportedClosed ? "var(--danger-text)" : "var(--text-sub)",
+                    border: hasReportedClosed
+                      ? "1px solid var(--danger-border)"
+                      : "1px solid var(--card-border)",
+                  }}
+                >
+                  <Flag size={13} aria-hidden="true" />
+                  <span>
+                    {hasReportedClosed
+                      ? `품절 제보 완료${reportCount > 0 ? ` (${reportCount})` : ""}`
+                      : `품절 제보${reportCount > 0 ? ` (${reportCount})` : ""}`}
+                  </span>
+                </button>
+              )}
+              {onHideDeal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onHideDeal(deal.id);
+                    handleDismiss();
+                  }}
+                  aria-label="이 핫딜 숨기기"
+                  className="bounce-click"
+                  style={{
+                    minHeight: "44px",
+                    minWidth: "44px",
+                    padding: "8px 12px",
+                    borderRadius: "10px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    fontSize: "0.78rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    background: "var(--card-bg)",
+                    color: "var(--text-sub)",
+                    border: "1px solid var(--card-border)",
+                  }}
+                >
+                  <EyeOff size={13} aria-hidden="true" />
+                  <span>이 핫딜 숨기기</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {(detailUnitPriceBadge || detailPaymentCondBadge) && (

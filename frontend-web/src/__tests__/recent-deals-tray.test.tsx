@@ -10,9 +10,17 @@ vi.mock("next/link", () => ({
   default: ({
     href,
     children,
+    prefetch,
     ...rest
-  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
-    <a href={href} {...rest}>
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+    href: string;
+    prefetch?: boolean;
+  }) => (
+    <a
+      href={href}
+      data-prefetch={prefetch !== undefined ? String(prefetch) : undefined}
+      {...rest}
+    >
       {children}
     </a>
   ),
@@ -209,8 +217,8 @@ describe("RecentDealsTray 컴포넌트 및 최근 본 핫딜 E2E 상태 동기�
     fireEvent.click(screen.getByRole("button", { name: "전체 비우기" }));
     expect(onClearAll).toHaveBeenCalledTimes(1);
 
-    // 0건 빈 상태
-    rerender(
+    // 0건일 때는 트레이를 렌더링하지 않고 공간 0px 유지
+    const { container: emptyContainer } = render(
       <RecentDealsTray
         deals={[]}
         onSelectDeal={onSelectDeal}
@@ -218,16 +226,11 @@ describe("RecentDealsTray 컴포넌트 및 최근 본 핫딜 E2E 상태 동기�
         onClearAll={onClearAll}
       />
     );
-    expect(screen.getByText("최근 본 핫딜 (0건)")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "전체 비우기" })).toBeNull();
-    expect(
-      screen.getByText(
-        "아직 열어본 핫딜이 없어요. 카드를 누르면 최근 기록이 여기에 쌓여요."
-      )
-    ).toBeInTheDocument();
+    expect(emptyContainer.firstChild).toBeNull();
+    void rerender;
   });
 
-  it("Home에서 localStorage 12건 복원(손상 항목 필터링) -> 개별 × 삭제 시 localStorage 즉시 동기화 -> 전체 비우기 동작을 검증한다", async () => {
+  it("Home에서 localStorage 12건 복원(손상 항목 필터링) -> 자동 노출 -> 개별 × 삭제 시 localStorage 즉시 동기화 -> 전체 비우기(0px) 동작을 검증한다", async () => {
     mockHomeApis();
     const storedDeals = Array.from({ length: 12 }, (_, idx) =>
       makeRecentDeal(idx + 1)
@@ -244,14 +247,8 @@ describe("RecentDealsTray 컴포넌트 및 최근 본 핫딜 E2E 상태 동기�
     render(<Home />);
 
     await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: "최근 본 핫딜 (12)" })
-      ).toBeInTheDocument();
+      expect(screen.getByText("최근 본 핫딜 (12건)")).toBeInTheDocument();
     });
-
-    fireEvent.click(screen.getByRole("button", { name: "최근 본 핫딜 (12)" }));
-
-    expect(screen.getByText("최근 본 핫딜 (12건)")).toBeInTheDocument();
     expect(screen.getByText("테스트 최근 핫딜 12")).toBeInTheDocument();
 
     // 12번 딜 개별 삭제 -> 11건으로 감소 및 localStorage 즉시 동기화
@@ -269,13 +266,13 @@ describe("RecentDealsTray 컴포넌트 및 최근 본 핫딜 E2E 상태 동기�
     expect(afterRemove).toHaveLength(11);
     expect(afterRemove.some((item) => item.id === 12)).toBe(false);
 
-    // 전체 비우기 -> 0건 및 localStorage 제거
+    // 전체 비우기 -> 트레이 미노출 및 localStorage 제거
     fireEvent.click(screen.getByRole("button", { name: "전체 비우기" }));
-    expect(screen.getByText("최근 본 핫딜 (0건)")).toBeInTheDocument();
+    expect(screen.queryByLabelText("최근 본 핫딜")).toBeNull();
     expect(localStorage.getItem("insightdeal_recent_deals")).toBeNull();
   });
 
-  it("Home에서 마지막 1건 개별 삭제 시 localStorage 키를 완전히 제거한다", async () => {
+  it("Home에서 마지막 1건 개별 삭제 시 트레이가 사라지고 localStorage 키를 완전히 제거한다", async () => {
     mockHomeApis();
     localStorage.setItem(
       "insightdeal_recent_deals",
@@ -285,19 +282,16 @@ describe("RecentDealsTray 컴포넌트 및 최근 본 핫딜 E2E 상태 동기�
     render(<Home />);
 
     await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: "최근 본 핫딜 (1)" })
-      ).toBeInTheDocument();
+      expect(screen.getByLabelText("최근 본 핫딜")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "최근 본 핫딜 (1)" }));
     fireEvent.click(
       screen.getByRole("button", {
         name: "테스트 최근 핫딜 99 최근 본 목록에서 삭제",
       })
     );
 
-    expect(screen.getByText("최근 본 핫딜 (0건)")).toBeInTheDocument();
+    expect(screen.queryByLabelText("최근 본 핫딜")).toBeNull();
     expect(localStorage.getItem("insightdeal_recent_deals")).toBeNull();
   });
 
@@ -392,8 +386,6 @@ describe("RecentDealsTray 컴포넌트 및 최근 본 핫딜 E2E 상태 동기�
       expect(stored).toHaveLength(1);
       expect(stored[0].image_url).toBe(healedUrl);
     });
-
-    fireEvent.click(screen.getByRole("button", { name: "최근 본 핫딜 (1)" }));
 
     const trayImgs = screen.getAllByAltText(
       "9850X3D + Astral RTX 5090 + 2TB + 48G"
@@ -568,12 +560,9 @@ describe("RecentDealsTray 컴포넌트 및 최근 본 핫딜 E2E 상태 동기�
     render(<Home />);
 
     await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: "최근 본 핫딜 (1)" })
-      ).toBeInTheDocument();
+      expect(screen.getByLabelText("최근 본 핫딜")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "최근 본 핫딜 (1)" }));
     fireEvent.click(
       screen.getByRole("button", {
         name: /피드 밖 오래된 최근 본 딜.*상세 보기/,

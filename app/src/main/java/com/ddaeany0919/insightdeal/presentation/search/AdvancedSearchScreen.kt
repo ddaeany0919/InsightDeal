@@ -682,15 +682,16 @@ fun AdvancedSearchScreen(
                     // [jetpack-compose-performance] LazyColumn key 및 contentType 명시로 리컴포지션 방어 및 슬롯 재사용
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 80.dp)
+                        verticalArrangement = Arrangement.spacedBy(0.dp),
+                        contentPadding = PaddingValues(start = 0.dp, end = 0.dp, top = 8.dp, bottom = 80.dp)
                     ) {
                         if (searchQuery.text.isNotBlank() && snapshotDeals.isNotEmpty()) {
                             item(key = "keyword_price_summary", contentType = "price_summary_header") {
                                 KeywordPriceTrendSummaryCard(
                                     keyword = searchQuery.text.trim(),
                                     deals = snapshotDeals,
-                                    onRegisterKeywordAlarm = { navController.navigate("keyword_alarm") }
+                                    onRegisterKeywordAlarm = { navController.navigate("keyword_alarm") },
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                                 )
                             }
                         }

@@ -22,9 +22,17 @@ vi.mock("next/link", () => ({
   default: ({
     href,
     children,
+    prefetch,
     ...rest
-  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
-    <a href={href} {...rest}>
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+    href: string;
+    prefetch?: boolean;
+  }) => (
+    <a
+      href={href}
+      data-prefetch={prefetch !== undefined ? String(prefetch) : undefined}
+      {...rest}
+    >
       {children}
     </a>
   ),
@@ -162,23 +170,25 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     // 검색이동 소형 배지 노출 확인
     expect(screen.getByText("검색이동")).toBeInTheDocument();
 
-    // 뽐뿌해외 칩 클릭 -> platform=뽐뿌해외 서버 필터 및 aria-pressed 검증
+    // 상세 필터 드로어 열기 -> 뽐뿌해외 칩 + 종료 포함 토글 선택 후 적용하기
+    fireEvent.click(screen.getByRole("button", { name: /상세 필터/ }));
     const ppomOverseasBtn = screen.getByRole("button", { name: "뽐뿌해외" });
     fireEvent.click(ppomOverseasBtn);
+    expect(ppomOverseasBtn).toHaveAttribute("aria-pressed", "true");
+
+    const includeClosedBtn = screen.getByRole("button", { name: "종료 포함" });
+    fireEvent.click(includeClosedBtn);
+    expect(includeClosedBtn).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "적용하기" }));
     await waitFor(() => {
-      expect(ppomOverseasBtn).toHaveAttribute("aria-pressed", "true");
       expect(
         hotDealCalls.some((u) => u.includes(encodeURIComponent("뽐뿌해외")))
       ).toBe(true);
-    });
-
-    // 종료 포함 토글 -> include_closed=true 파라미터 전송 검증
-    const includeClosedBtn = screen.getByRole("button", { name: "종료 포함" });
-    fireEvent.click(includeClosedBtn);
-    await waitFor(() => {
-      expect(includeClosedBtn).toHaveAttribute("aria-pressed", "true");
       expect(hotDealCalls.some((u) => u.includes("include_closed=true"))).toBe(true);
     });
+    expect(screen.getByRole("button", { name: /커뮤니티: 뽐뿌해외/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /종료 포함/ })).toBeInTheDocument();
   });
 
   it("로딩 중 스켈레톤 카드 6개(.deal-skeleton-card)를 렌더링하고, 커뮤니티·카테고리 다중 선택·재클릭 해제·전체 펼치기·필터 보존을 수행한다", async () => {
@@ -302,7 +312,8 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     });
     expect(container.querySelectorAll(".deal-skeleton-card")).toHaveLength(0);
 
-    // 2. 커뮤니티 다중 선택 (뽐뿌 + 펨코) 및 클라이언트 결과 양립 통과 검증
+    // 2. 상세 필터 드로어에서 커뮤니티 다중 선택 (뽐뿌 + 펨코) 및 일괄 적용 후 적용 칩 개별 해제 검증
+    fireEvent.click(screen.getByRole("button", { name: /상세 필터/ }));
     const ppomBtn = screen.getByRole("button", { name: "뽐뿌" });
     const fmkoreaBtn = screen.getByRole("button", { name: "펨코" });
     const allCommunityBtn = screen.getByRole("button", { name: "전체 커뮤니티" });
@@ -314,6 +325,8 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     fireEvent.click(fmkoreaBtn);
     expect(ppomBtn).toHaveAttribute("aria-pressed", "true");
     expect(fmkoreaBtn).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "적용하기" }));
 
     await waitFor(() => {
       expect(
@@ -330,33 +343,39 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     expect(removePpomFilterBtn).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /커뮤니티: 펨코/ })).toBeInTheDocument();
     fireEvent.click(removePpomFilterBtn);
-    expect(ppomBtn).toHaveAttribute("aria-pressed", "false");
-    expect(fmkoreaBtn).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => {
       expect(
         hotDealCalls.some((u) => u.includes(`platform=${encodeURIComponent("펨코")}`))
       ).toBe(true);
     });
 
-    // 3. 이미 선택된 칩 재클릭 해제 (펨코 해제 -> 전체 커뮤니티 자동 복귀)
-    fireEvent.click(fmkoreaBtn);
-    expect(fmkoreaBtn).toHaveAttribute("aria-pressed", "false");
-    expect(allCommunityBtn).toHaveAttribute("aria-pressed", "true");
+    // 3. 상세 필터 드로어 내 10종 모두 선택 시 "전체 커뮤니티"([])로 정규화 검증
+    fireEvent.click(screen.getByRole("button", { name: /상세 필터/ }));
+    const fmkoreaInDrawer = screen.getByRole("button", { name: "펨코" });
+    fireEvent.click(fmkoreaInDrawer);
+    expect(fmkoreaInDrawer).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "전체 커뮤니티" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
 
-    // 3-1. 개별 커뮤니티 10개 모두 선택 시 "전체 커뮤니티"([])로 정규화
     const individualPlatforms = PLATFORMS.filter((p) => p !== "전체");
     for (const p of individualPlatforms) {
       fireEvent.click(screen.getByRole("button", { name: p }));
     }
-    expect(allCommunityBtn).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "전체 커뮤니티" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
     for (const p of individualPlatforms) {
       expect(screen.getByRole("button", { name: p })).toHaveAttribute(
         "aria-pressed",
         "false"
       );
     }
+    fireEvent.click(screen.getByRole("button", { name: "적용하기" }));
 
-    // 4. 카테고리 다중 선택 (가전/TV + PC/하드웨어) 및 재클릭 해제 + "전체 펼치기" 검증
+    // 4. 카테고리 밑줄 탭 다중 선택 (가전/TV + PC/하드웨어) 및 재클릭 해제 검증
     const tvCatBtn = screen.getByRole("button", { name: "가전/TV" });
     const pcCatBtn = screen.getByRole("button", { name: "PC/하드웨어" });
     const allCatBtn = screen.getByRole("button", { name: "전체" });
@@ -381,22 +400,20 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     fireEvent.click(pcCatBtn);
     expect(pcCatBtn).toHaveAttribute("aria-pressed", "false");
     expect(allCatBtn).toHaveAttribute("aria-pressed", "true");
+    expect(container.querySelector(".category-underline-tabs")).not.toBeNull();
 
-    const catExpandBtn = screen.getByRole("button", { name: /전체 펼치기/ });
-    expect(catExpandBtn).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(catExpandBtn);
-    const catCollapseBtn = screen.getByRole("button", { name: /접기/ });
-    expect(catCollapseBtn).toHaveAttribute("aria-expanded", "true");
-    expect(container.querySelector(".tabs-container.expanded")).not.toBeNull();
-    expect(container.querySelector(".tabs.expanded")).not.toBeNull();
+    // 5. 뽐뿌 필터 적용 후 중앙 검색창 팝오버 인기 검색어 클릭 시 기존 커뮤니티 필터 보존 + 결과 0건 조건 완화 버튼 검증
+    fireEvent.click(screen.getByRole("button", { name: /상세 필터/ }));
+    fireEvent.click(screen.getByRole("button", { name: "뽐뿌" }));
+    fireEvent.click(screen.getByRole("button", { name: "적용하기" }));
 
-    // 5. 인기 검색어 클릭 시 기존 커뮤니티 필터 보존 + 결과 0건 조건 완화 버튼 검증
-    fireEvent.click(ppomBtn);
-    const tickerBtn = container.querySelector(".trending-ticker-left") as HTMLButtonElement;
-    expect(tickerBtn).not.toBeNull();
-    fireEvent.click(tickerBtn);
+    const searchInput = screen.getByLabelText("핫딜 검색어 입력");
+    fireEvent.focus(searchInput);
+    const popularKeywordBtn = await screen.findByRole("button", {
+      name: /제로콜라/,
+    });
+    fireEvent.click(popularKeywordBtn);
 
-    expect(ppomBtn).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => {
       expect(
         hotDealCalls.some(
@@ -598,44 +615,46 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
       expect(screen.getByText("우선로딩 테스트 상품 8")).toBeInTheDocument();
     });
 
-    // Tier 1: 헤더 구분선 및 접근성 버튼 마운트 확인
-    expect(container.querySelector(".nav-divider")).not.toBeNull();
+    // Tier 1: 1줄 헤더 + 중앙 검색창 + 찜/알림/더보기 메뉴 검증 (.live-badge 제거)
+    expect(container.querySelector(".live-badge")).toBeNull();
+    expect(container.querySelector("header.navbar .header-search-shell")).not.toBeNull();
     expect(screen.getByRole("button", { name: "내 찜 목록 열기" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "알림 내역 열기" })).toBeInTheDocument();
+    const moreMenuBtn = screen.getByRole("button", { name: "더보기 메뉴" });
+    expect(moreMenuBtn).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(moreMenuBtn);
+    expect(moreMenuBtn).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("link", { name: "키워드 알림 설정" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "기기 동기화 및 계정 연결" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "화면 테마 전환" })).toBeInTheDocument();
+    fireEvent.click(moreMenuBtn);
 
-    // Tier 2-A: sr-only h1 + 통합 검색·급상승 그리드
+    // Tier 2-A: sr-only h1 + 헤더 중앙 검색창 및 포커스 팝오버
     const heading = screen.getByRole("heading", { level: 1, name: "실시간 핫딜 모아보기" });
     expect(heading).toHaveClass("sr-only");
-    const discoveryGrid = container.querySelector(".discovery-bar-grid");
-    expect(discoveryGrid).not.toBeNull();
-    expect(discoveryGrid?.querySelector(".search-container")).not.toBeNull();
-    expect(discoveryGrid?.querySelector(".trending-ticker-wrapper")).not.toBeNull();
-    expect(
-      screen.getByPlaceholderText(
-        "주요 커뮤니티 10곳 핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
-      )
-    ).toBeInTheDocument();
+    const searchInput = screen.getByPlaceholderText(
+      "주요 커뮤니티 10곳 핫딜 검색 (예: 맥북 -파우치, 콜라 :15000)"
+    );
+    expect(searchInput).toBeInTheDocument();
+    fireEvent.focus(searchInput);
+    expect(screen.getByText("실시간 인기 검색어 TOP 10")).toBeInTheDocument();
 
-    // Tier 2-B: 출처/카테고리 라벨 도크 및 .platform-chip / .tab 분리 렌더
-    const dock = container.querySelector(".filter-scope-dock");
-    expect(dock).not.toBeNull();
-    expect(screen.getByText("출처")).toBeInTheDocument();
-    expect(screen.getByText("카테고리")).toBeInTheDocument();
-    expect(dock?.querySelectorAll(".platform-chip").length).toBe(11);
-    expect(dock?.querySelectorAll(".tab").length).toBe(16);
+    // Tier 2-B: 카테고리 밑줄 탭 + 우측 2버튼(인기 딜만 · 상세 필터)
+    const categoryBar = container.querySelector(".category-action-bar");
+    expect(categoryBar).not.toBeNull();
+    expect(categoryBar?.querySelectorAll(".category-underline-tab").length).toBe(16);
+    expect(screen.getByRole("button", { name: "인기 딜만" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /상세 필터/ })).toBeInTheDocument();
 
-    // Tier 3: .feed-control-toolbar가 .filter-scope-dock 뒤, .deal-list 직상단에 위치
-    const toolbar = container.querySelector(".feed-control-toolbar");
+    // Tier 3: .feed-header-bar가 .category-action-bar 뒤, .deal-list 직상단에 위치
+    const feedHeader = container.querySelector(".feed-header-bar");
     const dealList = container.querySelector(".deal-list");
-    expect(toolbar).not.toBeNull();
+    expect(feedHeader).not.toBeNull();
     expect(dealList).not.toBeNull();
     expect(
-      toolbar!.compareDocumentPosition(dealList!) & Node.DOCUMENT_POSITION_FOLLOWING
+      feedHeader!.compareDocumentPosition(dealList!) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
-    expect(toolbar?.querySelector('[aria-label="정렬 기준"]')).not.toBeNull();
+    expect(feedHeader?.querySelector('[aria-label="정렬 기준"]')).not.toBeNull();
 
     // 상위 6개 카드 eager + fetchpriority="high", 7번째 이후 lazy
     for (let i = 1; i <= 8; i++) {
@@ -952,7 +971,9 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     try {
       render(<Home />);
       await waitFor(() => {
-        expect(screen.getByRole("heading", { level: 2, name: "실시간 핫딜 목록" })).toHaveClass("sr-only");
+        expect(screen.getByRole("heading", { level: 2, name: /실시간 핫딜/ })).toHaveClass(
+          "feed-header-title"
+        );
       });
       expect(
         screen.getByPlaceholderText("핫딜 검색 (맥북 -파우치, :15000)")
@@ -1069,10 +1090,14 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
         )
       ).toBe(true);
     });
-    const platformExpandBtn = screen.getByRole("button", { name: /출처 더보기/ });
-    fireEvent.click(platformExpandBtn);
-    expect(container.querySelector(".platform-chips-row.expanded")).not.toBeNull();
-    expect(screen.getByRole("button", { name: /출처 접기/ })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: /커뮤니티: 뽐뿌/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /상세 필터/ }));
+    expect(screen.getByRole("button", { name: "뽐뿌" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    fireEvent.click(screen.getByRole("button", { name: "상세 필터 닫기" }));
+    void container;
 
     // 4. DealDetailModal 딥링크 진입 시 history.back() 오발동 차단 & 닫기 시 URL dealId 제거
     const backSpy = vi.spyOn(window.history, "back").mockImplementation(() => {});

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import {
   API_BASE_URL,
@@ -15,11 +15,15 @@ import {
   type WebPushSupportStatus,
 } from '../../lib/utils';
 import {
+  appendTossDebugQuery,
+  isTossMiniAppEnv,
   logTossScreen,
   logTossClick,
   maybeRequestTossReview,
   copyTextSafe,
 } from '../../lib/tossBridge';
+
+const subscribeNoop = () => () => {};
 
 interface Keyword {
   id: string;
@@ -110,6 +114,14 @@ function serializeWeekdayWeekendDnd(
 }
 
 export default function NotificationSettingsPage() {
+  const [isTossMiniApp, setIsTossMiniApp] = useState(
+    () => process.env.NEXT_PUBLIC_TOSS_MINIAPP === 'true'
+  );
+  const homeHref = useSyncExternalStore(
+    subscribeNoop,
+    () => appendTossDebugQuery('/'),
+    () => '/'
+  );
   const [supportStatus, setSupportStatus] =
     useState<WebPushSupportStatus>('unsupported');
   const [permission, setPermission] =
@@ -239,6 +251,14 @@ export default function NotificationSettingsPage() {
   }, []);
 
   useEffect(() => {
+    // 토스 미니앱 호스트(런타임 브릿지·UA·도메인·디버그 쿼리) 여부를 클라이언트 마운트 후 안전하게 판별
+    const urlParams =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search)
+        : null;
+    if (isTossMiniAppEnv() || urlParams?.get('toss') === '1') {
+      setIsTossMiniApp(true);
+    }
     logTossScreen('keyword_settings_view');
     const status = getWebPushSupportStatus();
     setSupportStatus(status);
@@ -730,28 +750,32 @@ export default function NotificationSettingsPage() {
     >
       <div style={{ maxWidth: '760px', margin: '0 auto' }}>
         <header style={{ marginBottom: '28px', textAlign: 'left' }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '16px' }}>
-            <Link
-              href="/"
-              className="bounce-click"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                minHeight: '44px',
-                gap: '6px',
-                padding: '8px 14px',
-                borderRadius: '10px',
-                background: 'var(--card-bg)',
-                border: '1px solid var(--card-border)',
-                color: 'var(--text-main)',
-                fontSize: '0.88rem',
-                fontWeight: 700,
-                textDecoration: 'none',
-              }}
-            >
-              ← 홈으로 돌아가기
-            </Link>
-          </div>
+          {!isTossMiniApp && (
+            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '16px' }}>
+              {/* 정적 export 환경에서 RSC prefetch 404 방지 */}
+              <Link
+                href={homeHref}
+                prefetch={false}
+                className="bounce-click"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  minHeight: '44px',
+                  gap: '6px',
+                  padding: '8px 14px',
+                  borderRadius: '10px',
+                  background: 'var(--card-bg)',
+                  border: '1px solid var(--card-border)',
+                  color: 'var(--text-main)',
+                  fontSize: '0.88rem',
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                }}
+              >
+                ← 홈으로 돌아가기
+              </Link>
+            </div>
+          )}
           <h1
             style={{
               fontSize: '1.85rem',

@@ -3213,3 +3213,26 @@ export function getDealAgeDays(
   const diffMs = Math.max(0, nowMs - ts);
   return Math.floor(diffMs / 86_400_000);
 }
+
+/**
+ * 최소·최대 가격 입력값을 숫자만으로 정제하고, min > max 역전 시 자동으로 교정(swap)합니다.
+ */
+export function normalizePriceRange(
+  rawMin: string,
+  rawMax: string
+): { minPrice: string; maxPrice: string; swapped: boolean } {
+  let cleanMin = rawMin.replace(/[^0-9]/g, "");
+  let cleanMax = rawMax.replace(/[^0-9]/g, "");
+  let swapped = false;
+
+  if (cleanMin && cleanMax) {
+    const minVal = Number(cleanMin);
+    const maxVal = Number(cleanMax);
+    if (Number.isFinite(minVal) && Number.isFinite(maxVal) && minVal > maxVal) {
+      [cleanMin, cleanMax] = [cleanMax, cleanMin];
+      swapped = true;
+    }
+  }
+
+  return { minPrice: cleanMin, maxPrice: cleanMax, swapped };
+}

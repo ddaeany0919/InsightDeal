@@ -10,9 +10,17 @@ vi.mock("next/link", () => ({
   default: ({
     href,
     children,
+    prefetch,
     ...rest
-  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
-    <a href={href} {...rest}>
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+    href: string;
+    prefetch?: boolean;
+  }) => (
+    <a
+      href={href}
+      data-prefetch={prefetch !== undefined ? String(prefetch) : undefined}
+      {...rest}
+    >
       {children}
     </a>
   ),
@@ -262,5 +270,8 @@ describe("P1 상세모달·라이트박스·품절제보·다기기동기화·�
 
     expect(await screen.findByText("타기기 목표가 상품")).toBeInTheDocument();
     expect(screen.getByText("25,000원 이하")).toBeInTheDocument();
+    const drawerSettingsLink = screen.getByRole("link", { name: /키워드 알림 설정하기/ });
+    expect(drawerSettingsLink).toHaveAttribute("href", "/settings/notifications");
+    expect(drawerSettingsLink).toHaveAttribute("data-prefetch", "false");
   });
 });

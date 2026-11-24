@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useId, useCallback } from "react";
+import React, { useEffect, useState, useRef, useId, useCallback, useSyncExternalStore } from "react";
 import { Bell, CheckCheck, Trash2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import type { Deal, NotificationLogItem, WishlistApiItem } from "../lib/types";
@@ -13,8 +13,10 @@ import {
   isSafeHttpUrl,
   loadWishlistIdMap,
 } from "../lib/utils";
-import { openExternalUrlInToss } from "../lib/tossBridge";
+import { appendTossDebugQuery, openExternalUrlInToss } from "../lib/tossBridge";
 import { useDialogA11y } from "../lib/useDialogA11y";
+
+const subscribeNoop = () => () => {};
 
 interface NotificationDrawerProps {
   isOpen: boolean;
@@ -90,6 +92,11 @@ export default function NotificationDrawer({
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const onCountChangeRef = useRef(onServerAlertCountChange);
+  const settingsHref = useSyncExternalStore(
+    subscribeNoop,
+    () => appendTossDebugQuery("/settings/notifications"),
+    () => "/settings/notifications"
+  );
 
   useEffect(() => {
     onCountChangeRef.current = onServerAlertCountChange;
@@ -692,7 +699,13 @@ export default function NotificationDrawer({
           )}
         </div>
 
-        <Link href="/settings/notifications" onClick={onClose} style={{ textDecoration: "none" }}>
+        {/* 정적 export 환경에서 존재하지 않는 RSC payload(__next.*.txt) 404 방지 */}
+        <Link
+          href={settingsHref}
+          prefetch={false}
+          onClick={onClose}
+          style={{ textDecoration: "none" }}
+        >
           <div
             style={{
               marginTop: "12px",
