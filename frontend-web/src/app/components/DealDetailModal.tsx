@@ -2724,8 +2724,8 @@ export default function DealDetailModal({
             aria-label="유사한 핫딜 추천"
             style={{
               padding: '12px 20px 14px',
-              borderTop: '1px solid var(--border-subtle, rgba(148,163,184,0.18))',
-              background: 'var(--bg-subtle, rgba(148,163,184,0.06))',
+              borderTop: '1px solid var(--card-border)',
+              background: 'var(--surface-subtle)',
             }}
           >
             <div
@@ -2733,14 +2733,14 @@ export default function DealDetailModal({
                 fontSize: '13px',
                 fontWeight: 700,
                 marginBottom: '8px',
-                color: 'var(--text-primary)',
+                color: 'var(--text-main)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
               }}
             >
               <span>비슷한 커뮤니티 핫딜</span>
-              <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+              <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-sub)' }}>
                 {similarDeals.length}건
               </span>
             </div>
@@ -2766,9 +2766,10 @@ export default function DealDetailModal({
                       alignItems: 'flex-start',
                       gap: '4px',
                       padding: '10px 12px',
-                      borderRadius: '10px',
-                      border: '1px solid var(--border-subtle, rgba(148,163,184,0.22))',
-                      background: 'var(--bg-card, var(--surface-card, #ffffff))',
+                      borderRadius: '12px',
+                      border: '1px solid var(--card-border)',
+                      background: 'var(--card-bg)',
+                      color: 'var(--text-main)',
                       textAlign: 'left',
                       cursor: onSelectRelatedDeal ? 'pointer' : 'default',
                       opacity: sd.isClosed ? 0.65 : 1,
@@ -2778,7 +2779,7 @@ export default function DealDetailModal({
                       style={{
                         fontSize: '12px',
                         fontWeight: 600,
-                        color: 'var(--text-primary)',
+                        color: 'var(--text-main)',
                         lineHeight: 1.35,
                         display: '-webkit-box',
                         WebkitLineClamp: 2,
@@ -2795,11 +2796,11 @@ export default function DealDetailModal({
                         alignItems: 'center',
                         gap: '6px',
                         fontSize: '11px',
-                        color: 'var(--text-secondary)',
+                        color: 'var(--text-sub)',
                         flexWrap: 'wrap',
                       }}
                     >
-                      <strong style={{ color: 'var(--accent-primary, #059669)', fontSize: '12px' }}>
+                      <strong style={{ color: 'var(--accent)', fontSize: '12px' }}>
                         {priceLabel}
                       </strong>
                       <span>· {sd.shop_name || sd.community_name}</span>

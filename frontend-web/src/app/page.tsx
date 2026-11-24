@@ -3057,7 +3057,7 @@ export default function Home() {
 
   return (
     <>
-      {newDealsCount > 0 && (
+      {newDealsCount > 0 && !selectedDeal && (
         <button
           type="button"
           onClick={handleScrollToTopAndRefresh}

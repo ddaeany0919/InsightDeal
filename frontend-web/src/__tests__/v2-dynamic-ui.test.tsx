@@ -327,4 +327,56 @@ describe("v2.0 Dynamic Commerce UI 모션·스크롤 헤더·모바일 엄지 �
     expect(screen.getByText("가격 추이 (4건)")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "상세 모달 닫기" })).toBeInTheDocument();
   });
+
+  it("DealDetailModal의 비슷한 커뮤니티 핫딜 카드는 다크/AMOLED 대응 테마 CSS 변수를 사용하고 흰색 하드코딩을 피한다", async () => {
+    localStorage.setItem("insightdeal_web_device_uuid", "web_v2_similar");
+    localStorage.setItem("insightdeal_web_device_token", "tok_v2_similar");
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 2005,
+          title: "[쿠팡] 유사 딜 가독성 테스트",
+          price: 19900,
+          currency: "KRW",
+          site_name: "뽐뿌",
+          content_html: "<p>유사 딜 테스트</p>",
+          history_count: 1,
+          is_closed: false,
+          similar_deals: [
+            {
+              id: 2099,
+              title: "켈로그 첵스초코 딸기 크런치 350g",
+              price: 3640,
+              currency: "KRW",
+              shop_name: "쿠팡",
+              site_name: "펨코",
+              is_closed: false,
+              is_free: false,
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+
+    render(
+      <DealDetailModal
+        deal={buildDeal(2005, { title: "[쿠팡] 유사 딜 가독성 테스트", price: "19900" })}
+        onClose={vi.fn()}
+        showToast={vi.fn()}
+      />
+    );
+
+    const similarSection = await screen.findByLabelText("유사한 핫딜 추천");
+    const similarBtn = screen.getByRole("button", {
+      name: /켈로그 첵스초코 딸기 크런치 350g/,
+    });
+    expect(similarSection.style.background).toContain("var(--surface-subtle)");
+    expect(similarBtn.style.background).toBe("var(--card-bg)");
+    expect(similarBtn.style.color).toBe("var(--text-main)");
+    expect(similarBtn.getAttribute("style")).not.toContain("#ffffff");
+    const similarTitle = screen.getByText("켈로그 첵스초코 딸기 크런치 350g");
+    expect(similarTitle.style.color).toBe("var(--text-main)");
+  });
 });

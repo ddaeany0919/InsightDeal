@@ -996,7 +996,7 @@ body {
   top: calc(64px + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 2500;
+  z-index: 1050;
   min-height: 44px;
   background: #191f28;
   color: #ffffff;
