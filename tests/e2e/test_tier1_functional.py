@@ -52,7 +52,7 @@ class TestTier1FunctionalCoverage:
             assert mock_get.called
             call_args, call_kwargs = mock_get.call_args
             called_relay_url = call_args[0]
-            assert "https://insightdeal.vercel.app/api/scraper-relay" in called_relay_url
+            assert "https://eolmande.pages.dev/api/scraper-relay" in called_relay_url
             assert "ppomppu" in called_relay_url
             assert result_html == expected_full_html
             assert len(result_html) >= 500
