@@ -23,10 +23,26 @@ IS_CLOUD_ENV = bool(
     or os.environ.get("RUN_IN_CLOUD") == "true"
 )
 
+DEFAULT_SCRAPER_RELAY_URL = "https://eolmande.pages.dev/api/scraper-relay"
+
 SCRAPER_RELAY_URL = os.environ.get(
     "SCRAPER_RELAY_URL",
-    "https://insightdeal.vercel.app/api/scraper-relay",
-).strip() or "https://insightdeal.vercel.app/api/scraper-relay"
+    DEFAULT_SCRAPER_RELAY_URL,
+).strip() or DEFAULT_SCRAPER_RELAY_URL
+
+
+def get_scraper_relay_urls() -> list[str]:
+    """다중 릴레이 환경변수(SCRAPER_RELAY_URLS) 또는 단일 릴레이(SCRAPER_RELAY_URL) 목록 반환."""
+    multi_raw = os.environ.get("SCRAPER_RELAY_URLS", "").strip()
+    if multi_raw:
+        urls = [u.strip().rstrip("/") for u in multi_raw.split(",") if u.strip()]
+        if urls:
+            return list(dict.fromkeys(urls))
+    single = (
+        os.environ.get("SCRAPER_RELAY_URL", SCRAPER_RELAY_URL).strip()
+        or DEFAULT_SCRAPER_RELAY_URL
+    ).rstrip("/")
+    return [single]
 
 # 에펨코리아 WebAssembly(fm5/fm6/lite_year) 보안 챌린지 통과 쿠키 전역 캐시
 _FMKOREA_WASM_COOKIES: dict[str, str] = {}
@@ -55,6 +71,7 @@ def _default_breaker_state() -> dict:
         "global_reason": "",
         "consecutive_503": 0,
         "host_scopes": {},
+        "relay_states": {},
     }
 
 
@@ -99,6 +116,8 @@ def _load_breaker_state() -> dict:
                 state["consecutive_503"] = int(raw.get("consecutive_503") or 0)
                 if isinstance(raw.get("host_scopes"), dict):
                     state["host_scopes"] = dict(raw["host_scopes"])
+                if isinstance(raw.get("relay_states"), dict):
+                    state["relay_states"] = dict(raw["relay_states"])
         except Exception:
             pass
 
@@ -139,8 +158,68 @@ def _classify_relay_scope(url: str) -> tuple[str, str]:
     return host, scope
 
 
-def is_relay_blocked(url: str, now_ts: Optional[float] = None) -> tuple[bool, str]:
-    """릴레이 회로 차단 여부 확인 (env 비활성화, 402/429/503 글로벌 차단, 도메인::스코프 403 쿨다운)."""
+def _update_scope_breaker(bucket: dict, url: str, status_code: int, now: float) -> bool:
+    """글로벌 또는 개별 릴레이 버킷의 402/429/503/403 회로 차단 상태 갱신."""
+    host, scope = _classify_relay_scope(url)
+    scope_key = f"{host}::{scope}"
+    host_scopes = dict(bucket.get("host_scopes") or {})
+    changed = False
+
+    if status_code in (402, 429):
+        bucket["paused_until"] = now + 3600.0
+        if "global_paused_until" in bucket:
+            bucket["global_paused_until"] = now + 3600.0
+            bucket["global_reason"] = f"http_{status_code}"
+        else:
+            bucket["reason"] = f"http_{status_code}"
+        bucket["consecutive_503"] = 0
+        changed = True
+    elif status_code == 503:
+        cnt_503 = int(bucket.get("consecutive_503") or 0) + 1
+        bucket["consecutive_503"] = cnt_503
+        if cnt_503 >= 3:
+            bucket["paused_until"] = now + 600.0
+            if "global_paused_until" in bucket:
+                bucket["global_paused_until"] = now + 600.0
+                bucket["global_reason"] = "http_503"
+            else:
+                bucket["reason"] = "http_503"
+        changed = True
+    elif status_code == 403:
+        cur = dict(host_scopes.get(scope_key) or {})
+        cnt_403 = int(cur.get("consecutive_403") or 0) + 1
+        cur["consecutive_403"] = cnt_403
+        if scope in ("detail", "list") and cnt_403 >= 3:
+            cur["cooldown_until"] = now + 1800.0
+        host_scopes[scope_key] = cur
+        bucket["host_scopes"] = host_scopes
+        changed = True
+    elif status_code == 200:
+        if int(bucket.get("consecutive_503") or 0) != 0:
+            bucket["consecutive_503"] = 0
+            changed = True
+        if float(bucket.get("global_paused_until") or 0.0) > 0.0:
+            bucket["global_paused_until"] = 0.0
+            bucket["global_reason"] = ""
+            changed = True
+        if float(bucket.get("paused_until") or 0.0) > 0.0:
+            bucket["paused_until"] = 0.0
+            bucket["reason"] = ""
+            changed = True
+        cur = host_scopes.get(scope_key)
+        if isinstance(cur, dict) and (
+            int(cur.get("consecutive_403") or 0) != 0 or float(cur.get("cooldown_until") or 0.0) > 0.0
+        ):
+            host_scopes[scope_key] = {"consecutive_403": 0, "cooldown_until": 0.0}
+            bucket["host_scopes"] = host_scopes
+            changed = True
+    return changed
+
+
+def is_relay_blocked(
+    url: str, now_ts: Optional[float] = None, relay_url: Optional[str] = None
+) -> tuple[bool, str]:
+    """릴레이 회로 차단 여부 확인 (env 비활성화, 402/429/503 글로벌 또는 릴레이별 차단, 도메인::스코프 403 쿨다운)."""
     if os.environ.get("SCRAPER_RELAY_ENABLED", "true").strip().lower() in ("0", "false", "no", "off"):
         return True, "disabled_by_env"
 
@@ -152,6 +231,18 @@ def is_relay_blocked(url: str, now_ts: Optional[float] = None) -> tuple[bool, st
 
     host, scope = _classify_relay_scope(url)
     scope_key = f"{host}::{scope}"
+
+    if relay_url:
+        relay_key = relay_url.strip().rstrip("/")
+        r_state = (state.get("relay_states") or {}).get(relay_key)
+        if isinstance(r_state, dict):
+            if float(r_state.get("paused_until") or 0.0) > now:
+                return True, str(r_state.get("reason") or "relay_paused")
+            r_entry = (r_state.get("host_scopes") or {}).get(scope_key)
+            if isinstance(r_entry, dict) and float(r_entry.get("cooldown_until") or 0.0) > now:
+                return True, "host_403_cooldown"
+        return False, ""
+
     entry = state.get("host_scopes", {}).get(scope_key)
     if isinstance(entry, dict) and float(entry.get("cooldown_until") or 0.0) > now:
         return True, "host_403_cooldown"
@@ -159,53 +250,29 @@ def is_relay_blocked(url: str, now_ts: Optional[float] = None) -> tuple[bool, st
     return False, ""
 
 
-def record_relay_status(url: str, status_code: int, now_ts: Optional[float] = None) -> None:
-    """릴레이 HTTP 응답 상태에 따라 글로벌/도메인별 회로 차단 상태를 디스크에 기록."""
+def record_relay_status(
+    url: str, status_code: int, now_ts: Optional[float] = None, relay_url: Optional[str] = None
+) -> None:
+    """릴레이 HTTP 응답 상태에 따라 글로벌 또는 릴레이별 회로 차단 상태를 디스크에 기록."""
     now = time.time() if now_ts is None else float(now_ts)
     state = _load_breaker_state()
-    host, scope = _classify_relay_scope(url)
-    scope_key = f"{host}::{scope}"
-    host_scopes = dict(state.get("host_scopes") or {})
-    changed = False
 
-    if status_code in (402, 429):
-        state["global_paused_until"] = now + 3600.0
-        state["global_reason"] = f"http_{status_code}"
-        state["consecutive_503"] = 0
-        changed = True
-    elif status_code == 503:
-        cnt_503 = int(state.get("consecutive_503") or 0) + 1
-        state["consecutive_503"] = cnt_503
-        if cnt_503 >= 3:
-            state["global_paused_until"] = now + 600.0
-            state["global_reason"] = "http_503"
-        changed = True
-    elif status_code == 403:
-        cur = dict(host_scopes.get(scope_key) or {})
-        cnt_403 = int(cur.get("consecutive_403") or 0) + 1
-        cur["consecutive_403"] = cnt_403
-        if scope in ("detail", "list") and cnt_403 >= 3:
-            cur["cooldown_until"] = now + 1800.0
-        host_scopes[scope_key] = cur
-        state["host_scopes"] = host_scopes
-        changed = True
-    elif status_code == 200:
-        if int(state.get("consecutive_503") or 0) != 0:
-            state["consecutive_503"] = 0
-            changed = True
-        if float(state.get("global_paused_until") or 0.0) > 0.0:
-            state["global_paused_until"] = 0.0
-            state["global_reason"] = ""
-            changed = True
-        cur = host_scopes.get(scope_key)
-        if isinstance(cur, dict) and (
-            int(cur.get("consecutive_403") or 0) != 0 or float(cur.get("cooldown_until") or 0.0) > 0.0
-        ):
-            host_scopes[scope_key] = {"consecutive_403": 0, "cooldown_until": 0.0}
-            state["host_scopes"] = host_scopes
-            changed = True
+    if relay_url:
+        relay_key = relay_url.strip().rstrip("/")
+        relay_states = dict(state.get("relay_states") or {})
+        r_bucket = dict(relay_states.get(relay_key) or {
+            "paused_until": 0.0,
+            "reason": "",
+            "consecutive_503": 0,
+            "host_scopes": {},
+        })
+        if _update_scope_breaker(r_bucket, url, status_code, now):
+            relay_states[relay_key] = r_bucket
+            state["relay_states"] = relay_states
+            _save_breaker_state(state)
+        return
 
-    if changed:
+    if _update_scope_breaker(state, url, status_code, now):
         _save_breaker_state(state)
 
 
@@ -509,86 +576,105 @@ class AsyncBaseScraper(ABC):
         return None
 
     async def _fetch_via_seoul_relay(self, url: str) -> Optional[str]:
-        """미국(GCP us-central1) 서버 IP 차단 시 서울 리전 릴레이를 통해 한국 커뮤니티 HTML 페칭 (회로 차단기 내장)"""
+        """미국(GCP us-central1) 서버 IP 차단 시 다중 릴레이 페일오버로 한국 커뮤니티 HTML 페칭 (릴레이별/글로벌 회로 차단기 내장)"""
         try:
             import re
             from urllib.parse import quote
 
-            blocked, reason = is_relay_blocked(url)
-            if blocked and (
-                reason in ("disabled_by_env", "http_402", "http_429", "http_503", "global_paused")
-            ):
-                if reason not in _LOGGED_BREAKER_KEYS:
-                    _LOGGED_BREAKER_KEYS.add(reason)
-                    logger.warning(f"⛔ [{self.platform_name}] 서울 릴레이 회로 차단 활성({reason}) - 릴레이 호출 건너뜀")
-                return None
-
-            relay_base = (
-                os.environ.get("SCRAPER_RELAY_URL", SCRAPER_RELAY_URL).strip()
-                or "https://insightdeal.vercel.app/api/scraper-relay"
-            ).rstrip("/")
-            relay_url = f"{relay_base}?url={quote(url, safe='')}"
+            relay_urls = get_scraper_relay_urls()
+            is_multi_relay = len(relay_urls) > 1
             relay_timeout = 10.0 if IS_CLOUD_ENV else 15.0
+            cf_blocked_signals = [
+                "Attention Required! | Cloudflare",
+                "Just a moment...",
+                "cf-browser-verification",
+                "Ray ID:",
+                "Cloudflare Ray ID",
+                "cf-turnstile",
+            ]
 
             async with httpx.AsyncClient(timeout=relay_timeout, follow_redirects=True) as client:
-                if not blocked:
-                    relay_headers = build_scraper_relay_headers(url)
-                    res = await client.get(relay_url, headers=relay_headers or None)
-                    record_relay_status(url, res.status_code)
+                for relay_base in relay_urls:
+                    scope_relay_arg = relay_base if is_multi_relay else None
+                    blocked, reason = is_relay_blocked(url, relay_url=scope_relay_arg)
+                    if blocked and (
+                        reason in ("disabled_by_env", "http_402", "http_429", "http_503", "global_paused", "relay_paused")
+                    ):
+                        log_k = f"{relay_base}::{reason}" if is_multi_relay else reason
+                        if log_k not in _LOGGED_BREAKER_KEYS:
+                            _LOGGED_BREAKER_KEYS.add(log_k)
+                            logger.warning(f"⛔ [{self.platform_name}] 서울 릴레이 회로 차단 활성({reason}) - 릴레이 호출 건너뜀 ({relay_base})")
+                        if reason == "disabled_by_env":
+                            return None
+                        continue
 
-                    if res.status_code in (402, 429):
-                        _LOGGED_BREAKER_KEYS.add(f"http_{res.status_code}")
-                        logger.warning(
-                            f"⛔ [{self.platform_name}] 서울 릴레이 HTTP {res.status_code} 감지 -> 글로벌 릴레이 60분 회로 차단 발동: {url}"
-                        )
-                        return None
-                    if res.status_code in (401, 403, 503):
-                        logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 릴레이 인증/설정 오류 (HTTP {res.status_code}): {url}")
-                    if res.status_code == 200 and len(res.text) > 500:
-                        cf_blocked_signals = ["Attention Required! | Cloudflare", "Just a moment...", "cf-browser-verification", "Ray ID:", "Cloudflare Ray ID", "cf-turnstile"]
-                        is_cf_blocked = any(sig in res.text for sig in cf_blocked_signals)
-                        if not is_cf_blocked:
-                            logger.info(f"🌐 [{self.platform_name}] 서울 리전 릴레이 우회 페칭 성공: {url}")
-                            return res.text
-                        else:
-                            logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 릴레이 응답에 Cloudflare 차단 시그니처 감지: {url}")
-                else:
-                    host, scope = _classify_relay_scope(url)
-                    cd_key = f"{host}::{scope}::{reason}"
-                    if cd_key not in _LOGGED_BREAKER_KEYS:
-                        _LOGGED_BREAKER_KEYS.add(cd_key)
-                        logger.info(f"⏳ [{self.platform_name}] 서울 릴레이 {host}({scope}) 쿨다운({reason}) - 직접 호출 생략")
+                    if not blocked:
+                        relay_url = f"{relay_base}?url={quote(url, safe='')}"
+                        try:
+                            relay_headers = build_scraper_relay_headers(url)
+                            res = await client.get(relay_url, headers=relay_headers or None)
+                            record_relay_status(url, res.status_code, relay_url=scope_relay_arg)
 
-                if "ppomppu.co.kr/zboard/zboard.php" in url and "page=" not in url:
-                    m_id = re.search(r"id=([a-zA-Z0-9_]+)", url)
-                    board_id = m_id.group(1) if m_id else "ppomppu"
-                    rss_target = f"https://www.ppomppu.co.kr/rss.php?id={board_id}"
-                    rss_blocked, _ = is_relay_blocked(rss_target)
-                    if rss_blocked:
-                        return None
-                    rss_relay = f"{relay_base}?url={quote(rss_target, safe='')}"
-                    rss_headers = build_scraper_relay_headers(rss_target)
-                    rss_res = await client.get(rss_relay, headers=rss_headers or None)
-                    record_relay_status(rss_target, rss_res.status_code)
-                    if rss_res.status_code in (402, 429):
-                        _LOGGED_BREAKER_KEYS.add(f"http_{rss_res.status_code}")
-                        logger.warning(
-                            f"⛔ [{self.platform_name}] 서울 RSS 릴레이 HTTP {rss_res.status_code} 감지 -> 글로벌 릴레이 60분 회로 차단 발동"
-                        )
-                        return None
-                    if rss_res.status_code in (401, 403, 503):
-                        logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 RSS 릴레이 인증/설정 오류 (HTTP {rss_res.status_code}): {rss_target}")
-                    if rss_res.status_code == 200 and "<item>" in rss_res.text:
-                        logger.info(f"🌐 [{self.platform_name}] 서울 리전 RSS 릴레이 우회 페칭 성공: {rss_target}")
-                        return rss_res.text
+                            if res.status_code in (402, 429):
+                                log_k = f"{relay_base}::http_{res.status_code}" if is_multi_relay else f"http_{res.status_code}"
+                                _LOGGED_BREAKER_KEYS.add(log_k)
+                                logger.warning(
+                                    f"⛔ [{self.platform_name}] 서울 릴레이 HTTP {res.status_code} 감지 ({relay_base}) -> 60분 회로 차단 발동: {url}"
+                                )
+                                continue
+                            if res.status_code in (401, 403, 503):
+                                logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 릴레이 인증/설정 오류 (HTTP {res.status_code}, {relay_base}): {url}")
+                            if res.status_code == 200 and len(res.text) > 500:
+                                is_cf_blocked = any(sig in res.text for sig in cf_blocked_signals)
+                                if not is_cf_blocked:
+                                    logger.info(f"🌐 [{self.platform_name}] 서울 리전 릴레이 우회 페칭 성공: {url}")
+                                    return res.text
+                                logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 릴레이 응답에 Cloudflare 차단 시그니처 감지: {url}")
+                        except Exception as single_err:
+                            logger.warning(f"⚠️ [{self.platform_name}] 릴레이 요청 실패 ({relay_base}): {single_err}")
+                            continue
+                    else:
+                        host, scope = _classify_relay_scope(url)
+                        cd_key = f"{relay_base}::{host}::{scope}::{reason}" if is_multi_relay else f"{host}::{scope}::{reason}"
+                        if cd_key not in _LOGGED_BREAKER_KEYS:
+                            _LOGGED_BREAKER_KEYS.add(cd_key)
+                            logger.info(f"⏳ [{self.platform_name}] 서울 릴레이 {host}({scope}) 쿨다운({reason}) - 직접 호출 생략")
+
+                    if "ppomppu.co.kr/zboard/zboard.php" in url and "page=" not in url:
+                        m_id = re.search(r"id=([a-zA-Z0-9_]+)", url)
+                        board_id = m_id.group(1) if m_id else "ppomppu"
+                        rss_target = f"https://www.ppomppu.co.kr/rss.php?id={board_id}"
+                        rss_blocked, _ = is_relay_blocked(rss_target, relay_url=scope_relay_arg)
+                        if rss_blocked:
+                            continue
+                        rss_relay = f"{relay_base}?url={quote(rss_target, safe='')}"
+                        try:
+                            rss_headers = build_scraper_relay_headers(rss_target)
+                            rss_res = await client.get(rss_relay, headers=rss_headers or None)
+                            record_relay_status(rss_target, rss_res.status_code, relay_url=scope_relay_arg)
+                            if rss_res.status_code in (402, 429):
+                                log_k = f"{relay_base}::http_{rss_res.status_code}" if is_multi_relay else f"http_{rss_res.status_code}"
+                                _LOGGED_BREAKER_KEYS.add(log_k)
+                                logger.warning(
+                                    f"⛔ [{self.platform_name}] 서울 RSS 릴레이 HTTP {rss_res.status_code} 감지 ({relay_base}) -> 60분 회로 차단 발동"
+                                )
+                                continue
+                            if rss_res.status_code in (401, 403, 503):
+                                logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 RSS 릴레이 인증/설정 오류 (HTTP {rss_res.status_code}): {rss_target}")
+                            if rss_res.status_code == 200 and "<item>" in rss_res.text:
+                                logger.info(f"🌐 [{self.platform_name}] 서울 리전 RSS 릴레이 우회 페칭 성공: {rss_target}")
+                                return rss_res.text
+                        except Exception as rss_re_err:
+                            logger.warning(f"⚠️ [{self.platform_name}] RSS 릴레이 요청 실패 ({relay_base}): {rss_re_err}")
+                            continue
         except Exception as re_err:
             logger.warning(f"⚠️ [{self.platform_name}] 서울 리전 릴레이 페칭 실패 ({url}): {re_err}")
         return None
 
     async def fetch_og_image(self, url: str = "", fallback_title: str = "") -> Optional[str]:
-        """외부 쇼핑몰 URL의 og:image 메타 태그를 파싱하여 고화질 대표 이미지 획득 (차단/무링크 시 상품명 기반 검색 폴백 완비)"""
+        """외부 쇼핑몰 URL의 정적 CDN 또는 og:image 메타 태그만 파싱 (웹검색 기반 엉뚱한 이미지 추측 전면 배제)."""
         import re
-        from urllib.parse import urljoin, quote
+        from urllib.parse import urljoin
 
         def _is_valid_product_img(candidate_url: str) -> bool:
             if not candidate_url or not candidate_url.startswith('http'):
@@ -669,99 +755,7 @@ class AsyncBaseScraper(ABC):
                 except Exception as e:
                     logger.warning(f"⚠️ [og:image] 외부 쇼핑몰 이미지 파싱 실패 ({target_url}): {e}")
 
-        # 3. 쇼핑몰 403/타임아웃(옥션 등) 또는 본문 내 사진/쇼핑몰 링크가 없는 텍스트 게시글인 경우:
-        #    스크래핑 시점에 상품 제목(fallback_title)으로 실시간 상품 이미지를 즉시 확보하여 누락 제로화!
-        #    (클라우드 GCP IP에서도 100% 동작하는 네이버 썸네일 CDN -> 다음 카카오 CDN -> 빙 이미지 3중 폴백)
-        if fallback_title and fallback_title.strip():
-            try:
-                from urllib.parse import unquote
-                clean_q = re.sub(r'^\[[^\]]+\]\s*', '', fallback_title.strip())
-                clean_q = re.sub(r'\([^)]*(?:원|무료|무배|배송|쿠폰|할인|적립|최대|\$|달러|불|유로|€)[^)]*\)', ' ', clean_q)
-                clean_q = re.sub(r'(?:[0-9,]+\s*원|\$\s*[0-9,.]+|[0-9,.]+\s*(?:만\s*원?|달러|불|유로|€))', ' ', clean_q)
-                clean_q = re.sub(r'(?:무료배송|무배|배송비|특가|할인|핫딜|역대가|초특가)', ' ', clean_q)
-                clean_q = re.sub(r'\s+', ' ', clean_q).strip()
-                first_part = re.split(r'[,/]', clean_q)[0].strip()
-                short_q = " ".join(first_part.split()[:3]).strip()
-                query_candidates = [q for q in dict.fromkeys([clean_q, first_part, short_q]) if len(q) >= 2]
-                if query_candidates:
-                    req_hdrs = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                        "Accept-Language": "ko-KR,ko;q=0.9"
-                    }
-                    async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as hclient:
-                        for q_cand in query_candidates:
-                            # 3-A. 네이버 통합검색 썸네일 (직접 shopping-phinf 우선 -> search.pstatic.net/common 폴백)
-                            naver_url = f"https://search.naver.com/search.naver?where=nexearch&query={quote(q_cand)}"
-                            rn = await hclient.get(naver_url, headers=req_hdrs)
-                            if rn.status_code == 200:
-                                shop_direct_imgs = re.findall(
-                                    r'(https://shopping-phinf\.pstatic\.net/[^\s"\'&<>\\]+)',
-                                    rn.text,
-                                )
-                                for raw_s_img in shop_direct_imgs[:12]:
-                                    base_s_img = raw_s_img.split("?")[0].strip().rstrip(",)")
-                                    if _is_valid_product_img(base_s_img) and any(
-                                        base_s_img.lower().endswith(ext)
-                                        for ext in (".jpg", ".jpeg", ".png", ".webp")
-                                    ):
-                                        hi_s_img = f"{base_s_img}?type=f640"
-                                        logger.info(
-                                            f"🖼️ [Scraper Image Fallback - Naver Shopping] 상품명('{q_cand}') 고화질 이미지 확보: {hi_s_img}"
-                                        )
-                                        return hi_s_img
-
-                                n_imgs = re.findall(r'(https://search\.pstatic\.net/common/\?src=[^\s"\'&<>]+)', rn.text)
-                                naver_bad = (
-                                    'blogpfthumb', 'kinimage', 'musicmeta', 'profile', 'icon', 'logo',
-                                    'blank', 'avatar', 'favicon', '파비콘', '.ico', 'influencer-phinf',
-                                    'clip-service-phinf', 'pup-post-phinf', '96x96', '32x32', '64x64',
-                                    '192x192', 'cropped-', 'Press', 'news',
-                                    'blogfiles.naver', 'postfiles.pstatic', 'mblogthumb-phinf', 'cafeptthumb', 'cafefiles.naver',
-                                    'tvcast', 'sstatic/search', 'sstatic.net/sstatic', 'kin-phinf', 'dbscthumb-phinf', 'navertv', 'veta-phinf', '아이콘'
-                                )
-                                preferred_naver = []
-                                fallback_naver = []
-                                for cand in n_imgs[:60]:
-                                    low_dec = unquote(unquote(cand)).lower()
-                                    if any(b.lower() in low_dec for b in naver_bad):
-                                        continue
-                                    if any(p in low_dec for p in ('shopping-phinf', 'shop-phinf', 'dthumb-phinf')):
-                                        preferred_naver.append(cand)
-                                    else:
-                                        fallback_naver.append(cand)
-                                chosen_naver = (preferred_naver or fallback_naver)
-                                if chosen_naver:
-                                    logger.info(f"🖼️ [Scraper Image Fallback - Naver] 상품명('{q_cand}') 대표 이미지 확보 성공: {chosen_naver[0]}")
-                                    return chosen_naver[0]
-
-                            # 3-B. 다음 통합검색 썸네일 (안정적 600x0 우선 + 저해상도 130x130 자동 업그레이드)
-                            daum_url = f"https://search.daum.net/search?w=tot&q={quote(q_cand)}"
-                            rd = await hclient.get(daum_url, headers=req_hdrs)
-                            if rd.status_code == 200:
-                                d_imgs = re.findall(r'(https://search\d+\.kakaocdn\.net/argon/[^\s"\'<>]+)', rd.text)
-                                if d_imgs:
-                                    from backend.core.deal_normalizer import upgrade_lowres_image_url
-                                    chosen_d = (
-                                        next((c for c in d_imgs[:12] if "600x0" in c), None)
-                                        or next((c for c in d_imgs[:12] if "320x320" in c), None)
-                                        or d_imgs[0]
-                                    )
-                                    chosen_d = upgrade_lowres_image_url(chosen_d)
-                                    logger.info(f"🖼️ [Scraper Image Fallback - Daum] 상품명('{q_cand}') 대표 이미지 확보 성공: {chosen_d}")
-                                    return chosen_d
-
-                        # 3-C. 빙 이미지 검색 폴백
-                        search_url = f"https://www.bing.com/images/search?q={quote(query_candidates[-1] + ' 상품')}&FORM=HDRSC2"
-                        res = await hclient.get(search_url, headers=req_hdrs)
-                        if res.status_code == 200:
-                            murls = re.findall(r'murl&quot;:&quot;(https?://[^&]+?)&quot;', res.text)
-                            for candidate in murls[:6]:
-                                if _is_valid_product_img(candidate):
-                                    logger.info(f"🖼️ [Scraper Image Fallback - Bing] 상품명('{clean_q}') 기반 대표 이미지 확보 성공: {candidate}")
-                                    return candidate
-            except Exception as fb_err:
-                logger.warning(f"⚠️ [Scraper Image Fallback] 상품명 이미지 검색 실패 ({fallback_title}): {fb_err}")
-
+        # 3. GEMINI.md 5조 & 오매칭 제로 원칙: 네이버/다음/빙 키워드 웹검색 및 외부 쇼핑몰 검색 API 추측은 전면 배제하고 None 반환
         return None
 
     @abstractmethod

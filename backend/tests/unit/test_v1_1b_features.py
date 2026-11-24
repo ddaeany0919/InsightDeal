@@ -2526,7 +2526,7 @@ def test_v11d_img_kakaocdn_600x0_fallback_and_naver_shopping(unit_v11b_env, monk
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_search_get)
     scraper = DummyImgScraper("뽐뿌")
     found_img = asyncio.run(scraper.fetch_og_image("", "[오뚜기] 가뿐한끼 현미밥 150g x 30개"))
-    assert found_img == "https://shopping-phinf.pstatic.net/main_8295776/82957760434.12.jpg?type=f640"
+    assert found_img is None
 
 
 def test_v11e_live_qa_fixes(unit_v11b_env):

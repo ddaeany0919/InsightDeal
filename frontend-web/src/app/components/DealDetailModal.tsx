@@ -2718,6 +2718,83 @@ export default function DealDetailModal({
           }
         />
 
+        {optionSources.length === 0 && (() => {
+          const seenSites = new Set<string>();
+          const crossCommunitySources = detailSources.filter((src) => {
+            const rawName = (src.site_name || "").trim();
+            if (!rawName || rawName.includes(" - ")) return false;
+            const postUrl = (src.post_url || "").trim();
+            if (!postUrl || postUrl === "#") return false;
+            if (seenSites.has(rawName)) return false;
+            seenSites.add(rawName);
+            return true;
+          });
+          if (crossCommunitySources.length < 2) return null;
+          return (
+            <section
+              aria-label="함께 올라온 커뮤니티 원글"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+                padding: "12px 14px",
+                borderRadius: "14px",
+                border: "1px solid var(--card-border)",
+                background: "var(--surface-subtle)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  fontSize: "0.78rem",
+                  fontWeight: 700,
+                  color: "var(--text-main)",
+                }}
+              >
+                <span>함께 올라온 커뮤니티 원글</span>
+                <span style={{ color: "var(--text-sub)", fontWeight: 600 }}>
+                  {crossCommunitySources.length}곳
+                </span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                {crossCommunitySources.map((src, idx) => {
+                  const targetPost = resolveOutboundUrl(src.post_url);
+                  return (
+                    <a
+                      key={`${src.site_name}-${idx}`}
+                      href={targetPost}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => {
+                        openExternalUrlInToss(targetPost, e);
+                      }}
+                      className="bounce-click"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        minHeight: "36px",
+                        padding: "6px 12px",
+                        borderRadius: "9999px",
+                        border: "1px solid var(--card-border)",
+                        background: "var(--card-bg)",
+                        color: "var(--text-main)",
+                        fontSize: "0.78rem",
+                        fontWeight: 700,
+                      }}
+                    >
+                      <span>{src.site_name}</span>
+                      <ExternalLink size={12} aria-hidden="true" color="var(--text-sub)" />
+                    </a>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })()}
+
         {similarDeals.length > 0 && (
           <section
             className="deal-similar-section"

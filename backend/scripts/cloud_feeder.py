@@ -96,6 +96,39 @@ def _rotate_cron_log_if_needed(log_path: str = None, max_bytes: int = 3 * 1024 *
 
 CLOUD_API = os.environ.get("CLOUD_API_URL", "https://34.59.208.14.sslip.io/api/community/ingest-batch")
 CLOUD_DEALS_API = os.environ.get("CLOUD_DEALS_API_URL", "https://34.59.208.14.sslip.io/api/community/hot-deals")
+CLOUD_HEARTBEAT_API = os.environ.get(
+    "CLOUD_HEARTBEAT_API_URL",
+    CLOUD_API.replace("/ingest-batch", "/feeder-heartbeat"),
+)
+
+
+async def _send_feeder_heartbeat(
+    http_client: httpx.AsyncClient,
+    community_name: str,
+    display_name: str,
+    status: str,
+    fetched_count: int = 0,
+    inserted_count: int = 0,
+    error_detail: str = "",
+) -> None:
+    try:
+        feeder_token = os.getenv("FEEDER_API_TOKEN", "").strip()
+        feeder_headers = {"X-Feeder-Token": feeder_token} if feeder_token else {}
+        await http_client.post(
+            CLOUD_HEARTBEAT_API,
+            json={
+                "community_name": community_name,
+                "display_name": display_name,
+                "status": status,
+                "fetched_count": int(fetched_count or 0),
+                "inserted_count": int(inserted_count or 0),
+                "error_detail": (error_detail or "")[:200] or None,
+            },
+            headers=feeder_headers or None,
+            timeout=5.0,
+        )
+    except Exception as hb_err:
+        logger.debug(f"[{display_name}] feeder-heartbeat 전송 스킵: {hb_err}")
 
 # 이미 상세 페이지를 파싱했거나 클라우드 DB에 존재하는 게시글 URL 캐시 (커뮤니티별 분리 + 로컬 파일 영구 캐시 연동)
 _SEEN_DETAIL_CACHE: dict[tuple[str, str], dict] = {}
@@ -321,6 +354,7 @@ async def scrape_and_push_once():
     from backend.scrapers.base_scraper import (
         SCRAPER_RELAY_URL,
         build_scraper_relay_headers,
+        get_scraper_relay_urls,
         is_relay_blocked,
         record_relay_status,
     )
@@ -370,27 +404,30 @@ async def scrape_and_push_once():
                         items = []
                         seen_page_urls = set()
 
-                        # 1. 뽐뿌 계열 클라우드 모드 시 서울 리전 릴레이 RSS 1-RTT 일괄 수집
+                        # 1. 뽐뿌 계열 클라우드 모드 시 다중 릴레이 페일오버 기반 서울 리전 RSS 1-RTT 일괄 수집
                         if "ppomppu" in name and IS_CLOUD_ENV:
                             board_id = "ppomppu8" if name == "ali_ppomppu" else ("ppomppu4" if name == "ppomppu_overseas" else "ppomppu")
                             rss_target = f"https://www.ppomppu.co.kr/rss.php?id={board_id}"
-                            rss_blocked, rss_reason = is_relay_blocked(rss_target)
-                            if rss_blocked:
-                                logger.info(f"⛔ [{display_name}] 서울 릴레이 회로 차단({rss_reason})으로 클라우드 RSS 릴레이 생략")
-                            else:
-                                relay_base = (
-                                    os.environ.get("SCRAPER_RELAY_URL", SCRAPER_RELAY_URL).strip()
-                                    or "https://insightdeal.vercel.app/api/scraper-relay"
-                                ).rstrip("/")
+                            relay_urls = get_scraper_relay_urls()
+                            is_multi_relay = len(relay_urls) > 1
+                            for relay_base in relay_urls:
+                                scope_relay_arg = relay_base if is_multi_relay else None
+                                rss_blocked, rss_reason = is_relay_blocked(rss_target, relay_url=scope_relay_arg)
+                                if rss_blocked:
+                                    logger.info(f"⛔ [{display_name}] 서울 릴레이 회로 차단({rss_reason})으로 클라우드 RSS 릴레이 생략 ({relay_base})")
+                                    if rss_reason == "disabled_by_env":
+                                        break
+                                    continue
                                 rss_relay_url = f"{relay_base}?url={urllib.parse.quote(rss_target, safe='')}"
                                 try:
                                     rss_headers = build_scraper_relay_headers(rss_target)
                                     res = await http_client.get(rss_relay_url, headers=rss_headers or None, timeout=10.0)
-                                    record_relay_status(rss_target, res.status_code)
+                                    record_relay_status(rss_target, res.status_code, relay_url=scope_relay_arg)
                                     if res.status_code in (402, 429):
-                                        logger.warning(f"⛔ [{display_name}] 클라우드 RSS 릴레이 HTTP {res.status_code} 감지 -> 글로벌 릴레이 60분 회로 차단 발동")
-                                    elif res.status_code in (401, 403, 503):
-                                        logger.warning(f"⚠️ [{display_name}] 클라우드 RSS 릴레이 인증/설정 오류 (HTTP {res.status_code})")
+                                        logger.warning(f"⛔ [{display_name}] 클라우드 RSS 릴레이 HTTP {res.status_code} 감지 ({relay_base}) -> 60분 회로 차단 발동")
+                                        continue
+                                    if res.status_code in (401, 403, 503):
+                                        logger.warning(f"⚠️ [{display_name}] 클라우드 RSS 릴레이 인증/설정 오류 (HTTP {res.status_code}, {relay_base})")
                                     if res.status_code == 200 and "<item>" in res.text:
                                         rss_items = await sc.parse_list(res.text)
                                         if rss_items:
@@ -402,8 +439,9 @@ async def scrape_and_push_once():
                                                     pit["url"] = norm_u
                                                     pit["_page_no"] = 1
                                                     items.append(pit)
+                                            break
                                 except Exception as rss_err:
-                                    logger.warning(f"⚠️ [{display_name}] 클라우드 RSS 수집 실패 ({rss_err}), 웹 크롤링 폴백")
+                                    logger.warning(f"⚠️ [{display_name}] 클라우드 RSS 수집 실패 ({relay_base}: {rss_err}), 다음 경로 폴백")
 
                         # 2. 일반 목록 페이지네이션 수집 (RSS로 수집되지 않았거나 타 커뮤니티인 경우)
                         if not items:
@@ -697,8 +735,13 @@ async def scrape_and_push_once():
                             else:
                                 enriched.append(item)
 
-                        # 3. 비동기 병렬 상세 페칭 (신규 게시글만 대상, Vercel 릴레이 및 뽐뿌 부하 방지를 위해 클라우드 동시 3개 제한)
+                        # 3. 비동기 병렬 상세 페칭 (이미지 누락 뽐뿌 건 우선 배치 + 클라우드 동시 3개 제한)
                         if items_needing_detail:
+                            items_needing_detail.sort(
+                                key=lambda it: 0
+                                if ("ppomppu.co.kr" in (it.get("url") or "") and not it.get("image_url"))
+                                else 1
+                            )
                             target_details = items_needing_detail[:15] if IS_CLOUD_ENV else items_needing_detail
                             detail_sem = asyncio.Semaphore(3 if IS_CLOUD_ENV else 5)
 
@@ -859,8 +902,26 @@ async def scrape_and_push_once():
                                         pass
                                     await asyncio.sleep(0.5 if IS_CLOUD_ENV else 1.5)
                             logger.info(f"✅ [{display_name}] 클라우드 서버 전송 완료 (신규/상태갱신 {len(final_enriched)}건 중 {total_processed}건 반영)")
+                        else:
+                            await _send_feeder_heartbeat(
+                                http_client,
+                                name,
+                                display_name,
+                                "OK_EMPTY" if (items or skipped_count > 0) else "BLOCKED",
+                                fetched_count=len(items),
+                                inserted_count=0,
+                            )
                 except Exception as e:
                     logger.error(f"❌ [{display_name}] 수집/전송 오류: {e}")
+                    await _send_feeder_heartbeat(
+                        http_client,
+                        name,
+                        display_name,
+                        "ERROR",
+                        fetched_count=0,
+                        inserted_count=0,
+                        error_detail=str(e),
+                    )
 
         # 10개 커뮤니티 타겟을 asyncio.Semaphore(4) 기반 asyncio.gather 병렬 수집
         await asyncio.gather(*[process_single_target(t) for t in targets], return_exceptions=True)

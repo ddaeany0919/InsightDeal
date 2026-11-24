@@ -1068,7 +1068,7 @@ fun KeywordPriceTrendSummaryCard(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "터치하여 가격 비교",
+                        text = "터치하여 가격 추이 보기",
                         style = MaterialTheme.typography.labelSmall,
                         color = LocalInsightDealColors.current.textMuted
                     )

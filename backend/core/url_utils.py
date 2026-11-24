@@ -481,7 +481,7 @@ def normalize_url(url: str) -> str:
                     url = dec
             except Exception:
                 pass
-    elif any(k in url for k in ("link.php", "out_link.php", "view_gourl_show.php", "popup/outlink", "click.linkprice.com", "lpweb.kr")):
+    elif any(k in url for k in ("link.php", "out_link.php", "view_gourl_show.php", "popup/outlink", "click.linkprice.com", "newtip.net", "lpweb.kr")):
         m_wrap = re.search(r"[?&](?:url|ol|link|gourl|tu)=([^&]+)", url)
         if m_wrap:
             try:
@@ -815,6 +815,14 @@ def extract_canonical_product_key(url: str) -> str:
         m = re.search(r"goodsNo=([0-9]+)", u, re.IGNORECASE)
         if m:
             return f"himart_{m.group(1)}"
+    if "compuzone.co.kr" in u_lower:
+        m = re.search(r"ProductNo=([0-9]+)", u, re.IGNORECASE)
+        if m:
+            return f"compuzone_{m.group(1)}"
+    if "hmall.com" in u_lower:
+        m = re.search(r"slitmCd=([A-Za-z0-9]+)", u, re.IGNORECASE)
+        if m:
+            return f"hmall_{m.group(1).upper()}"
 
     return ""
 

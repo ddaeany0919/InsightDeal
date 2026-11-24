@@ -292,3 +292,38 @@ def test_cors_allows_cloudflare_pages_and_gcp_and_blocks_untrusted():
         )
         hdrs = {k.lower(): v for k, v in res.headers.items()}
         assert "access-control-allow-origin" not in hdrs
+
+
+@pytest.mark.asyncio
+async def test_multi_relay_402_fails_over_immediately_to_secondary_relay(monkeypatch):
+    monkeypatch.setenv(
+        "SCRAPER_RELAY_URLS",
+        "https://dead-vercel.example/api/scraper-relay,https://eolmande.pages.dev/api/scraper-relay",
+    )
+    called_urls = []
+
+    async def fake_get(self, url, headers=None, **kwargs):
+        called_urls.append(url)
+        resp = MagicMock()
+        if url.startswith("https://dead-vercel.example/"):
+            resp.status_code = 402
+            resp.text = "DEPLOYMENT_DISABLED"
+        else:
+            resp.status_code = 200
+            resp.text = "<html><body>" + ("정상 뽐뿌 게시글 본문 " * 40) + "</body></html>"
+        return resp
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    scraper = _DummyRelayScraper()
+    target = "https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=749820"
+    html = await scraper._fetch_via_seoul_relay(target)
+    assert html is not None and "정상 뽐뿌 게시글 본문" in html
+    assert len(called_urls) == 2
+
+    # 다음 호출에서는 차단된 1번 릴레이를 건너뛰고 즉시 2번 정상 릴레이로 요청
+    called_urls.clear()
+    html2 = await scraper._fetch_via_seoul_relay(target)
+    assert html2 is not None
+    assert len(called_urls) == 1
+    assert called_urls[0].startswith("https://eolmande.pages.dev/api/scraper-relay")

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import SwUpdateManager from "./components/SwUpdateManager";
 
 const isTossMiniApp = process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true";
 
@@ -73,7 +74,10 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <SwUpdateManager />
+      </body>
     </html>
   );
 }

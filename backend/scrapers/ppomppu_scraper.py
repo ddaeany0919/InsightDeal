@@ -287,6 +287,19 @@ class PpomppuScraper(AsyncBaseScraper):
         headers = self._get_headers()
         headers["Referer"] = self.list_url  # 봇 차단 및 로그인 리다이렉트 방지를 위한 Referer 설정
         html = await self.fetch_html(url, headers=headers)
+        if not html and "ppomppu.co.kr/zboard/view.php" in url:
+            from urllib.parse import parse_qs, urlparse
+            parsed_pc = urlparse(url)
+            qs_pc = parse_qs(parsed_pc.query)
+            bid = qs_pc.get("id", [""])[0]
+            post_no = qs_pc.get("no", [""])[0]
+            if bid and post_no:
+                mobile_url = f"https://m.ppomppu.co.kr/new/bbs_view.php?id={bid}&no={post_no}"
+                mobile_headers = {
+                    **headers,
+                    "Referer": f"https://m.ppomppu.co.kr/new/bbs_list.php?id={bid}",
+                }
+                html = await self.fetch_html(mobile_url, headers=mobile_headers)
         if not html:
             return {}
         if any(k in html for k in ("해당 게시물이 존재하지 않거나 삭제", "존재하지 않는 게시물", "삭제된 게시물입니다")):
@@ -357,7 +370,7 @@ class PpomppuScraper(AsyncBaseScraper):
         # 1. 이미지 태그를 먼저 추출 (아래 a.string 치환 시 a 태그 내부 img가 소실되는 버그 원천 차단!)
         images = []
         image_url = ""
-        for img in soup.select('td.board-contents img, td.han img, table.pic_bg img, .cont img'):
+        for img in soup.select('td.board-contents img, div#KH_Content img, td.han img, table.pic_bg img, .cont img'):
             src = (img.get('data-original') or img.get('data-src') or img.get('src') or '').strip()
             if src and src.startswith('//'):
                 src = 'https:' + src
@@ -381,7 +394,7 @@ class PpomppuScraper(AsyncBaseScraper):
 
         # 2. 본문 엘리먼트 정밀 탐색 (우선순위 셀렉터 순회 + 상단 헤더 .cont 오탐지 원천 차단)
         content_element = None
-        for sel in ('td.board-contents', 'div.board-contents', 'td.han', 'table.pic_bg td'):
+        for sel in ('td.board-contents', 'div.board-contents', 'div#KH_Content', 'td.han', 'table.pic_bg td'):
             for candidate in soup.select(sel):
                 cand_txt = candidate.get_text(strip=True)
                 if "뽐뿌 - 사람이 좋아 함께하는 곳" in cand_txt and len(cand_txt) < 80:

@@ -60,6 +60,7 @@ agent_workspace/
 
 # 8. [bkit/Custom] 대표님 지정 불필요한 임시 캐시 및 스크래치 차단
 backend/scraper_stats.json
+backend/logs/scraper_stats.json
 scratch_query.py
 
 # 9. [Hygiene] 루트 디렉토리 오염 방지 — 로그, 임시 스크립트, 바이너리

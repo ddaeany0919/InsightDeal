@@ -732,3 +732,242 @@ def test_renormalize_existing_deals_heals_audit_anomalies_idempotently(mem_db, m
     finally:
         app.dependency_overrides.pop(get_db_session, None)
 
+
+def test_p1_p2_unmerged_pairs_image_guard_similar_deals_time_weighted_and_heartbeat(
+    mem_db, tmp_path, monkeypatch
+):
+    """P1/P2 전사 회귀 검증: 미병합 3쌍 해소, 오병합 0건, kakaocdn 차단, similar_deals 정밀화, 시간가중 품절, 제목/배송비 정규화, Heartbeat."""
+    from backend.database.models import DealClosedReport
+    from backend.routers.community import _resolve_best_image_url, build_dsu, get_deal
+
+    # 1) 제목/배송비 정규화 (골드박스, 무료배, 네맴, 미국내free, 배대지, 상품권/스펙 보존)
+    assert clean_canonical_title("[골드박스 12300원] 동원샘물 무라벨, 2L, 30개") == "동원샘물 무라벨, 2L, 30개"
+    assert clean_canonical_title("[네이버]아트뮤 갤럭시용 맥세이프 고속충전 무선배터리 41700원/무료배") == "[네이버]아트뮤 갤럭시용 맥세이프 고속충전 무선배터리"
+    assert clean_canonical_title("[네이버] 신세계백화점 5만원권") == "[네이버] 신세계백화점 5만원권"
+    assert clean_canonical_title("[알리] 유그린 100W") == "[알리] 유그린 100W"
+    assert normalize_shipping_fee("네맴무료") == "네멤무료"
+    assert normalize_shipping_fee("미국내free") == "무료배송"
+    assert normalize_shipping_fee("배대지") == "배대지별도"
+
+    # 2) kakaocdn/search.pstatic 차단 & 원글 첨부 이미지 복원
+    class _ImgDummy:
+        def __init__(self, image_url, content_html="", title="일반 상품"):
+            self.image_url = image_url
+            self.content_html = content_html
+            self.title = title
+
+    assert _resolve_best_image_url(_ImgDummy("https://search4.kakaocdn.net/argon/600x0_65_wr/BoRopR20Ne7"), "") is None
+    assert _resolve_best_image_url(_ImgDummy("https://search.pstatic.net/common/?src=foo"), "") is None
+    assert (
+        _resolve_best_image_url(
+            _ImgDummy(
+                "https://search4.kakaocdn.net/argon/600x0_65_wr/BoRopR20Ne7",
+                "[첨부된 이미지 링크들]: https://cdn4.ppomppu.co.kr/zboard/data3/2026/1118/test.jpeg",
+            ),
+            "",
+        )
+        == "https://cdn4.ppomppu.co.kr/zboard/data3/2026/1118/test.jpeg"
+    )
+
+    # 3) 미병합 3쌍 병합 + 이종 상품 ID 오병합 0건
+    now = datetime.utcnow()
+    assert (
+        extract_canonical_product_key("https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=12749")
+        == "compuzone_12749"
+    )
+    assert (
+        extract_canonical_product_key(
+            "https://newtip.net/click.php?m=hmall&tu=https%3A%2F%2Fwww.hmall.com%2Fp%2Fpda%2FitemPtc.do%3FslitmCd%3D2123456"
+        )
+        == "hmall_2123456"
+    )
+
+    artmu_a = Deal(
+        id=8101,
+        source_community_id=3,
+        title="[네이버] 아트뮤 Qi2 25w 맥세이프 보조배터리 10000mah(갤럭시용)",
+        price="41700",
+        currency="KRW",
+        shop_name="네이버",
+        ecommerce_link="https://brand.naver.com/artmu/products/13891267753",
+        post_link="https://quasarzone.com/bbs/qb_saleinfo/views/2004021",
+        category="PC용품",
+        indexed_at=now - timedelta(hours=1),
+    )
+    artmu_b = Deal(
+        id=8102,
+        source_community_id=4,
+        title="[네이버]아트뮤 갤럭시용 맥세이프 고속충전 무선배터리 41700원/무료배",
+        price="41700",
+        currency="KRW",
+        shop_name="네이버",
+        ecommerce_link="https://m.brand.naver.com/artmu/store-content/detail/10000011184",
+        post_link="https://bbs.ruliweb.com/market/board/1020/read/109341",
+        category="PC용품",
+        indexed_at=now - timedelta(hours=5),
+    )
+    water_a = Deal(
+        id=8103,
+        source_community_id=3,
+        title="[기타] 동원 샘물 2리터 X 6개",
+        price="1800",
+        currency="KRW",
+        shop_name="현대Hmall",
+        ecommerce_link="https://newtip.net/click.php?m=hmall&tu=https%3A%2F%2Fwww.hmall.com%2Fp%2Fpda%2FitemPtc.do%3FslitmCd%3D2199999",
+        post_link="https://quasarzone.com/bbs/qb_saleinfo/views/8103",
+        category="음식",
+        indexed_at=now - timedelta(hours=2),
+    )
+    water_b = Deal(
+        id=8104,
+        source_community_id=4,
+        title="[Hmall] 동원 샘물 2L 6개 3800원",
+        price="1800",
+        currency="KRW",
+        shop_name="현대Hmall",
+        ecommerce_link="https://www.hmall.com/p/pda/itemPtc.do?slitmCd=2199999",
+        post_link="https://bbs.ruliweb.com/market/board/1020/read/8104",
+        category="음식",
+        indexed_at=now - timedelta(hours=7),
+    )
+    epson_a = Deal(
+        id=8105,
+        source_community_id=3,
+        title="[기타] EPSON WorkForce DS-1730 고속 양면 평판 스캐너",
+        price="349000",
+        currency="KRW",
+        shop_name="컴퓨존",
+        ecommerce_link="https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=12749",
+        post_link="https://quasarzone.com/bbs/qb_saleinfo/views/8105",
+        category="PC용품",
+        indexed_at=now - timedelta(hours=3),
+    )
+    epson_b = Deal(
+        id=8106,
+        source_community_id=2,
+        title="엡손 DS-1730 평판 하이브리드 스캐너",
+        price="349000",
+        currency="KRW",
+        shop_name="컴퓨존",
+        ecommerce_link="https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=12749",
+        post_link="https://www.fmkorea.com/8106",
+        category="PC용품",
+        indexed_at=now - timedelta(hours=6),
+    )
+    # 500원짜리 단일 '맥세이프' 토큰 + 품절 제보 1건 보유 오래된 홀더 (similar_deals에 절대 노출 금지)
+    beluga_old = Deal(
+        id=8107,
+        source_community_id=1,
+        title="[네이버] 벨루가 퓨어웨이브 맥세이프 홀더 베이스",
+        price="500",
+        currency="KRW",
+        shop_name="네이버",
+        ecommerce_link="https://smartstore.naver.com/mobilelounge/products/803834583",
+        post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=749820",
+        category="PC용품",
+        indexed_at=now - timedelta(days=6),
+        is_closed=False,
+    )
+    # 동일 가격/동일 브랜드라도 다른 상품 ID + 다른 스펙/컬러 조합은 절대 오병합 금지
+    diff_id_a = Deal(
+        id=8108,
+        source_community_id=2,
+        title="[쿠팡] 테스트 브랜드 로지텍 G304 256GB 무선 마우스",
+        price="25000",
+        currency="KRW",
+        shop_name="쿠팡",
+        ecommerce_link="https://www.coupang.com/vp/products/1111111",
+        post_link="https://www.fmkorea.com/8108",
+        category="PC용품",
+        indexed_at=now - timedelta(hours=1),
+    )
+    diff_id_b = Deal(
+        id=8109,
+        source_community_id=3,
+        title="[쿠팡] 테스트 브랜드 로지텍 G304 512GB 유선 키보드",
+        price="25000",
+        currency="KRW",
+        shop_name="쿠팡",
+        ecommerce_link="https://www.coupang.com/vp/products/2222222",
+        post_link="https://quasarzone.com/bbs/qb_saleinfo/views/8109",
+        category="PC용품",
+        indexed_at=now - timedelta(hours=1),
+    )
+
+    all_test_deals = [artmu_a, artmu_b, water_a, water_b, epson_a, epson_b, beluga_old, diff_id_a, diff_id_b]
+    mem_db.add_all(all_test_deals)
+    mem_db.flush()
+    mem_db.add(DealClosedReport(deal_id=8107, device_uuid="existing-reporter-1"))
+    mem_db.commit()
+
+    dsu = build_dsu(all_test_deals, time_window_days=1)
+    assert dsu.find(8101) == dsu.find(8102)
+    assert dsu.find(8103) == dsu.find(8104)
+    assert dsu.find(8105) == dsu.find(8106)
+    assert dsu.find(8108) != dsu.find(8109)
+
+    # 4) similar_deals: 맥세이프 1토큰 & 제보 보유 딜 제거 -> 빈 배열([]) 반환
+    detail_8101 = get_deal(8101, db=mem_db)
+    assert detail_8101["similarDeals"] == []
+
+    # 5) 시간 가중 품절 제보 (72h+ -> 임계치 1, <24h -> 임계치 3) + feeder-heartbeat
+    from fastapi import Header
+    from backend.core.device_auth import require_device_token
+
+    def _override_db():
+        yield mem_db
+
+    def _override_device(x_device_token: str = Header(default="test-dev-1", alias="X-Device-Token")):
+        return x_device_token
+
+    seed_file = tmp_path / "seed_stats.json"
+    runtime_file = tmp_path / "runtime_stats.json"
+    monkeypatch.setattr(
+        "backend.routers.community._get_scraper_stats_paths",
+        lambda: (str(runtime_file), str(seed_file)),
+    )
+    monkeypatch.setenv("FEEDER_API_TOKEN", "hb-secret-token")
+
+    app.dependency_overrides[get_db_session] = _override_db
+    app.dependency_overrides[require_device_token] = _override_device
+    try:
+        client = TestClient(app)
+        # 6일 지난 8107에 신규 제보 1건 추가 -> report_count=2 >= threshold(1) 즉시 종료
+        r_old = client.post(
+            "/api/community/deals/8107/report-closed",
+            headers={"X-Device-Token": "00000000-0000-4000-8000-000000000101"},
+        )
+        assert r_old.status_code == 200
+        assert r_old.json()["threshold"] == 1
+        assert r_old.json()["is_closed"] is True
+
+        # 신규 1시간 전 8108에 제보 1건 -> threshold=3, is_closed=False
+        r_new = client.post(
+            "/api/community/deals/8108/report-closed",
+            headers={"X-Device-Token": "00000000-0000-4000-8000-000000000102"},
+        )
+        assert r_new.status_code == 200
+        assert r_new.json()["threshold"] == 3
+        assert r_new.json()["is_closed"] is False
+
+        # feeder-heartbeat OK_EMPTY 기록 후 /scraper-stats 반영 확인
+        hb_res = client.post(
+            "/api/community/feeder-heartbeat",
+            json={
+                "community_name": "bbasak_parenting",
+                "display_name": "빠삭육아",
+                "status": "OK_EMPTY",
+                "fetched_count": 30,
+                "inserted_count": 0,
+            },
+            headers={"X-Feeder-Token": "hb-secret-token"},
+        )
+        assert hb_res.status_code == 200
+        stats_res = client.get("/api/community/scraper-stats")
+        assert stats_res.status_code == 200
+        assert stats_res.json()["빠삭육아"]["status"] == "OK_EMPTY"
+        assert "last_attempt_at" in stats_res.json()["빠삭육아"]
+    finally:
+        app.dependency_overrides.pop(get_db_session, None)
+        app.dependency_overrides.pop(require_device_token, None)
+

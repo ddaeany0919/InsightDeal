@@ -37,13 +37,16 @@ import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.*
@@ -1374,17 +1377,39 @@ fun HomeScreen(
                     }
 
                     // 2줄: 좌측 가로 스크롤 카테고리 밑줄 탭 + 우측 [인기 딜만] + [상세 필터(배지)]
+                    val categoryListState = rememberLazyListState()
+                    val isLargeFontScale = LocalDensity.current.fontScale >= 1.15f
+                    val showRightCategoryFade by remember {
+                        derivedStateOf { categoryListState.canScrollForward }
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(start = 10.dp, end = 10.dp, bottom = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(if (isLargeFontScale) 4.dp else 6.dp)
                     ) {
                         LazyRow(
-                            modifier = Modifier.weight(1f),
+                            state = categoryListState,
+                            modifier = Modifier
+                                .weight(1f)
+                                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                                .drawWithContent {
+                                    drawContent()
+                                    if (showRightCategoryFade && size.width > 0f) {
+                                        val fadePx = 20.dp.toPx().coerceAtMost(size.width * 0.25f)
+                                        drawRect(
+                                            brush = Brush.horizontalGradient(
+                                                colors = listOf(Color.Black, Color.Transparent),
+                                                startX = size.width - fadePx,
+                                                endX = size.width
+                                            ),
+                                            blendMode = BlendMode.DstIn
+                                        )
+                                    }
+                                },
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
-                            contentPadding = PaddingValues(end = 4.dp)
+                            contentPadding = PaddingValues(end = if (showRightCategoryFade) 18.dp else 4.dp)
                         ) {
                             item(key = "tab_all", contentType = "category_tab") {
                                 val isSelected = activeCategories.isEmpty()
@@ -1411,7 +1436,7 @@ fun HomeScreen(
                                         color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                         softWrap = false,
-                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 10.dp)
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 10.dp)
                                     )
                                     Box(
                                         modifier = Modifier
@@ -1450,7 +1475,7 @@ fun HomeScreen(
                                         color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                         softWrap = false,
-                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 10.dp)
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 10.dp)
                                     )
                                     Box(
                                         modifier = Modifier
@@ -1463,11 +1488,11 @@ fun HomeScreen(
                         }
 
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            horizontalArrangement = Arrangement.spacedBy(if (isLargeFontScale) 4.dp else 5.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             HomeSelectablePillChip(
-                                label = "인기 딜만",
+                                label = if (isLargeFontScale) "인기" else "인기 딜만",
                                 selected = filterState.popularOnly,
                                 role = Role.Checkbox,
                                 shape = RoundedCornerShape(999.dp),
@@ -1517,7 +1542,7 @@ fun HomeScreen(
                                     )
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 9.dp),
+                                        modifier = Modifier.padding(horizontal = if (isLargeFontScale) 7.dp else 9.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
@@ -1532,7 +1557,7 @@ fun HomeScreen(
                                             modifier = Modifier.size(14.dp)
                                         )
                                         Text(
-                                            text = "상세 필터",
+                                            text = if (isLargeFontScale) "필터" else "상세 필터",
                                             fontSize = 12.sp,
                                             fontWeight = if (activeSheetFilterCount > 0) FontWeight.Bold else FontWeight.Medium,
                                             color = if (activeSheetFilterCount > 0) {
@@ -5379,7 +5404,7 @@ fun BrandPlaceholder(
                 if (isDark) Color(0xFFFDA4AF) else Color(0xFF9F1239),
                 "빠삭"
             )
-            siteLower.contains("슬리앙") || siteLower.contains("클리앙") -> Triple(
+            siteLower.contains("클리앙") -> Triple(
                 if (isDark) Color(0xFF222934) else Color(0xFFF0F3F7),
                 if (isDark) Color(0xFFCBD5E1) else Color(0xFF334155),
                 "클리앙"

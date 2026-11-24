@@ -9,10 +9,12 @@ const withPWA = withPWAInit({
   dest: "public",
   sw: "pwa-sw.js",
   disable: process.env.NODE_ENV === "development" || isTossMiniApp,
-  register: true,
+  register: false,
   publicExcludes: ["!sw.js"],
   workboxOptions: {
     importScripts: ["/sw.js"],
+    skipWaiting: false,
+    clientsClaim: true,
   },
 });
 

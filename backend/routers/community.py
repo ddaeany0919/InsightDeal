@@ -624,18 +624,65 @@ def get_deal_sources(
 
 BASE_URL = os.getenv("BASE_URL", "http://10.0.2.2:8080")
 
+
+def _get_scraper_stats_paths() -> tuple[str, str]:
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    runtime_path = os.path.join(backend_dir, "logs", "scraper_stats.json")
+    seed_path = os.path.join(backend_dir, "scraper_stats.json")
+    return runtime_path, seed_path
+
+
+def _load_merged_scraper_stats() -> dict:
+    runtime_path, seed_path = _get_scraper_stats_paths()
+    merged: dict = {}
+    for path in (seed_path, runtime_path):
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    merged.update(data)
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning(f"Failed to load scraper_stats ({path}): {exc}")
+    return merged
+
+
+def _update_runtime_scraper_stats(
+    display_name: str,
+    *,
+    status: str = "Success",
+    fetched_count: int = 0,
+    inserted_count: int = 0,
+    error_detail: Optional[str] = None,
+) -> None:
+    runtime_path, _ = _get_scraper_stats_paths()
+    try:
+        stats = _load_merged_scraper_stats()
+        kst_tz = timezone(timedelta(hours=9))
+        now_kst_str = datetime.now(kst_tz).strftime("%Y-%m-%d %H:%M:%S")
+        prev = stats.get(display_name) if isinstance(stats.get(display_name), dict) else {}
+        entry = dict(prev)
+        entry["last_attempt_at"] = now_kst_str
+        entry["status"] = status
+        entry["fetched_count"] = int(fetched_count or 0)
+        entry["last_count"] = int(inserted_count or 0)
+        entry["updated_count"] = int(inserted_count or 0)
+        if status in ("Success", "SUCCESS", "OK_EMPTY"):
+            entry["last_run"] = now_kst_str
+            entry.pop("error_detail", None)
+        elif error_detail:
+            entry["error_detail"] = str(error_detail)[:200]
+        stats[display_name] = entry
+        os.makedirs(os.path.dirname(runtime_path), exist_ok=True)
+        with open(runtime_path, "w", encoding="utf-8") as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning(f"[scraper_stats] failed to update runtime stats: {exc}")
+
+
 @router.get("/scraper-stats")
 def get_scraper_stats():
-    import os
-    stats_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scraper_stats.json")
-    if os.path.exists(stats_file):
-        try:
-            with open(stats_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.warning(f"Failed to load scraper_stats.json: {exc}")
-            return {}
-    return {}
+    return _load_merged_scraper_stats()
 
 @router.get("/proxy-image")
 async def proxy_image(
@@ -1126,11 +1173,20 @@ def normalize_units(text: str) -> str:
     t = re.sub(r'(\d+)\s*tb', r'\1000gb', t)
     t = re.sub(r'(\d+)\s*gb', r'\1gb', t)
     t = re.sub(r'(\d+\.\d+)\s*kg', lambda m: str(int(float(m.group(1)) * 1000)) + 'g', t)
+    t = re.sub(r'(\d+(?:\.\d+)?)\s*(?:리터|ℓ)', lambda m: str(int(round(float(m.group(1)) * 1000))) + 'ml', t)
     t = re.sub(r'(\d+\.\d+)\s*l', lambda m: str(int(float(m.group(1)) * 1000)) + 'ml', t)
     t = re.sub(r'(?<!\d)(\d+)\s*kg', lambda m: str(int(m.group(1)) * 1000) + 'g', t)
     t = re.sub(r'(?<!\d)(\d+)\s*l', lambda m: str(int(m.group(1)) * 1000) + 'ml', t)
     t = re.sub(r'(\d+)\s*킬로그램', r'\1kg', t)
     return t
+
+_MERGE_SYNONYM_PATTERNS = (
+    (re.compile(r'\bepson\b', re.IGNORECASE), '엡손'),
+    (re.compile(r'앱손'), '엡손'),
+    (re.compile(r'\bartmu\b', re.IGNORECASE), '아트뮤'),
+    (re.compile(r'무선\s*배터리|무선충전\s*배터리'), '보조배터리'),
+)
+
 def get_normalized_base_name(deal):
     raw_title = getattr(deal, 'title', None)
     if not raw_title:
@@ -1144,9 +1200,11 @@ def get_normalized_base_name(deal):
     clean = re.sub(r'\d+(?:,\d+)*\s*원', '', clean)
     clean = normalize_units(clean)
     clean = re.sub(r'아이(?:스)?\s*아메리카노', '아이스아메리카노', clean)
+    for syn_pat, syn_rep in _MERGE_SYNONYM_PATTERNS:
+        clean = syn_pat.sub(syn_rep, clean)
     base_str = re.sub(r'[^가-힣a-zA-Z0-9]', ' ', clean)
     malls = r'(쿠팡|g마켓|지마켓|11번가|십일번가|옥션|위메프|티몬|ssg|쓱|이마트|홈플러스|롯데마트|하이마트|오늘의집|집꾸미기|알리|알리익스프레스|테무|큐텐|아마존|무신사|올리브영|에이블리|지그재그|아이디어스)'
-    modifiers = r'(역대급|대박|미친|오늘만|단하루|품절|임박|로켓|스마일|새벽|무료|배송|무배|체감|추가|할인|반값|특가|쿠폰|카드|핫딜|최저가|이벤트|세일|오픈|론칭|한정|수량|마감|긴급|선착순|단독|예약|할인가|공식|인증|행사|사은품|증정|패키지|초특가|투데이|반짝|게릴라|종결|우주패스|빅스마일데이|광군제|블프|블랙프라이데이|크리스마스|명절|설날|추석|옵션|행상\d+종|행상\d+가지|재입고|출시|추천|종료)'
+    modifiers = r'(역대급|대박|미친|오늘만|단하루|품절|임박|로켓|스마일|새벽|무료배|무료|배송|무배|체감|추가|할인|반값|특가|쿠폰|카드|핫딜|최저가|이벤트|세일|오픈|론칭|한정|수량|마감|긴급|선착순|단독|예약|할인가|공식|인증|행사|사은품|증정|패키지|초특가|투데이|반짝|게릴라|종결|우주패스|빅스마일데이|광군제|블프|블랙프라이데이|크리스마스|명절|설날|추석|옵션|행상\d+종|행상\d+가지|재입고|출시|추천|종료)'
     clean = re.sub(malls, '', base_str, flags=re.IGNORECASE)
     clean = re.sub(modifiers, '', clean, flags=re.IGNORECASE)
     clean = re.sub(r'\s+', ' ', clean).strip()
@@ -1320,6 +1378,32 @@ def has_price_conflict(
     from backend.core.deal_normalizer import has_currency_aware_price_conflict
     return has_currency_aware_price_conflict(price_a, price_b, curr_a, curr_b, threshold=0.45)
 
+_GENERIC_MODEL_SPEC_TOKENS = {
+    "256g", "512g", "128g", "100w", "65w", "45w", "30w", "25w", "20w",
+    "ddr4", "ddr5", "usb4", "usb3", "pcie4", "pcie5", "10000mah", "20000mah", "5000mah",
+}
+
+
+def _extract_brand_store_slug(raw_url: str) -> str:
+    if not raw_url:
+        return ""
+    from backend.core.deal_normalizer import unwrap_redirect_target_url
+    u = unwrap_redirect_target_url(raw_url).lower()
+    m = re.search(r"brand\.naver\.com/([a-z0-9_-]+)/(?:products|store-content/detail)/", u)
+    return f"naver_brand_{m.group(1)}" if m else ""
+
+
+def _is_close_price(price_a: int, price_b: int, curr_a: str, curr_b: str, ratio: float) -> bool:
+    if not price_a or not price_b:
+        return True
+    ka = _to_krw_equiv(price_a, curr_a)
+    kb = _to_krw_equiv(price_b, curr_b)
+    if ka <= 0 or kb <= 0:
+        return False
+    hi = max(ka, kb)
+    return abs(ka - kb) <= hi * ratio
+
+
 def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[int, str]]] = None):
     dsu = DSU()
     url_to_deal = {}
@@ -1330,7 +1414,7 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
     memo = price_memo if price_memo is not None else {}
 
     unit_or_generic_re = re.compile(
-        r'^(?:\d+(?:\.\d+)?(?:kg|g|ml|l|gb|tb|mb|w|v|a|hz|mah|ah|gsm|in1|인치|inch|개입|개|입|캔|병|팩|봉|포|매|판|박스|세트|롤|정|캡슐|구|미|쪽|호|p|ea|pcs|년|개월|일|시간|원|만원|천원)?|국내산|국산|해외|정품|무료|무배|특가|할인|증정|사은품|단품|혼합|선택|외|모음|한정|출시|신제품|신모델|리뉴얼|끌올)$',
+        r'^(?:\d+(?:\.\d+)?(?:kg|g|ml|l|gb|tb|mb|w|v|a|hz|mah|ah|gsm|in1|인치|inch|개입|개|입|캔|병|팩|봉|포|매|판|박스|세트|롤|정|캡슐|구|미|쪽|호|p|ea|pcs|년|개월|일|시간|원|만원|천원)?|국내산|국산|해외|정품|무료|무배|무료배|특가|할인|증정|사은품|단품|혼합|선택|외|모음|한정|출시|신제품|신모델|리뉴얼|끌올)$',
         re.IGNORECASE
     )
 
@@ -1339,12 +1423,21 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
 
     for deal in deals:
         dsu.find(deal.id)
+        raw_ecom = getattr(deal, 'ecommerce_link', None) or ""
         n_url = get_normalized_url(deal)
         n_name = get_normalized_base_name(deal)
         deal_time = _to_utc_naive(deal.indexed_at)
         curr_price, curr_currency = memo.get(deal.id) or resolve_deal_price_and_currency(deal)
         memo.setdefault(deal.id, (curr_price, curr_currency))
         curr_model = (getattr(deal, 'model_code', None) or "").strip().lower()
+        curr_shop = _resolve_canonical_shop_name(deal, raw_ecom)
+        curr_brand_store = _extract_brand_store_slug(raw_ecom)
+        _EXACT_ID_PREFIXES = (
+            "gmarket_", "auction_", "11st_", "coupang_", "aliexpress_",
+            "naver_", "lotteon_", "ssg_", "musinsa_", "ohouse_", "kakao_", "himart_",
+            "compuzone_", "hmall_",
+        )
+        curr_exact_id = n_url if (n_url and any(n_url.startswith(p) for p in _EXACT_ID_PREFIXES)) else ""
 
         curr_words_set = set(n_name.split(' ')) if n_name else set()
         curr_core_set = get_core_words(curr_words_set)
@@ -1360,13 +1453,7 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
                         union = len(curr_words_set.union(past_words_set))
                         core_inter = len(curr_core_set.intersection(past_core_set))
 
-                        is_exact_id = any(
-                            n_url_key.startswith(prefix)
-                            for prefix in [
-                                "gmarket_", "auction_", "11st_", "coupang_", "aliexpress_",
-                                "naver_", "lotteon_", "ssg_", "musinsa_", "ohouse_", "kakao_", "himart_"
-                            ]
-                        )
+                        is_exact_id = bool(curr_exact_id)
 
                         if is_exact_id:
                             if (
@@ -1390,15 +1477,23 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
                                     break
             url_to_deal.setdefault(n_url_key, []).append((deal.id, curr_words_set, curr_core_set, curr_price, curr_currency))
 
-        # 2단계: 고유 제조사 모델코드 일치 시 교차 병합
-        true_codes = extract_true_model_codes(curr_words_set)
+        # 2단계: 고유 제조사 모델코드 일치 시 교차 병합 (범용 스펙 토큰 배제 + 가격 15% 이내 시 핵심토큰 1개+ 허용)
+        true_codes = {
+            c for c in extract_true_model_codes(curr_words_set)
+            if c not in _GENERIC_MODEL_SPEC_TOKENS
+        }
         if curr_model and len(curr_model) >= 5:
-            true_codes.update(extract_true_model_codes({curr_model}))
+            true_codes.update(
+                c for c in extract_true_model_codes({curr_model})
+                if c not in _GENERIC_MODEL_SPEC_TOKENS
+            )
         for code_key in true_codes:
             if code_key in model_to_deal:
                 for past_id, past_words_set, past_core_set, past_price, past_currency in model_to_deal[code_key]:
+                    core_inter_cnt = len(curr_core_set.intersection(past_core_set))
+                    min_core_req = 1 if _is_close_price(curr_price, past_price, curr_currency, past_currency, 0.15) else 2
                     if (
-                        len(curr_core_set.intersection(past_core_set)) >= 2
+                        core_inter_cnt >= min_core_req
                         and not has_quantity_conflict(curr_words_set, past_words_set)
                         and not has_model_conflict(curr_words_set, past_words_set)
                         and not has_brand_or_keyword_conflict(curr_words_set, past_words_set)
@@ -1452,8 +1547,41 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
                     and (core_inter >= 2 or len(curr_sc) >= 6)
                 )
 
-                if (core_min_len == 1 and core_jaccard == 1.0) or sc_match or (
-                    core_inter >= 2 and (core_jaccard >= 0.68 or (core_subset_ratio >= 0.85 and core_inter >= 3))
+                same_shop_exact = bool(curr_shop and cluster.get('shop_name') and curr_shop == cluster['shop_name'])
+                same_brand_store = bool(
+                    curr_brand_store
+                    and cluster.get('brand_store')
+                    and curr_brand_store == cluster['brand_store']
+                )
+                same_price_tight = bool(
+                    curr_price > 0
+                    and (cluster.get('price', 0) or 0) > 0
+                    and _is_close_price(
+                        curr_price,
+                        cluster.get('price', 0),
+                        curr_currency,
+                        cluster.get('currency', 'KRW'),
+                        0.03,
+                    )
+                )
+                distinct_exact_ids = bool(
+                    curr_exact_id
+                    and cluster.get('exact_id')
+                    and curr_exact_id != cluster['exact_id']
+                )
+                shop_price_assisted = bool(
+                    not distinct_exact_ids
+                    and (same_shop_exact or same_brand_store)
+                    and same_price_tight
+                    and core_inter >= 3
+                    and core_jaccard >= 0.35
+                )
+
+                if (
+                    (core_min_len == 1 and core_jaccard == 1.0)
+                    or sc_match
+                    or shop_price_assisted
+                    or (core_inter >= 2 and (core_jaccard >= 0.68 or (core_subset_ratio >= 0.85 and core_inter >= 3)))
                 ):
                     if (
                         not has_quantity_conflict(words_set, cluster['words'])
@@ -1482,6 +1610,9 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
                     'core_words': curr_core_set,
                     'sc': curr_sc,
                     'model_code': curr_model,
+                    'exact_id': curr_exact_id,
+                    'shop_name': curr_shop,
+                    'brand_store': curr_brand_store,
                     'price': curr_price,
                     'currency': curr_currency,
                     'times': [deal_time] if deal_time else []
@@ -1832,6 +1963,8 @@ def _resolve_best_image_url(deal_obj, base_url: str) -> Optional[str]:
                 "mobile.auction.co.kr/ego.aspx",
             )
         )
+        if _is_search_fallback_thumbnail_url(img):
+            is_invalid_img = True
         if not is_invalid_img:
             if img.startswith("/images/"):
                 return f"{base_url}{img}"
@@ -1843,12 +1976,12 @@ def _resolve_best_image_url(deal_obj, base_url: str) -> Optional[str]:
         m = re.search(r'\[첨부된 이미지 링크들\]\s*:?\s*(https?://[^\s,\)\]]+)', content)
         if m:
             cand = m.group(1).strip().rstrip(",)")
-            if cand and "no_image" not in cand.lower():
+            if cand and "no_image" not in cand.lower() and not _is_search_fallback_thumbnail_url(cand):
                 return upgrade_lowres_image_url(cand)
         m2 = re.search(r'(https?://[^\s"\'<>\)\]]+?\.(?:jpg|jpeg|png|webp))', content, re.IGNORECASE)
         if m2:
             cand2 = m2.group(1).strip().rstrip(",)")
-            if cand2 and "dot03.gif" not in cand2.lower():
+            if cand2 and "dot03.gif" not in cand2.lower() and not _is_search_fallback_thumbnail_url(cand2):
                 return upgrade_lowres_image_url(cand2)
     title = getattr(deal_obj, "title", None) or ""
     lower_title = title.lower()
@@ -4192,6 +4325,7 @@ def get_deal(
             "무료배송", "오늘", "특가", "쇼핑", "마켓", "스토어", "브랜드", "정품",
             "기획전", "페스타", "타임딜", "오늘끝딜", "핫딜", "공동구매", "네이버",
             "쿠팡", "지마켓", "옥션", "11번가", "롯데온", "알리", "아마존", "토스", "카카오",
+            "무선", "충전", "블랙", "화이트", "그레이", "실버",
         }
 
         def _extract_sim_tokens(d_obj) -> set[str]:
@@ -4212,37 +4346,75 @@ def get_deal(
             return fallback
 
         target_sim_tokens = _extract_sim_tokens(best_deal) | _extract_sim_tokens(deal)
+        excluded_cluster_ids = {
+            d.id for d in similar_deals if dsu.find(d.id) == cluster_key
+        } | {deal.id}
         if target_sim_tokens:
-            sim_q = (
+            reported_subq = db.query(models.DealClosedReport.deal_id)
+            cutoff_72h = datetime.utcnow() - timedelta(hours=72)
+            cutoff_7d = datetime.utcnow() - timedelta(days=7)
+
+            base_sim_q = (
                 db.query(models.Deal)
                 .options(joinedload(models.Deal.community), defer(models.Deal.content_html), defer(models.Deal.search_keywords))
                 .filter(
-                    models.Deal.id != deal.id,
+                    ~models.Deal.id.in_(excluded_cluster_ids),
                     models.Deal.is_closed == False,
+                    ~models.Deal.id.in_(reported_subq),
                     _sa_not(models.Deal.title.like("%블라인드%")),
                 )
             )
-            if detail_category_key and detail_category_key != "기타":
-                sim_q = sim_q.filter(models.Deal.category.ilike(f"%{_escape_like(detail_category_key)}%", escape="\\"))
-            cand_rows = (
-                sim_q.order_by(models.Deal.indexed_at.desc(), models.Deal.honey_score.desc(), models.Deal.id.desc())
-                .limit(160)
+            tier1_rows = (
+                base_sim_q.filter(models.Deal.indexed_at >= cutoff_72h)
+                .order_by(models.Deal.indexed_at.desc(), models.Deal.honey_score.desc(), models.Deal.id.desc())
+                .limit(120)
                 .all()
             )
-            scored_sims = []
-            for sd in cand_rows:
+            scored_t1 = []
+            seen_sim_ids = set()
+            for sd in tier1_rows:
                 cand_tokens = _extract_sim_tokens(sd)
                 overlap = len(target_sim_tokens & cand_tokens)
-                if overlap >= 1:
-                    scored_sims.append((
+                if overlap >= 2:
+                    scored_t1.append((
                         overlap,
                         int(sd.honey_score or 0),
                         _to_utc_naive(sd.indexed_at) or datetime.min,
                         sd.id,
                         sd,
                     ))
-            scored_sims.sort(key=lambda r: (r[0], r[1], r[2], r[3]), reverse=True)
-            sim_rows = [r[4] for r in scored_sims[:4]]
+                    seen_sim_ids.add(sd.id)
+            scored_t1.sort(key=lambda r: (r[0], r[1], r[2], r[3]), reverse=True)
+            sim_rows = [r[4] for r in scored_t1[:4]]
+
+            if len(sim_rows) < 4 and detail_category_key and detail_category_key != "기타":
+                tier2_q = (
+                    base_sim_q.filter(
+                        models.Deal.indexed_at >= cutoff_7d,
+                        models.Deal.category.ilike(f"%{_escape_like(detail_category_key)}%", escape="\\"),
+                    )
+                    .order_by(models.Deal.indexed_at.desc(), models.Deal.honey_score.desc(), models.Deal.id.desc())
+                    .limit(120)
+                )
+                scored_t2 = []
+                for sd in tier2_q.all():
+                    if sd.id in seen_sim_ids:
+                        continue
+                    cand_tokens = _extract_sim_tokens(sd)
+                    overlap = len(target_sim_tokens & cand_tokens)
+                    if overlap >= 2:
+                        scored_t2.append((
+                            overlap,
+                            int(sd.honey_score or 0),
+                            _to_utc_naive(sd.indexed_at) or datetime.min,
+                            sd.id,
+                            sd,
+                        ))
+                scored_t2.sort(key=lambda r: (r[0], r[1], r[2], r[3]), reverse=True)
+                for r in scored_t2:
+                    if len(sim_rows) >= 4:
+                        break
+                    sim_rows.append(r[4])
         else:
             sim_rows = []
         for sd in sim_rows:
@@ -4386,7 +4558,20 @@ def report_deal_closed(
         models.DealClosedReport.deal_id == deal_id
     ).count()
 
-    if report_count >= _REPORT_CLOSED_THRESHOLD and not deal.is_closed:
+    indexed_dt = _to_utc_naive(deal.indexed_at)
+    age_hours = (
+        max(0.0, (datetime.utcnow() - indexed_dt).total_seconds() / 3600.0)
+        if indexed_dt
+        else 0.0
+    )
+    if age_hours >= 72.0:
+        effective_threshold = 1
+    elif age_hours >= 24.0:
+        effective_threshold = 2
+    else:
+        effective_threshold = _REPORT_CLOSED_THRESHOLD
+
+    if report_count >= effective_threshold and not deal.is_closed:
         deal.is_closed = True
 
     db.commit()
@@ -4402,7 +4587,7 @@ def report_deal_closed(
         "reportCount": report_count,
         "is_closed": is_closed_val,
         "isClosed": is_closed_val,
-        "threshold": _REPORT_CLOSED_THRESHOLD,
+        "threshold": effective_threshold,
     }
 
 @router.get("/deals/{deal_id}/history")
@@ -4797,27 +4982,8 @@ def _collect_raw_history_events(
 
     raw_comm_events.sort(key=lambda ev: (ev["dt"], ev["seq"]))
 
-    # 3. 네이버 쇼핑 최저가 히스토리(NaverPriceHistory) 원시 포인트 수집
+    # 3. GEMINI.md 5조 준수: NaverPriceHistory 외부 쇼핑몰 가격비교 히스토리 조회 전면 배제
     naver_entries: list[tuple[datetime, int]] = []
-    if not target_opt_name and effective_currency == "KRW" and target_price_val > 0:
-        target_model_code = deal.model_code if deal.model_code else (deal.base_product_name if deal.base_product_name else None)
-        if deal.brand and target_model_code:
-            nh_query = db.query(models.NaverPriceHistory).filter(
-                models.NaverPriceHistory.brand == deal.brand,
-                models.NaverPriceHistory.model_code == target_model_code,
-                models.NaverPriceHistory.checked_at <= end_time_utc,
-            )
-            if time_limit_utc is not None:
-                nh_query = nh_query.filter(models.NaverPriceHistory.checked_at >= time_limit_utc)
-            for nh in nh_query.order_by(models.NaverPriceHistory.checked_at.asc()).all():
-                try:
-                    p_val = int(nh.price)
-                    if p_val <= 0 or p_val < target_price_val * 0.40 or p_val > target_price_val * 2.20:
-                        continue
-                    naver_entries.append((normalize_kst_dt(nh.checked_at), p_val))
-                except Exception as exc:
-                    logger.debug(f"_compute_deal_history naver_history row skipped: {exc}")
-
     return raw_comm_events, naver_entries
 
 
@@ -5737,26 +5903,14 @@ async def ingest_scraped_deals_batch(
             db.rollback()
             logger.warning(f"[ingest-batch] item error ({payload.community_name}): {e}")
 
-    # Update scraper_stats.json (실제 수집 아이템이 있을 때만 통계 파일 갱신)
+    # Update runtime scraper_stats.json (실제 수집 아이템이 있을 때만 통계 파일 갱신; 빈 사이클은 /feeder-heartbeat가 갱신)
     if payload.deals:
-        stats_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scraper_stats.json")
-        try:
-            stats = {}
-            if os.path.exists(stats_file):
-                with open(stats_file, "r", encoding="utf-8") as f:
-                    stats = json.load(f)
-            kst_tz = timezone(timedelta(hours=9))
-            stats[payload.display_name] = {
-                "last_count": inserted,
-                "fetched_count": len(payload.deals),
-                "updated_count": inserted,
-                "last_run": datetime.now(kst_tz).strftime("%Y-%m-%d %H:%M:%S"),
-                "status": "Success",
-            }
-            with open(stats_file, "w", encoding="utf-8") as f:
-                json.dump(stats, f, ensure_ascii=False, indent=2)
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.warning(f"[ingest-batch] failed to update scraper_stats.json: {exc}")
+        _update_runtime_scraper_stats(
+            payload.display_name,
+            status="Success",
+            fetched_count=len(payload.deals),
+            inserted_count=inserted,
+        )
 
     if has_feed_change:
         invalidate_feed_api_cache(clear_ecom_url_cache=False)
@@ -5778,6 +5932,54 @@ async def ingest_scraped_deals_batch(
         except Exception as exc:
             logger.debug("AI microbatch scheduling skipped: %s", exc)
     return {"status": "ok", "community": payload.display_name, "processed": inserted}
+
+
+class FeederHeartbeatPayload(BaseModel):
+    community_name: str
+    display_name: str
+    status: str = "OK_EMPTY"  # SUCCESS | OK_EMPTY | BLOCKED | ERROR
+    fetched_count: int = 0
+    inserted_count: int = 0
+    error_detail: Optional[str] = None
+
+
+@router.post("/feeder-heartbeat")
+def report_feeder_heartbeat(
+    payload: FeederHeartbeatPayload,
+    request: Request,
+    x_feeder_token: Optional[str] = Header(default=None, alias="X-Feeder-Token"),
+):
+    """피더의 0건 정상 사이클(OK_EMPTY) 및 차단/오류(BLOCKED/ERROR) 상태를 런타임 통계에 기록."""
+    expected_token = os.getenv("FEEDER_API_TOKEN", "").strip()
+    if expected_token:
+        if not hmac.compare_digest(x_feeder_token or "", expected_token):
+            raise HTTPException(status_code=401, detail="Invalid or missing feeder token")
+    else:
+        env = os.getenv("ENV", "development").strip().lower()
+        if env in ("production", "prod") or env.startswith("prod"):
+            raise HTTPException(status_code=503, detail="FEEDER_API_TOKEN is not configured")
+        forwarded_for = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip().lower() if request else ""
+        real_ip = (request.headers.get("x-real-ip") or "").strip().lower() if request else ""
+        client_host = ((request.client.host if request and request.client else "") or "").strip().lower()
+        is_loopback = (
+            client_host in _LOOPBACK_HOSTS
+            and (not forwarded_for or forwarded_for in _LOOPBACK_HOSTS)
+            and (not real_ip or real_ip in _LOOPBACK_HOSTS)
+        )
+        if not is_loopback:
+            raise HTTPException(status_code=503, detail="FEEDER_API_TOKEN is not configured")
+
+    norm_status = (payload.status or "OK_EMPTY").strip().upper()
+    if norm_status not in ("SUCCESS", "OK_EMPTY", "BLOCKED", "ERROR"):
+        norm_status = "OK_EMPTY"
+    _update_runtime_scraper_stats(
+        payload.display_name,
+        status="Success" if norm_status == "SUCCESS" else norm_status,
+        fetched_count=payload.fetched_count,
+        inserted_count=payload.inserted_count,
+        error_detail=payload.error_detail,
+    )
+    return {"status": "ok", "community": payload.display_name, "heartbeat_status": norm_status}
 
 
 class FeedbackReq(BaseModel):

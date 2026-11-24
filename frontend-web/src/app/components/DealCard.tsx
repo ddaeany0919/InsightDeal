@@ -458,6 +458,15 @@ export default function DealCard({
               </span>
             );
           })}
+          {uniqueBadgeSources.length >= 2 && (
+            <span
+              className="deal-source-extra-count"
+              title={`총 ${uniqueBadgeSources.length}개 커뮤니티 동시 등록`}
+              aria-label={`외 ${uniqueBadgeSources.length - 1}개 커뮤니티`}
+            >
+              +{uniqueBadgeSources.length - 1}
+            </span>
+          )}
           <span className="deal-meta-dot" aria-hidden="true">
             ·
           </span>

@@ -570,6 +570,10 @@ def sanitize_ingested_title(raw_title: str) -> str:
     return re.sub(r"\s{2,}", " ", t).strip()
 
 
+_CLEAN_TITLE_PROMO_PRICE_HEAD_RE = re.compile(
+    r"^\s*\[(?:골드박스|와우\s*할인|오늘끝딜|톡딜가?|타임딜|코인딜|일일특가|특가가?)\s+(?:[1-9][0-9,]*\s*원)\]\s+(?=\S)",
+    re.IGNORECASE,
+)
 _CLEAN_TITLE_ULTRA_TAIL_RE = re.compile(r"\s*\([^)]*울트라\s*맥스[^)]*\)", re.IGNORECASE)
 _CLEAN_TITLE_EMPTY_PAREN_RE = re.compile(r"\(\s*[/,|]?\s*\)")
 _CLEAN_TITLE_HEAD_RE = re.compile(r"^\s*([^\[\]\(\)\s][^\[\]\(\)]{0,15})[\]\)]\s+(.+)$")
@@ -580,18 +584,22 @@ _CLEAN_TITLE_PRICE_PAREN_TAIL_RE = re.compile(
     r"\s*\([^)]*(?:"
     r"(?:[$€¥￥]\s*[0-9]+(?:\.[0-9]+)?)"
     r"|(?:(?:[0-9,]+|[0-9]+(?:\.[0-9]+)?)\s*(?:만\s*원?|천\s*원?|원|달러|불|엔|円|위안|유로|\$|€|¥|￥|USD|EUR|CNY|JPY|원\s*대|원\s*상당))"
-    r"|(?:[0-9]{1,3}(?:,[0-9]{3})+\s*[/,|]\s*(?:무배|무료|무료배송|유배|배송비|[0-9,]+))"
+    r"|(?:[0-9]{1,3}(?:,[0-9]{3})+\s*[/,|]\s*(?:무배|무료배|무료|무료배송|유배|배송비|[0-9,]+))"
     r")[^)]*\)\s*$",
     re.IGNORECASE,
 )
 _CLEAN_TITLE_SHIP_PAREN_TAIL_RE = re.compile(
-    r"\s*\([^)]*(?:무료배송|배송비|무배|유배|미국내무료|미국내무배|국내까지\s*무료|국내까지무료|배대지무료|배대지무배|무료직배|직배무료|직배무배|프라임무료|관부가세포함|와우무료|와우무배|네멤무료|네멤무배|유클무료|유클무배|스클무료|스클무배|조건부무료|카드할인)[^)]*\)\s*$",
+    r"\s*\([^)]*(?:무료배송|배송비|무배|무료배|유배|미국내무료|미국내무배|국내까지\s*무료|국내까지무료|배대지무료|배대지무배|무료직배|직배무료|직배무배|프라임무료|관부가세포함|와우무료|와우무배|네멤무료|네멤무배|유클무료|유클무배|스클무료|스클무배|조건부무료|카드할인)[^)]*\)\s*$",
     re.IGNORECASE,
 )
 _CLEAN_TITLE_UNCLOSED_PAREN_TAIL_RE = re.compile(r"\s*\([^)]*$")
 _CLEAN_TITLE_SLASH_TAIL_RE = re.compile(
-    r"\s*/\s*(?:[1-9][0-9]{0,2}(?:,[0-9]{3})+|[1-9][0-9]{3,6})\s*원?\s*/\s*"
-    r"(?:무배|무료배송|무료|무|0원?|와우무료|와우무배|네멤무료|네멤무배|유클무료|유클무배|스클무료|스클무배|조건부무료|(?:배송비\s*|택배비?\s*)?[1-9][0-9]{0,1},?[0-9]{3}\s*원?)\s*$",
+    r"(?:\s*/\s*|\s+)(?:[1-9][0-9]{0,2}(?:,[0-9]{3})+|[1-9][0-9]{3,6})\s*원?\s*/\s*"
+    r"(?:무배|무료배|무료배송|무료|무|0원?|와우무료|와우무배|네멤무료|네멤무배|네맴무료|유클무료|유클무배|스클무료|스클무배|조건부무료|(?:배송비\s*|택배비?\s*)?[1-9][0-9]{0,1},?[0-9]{3}\s*원?)\s*$",
+    re.IGNORECASE,
+)
+_CLEAN_TITLE_PLAIN_PRICE_TAIL_RE = re.compile(
+    r"(?<!권)(?<!할인)(?<!적립)\s+(?:[1-9][0-9]{0,2}(?:,[0-9]{3})+|[1-9][0-9]{3,6})\s*원\s*[!~.]*$",
     re.IGNORECASE,
 )
 _CLEAN_TITLE_TRIM_END_RE = re.compile(r"[\s\.,\-\/~]+$")
@@ -611,6 +619,7 @@ def _clean_canonical_title_cached(raw_title: str) -> str:
     t = _SEED_DUMMY_TAIL_RE.sub("", t)
     t = _CLEAN_TITLE_ULTRA_TAIL_RE.sub("", t)
     t = _CLEAN_TITLE_EMPTY_PAREN_RE.sub("", t)
+    t = _CLEAN_TITLE_PROMO_PRICE_HEAD_RE.sub("", t)
 
     # 앞머리 닫는 괄호 오타 교정 ('잔여공구코드] ' -> '[잔여공구코드] ')
     m_head = _CLEAN_TITLE_HEAD_RE.match(t)
@@ -633,8 +642,11 @@ def _clean_canonical_title_cached(raw_title: str) -> str:
 
     # 닫는 괄호가 누락된 후행 열린 괄호 제거 (예: '(16,680원/무료')
     t = _CLEAN_TITLE_UNCLOSED_PAREN_TAIL_RE.sub("", t)
-    # 후행 슬래시 가격/배송비 꼬리표 제거 (예: '/88,900원/2500원', '/22050원/무배')
+    # 후행 슬래시/공백 가격+배송비 꼬리표 제거 (예: '/88,900원/2500원', ' 41700원/무료배')
     t = _CLEAN_TITLE_SLASH_TAIL_RE.sub("", t)
+    # 단독 후행 가격 제거 (단, 상품권 액면가 '원권' 및 '할인/적립' 제외)
+    if not re.search(r"(?:원권|상품권|금액권|기프트카드)\s*$", t):
+        t = _CLEAN_TITLE_PLAIN_PRICE_TAIL_RE.sub("", t)
     t = _CLEAN_TITLE_TRIM_END_RE.sub("", t)
     t = _MULTI_WS_RE.sub(" ", t).strip()
     return t or html.unescape(raw_title).strip()
@@ -654,11 +666,11 @@ def clean_canonical_title(raw_title: str) -> str:
 
 
 _TITLE_SHIP_WOW_RE = re.compile(r"(?:와우\s*무배|와우\s*무료|쿠팡와우\s*0?\s*무료)", re.IGNORECASE)
-_TITLE_SHIP_NMEM_RE = re.compile(r"(?:네멤\s*무배|네멤\s*무료|멤버십\s*0?\s*무료)", re.IGNORECASE)
+_TITLE_SHIP_NMEM_RE = re.compile(r"(?:네[멤맴]\s*무배|네[멤맴]\s*무료|멤버십\s*0?\s*무료)", re.IGNORECASE)
 _TITLE_SHIP_UCLUB_RE = re.compile(r"(?:유클\s*무배|유클\s*무료|유니버스\s*클럽\s*(?:무료|무배))", re.IGNORECASE)
 _TITLE_SHIP_SCLUB_RE = re.compile(r"(?:스클\s*무배|스클\s*무료|스마일\s*클럽\s*(?:무료|무배))", re.IGNORECASE)
 _TITLE_SHIP_FREE_RE = re.compile(
-    r"(?:무배|무료배송|직배\s*무료|직배\s*무배|직구\s*무배?|미국내\s*(?:무료|무배)|국내까지\s*(?:무료|무배)|배대지\s*(?:무료|무배)|무료\s*직배|프라임\s*(?:무료|무배)|/\s*(?:무료|무|0원?|free|fs)\s*(?:[\)\]]|$))",
+    r"(?:무배|무료배(?![\w가-힣])|무료배송|직배\s*무료|직배\s*무배|직구\s*무배?|미국내\s*(?:무료|무배|free)|국내까지\s*(?:무료|무배)|배대지\s*(?:무료|무배)|무료\s*직배|프라임\s*(?:무료|무배)|/\s*(?:무료|무|0원?|free|fs)\s*(?:[\)\]]|$))",
     re.IGNORECASE,
 )
 
@@ -691,7 +703,7 @@ def _normalize_shipping_fee_cached(raw_fee_str: str, title_hint: str) -> str:
                 return "유클무료"
             if ("스클" in compact or "스마일클럽" in compact) and ("무료" in compact or "무배" in compact):
                 return "스클무료"
-            if ("멤버십" in compact or "네멤" in compact) and ("무료" in compact or "무배" in compact):
+            if ("멤버십" in compact or "네멤" in compact or "네맴" in compact) and ("무료" in compact or "무배" in compact):
                 return "네멤무료"
             if any(k in low for k in ("무료배송", "무배", "배송비 무료", "배송비포함", "배송비 포함", "free shipping")):
                 return "무료배송"
@@ -703,10 +715,14 @@ def _normalize_shipping_fee_cached(raw_fee_str: str, title_hint: str) -> str:
             return "유클무료"
         if ("스클" in compact or "스마일클럽" in compact) and any(k in compact for k in ("무료", "무배", "0")):
             return "스클무료"
-        if any(m in compact for m in ("멤버십", "네멤", "네이버멤버십", "플러스멤버십")) and any(
+        if any(m in compact for m in ("멤버십", "네멤", "네맴", "네이버멤버십", "플러스멤버십")) and any(
             k in compact for k in ("무료", "무배", "0")
         ):
             return "네멤무료"
+        if compact in ("미국내free", "미국내무료", "미국내무배"):
+            return "무료배송"
+        if compact == "배대지":
+            return "배대지별도"
         if "조건부" in compact or ("이상" in compact and ("무료" in compact or "무배" in compact)):
             return "조건부무료"
 
@@ -1757,6 +1773,11 @@ KOR_ENG_SEARCH_SYNONYMS: dict[str, tuple[str, ...]] = {
     "bose": ("보스",),
     "마샬": ("marshall",),
     "marshall": ("마샬",),
+    "엡손": ("epson", "앱손"),
+    "앱손": ("epson", "엡손"),
+    "epson": ("엡손", "앱손"),
+    "아트뮤": ("artmu",),
+    "artmu": ("아트뮤",),
 }
 
 

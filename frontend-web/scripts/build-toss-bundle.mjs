@@ -55,6 +55,20 @@ try {
   }
 }
 
+// 3.5. 앱인토스 정적 번들 위생 정화: 웹 PWA 전용 서비스 워커 잔재 제거
+if (fs.existsSync(outDir)) {
+  for (const entry of fs.readdirSync(outDir)) {
+    if (
+      entry === "pwa-sw.js" ||
+      /^workbox-.*\.js$/.test(entry) ||
+      /^swe-worker-.*\.js$/.test(entry)
+    ) {
+      fs.rmSync(path.join(outDir, entry), { force: true });
+      console.log(`🧹 [번들 정화] 웹 PWA 잔재 제거: out/${entry}`);
+    }
+  }
+}
+
 // 4. out/ 폴더를 앱인토스 콘솔 업로드용 zip으로 압축
 if (fs.existsSync(outDir)) {
   if (fs.existsSync(zipPath)) {

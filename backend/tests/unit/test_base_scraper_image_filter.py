@@ -153,6 +153,33 @@ async def test_fetch_og_image_rejects_each_new_bad_token(
 
 
 @pytest.mark.asyncio
+async def test_fetch_og_image_never_uses_daum_naver_bing_web_search_guess(monkeypatch):
+    """스마트스토어 429 등 직접 파싱 실패 시 다음 w=tot / 네이버 / 빙 웹검색 추측을 0회 호출하고 None 반환한다."""
+
+    async def forbid_external_httpx_get(*args, **kwargs):
+        raise AssertionError("외부 검색(daum/naver/bing) httpx 요청이 절대 발생하면 안 됩니다.")
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", forbid_external_httpx_get)
+
+    scraper = _DummyImageFilterScraper()
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(
+        return_value=_make_mock_html_response(
+            "https://smartstore.naver.com/mobilelounge/products/803834583",
+            "<html><title>에러페이지</title></html>",
+            status_code=429,
+        )
+    )
+    scraper.client = mock_client
+
+    selected = await scraper.fetch_og_image(
+        "https://smartstore.naver.com/mobilelounge/products/803834583",
+        fallback_title="벨루가 퓨어웨이브 맥세이프 홀더 베이스",
+    )
+    assert selected is None
+
+
+@pytest.mark.asyncio
 async def test_fetch_og_image_bad_tokens_match_case_insensitively(monkeypatch):
     async def forbid_external_httpx_get(*args, **kwargs):
         raise AssertionError("외부 검색 폴백 httpx 네트워크 요청이 발생하면 안 됩니다.")
@@ -181,3 +208,30 @@ async def test_fetch_og_image_bad_tokens_match_case_insensitively(monkeypatch):
 
     selected = await scraper.fetch_og_image(target_url, fallback_title="")
     assert selected == "https://seorincomputer.co.kr/data/pimg/163/163082_600.jpg"
+
+
+@pytest.mark.asyncio
+async def test_fetch_og_image_never_uses_daum_naver_bing_web_search_guess(monkeypatch):
+    """스마트스토어 429 등 직접 파싱 실패 시 다음 w=tot / 네이버 / 빙 웹검색 추측을 0회 호출하고 None 반환한다."""
+
+    async def forbid_external_httpx_get(*args, **kwargs):
+        raise AssertionError("외부 검색(daum/naver/bing) httpx 요청이 절대 발생하면 안 됩니다.")
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", forbid_external_httpx_get)
+
+    scraper = _DummyImageFilterScraper()
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(
+        return_value=_make_mock_html_response(
+            "https://smartstore.naver.com/mobilelounge/products/803834583",
+            "<html><title>에러페이지</title></html>",
+            status_code=429,
+        )
+    )
+    scraper.client = mock_client
+
+    selected = await scraper.fetch_og_image(
+        "https://smartstore.naver.com/mobilelounge/products/803834583",
+        fallback_title="벨루가 퓨어웨이브 맥세이프 홀더 베이스",
+    )
+    assert selected is None
