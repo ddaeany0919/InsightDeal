@@ -105,6 +105,7 @@ frontend-web/.web-static-api-stash/
 
 # Backups & Keystore
 backend/backups/
+backend/.ai_budget_state.json
 keystore.properties
 *.jks
 *.keystore

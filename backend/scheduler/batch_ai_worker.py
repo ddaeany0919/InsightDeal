@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -26,8 +27,8 @@ load_dotenv(os.path.join(root_dir, ".env"))
 from backend.core.ai_utils import (  # noqa: E402
     get_cloudflare_ai_config,
     get_gemini_summary_model,
+    get_microbatch_gemini_key,
     get_openai_compatible_config,
-    get_random_gemini_key,
     is_ai_summary_enabled,
     mark_key_dead,
 )
@@ -40,8 +41,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_BUDGET_STATE_PATH = os.path.join(root_dir, "backend", ".ai_budget_state.json")
 _STATE_LOCK = threading.Lock()
-_DAILY_COUNTER = {"date": "", "count": 0}
+_DAILY_BUDGET = {"date": "", "calls": 0, "tokens": 0}
+_BUDGET_LOADED_FROM_DISK = False
+_LAST_CALL_MONOTONIC = 0.0
 _PROVIDER_COOLDOWN_UNTIL: dict[str, float] = {}
 
 _MICROBATCH_LOCK = threading.Lock()
@@ -56,31 +60,97 @@ class _ProviderCallError(Exception):
         self.status_code = status_code
 
 
+def _is_test_runtime() -> bool:
+    return (
+        os.getenv("ENV") == "test"
+        or "pytest" in sys.modules
+        or "memory" in os.getenv("DATABASE_URL", "").lower()
+    )
+
+
 def reset_ai_worker_state() -> None:
-    """일일 호출 카운터, 쿨다운, 대기 큐를 초기화합니다 (단위 테스트 격리용)."""
-    global _MICROBATCH_TASK
+    """일일 호출/토큰 카운터, 최소 간격, 쿨다운, 대기 큐를 초기화합니다 (테스트 격리용)."""
+    global _MICROBATCH_TASK, _BUDGET_LOADED_FROM_DISK, _LAST_CALL_MONOTONIC
     with _STATE_LOCK:
-        _DAILY_COUNTER["date"] = ""
-        _DAILY_COUNTER["count"] = 0
+        _DAILY_BUDGET["date"] = ""
+        _DAILY_BUDGET["calls"] = 0
+        _DAILY_BUDGET["tokens"] = 0
+        _BUDGET_LOADED_FROM_DISK = False
+        _LAST_CALL_MONOTONIC = 0.0
         _PROVIDER_COOLDOWN_UNTIL.clear()
     with _MICROBATCH_LOCK:
         _PENDING_DEAL_IDS.clear()
         _MICROBATCH_TASK = None
 
 
+def _utc_today_str() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _load_budget_state_unlocked() -> None:
+    global _BUDGET_LOADED_FROM_DISK
+    if _BUDGET_LOADED_FROM_DISK:
+        return
+    _BUDGET_LOADED_FROM_DISK = True
+    if _is_test_runtime() or not os.path.exists(_BUDGET_STATE_PATH):
+        return
+    try:
+        with open(_BUDGET_STATE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        today = _utc_today_str()
+        if isinstance(data, dict) and data.get("date") == today:
+            _DAILY_BUDGET["date"] = today
+            _DAILY_BUDGET["calls"] = max(0, int(data.get("calls", 0) or 0))
+            _DAILY_BUDGET["tokens"] = max(0, int(data.get("tokens", 0) or 0))
+    except Exception as exc:
+        logger.debug("AI budget state load skipped: %s", exc)
+
+
+def _save_budget_state_unlocked() -> None:
+    if _is_test_runtime():
+        return
+    try:
+        tmp_path = f"{_BUDGET_STATE_PATH}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(_DAILY_BUDGET, f, ensure_ascii=False)
+        os.replace(tmp_path, _BUDGET_STATE_PATH)
+    except Exception as exc:
+        logger.debug("AI budget state save skipped: %s", exc)
+
+
+def _rollover_budget_day_unlocked() -> None:
+    _load_budget_state_unlocked()
+    today = _utc_today_str()
+    if _DAILY_BUDGET["date"] != today:
+        _DAILY_BUDGET["date"] = today
+        _DAILY_BUDGET["calls"] = 0
+        _DAILY_BUDGET["tokens"] = 0
+
+
 def get_daily_call_count() -> int:
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with _STATE_LOCK:
-        if _DAILY_COUNTER["date"] != today:
-            return 0
-        return int(_DAILY_COUNTER["count"])
+        _rollover_budget_day_unlocked()
+        return int(_DAILY_BUDGET["calls"])
+
+
+def get_daily_token_count() -> int:
+    with _STATE_LOCK:
+        _rollover_budget_day_unlocked()
+        return int(_DAILY_BUDGET["tokens"])
 
 
 def _get_max_daily_calls() -> int:
     try:
-        return max(0, int(os.getenv("AI_MAX_DAILY_CALLS", "200") or "200"))
+        return max(0, int(os.getenv("AI_MAX_DAILY_CALLS", "60") or "60"))
     except ValueError:
-        return 200
+        return 60
+
+
+def _get_max_daily_tokens() -> int:
+    try:
+        return max(0, int(os.getenv("AI_MAX_DAILY_TOKENS", "150000") or "150000"))
+    except ValueError:
+        return 150000
 
 
 def _get_max_batch_size() -> int:
@@ -90,6 +160,13 @@ def _get_max_batch_size() -> int:
         return 20
 
 
+def _get_content_preview_chars() -> int:
+    try:
+        return max(0, min(400, int(os.getenv("AI_CONTENT_PREVIEW_CHARS", "140") or "140")))
+    except ValueError:
+        return 140
+
+
 def _get_rate_limit_cooldown_sec() -> float:
     try:
         return max(1.0, float(os.getenv("AI_RATE_LIMIT_COOLDOWN_SEC", "300") or "300"))
@@ -97,26 +174,70 @@ def _get_rate_limit_cooldown_sec() -> float:
         return 300.0
 
 
+def _get_min_call_interval_sec() -> float:
+    try:
+        return max(0.0, float(os.getenv("AI_MIN_CALL_INTERVAL_SEC", "15") or "15"))
+    except ValueError:
+        return 15.0
+
+
 def _get_microbatch_debounce_sec() -> float:
     try:
-        return max(0.0, float(os.getenv("AI_MICROBATCH_DEBOUNCE_SEC", "8") or "8"))
+        return max(0.0, float(os.getenv("AI_MICROBATCH_DEBOUNCE_SEC", "20") or "20"))
     except ValueError:
-        return 8.0
+        return 20.0
 
 
-def _try_consume_daily_quota() -> bool:
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    limit = _get_max_daily_calls()
-    if limit <= 0:
-        return False
+def _estimate_tokens(text: str) -> int:
+    """한글/영문 혼합 텍스트의 보수적인 토큰 수를 추정합니다 (한글 1자 ≈ 0.8~1.2토큰)."""
+    if not text:
+        return 0
+    return max(1, math.ceil(len(text) * 0.9))
+
+
+def _reserve_call_budget(estimated_input_tokens: int) -> tuple[bool, str]:
+    global _LAST_CALL_MONOTONIC
+    max_calls = _get_max_daily_calls()
+    max_tokens = _get_max_daily_tokens()
+    min_interval = _get_min_call_interval_sec()
+
+    if max_calls <= 0 or max_tokens <= 0:
+        return False, "hard_cap_disabled"
+
+    now_mono = time.monotonic()
     with _STATE_LOCK:
-        if _DAILY_COUNTER["date"] != today:
-            _DAILY_COUNTER["date"] = today
-            _DAILY_COUNTER["count"] = 0
-        if _DAILY_COUNTER["count"] >= limit:
-            return False
-        _DAILY_COUNTER["count"] += 1
-        return True
+        _rollover_budget_day_unlocked()
+        if min_interval > 0 and _LAST_CALL_MONOTONIC > 0 and (now_mono - _LAST_CALL_MONOTONIC) < min_interval:
+            return False, "min_interval"
+        if _DAILY_BUDGET["calls"] >= max_calls:
+            return False, "daily_calls"
+        if (_DAILY_BUDGET["tokens"] + max(0, estimated_input_tokens)) > max_tokens:
+            return False, "daily_tokens"
+
+        _DAILY_BUDGET["calls"] += 1
+        _DAILY_BUDGET["tokens"] += max(0, estimated_input_tokens)
+        _LAST_CALL_MONOTONIC = now_mono
+        _save_budget_state_unlocked()
+        return True, "ok"
+
+
+def _reconcile_token_usage(
+    estimated_input_tokens: int,
+    actual_total_tokens: Optional[int],
+    raw_output_text: str = "",
+) -> None:
+    final_tokens = (
+        max(0, int(actual_total_tokens))
+        if actual_total_tokens is not None
+        else max(0, estimated_input_tokens) + _estimate_tokens(raw_output_text)
+    )
+    delta = final_tokens - max(0, estimated_input_tokens)
+    if delta == 0:
+        return
+    with _STATE_LOCK:
+        _rollover_budget_day_unlocked()
+        _DAILY_BUDGET["tokens"] = max(0, _DAILY_BUDGET["tokens"] + delta)
+        _save_budget_state_unlocked()
 
 
 def _is_provider_in_cooldown(provider: str) -> bool:
@@ -132,8 +253,8 @@ def _set_provider_cooldown(provider: str, seconds: Optional[float] = None) -> No
         _PROVIDER_COOLDOWN_UNTIL[provider] = time.monotonic() + duration
 
 
-def _strip_html_preview(raw_html: Optional[str], max_chars: int = 350) -> str:
-    if not raw_html:
+def _strip_html_preview(raw_html: Optional[str], max_chars: int = 140) -> str:
+    if not raw_html or max_chars <= 0:
         return ""
     try:
         text = BeautifulSoup(str(raw_html), "html.parser").get_text(" ", strip=True)
@@ -161,34 +282,27 @@ def _format_price_for_prompt(deal: Deal) -> str:
 
 
 def _build_batch_prompt(deals_to_process: list[Deal]) -> str:
+    preview_chars = _get_content_preview_chars()
     input_data = []
     for d in deals_to_process:
-        input_data.append(
-            {
-                "id": d.id,
-                "title": d.title,
-                "price": _format_price_for_prompt(d),
-                "content": _strip_html_preview(d.content_html, 350),
-                "is_super_hotdeal": bool(d.honey_score == 100 or d.is_super_hotdeal),
-            }
-        )
+        entry = {
+            "id": d.id,
+            "t": d.title,
+            "p": _format_price_for_prompt(d),
+        }
+        snippet = _strip_html_preview(d.content_html, preview_chars)
+        if snippet:
+            entry["c"] = snippet
+        if d.honey_score == 100 or d.is_super_hotdeal:
+            entry["hot"] = 1
+        input_data.append(entry)
 
-    return f"""너는 국내 쇼핑몰 핫딜 분석 전문가야. 아래 JSON 배열로 전달된 {len(input_data)}개의 핫딜 데이터를 분석해서, 각 핫딜에 대해 핵심 스펙과 체감가·구매 포인트를 정리하는 솔직하고 간결한 3줄 요약을 작성해줘.
-
-[규칙]
-1. 반드시 순수 JSON 배열만 반환할 것 (마크다운 백틱 제외).
-2. 각 객체는 입력받은 'id'를 반드시 정수로 그대로 유지하고, 'ai_summary' 필드에 3줄 요약을 넣을 것.
-3. 'ai_summary'의 각 줄은 '✅' 이모지로 시작하고 줄바꿈(\\n)으로 구분할 것. (전체 150자 이내)
-4. 만약 is_super_hotdeal 값이 true라면, 요약 맨 앞에 '🔥 [커뮤니티 인증 핫딜] '을 붙일 것.
-
-[입력 데이터]:
-{json.dumps(input_data, ensure_ascii=False, indent=2)}
-
-[출력 예시]:
-[
-  {{"id": 101, "ai_summary": "✅ 역대급 가격 메리트\\n✅ 스펙 대비 가성비 우수\\n✅ 구매 전 카드 할인 확인"}},
-  {{"id": 102, "ai_summary": "🔥 [커뮤니티 인증 핫딜] ✅ 품절 임박 인기 딜\\n✅ 체감가 기준 최저 수준\\n✅ 커뮤니티 반응 긍정적"}}
-]"""
+    compact_json = json.dumps(input_data, ensure_ascii=False, separators=(",", ":"))
+    return (
+        '한국 핫딜 JSON 요약기. 입력 배열의 id를 유지하고 ai_summary에 '
+        '"✅ 스펙/장점\\n✅ 체감가/혜택\\n✅ 주의사항"(총 120자 이내, hot=1이면 앞부분에 "🔥 [커뮤니티 인증 핫딜] ")을 채운 '
+        f"순수 JSON 배열만 반환하라: [{{\"id\":1,\"ai_summary\":\"...\"}}\n입력:{compact_json}"
+    )
 
 
 def _parse_batch_summaries(raw_text: str) -> dict[int, str]:
@@ -247,7 +361,35 @@ def _is_fatal_key_error(status_code: int, body_text: str) -> bool:
     )
 
 
-def _call_gemini_rest(prompt: str, cfg: dict, timeout: float = 25.0) -> str:
+def _extract_gemini_total_tokens(data: dict) -> Optional[int]:
+    usage = data.get("usageMetadata")
+    if not isinstance(usage, dict):
+        return None
+    total = usage.get("totalTokenCount")
+    if total is not None:
+        try:
+            return max(0, int(total))
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _extract_openai_total_tokens(data: dict) -> Optional[int]:
+    usage = data.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    total = usage.get("total_tokens")
+    if total is not None:
+        try:
+            return max(0, int(total))
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _call_gemini_rest(
+    prompt: str, cfg: dict, max_output_tokens: int, timeout: float = 25.0
+) -> tuple[str, Optional[int]]:
     api_key = cfg["api_key"]
     model = cfg["model"]
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -255,8 +397,9 @@ def _call_gemini_rest(prompt: str, cfg: dict, timeout: float = 25.0) -> str:
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.1,
-            "maxOutputTokens": 1500,
+            "maxOutputTokens": max_output_tokens,
             "responseMimeType": "application/json",
+            "thinkingConfig": {"thinkingBudget": 0},
         },
     }
     headers = {
@@ -275,19 +418,23 @@ def _call_gemini_rest(prompt: str, cfg: dict, timeout: float = 25.0) -> str:
     data = resp.json()
     try:
         parts = data["candidates"][0]["content"]["parts"]
-        return "".join(str(p.get("text", "")) for p in parts if isinstance(p, dict))
+        text = "".join(str(p.get("text", "")) for p in parts if isinstance(p, dict))
+        return text, _extract_gemini_total_tokens(data)
     except (KeyError, IndexError, TypeError) as exc:
         raise _ProviderCallError("gemini", resp.status_code, f"Malformed response: {exc}") from exc
 
 
-def _call_openai_compatible_rest(prompt: str, cfg: dict, timeout: float = 25.0) -> str:
+def _call_openai_compatible_rest(
+    prompt: str, cfg: dict, max_output_tokens: int, timeout: float = 25.0
+) -> tuple[str, Optional[int]]:
     provider = cfg["provider"]
     url = f"{cfg['base_url']}/chat/completions"
     payload = {
         "model": cfg["model"],
         "temperature": 0.1,
+        "max_tokens": max_output_tokens,
         "messages": [
-            {"role": "system", "content": "You return only valid JSON arrays."},
+            {"role": "system", "content": "Return only a valid JSON array."},
             {"role": "user", "content": prompt},
         ],
     }
@@ -306,20 +453,23 @@ def _call_openai_compatible_rest(prompt: str, cfg: dict, timeout: float = 25.0) 
 
     data = resp.json()
     try:
-        return str(data["choices"][0]["message"]["content"])
+        text = str(data["choices"][0]["message"]["content"])
+        return text, _extract_openai_total_tokens(data)
     except (KeyError, IndexError, TypeError) as exc:
         raise _ProviderCallError(provider, resp.status_code, f"Malformed response: {exc}") from exc
 
 
-def _call_cloudflare_workers_ai_rest(prompt: str, cfg: dict, timeout: float = 25.0) -> str:
+def _call_cloudflare_workers_ai_rest(
+    prompt: str, cfg: dict, max_output_tokens: int, timeout: float = 25.0
+) -> tuple[str, Optional[int]]:
     url = f"https://api.cloudflare.com/client/v4/accounts/{cfg['account_id']}/ai/run/{cfg['model']}"
     payload = {
         "messages": [
-            {"role": "system", "content": "You return only valid JSON arrays."},
+            {"role": "system", "content": "Return only a valid JSON array."},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.1,
-        "max_tokens": 1500,
+        "max_tokens": max_output_tokens,
     }
     headers = {
         "Content-Type": "application/json",
@@ -339,18 +489,21 @@ def _call_cloudflare_workers_ai_rest(prompt: str, cfg: dict, timeout: float = 25
         result = data["result"]
         if isinstance(result, dict):
             resp_val = result.get("response")
-            if isinstance(resp_val, (list, dict)):
-                return json.dumps(resp_val, ensure_ascii=False)
-            return str(resp_val or "")
-        return str(result)
+            text = (
+                json.dumps(resp_val, ensure_ascii=False)
+                if isinstance(resp_val, (list, dict))
+                else str(resp_val or "")
+            )
+            return text, None
+        return str(result), None
     except (KeyError, TypeError) as exc:
         raise _ProviderCallError("cloudflare_ai", resp.status_code, f"Malformed response: {exc}") from exc
 
 
-def _collect_available_providers() -> list[tuple[str, dict, Callable[[str, dict], str]]]:
-    providers: list[tuple[str, dict, Callable[[str, dict], str]]] = []
+def _collect_available_providers() -> list[tuple[str, dict, Callable[[str, dict, int], tuple[str, Optional[int]]]]]:
+    providers: list[tuple[str, dict, Callable[[str, dict, int], tuple[str, Optional[int]]]]] = []
 
-    gemini_key = get_random_gemini_key()
+    gemini_key = get_microbatch_gemini_key()
     if gemini_key and not _is_provider_in_cooldown("gemini"):
         providers.append(
             (
@@ -446,19 +599,27 @@ def process_ai_batch(
         if not deals_to_process:
             return 0
 
-        logger.info("🚀 %d개 핫딜 3줄 요약 마이크로배치 시작...", len(deals_to_process))
+        logger.info("🚀 %d개 핫딜 초절전 3줄 요약 마이크로배치 시작...", len(deals_to_process))
         prompt = _build_batch_prompt(deals_to_process)
+        estimated_in_tokens = _estimate_tokens(prompt)
+        max_output_tokens = min(900, 120 + len(deals_to_process) * 55)
 
         for provider_name, cfg, call_fn in providers:
-            if not _try_consume_daily_quota():
+            allowed, reason = _reserve_call_budget(estimated_in_tokens)
+            if not allowed:
                 logger.warning(
-                    "일일 AI 호출 상한(%d회)에 도달하여 요약을 건너뜁니다 (ai_summary=None 유지).",
+                    "AI 예산/빈도 가드(%s)로 외부 호출 차단 (calls=%d/%d, tokens=%d/%d).",
+                    reason,
+                    get_daily_call_count(),
                     _get_max_daily_calls(),
+                    get_daily_token_count(),
+                    _get_max_daily_tokens(),
                 )
                 return 0
 
             try:
-                raw_text = call_fn(prompt, cfg)
+                raw_text, actual_total_tokens = call_fn(prompt, cfg, max_output_tokens)
+                _reconcile_token_usage(estimated_in_tokens, actual_total_tokens, raw_text)
                 summaries_by_id = _parse_batch_summaries(raw_text)
                 if not summaries_by_id:
                     logger.warning("[%s] 빈 응답 또는 JSON 파싱 실패 → 다음 프로바이더 시도", provider_name)
@@ -478,10 +639,12 @@ def process_ai_batch(
                 db.commit()
                 _invalidate_caches_for_deals(updated_ids)
                 logger.info(
-                    "✅ [%s] AI 마이크로배치 완료: %d/%d건 업데이트",
+                    "✅ [%s] 초절전 AI 배치 완료: %d/%d건 (일일 %d회/%d토큰)",
                     provider_name,
                     len(updated_ids),
                     len(deals_to_process),
+                    get_daily_call_count(),
+                    get_daily_token_count(),
                 )
                 return len(updated_ids)
 
@@ -539,11 +702,7 @@ def schedule_ai_summary_microbatch(
     global _MICROBATCH_TASK
 
     allow_in_test = os.getenv("AI_MICROBATCH_ALLOW_IN_TEST", "").strip().lower() in ("true", "1", "yes")
-    if not allow_in_test and (
-        os.getenv("ENV") == "test"
-        or "pytest" in sys.modules
-        or "memory" in os.getenv("DATABASE_URL", "").lower()
-    ):
+    if not allow_in_test and _is_test_runtime():
         return False
 
     if not deal_ids or not is_ai_summary_enabled():
@@ -606,7 +765,7 @@ def run_all_batches(max_batches: int = 20) -> int:
             break
 
         total_processed += processed
-        time.sleep(2)
+        time.sleep(max(2.0, _get_min_call_interval_sec()))
 
     return total_processed
 

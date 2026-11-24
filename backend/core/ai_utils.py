@@ -41,18 +41,23 @@ def is_ai_summary_enabled() -> bool:
     return False
 
 
+def is_legacy_per_deal_ai_enabled() -> bool:
+    """
+    딜 1건당 AI를 즉시 호출하는 레거시 경로(aggregator_service, llm_normalizer, ai_product_name_service)는
+    토큰 폭주를 막기 위해 USE_LEGACY_GEMINI_PER_DEAL=true 를 명시한 경우에만 허용합니다.
+    """
+    return os.getenv("USE_LEGACY_GEMINI_PER_DEAL", "false").strip().lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+
+
 def get_gemini_summary_model() -> str:
     return (os.getenv("GEMINI_SUMMARY_MODEL") or "gemini-2.5-flash-lite").strip() or "gemini-2.5-flash-lite"
 
 
-def get_random_gemini_key():
-    """
-    USE_GEMINI_AI=true 일 때만 GEMINI_API_KEYS (콤마 분리) 또는 단일 GEMINI_API_KEY, GOOGLE_API_KEY 중에서
-    랜덤하게 하나의 키를 반환합니다. (죽은 키 제외, 기본값은 로컬 엔진 100% 가동)
-    """
-    if not is_ai_summary_enabled():
-        return None
-
+def _select_valid_gemini_key() -> Optional[str]:
     keys = []
 
     # 1. 콤마로 구분된 여러 키 (우선순위)
@@ -87,6 +92,24 @@ def get_random_gemini_key():
     masked_key = selected[:10] + "..." + selected[-4:] if len(selected) > 15 else "..."
     logger.debug(f"🔑 AI API Key Selected (Rotation): {masked_key}")
     return selected
+
+
+def get_microbatch_gemini_key() -> Optional[str]:
+    """초절전 마이크로배치 요약 워커 전용 Gemini 키 조회 (USE_GEMINI_AI=true 일 때 활성화)."""
+    if not is_ai_summary_enabled():
+        return None
+    return _select_valid_gemini_key()
+
+
+def get_random_gemini_key():
+    """
+    레거시 건별 호출 보호용 게이트.
+    USE_GEMINI_AI=true 이면서 동시에 USE_LEGACY_GEMINI_PER_DEAL=true 일 때만 키를 반환합니다.
+    기본값(false)에서는 항상 None을 반환해 딜 건별 토큰 폭탄을 원천 차단합니다.
+    """
+    if not is_ai_summary_enabled() or not is_legacy_per_deal_ai_enabled():
+        return None
+    return _select_valid_gemini_key()
 
 
 def get_openai_compatible_config() -> Optional[dict]:

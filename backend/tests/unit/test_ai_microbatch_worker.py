@@ -2,13 +2,15 @@
 """
 backend/tests/unit/test_ai_microbatch_worker.py
 
-0원 무료 멀티 프로바이더 마이크로배치 AI 요약 엔진 회귀 테스트:
-1. Gemini REST 배치 성공 + Deal.ai_summary DB 업데이트 + 캐시 무효화
+0원 무료 멀티 프로바이더 마이크로배치 AI 요약 엔진 & 4중 토큰·비용 하드 캡 가드 회귀 테스트:
+1. Gemini REST 배치 성공 + Deal.ai_summary DB 업데이트 + 캐시 무효화 + usageMetadata 토큰 정산
 2. Gemini 429(Rate Limit) 시 Groq/OpenAI 호환 무료 프로바이더 자동 폴백
-3. Cloudflare Workers AI 무료 폴백 동작
-4. 전 프로바이더 실패 시 더미 문자열('AI 요약 대체') 미기록 (None 유지)
-5. AI_MAX_DAILY_CALLS 상한 도달 시 외부 HTTP 호출 차단
-6. schedule_ai_summary_microbatch 디바운스 다건 유입 1회 묶음 처리
+3. Cloudflare Workers AI 무료 폴백 & 전 프로바이더 실패 시 더미 문자열('AI 요약 대체') 미기록
+4. AI_MAX_DAILY_CALLS 상한 도달 시 외부 HTTP 호출 차단
+5. AI_MAX_DAILY_TOKENS 상한 도달 시 외부 HTTP 호출 차단
+6. 레거시 건별 호출(get_random_gemini_key) 영구 잠금 & USE_LEGACY_GEMINI_PER_DEAL=true 시에만 허용
+7. Gemini 요청 payload에 thinkingConfig.thinkingBudget=0 · compact JSON · 동적 maxOutputTokens 적용 확인
+8. schedule_ai_summary_microbatch 디바운스 다건 유입 1회 묶음 처리
 """
 
 import asyncio
@@ -28,10 +30,15 @@ for _p in (_PROJECT_ROOT, _BACKEND_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from backend.core.ai_utils import reset_dead_keys  # noqa: E402
+from backend.core.ai_utils import (  # noqa: E402
+    get_microbatch_gemini_key,
+    get_random_gemini_key,
+    reset_dead_keys,
+)
 from backend.database.models import Base, Community, Deal  # noqa: E402
 from backend.scheduler.batch_ai_worker import (  # noqa: E402
     get_daily_call_count,
+    get_daily_token_count,
     process_ai_batch,
     reset_ai_worker_state,
     schedule_ai_summary_microbatch,
@@ -91,6 +98,7 @@ def _reset_ai_state(monkeypatch):
     for key in (
         "USE_GEMINI_AI",
         "AI_SUMMARY_ENABLED",
+        "USE_LEGACY_GEMINI_PER_DEAL",
         "GEMINI_API_KEY",
         "GEMINI_API_KEYS",
         "GOOGLE_API_KEY",
@@ -100,29 +108,46 @@ def _reset_ai_state(monkeypatch):
         "CLOUDFLARE_ACCOUNT_ID",
         "CLOUDFLARE_AI_API_TOKEN",
         "AI_MAX_DAILY_CALLS",
+        "AI_MAX_DAILY_TOKENS",
         "AI_MICROBATCH_DEBOUNCE_SEC",
+        "AI_MIN_CALL_INTERVAL_SEC",
         "AI_MICROBATCH_ALLOW_IN_TEST",
     ):
         monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("AI_MIN_CALL_INTERVAL_SEC", "0")
     yield
     reset_dead_keys()
     reset_ai_worker_state()
 
 
-def test_gemini_rest_batch_updates_deals_and_caches(tmp_path, monkeypatch):
+def test_legacy_per_deal_key_is_locked_while_microbatch_key_works(monkeypatch):
+    monkeypatch.setenv("USE_GEMINI_AI", "true")
+    monkeypatch.setenv("GEMINI_API_KEY", "free_tier_key_safe_01")
+
+    assert get_random_gemini_key() is None
+    assert get_microbatch_gemini_key() == "free_tier_key_safe_01"
+
+    monkeypatch.setenv("USE_LEGACY_GEMINI_PER_DEAL", "true")
+    assert get_random_gemini_key() == "free_tier_key_safe_01"
+
+
+def test_gemini_rest_batch_uses_thinking_budget_zero_compact_json_and_updates_deals(
+    tmp_path, monkeypatch
+):
     SessionFactory = _create_isolated_session_factory(tmp_path)
     deal_ids = _seed_deals(SessionFactory, count=2)
 
     monkeypatch.setenv("USE_GEMINI_AI", "true")
     monkeypatch.setenv("GEMINI_API_KEY", "free_tier_gemini_key_123456")
 
-    called_urls = []
+    captured_requests = []
 
     def mock_post(self, url, **kwargs):
-        called_urls.append(url)
+        captured_requests.append((url, kwargs.get("json")))
         return _MockHttpResp(
             200,
             {
+                "usageMetadata": {"totalTokenCount": 420},
                 "candidates": [
                     {
                         "content": {
@@ -145,7 +170,7 @@ def test_gemini_rest_batch_updates_deals_and_caches(tmp_path, monkeypatch):
                             ]
                         }
                     }
-                ]
+                ],
             },
         )
 
@@ -153,9 +178,18 @@ def test_gemini_rest_batch_updates_deals_and_caches(tmp_path, monkeypatch):
 
     updated = process_ai_batch(deal_ids=deal_ids, db_session_factory=SessionFactory)
     assert updated == 2
-    assert len(called_urls) == 1
-    assert "generativelanguage.googleapis.com" in called_urls[0]
+    assert len(captured_requests) == 1
+
+    req_url, req_body = captured_requests[0]
+    assert "generativelanguage.googleapis.com" in req_url
+    gen_cfg = req_body["generationConfig"]
+    assert gen_cfg["thinkingConfig"] == {"thinkingBudget": 0}
+    assert gen_cfg["maxOutputTokens"] == min(900, 120 + 2 * 55)
+    prompt_text = req_body["contents"][0]["parts"][0]["text"]
+    assert "\n  {" not in prompt_text  # indent=2 미사용(compact JSON)
+
     assert get_daily_call_count() == 1
+    assert get_daily_token_count() == 420
 
     db = SessionFactory()
     try:
@@ -184,6 +218,7 @@ def test_gemini_429_falls_back_to_openai_compatible_or_groq(tmp_path, monkeypatc
         return _MockHttpResp(
             200,
             {
+                "usage": {"total_tokens": 310},
                 "choices": [
                     {
                         "message": {
@@ -198,7 +233,7 @@ def test_gemini_429_falls_back_to_openai_compatible_or_groq(tmp_path, monkeypatc
                             )
                         }
                     }
-                ]
+                ],
             },
         )
 
@@ -219,7 +254,6 @@ def test_cloudflare_workers_ai_fallback_and_no_dummy_when_all_fail(tmp_path, mon
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "cf_acc_test_01")
     monkeypatch.setenv("CLOUDFLARE_AI_API_TOKEN", "cf_token_test_01")
 
-    # 1) 모든 프로바이더 실패 시 더미 텍스트를 저장하지 않고 None을 유지
     def mock_post_fail(self, url, **kwargs):
         return _MockHttpResp(503, {"success": False})
 
@@ -233,8 +267,8 @@ def test_cloudflare_workers_ai_fallback_and_no_dummy_when_all_fail(tmp_path, mon
     finally:
         db.close()
 
-    # 쿨다운 해제 후 Cloudflare Workers AI 성공
     reset_ai_worker_state()
+    monkeypatch.setenv("AI_MIN_CALL_INTERVAL_SEC", "0")
 
     def mock_post_cf_ok(self, url, **kwargs):
         assert "api.cloudflare.com/client/v4/accounts/cf_acc_test_01/ai/run/" in url
@@ -277,6 +311,7 @@ def test_daily_call_cap_blocks_extra_requests(tmp_path, monkeypatch):
         return _MockHttpResp(
             200,
             {
+                "usageMetadata": {"totalTokenCount": 250},
                 "candidates": [
                     {
                         "content": {
@@ -290,18 +325,62 @@ def test_daily_call_cap_blocks_extra_requests(tmp_path, monkeypatch):
                             ]
                         }
                     }
-                ]
+                ],
             },
         )
 
     monkeypatch.setattr(httpx.Client, "post", mock_post)
 
-    # 1번째 호출 성공 (상한 1/1 소진)
     assert process_ai_batch(deal_ids=[deal_ids[0]], db_session_factory=SessionFactory) == 1
     assert call_count == 1
     assert get_daily_call_count() == 1
 
-    # 2번째 호출은 상한 도달로 외부 HTTP 호출 없이 0 반환
+    assert process_ai_batch(deal_ids=[deal_ids[1]], db_session_factory=SessionFactory) == 0
+    assert call_count == 1
+
+
+def test_daily_token_cap_blocks_extra_requests(tmp_path, monkeypatch):
+    SessionFactory = _create_isolated_session_factory(tmp_path)
+    deal_ids = _seed_deals(SessionFactory, count=2)
+
+    monkeypatch.setenv("USE_GEMINI_AI", "true")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini_tokencap_key_1234")
+    monkeypatch.setenv("AI_MAX_DAILY_CALLS", "60")
+    monkeypatch.setenv("AI_MAX_DAILY_TOKENS", "500")
+
+    call_count = 0
+
+    def mock_post(self, url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return _MockHttpResp(
+            200,
+            {
+                "usageMetadata": {"totalTokenCount": 480},
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "text": json.dumps(
+                                        [{"id": deal_ids[0], "ai_summary": "✅ 1건 정산\n✅ B\n✅ C"}],
+                                        ensure_ascii=False,
+                                    )
+                                }
+                            ]
+                        }
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+
+    assert process_ai_batch(deal_ids=[deal_ids[0]], db_session_factory=SessionFactory) == 1
+    assert call_count == 1
+    assert get_daily_token_count() == 480
+
+    # 남은 토큰 여유(20)가 2번째 요청 예상 토큰보다 적으므로 외부 호출 원천 차단
     assert process_ai_batch(deal_ids=[deal_ids[1]], db_session_factory=SessionFactory) == 0
     assert call_count == 1
 
@@ -324,6 +403,7 @@ async def test_schedule_ai_summary_microbatch_debounces_into_single_call(tmp_pat
         return _MockHttpResp(
             200,
             {
+                "usageMetadata": {"totalTokenCount": 390},
                 "candidates": [
                     {
                         "content": {
@@ -340,7 +420,7 @@ async def test_schedule_ai_summary_microbatch_debounces_into_single_call(tmp_pat
                             ]
                         }
                     }
-                ]
+                ],
             },
         )
 
