@@ -305,7 +305,7 @@ export default function Home() {
   useEffect(() => {
     const onScroll = () => {
       const y = window.scrollY;
-      setShowScrollTop(y > 640);
+      setShowScrollTop(y > 380);
       setIsHeaderCollapsed((prev) => {
         if (y > 110) return true;
         if (y < 45) return false;

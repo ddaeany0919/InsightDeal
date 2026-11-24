@@ -1619,7 +1619,7 @@ export default function DealDetailModal({
                 </h3>
               </div>
             </div>
-            <div style={{ display: "flex", gap: "6px", flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <div className="deal-modal-header-actions">
               {onNavigateDeal && (
                 <>
                   <button
