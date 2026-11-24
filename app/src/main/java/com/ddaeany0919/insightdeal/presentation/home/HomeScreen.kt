@@ -70,6 +70,11 @@ import com.ddaeany0919.insightdeal.presentation.rememberRelativeTime
 import com.ddaeany0919.insightdeal.presentation.bounceClick
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import kotlinx.coroutines.launch
@@ -261,6 +266,14 @@ fun HomeScreen(
 
     val dealsPagingItems = viewModel.dealsPagingData.collectAsLazyPagingItems()
     val gridState = rememberLazyGridState()
+    val isScrolled by remember {
+        derivedStateOf {
+            gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 40
+        }
+    }
+    val showScrollTop by remember {
+        derivedStateOf { gridState.firstVisibleItemIndex >= 3 }
+    }
 
     // Toss 스타일 프리미엄 소프트 가이드 알림 권한 팝업 UI
     if (showPrePermissionDialog) {
@@ -556,112 +569,144 @@ fun HomeScreen(
 
     Box(modifier = Modifier.fillMaxSize().nestedScroll(pullRefreshState.nestedScrollConnection)) {
         val homeSemantic = LocalInsightDealColors.current
+        val isHairlineFeed = !isExpandedScreen && !isCompactMode
+        val topBarContainerColor by animateColorAsState(
+            targetValue = if (isScrolled) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.background,
+            animationSpec = tween(durationMillis = 180),
+            label = "topBarContainerColor"
+        )
+        val topBarShadowElevation by animateDpAsState(
+            targetValue = if (isScrolled) 3.dp else 0.dp,
+            animationSpec = tween(durationMillis = 180),
+            label = "topBarShadowElevation"
+        )
+        val topDividerColor by animateColorAsState(
+            targetValue = if (isScrolled) {
+                MaterialTheme.colorScheme.outline.copy(alpha = if (isDark) 0.55f else 0.7f)
+            } else {
+                homeSemantic.cardBorder
+            },
+            animationSpec = tween(durationMillis = 180),
+            label = "topDividerColor"
+        )
+        val topDividerThickness by animateDpAsState(
+            targetValue = if (isScrolled) 1.dp else 0.75.dp,
+            animationSpec = tween(durationMillis = 180),
+            label = "topDividerThickness"
+        )
         Column(modifier = Modifier.fillMaxSize()) {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
-                ),
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.bounceClick(onClickLabel = "홈 새로고침 및 맨 위로 이동") {
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            scope.launch {
-                                try {
-                                    searchInput = ""
-                                    viewModel.resetHomeFilters()
-                                    try {
-                                        gridState.animateScrollToItem(0)
-                                    } catch (_: Exception) {
+            Surface(
+                color = topBarContainerColor,
+                shadowElevation = topBarShadowElevation
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    TopAppBar(
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                            titleContentColor = MaterialTheme.colorScheme.onBackground
+                        ),
+                        title = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.bounceClick(onClickLabel = "홈 새로고침 및 맨 위로 이동") {
+                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                    scope.launch {
+                                        try {
+                                            searchInput = ""
+                                            viewModel.resetHomeFilters()
+                                            try {
+                                                gridState.animateScrollToItem(0)
+                                            } catch (_: Exception) {
+                                            }
+                                            dealsPagingItems.refresh()
+                                            viewModel.fetchTopHotDeals()
+                                            viewModel.onRefreshNewDeals()
+                                        } catch (_: Exception) {
+                                        }
                                     }
-                                    dealsPagingItems.refresh()
-                                    viewModel.fetchTopHotDeals()
-                                    viewModel.onRefreshNewDeals()
-                                } catch (_: Exception) {
                                 }
-                            }
-                        }
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_brand_mark),
-                            contentDescription = "얼만데 로고",
-                            modifier = Modifier.size(30.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "얼만데",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = (-0.5).sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                },
-                actions = {
-                    val alertsCount = notificationAlerts.size
-                    Box(
-                        modifier = Modifier
-                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                            .bounceClick(
-                                onClickLabel = if (alertsCount > 0) "알림 내역 (${alertsCount}건)" else "알림 내역"
-                            ) { showNotificationHistory = true }
-                            .padding(8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Notifications,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (alertsCount > 0) {
-                            Surface(
-                                shape = CircleShape,
-                                color = homeSemantic.danger,
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(top = 0.dp, end = 0.dp)
-                                    .sizeIn(minWidth = 16.dp, minHeight = 16.dp)
-                                    .clearAndSetSemantics {}
                             ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.padding(horizontal = 4.dp)
-                                ) {
-                                    Text(
-                                        text = "+$alertsCount",
-                                        color = Color.White,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        style = TextStyle(
-                                            platformStyle = PlatformTextStyle(includeFontPadding = false),
-                                            lineHeightStyle = LineHeightStyle(
-                                                alignment = LineHeightStyle.Alignment.Center,
-                                                trim = LineHeightStyle.Trim.Both
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_brand_mark),
+                                    contentDescription = "얼만데 로고",
+                                    modifier = Modifier.size(30.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "얼만데",
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = (-0.5).sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        },
+                        actions = {
+                            val alertsCount = notificationAlerts.size
+                            Box(
+                                modifier = Modifier
+                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                    .bounceClick(
+                                        onClickLabel = if (alertsCount > 0) "알림 내역 (${alertsCount}건)" else "알림 내역"
+                                    ) { showNotificationHistory = true }
+                                    .padding(8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Notifications,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                                if (alertsCount > 0) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = homeSemantic.danger,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 0.dp, end = 0.dp)
+                                            .sizeIn(minWidth = 16.dp, minHeight = 16.dp)
+                                            .clearAndSetSemantics {}
+                                    ) {
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier.padding(horizontal = 4.dp)
+                                        ) {
+                                            Text(
+                                                text = "+$alertsCount",
+                                                color = Color.White,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                style = TextStyle(
+                                                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                                                    lineHeightStyle = LineHeightStyle(
+                                                        alignment = LineHeightStyle.Alignment.Center,
+                                                        trim = LineHeightStyle.Trim.Both
+                                                    )
+                                                )
                                             )
-                                        )
-                                    )
+                                        }
+                                    }
                                 }
                             }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                    .bounceClick(onClickLabel = "키워드 알림 설정") { navController.navigate("keyword_alarm") }
+                                    .padding(8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Settings,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Box(
-                        modifier = Modifier
-                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                            .bounceClick(onClickLabel = "키워드 알림 설정") { navController.navigate("keyword_alarm") }
-                            .padding(8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Settings,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+                    )
+                    HorizontalDivider(thickness = topDividerThickness, color = topDividerColor)
                 }
-            )
-            HorizontalDivider(thickness = 0.8.dp, color = homeSemantic.cardBorder)
+            }
 
             AnimatedVisibility(
                 visible = !isOnline,
@@ -801,9 +846,19 @@ fun HomeScreen(
                 columns = GridCells.Fixed(if (isExpandedScreen) 2 else 1),
                 state = gridState,
                 modifier = Modifier.fillMaxWidth().weight(1f),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = if (isHairlineFeed) {
+                    PaddingValues(top = 12.dp, bottom = 88.dp)
+                } else {
+                    PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp)
+                },
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(
+                    when {
+                        isExpandedScreen -> 12.dp
+                        isCompactMode -> 8.dp
+                        else -> 0.dp
+                    }
+                )
             ) {
                 if (!hasActiveFilter && (topPicks.isNotEmpty() || !hideKeywordBanner)) {
                     item(
@@ -811,7 +866,17 @@ fun HomeScreen(
                         span = { GridItemSpan(maxLineSpan) },
                         contentType = "today_picks_section"
                     ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (isHairlineFeed) {
+                                        Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                        ) {
                             if (topPicks.isNotEmpty()) {
                                 Column(
                                     modifier = Modifier
@@ -1159,7 +1224,8 @@ fun HomeScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 2.dp)
+                            .padding(horizontal = if (isHairlineFeed) 16.dp else 2.dp)
+                            .then(if (isHairlineFeed) Modifier.padding(bottom = 12.dp) else Modifier)
                     ) {
                         // 1) 컴팩트 인라인 검색바
                         Surface(
@@ -1811,6 +1877,15 @@ fun HomeScreen(
                 // 상태 관리를 통한 스켈레톤 로딩 노출
                 when {
                     dealsPagingItems.loadState.refresh is LoadState.Loading && dealsPagingItems.itemCount == 0 -> {
+                        if (isHairlineFeed) {
+                            item(
+                                key = "skeleton_top_divider",
+                                span = { GridItemSpan(maxLineSpan) },
+                                contentType = "feed_divider"
+                            ) {
+                                HorizontalDivider(thickness = 0.75.dp, color = homeSemantic.cardBorder)
+                            }
+                        }
                         items(
                             count = if (isExpandedScreen && !isCompactMode) 4 else 3,
                             key = { index -> "skeleton_$index" },
@@ -1819,7 +1894,11 @@ fun HomeScreen(
                             } else null,
                             contentType = { if (isCompactMode) "skeleton_compact_loader" else "skeleton_loader" }
                         ) {
-                            if (isCompactMode) HomeCompactDealCardSkeleton() else HomeDealCardSkeleton()
+                            if (isCompactMode) {
+                                HomeCompactDealCardSkeleton()
+                            } else {
+                                HomeDealCardSkeleton(isExpandedGrid = isExpandedScreen)
+                            }
                         }
                     }
                     dealsPagingItems.loadState.refresh is LoadState.Error -> {
@@ -1832,7 +1911,7 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .heightIn(min = 220.dp)
-                                    .padding(horizontal = 4.dp, vertical = 8.dp),
+                                    .padding(horizontal = if (isHairlineFeed) 16.dp else 4.dp, vertical = 8.dp),
                                 shape = RoundedCornerShape(16.dp),
                                 border = BorderStroke(
                                     1.dp,
@@ -1889,7 +1968,7 @@ fun HomeScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .heightIn(min = 220.dp)
-                                        .padding(horizontal = 4.dp, vertical = 8.dp),
+                                        .padding(horizontal = if (isHairlineFeed) 16.dp else 4.dp, vertical = 8.dp),
                                     shape = RoundedCornerShape(16.dp),
                                     border = BorderStroke(
                                         1.dp,
@@ -1939,6 +2018,14 @@ fun HomeScreen(
                                         }
                                     }
                                 }
+                            }
+                        } else if (isHairlineFeed) {
+                            item(
+                                key = "feed_top_divider",
+                                span = { GridItemSpan(maxLineSpan) },
+                                contentType = "feed_divider"
+                            ) {
+                                HorizontalDivider(thickness = 0.75.dp, color = homeSemantic.cardBorder)
                             }
                         }
 
@@ -2001,12 +2088,17 @@ fun HomeScreen(
                                                 }
                                             },
                                             onMoreClick = onItemMoreClick,
-                                            highlightKeyword = filterState.keyword
+                                            highlightKeyword = filterState.keyword,
+                                            isExpandedGrid = isExpandedScreen
                                         )
                                     }
                                 }
                             } else {
-                                if (isCompactMode) HomeCompactDealCardSkeleton() else HomeDealCardSkeleton()
+                                if (isCompactMode) {
+                                    HomeCompactDealCardSkeleton()
+                                } else {
+                                    HomeDealCardSkeleton(isExpandedGrid = isExpandedScreen)
+                                }
                             }
                         }
 
@@ -2018,7 +2110,11 @@ fun HomeScreen(
                                     span = { GridItemSpan(maxLineSpan) },
                                     contentType = if (isCompactMode) "skeleton_compact_loader" else "skeleton_loader"
                                 ) {
-                                    if (isCompactMode) HomeCompactDealCardSkeleton() else HomeDealCardSkeleton()
+                                    if (isCompactMode) {
+                                        HomeCompactDealCardSkeleton()
+                                    } else {
+                                        HomeDealCardSkeleton(isExpandedGrid = isExpandedScreen)
+                                    }
                                 }
                             }
                             appendState is LoadState.Error -> {
@@ -2079,8 +2175,22 @@ fun HomeScreen(
         // 실시간 새 핫딜 감지 플로팅 캡슐 배너
         AnimatedVisibility(
             visible = hasNewDeals,
-            enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(300)) + androidx.compose.animation.slideInVertically(animationSpec = androidx.compose.animation.core.tween(300)) { -it },
-            exit = androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(200)) + androidx.compose.animation.slideOutVertically(animationSpec = androidx.compose.animation.core.tween(200)) { -it },
+            enter = fadeIn(animationSpec = tween(220)) +
+                slideInVertically(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                ) { -it } +
+                scaleIn(
+                    initialScale = 0.92f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                ),
+            exit = fadeOut(animationSpec = tween(180)) +
+                slideOutVertically(animationSpec = tween(180)) { -it },
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 76.dp)
@@ -2430,6 +2540,80 @@ fun HomeScreen(
             )
         }
 
+        val scrollTopBottomPadding by animateDpAsState(
+            targetValue = if (snackbarHostState.currentSnackbarData != null) 78.dp else 18.dp,
+            animationSpec = tween(durationMillis = 180),
+            label = "scrollTopBottomPadding"
+        )
+        AnimatedVisibility(
+            visible = showScrollTop,
+            enter = fadeIn(animationSpec = tween(180)) +
+                slideInVertically(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                ) { it / 2 } +
+                scaleIn(
+                    initialScale = 0.88f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                ),
+            exit = fadeOut(animationSpec = tween(150)) +
+                slideOutVertically(animationSpec = tween(150)) { it / 2 },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(end = 16.dp, bottom = scrollTopBottomPadding)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "맨 위로 이동"
+                    }
+                    .bounceClick(onClickLabel = "맨 위로 이동") {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        scope.launch {
+                            gridState.animateScrollToItem(0)
+                        }
+                    },
+                shape = RoundedCornerShape(999.dp),
+                color = if (isDark) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
+                tonalElevation = 4.dp,
+                shadowElevation = 6.dp,
+                border = BorderStroke(0.75.dp, homeSemantic.cardBorder)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.ArrowUpward,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "맨 위로",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        style = TextStyle(
+                            platformStyle = PlatformTextStyle(includeFontPadding = false)
+                        )
+                    )
+                }
+            }
+        }
+
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
@@ -2713,31 +2897,54 @@ private fun HomeActiveFilterChip(
 
 // ✨ 세로형 딜 카드를 위한 스켈레톤 (Recomposition 방지용, DealCardComposable 규격 정합)
 @Composable
-fun HomeDealCardSkeleton() {
+fun HomeDealCardSkeleton(isExpandedGrid: Boolean = false) {
     val semantic = LocalInsightDealColors.current
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, semantic.cardBorder),
-        elevation = CardDefaults.cardElevation(0.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+    val content: @Composable () -> Unit = {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = if (isExpandedGrid) 12.dp else 16.dp,
+                    vertical = if (isExpandedGrid) 12.dp else 14.dp
+                ),
+            verticalAlignment = Alignment.Top
+        ) {
             Box(
                 modifier = Modifier
-                    .size(80.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(88.dp)
+                    .clip(RoundedCornerShape(12.dp))
                     .shimmerEffect()
             )
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Box(Modifier.width(40.dp).height(16.dp).clip(RoundedCornerShape(4.dp)).shimmerEffect())
+                Box(Modifier.width(52.dp).height(16.dp).clip(RoundedCornerShape(4.dp)).shimmerEffect())
                 Spacer(Modifier.height(8.dp))
                 Box(Modifier.fillMaxWidth().height(16.dp).clip(RoundedCornerShape(4.dp)).shimmerEffect())
-                Spacer(Modifier.height(4.dp))
-                Box(Modifier.fillMaxWidth(0.5f).height(16.dp).clip(RoundedCornerShape(4.dp)).shimmerEffect())
-                Spacer(Modifier.height(8.dp))
-                Box(Modifier.width(80.dp).height(20.dp).clip(RoundedCornerShape(4.dp)).shimmerEffect())
+                Spacer(Modifier.height(5.dp))
+                Box(Modifier.fillMaxWidth(0.55f).height(16.dp).clip(RoundedCornerShape(4.dp)).shimmerEffect())
+                Spacer(Modifier.height(10.dp))
+                Box(Modifier.width(96.dp).height(20.dp).clip(RoundedCornerShape(4.dp)).shimmerEffect())
+            }
+        }
+    }
+    if (isExpandedGrid) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, semantic.cardBorder),
+            elevation = CardDefaults.cardElevation(0.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            content()
+        }
+    } else {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                content()
+                HorizontalDivider(thickness = 0.75.dp, color = semantic.cardBorder)
             }
         }
     }
@@ -2852,11 +3059,28 @@ fun DealCardComposable(
     isWishlisted: Boolean = false,
     onToggleWishlist: () -> Unit = {},
     onMoreClick: (() -> Unit)? = null,
-    highlightKeyword: String? = null
+    highlightKeyword: String? = null,
+    isExpandedGrid: Boolean = false
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val isDark = LocalIsDarkTheme.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    var heartPopTrigger by remember { mutableStateOf(false) }
+    LaunchedEffect(heartPopTrigger) {
+        if (heartPopTrigger) {
+            kotlinx.coroutines.delay(180L)
+            heartPopTrigger = false
+        }
+    }
+    val heartScale by animateFloatAsState(
+        targetValue = if (heartPopTrigger) 1.28f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "wishlistHeartScale"
+    )
 
     // 1. 쇼핑몰 배지 및 중복 [말머리] 제거·HTML 엔티티 디코딩 캐싱
     val resolvedShopTitle = remember(deal.id, deal.title, deal.shopName, deal.ecommerceUrl) {
@@ -3039,6 +3263,8 @@ fun DealCardComposable(
     val semantic = LocalInsightDealColors.current
     val cardBgColor = MaterialTheme.colorScheme.surface
     val cardContentColor = MaterialTheme.colorScheme.onSurface
+    val thumbBg = if (isDark) Color(0xFF1F242D) else Color(0xFFF6F7F9)
+    val thumbShape = RoundedCornerShape(12.dp)
     val highlightBg = if (isDark) Color(0x4DFFB74D) else Color(0xFFFFF3BF)
     val highlightFg = if (isDark) Color(0xFFFFE082) else Color(0xFF7C2D12)
     val highlightedTitle = remember(resolvedShopTitle.cleanTitle, highlightKeyword, isDark) {
@@ -3050,89 +3276,97 @@ fun DealCardComposable(
         )
     }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics {
-                stateDescription = if (deal.isClosed) {
-                    "종료됨"
-                } else if (isExpanded) {
-                    "옵션 펼쳐짐"
-                } else {
-                    "진행중"
-                }
+    val cardInteractionModifier = Modifier
+        .fillMaxWidth()
+        .semantics {
+            stateDescription = if (deal.isClosed) {
+                "종료됨"
+            } else if (isExpanded) {
+                "옵션 펼쳐짐"
+            } else {
+                "진행중"
             }
-            .bounceClick(
-                scaleDown = 0.98f,
-                onClickLabel = "${resolvedShopTitle.cleanTitle}, $priceText 상세 보기"
-            ) { onDetailClick() },
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, semantic.cardBorder),
-        elevation = CardDefaults.cardElevation(0.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = cardBgColor,
-            contentColor = cardContentColor
-        )
-    ) {
+        }
+        .bounceClick(
+            scaleDown = if (isExpandedGrid) 0.98f else 0.99f,
+            onClickLabel = "${resolvedShopTitle.cleanTitle}, $priceText 상세 보기"
+        ) { onDetailClick() }
+
+    val dealCardBody: @Composable () -> Unit = {
         Box(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top) {
-                    if (imageRequest == null) {
-                        BrandPlaceholder(
-                            siteName = deal.siteName,
-                            modifier = Modifier
-                                .size(80.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF9FAFB))
-                        )
-                    } else {
-                        Box(modifier = Modifier.size(80.dp)) {
-                            SubcomposeAsyncImage(
-                                model = imageRequest,
-                                contentDescription = null,
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = if (isExpandedGrid) 12.dp else 16.dp,
+                            vertical = if (isExpandedGrid) 12.dp else 14.dp
+                        ),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Surface(
+                        modifier = Modifier.size(88.dp),
+                        shape = thumbShape,
+                        color = thumbBg,
+                        border = BorderStroke(0.75.dp, semantic.cardBorder)
+                    ) {
+                        if (imageRequest == null) {
+                            BrandPlaceholder(
+                                siteName = deal.siteName,
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                                    .clip(RoundedCornerShape(8.dp)),
-                                colorFilter = if (deal.isClosed) CLOSED_DEAL_COLOR_FILTER else null,
-                                contentScale = ContentScale.Crop,
-                                onError = {
-                                    if (!activeImageUrl.orEmpty().contains("/api/proxy-image", ignoreCase = true) &&
-                                        fallbackProxyUrl != null &&
-                                        activeImageUrl != fallbackProxyUrl
-                                    ) {
-                                        activeImageUrl = fallbackProxyUrl
-                                    }
-                                },
-                                error = {
-                                    BrandPlaceholder(
-                                        siteName = deal.siteName,
-                                        modifier = Modifier.fillMaxSize(),
-                                        textStyle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF9FAFB))
-                                    )
-                                }
+                                    .clip(thumbShape),
+                                textStyle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF9FAFB))
                             )
-
-                            if (deal.isClosed) {
-                                Box(
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                SubcomposeAsyncImage(
+                                    model = imageRequest,
+                                    contentDescription = null,
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.85f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "종료",
-                                        color = MaterialTheme.colorScheme.inverseOnSurface,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 12.sp
-                                    )
+                                        .background(thumbBg, thumbShape)
+                                        .clip(thumbShape),
+                                    colorFilter = if (deal.isClosed) CLOSED_DEAL_COLOR_FILTER else null,
+                                    contentScale = ContentScale.Crop,
+                                    onError = {
+                                        if (!activeImageUrl.orEmpty().contains("/api/proxy-image", ignoreCase = true) &&
+                                            fallbackProxyUrl != null &&
+                                            activeImageUrl != fallbackProxyUrl
+                                        ) {
+                                            activeImageUrl = fallbackProxyUrl
+                                        }
+                                    },
+                                    error = {
+                                        BrandPlaceholder(
+                                            siteName = deal.siteName,
+                                            modifier = Modifier.fillMaxSize(),
+                                            textStyle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF9FAFB))
+                                        )
+                                    }
+                                )
+
+                                if (deal.isClosed) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(thumbShape)
+                                            .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.85f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "종료",
+                                            color = MaterialTheme.colorScheme.inverseOnSurface,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 12.sp
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(14.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
                         Row(
@@ -3287,11 +3521,13 @@ fun DealCardComposable(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
 
                         Text(
                             text = highlightedTitle,
-                            fontSize = 14.sp,
+                            fontSize = 14.5.sp,
+                            lineHeight = 20.sp,
+                            letterSpacing = (-0.2).sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
@@ -3308,11 +3544,11 @@ fun DealCardComposable(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             FlowRow(
-                                modifier = Modifier.weight(1f),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.weight(1f).padding(end = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                val priceFontSize = if (priceText.length >= 9) 14.sp else 16.5.sp
+                                val priceFontSize = if (priceText.length >= 9) 14.5.sp else 17.sp
                                 Text(
                                     text = priceText,
                                     style = PriceTextStyle.copy(
@@ -3422,12 +3658,44 @@ fun DealCardComposable(
                                     }
                                 }
                             }
+
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .semantics {
+                                        role = Role.Button
+                                        contentDescription = if (isWishlisted) "찜 해제" else "찜하기"
+                                    }
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        heartPopTrigger = true
+                                        onToggleWishlist()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isWishlisted) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                    contentDescription = null,
+                                    tint = if (isWishlisted) MaterialTheme.colorScheme.error else semantic.textMuted,
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .graphicsLayer {
+                                            scaleX = heartScale
+                                            scaleY = heartScale
+                                        }
+                                )
+                            }
                         }
                     }
                 }
 
                 AnimatedVisibility(visible = isExpanded) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = if (isExpandedGrid) 12.dp else 16.dp, vertical = 8.dp)
+                    ) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(modifier = Modifier.height(10.dp))
 
@@ -3600,7 +3868,33 @@ fun DealCardComposable(
                         }
                     }
                 }
+                if (!isExpandedGrid) {
+                    HorizontalDivider(thickness = 0.75.dp, color = semantic.cardBorder)
+                }
             }
+        }
+    }
+
+    if (isExpandedGrid) {
+        Card(
+            modifier = cardInteractionModifier,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, semantic.cardBorder),
+            elevation = CardDefaults.cardElevation(0.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = cardBgColor,
+                contentColor = cardContentColor
+            )
+        ) {
+            dealCardBody()
+        }
+    } else {
+        Surface(
+            modifier = cardInteractionModifier,
+            color = cardBgColor,
+            contentColor = cardContentColor
+        ) {
+            dealCardBody()
         }
     }
 }
@@ -4245,7 +4539,9 @@ fun NotificationHistoryBottomSheet(
  */
 @Composable
 fun HomeCompactDealCardSkeleton() {
+    val isDark = LocalIsDarkTheme.current
     val semantic = LocalInsightDealColors.current
+    val thumbBg = if (isDark) Color(0xFF1F242D) else Color(0xFFF6F7F9)
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -4259,12 +4555,19 @@ fun HomeCompactDealCardSkeleton() {
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .shimmerEffect()
-            )
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = thumbBg,
+                border = BorderStroke(0.75.dp, semantic.cardBorder)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(8.dp))
+                        .shimmerEffect()
+                )
+            }
             Spacer(modifier = Modifier.width(10.dp))
             Column(
                 modifier = Modifier.weight(1f),
@@ -4290,6 +4593,8 @@ fun CompactDealCardComposable(
     val context = LocalContext.current
     val isDark = LocalIsDarkTheme.current
     val semantic = LocalInsightDealColors.current
+    val thumbBg = if (isDark) Color(0xFF1F242D) else Color(0xFFF6F7F9)
+    val thumbShape = RoundedCornerShape(8.dp)
 
     val safeTitle = (deal.title as String?).orEmpty()
     val safeSiteName = (deal.siteName as String?).orEmpty()
@@ -4401,55 +4706,62 @@ fun CompactDealCardComposable(
                 .padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (imageRequest == null) {
-                BrandPlaceholder(
-                    siteName = safeSiteName,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    textStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF9FAFB))
-                )
-            } else {
-                Box(modifier = Modifier.size(48.dp)) {
-                    SubcomposeAsyncImage(
-                        model = imageRequest,
-                        contentDescription = null,
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = thumbShape,
+                color = thumbBg,
+                border = BorderStroke(0.75.dp, semantic.cardBorder)
+            ) {
+                if (imageRequest == null) {
+                    BrandPlaceholder(
+                        siteName = safeSiteName,
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                            .clip(RoundedCornerShape(8.dp)),
-                        colorFilter = if (deal.isClosed) CLOSED_DEAL_COLOR_FILTER else null,
-                        contentScale = ContentScale.Crop,
-                        onError = {
-                            if (!activeImageUrl.orEmpty().contains("/api/proxy-image", ignoreCase = true) &&
-                                fallbackProxyUrl != null &&
-                                activeImageUrl != fallbackProxyUrl
-                            ) {
-                                activeImageUrl = fallbackProxyUrl
-                            }
-                        },
-                        error = {
-                            BrandPlaceholder(
-                                siteName = safeSiteName,
-                                modifier = Modifier.fillMaxSize(),
-                                textStyle = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF9FAFB))
-                            )
-                        }
+                            .clip(thumbShape),
+                        textStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF9FAFB))
                     )
-                    if (deal.isClosed) {
-                        Box(
+                } else {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        SubcomposeAsyncImage(
+                            model = imageRequest,
+                            contentDescription = null,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.85f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "종료",
-                                color = MaterialTheme.colorScheme.inverseOnSurface,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 10.sp
-                            )
+                                .background(thumbBg, thumbShape)
+                                .clip(thumbShape),
+                            colorFilter = if (deal.isClosed) CLOSED_DEAL_COLOR_FILTER else null,
+                            contentScale = ContentScale.Crop,
+                            onError = {
+                                if (!activeImageUrl.orEmpty().contains("/api/proxy-image", ignoreCase = true) &&
+                                    fallbackProxyUrl != null &&
+                                    activeImageUrl != fallbackProxyUrl
+                                ) {
+                                    activeImageUrl = fallbackProxyUrl
+                                }
+                            },
+                            error = {
+                                BrandPlaceholder(
+                                    siteName = safeSiteName,
+                                    modifier = Modifier.fillMaxSize(),
+                                    textStyle = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF9FAFB))
+                                )
+                            }
+                        )
+                        if (deal.isClosed) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(thumbShape)
+                                    .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.85f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "종료",
+                                    color = MaterialTheme.colorScheme.inverseOnSurface,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 10.sp
+                                )
+                            }
                         }
                     }
                 }

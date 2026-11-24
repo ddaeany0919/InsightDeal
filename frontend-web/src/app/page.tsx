@@ -281,12 +281,15 @@ export default function Home() {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [isCompactViewport, setIsCompactViewport] = useState(false);
   const [isUltraCompactViewport, setIsUltraCompactViewport] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const urlSyncReadyRef = useRef(false);
 
   useEffect(() => {
     const syncViewport = () => {
       setIsCompactViewport(window.innerWidth <= 480);
+      setIsMobileViewport(window.innerWidth <= 640);
       const rootFontPx =
         parseFloat(getComputedStyle(document.documentElement).fontSize || "16") ||
         16;
@@ -300,7 +303,15 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const onScroll = () => setShowScrollTop(window.scrollY > 640);
+    const onScroll = () => {
+      const y = window.scrollY;
+      setShowScrollTop(y > 640);
+      setIsHeaderCollapsed((prev) => {
+        if (y > 110) return true;
+        if (y < 45) return false;
+        return prev;
+      });
+    };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -2954,7 +2965,11 @@ export default function Home() {
         </button>
       )}
 
-      <header className="navbar glass-panel">
+      <header
+        className={`navbar glass-panel ${
+          isHeaderCollapsed ? "navbar--scrolled" : ""
+        }`}
+      >
         <button
           type="button"
           className="nav-logo"
@@ -4430,7 +4445,7 @@ export default function Home() {
           {toastMessage && <div className="toast">{toastMessage}</div>}
         </div>
 
-        {showScrollTop && !selectedDeal && (
+        {!isMobileViewport && showScrollTop && !selectedDeal && (
           <button
             type="button"
             className="scroll-top-fab bounce-click"
@@ -4440,6 +4455,72 @@ export default function Home() {
           >
             <ArrowUp size={18} aria-hidden="true" />
           </button>
+        )}
+
+        {isMobileViewport && !selectedDeal && (
+          <div
+            className={`mobile-thumb-dock ${
+              isHeaderCollapsed ? "mobile-thumb-dock--scrolled" : ""
+            }`}
+            role="region"
+            aria-label="모바일 빠른 탐색 도구"
+          >
+            <button
+              type="button"
+              aria-expanded={showMobileQuickFilters}
+              aria-controls="feed-quick-filter-panel"
+              aria-label={
+                showMobileQuickFilters ? "상세 필터 닫기" : "빠른 상세 필터 열기"
+              }
+              onClick={() => {
+                const nextOpen = !showMobileQuickFilters;
+                setShowMobileQuickFilters(nextOpen);
+                if (
+                  nextOpen &&
+                  typeof window !== "undefined" &&
+                  window.scrollY > 220
+                ) {
+                  window.requestAnimationFrame(() => {
+                    document
+                      .getElementById("feed-quick-filter-panel")
+                      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  });
+                }
+              }}
+              className={`mobile-thumb-dock-btn bounce-click ${
+                showMobileQuickFilters ||
+                freeShippingOnly ||
+                shopFilter ||
+                minPriceInput.trim() ||
+                maxPriceInput.trim()
+                  ? "is-active"
+                  : ""
+              }`}
+            >
+              <SlidersHorizontal size={15} aria-hidden="true" />
+              <span>
+                상세 필터
+                {(() => {
+                  const cnt =
+                    (freeShippingOnly ? 1 : 0) +
+                    (shopFilter ? 1 : 0) +
+                    (minPriceInput.trim() || maxPriceInput.trim() ? 1 : 0);
+                  return cnt > 0 ? ` (${cnt})` : "";
+                })()}
+              </span>
+            </button>
+            {showScrollTop && (
+              <button
+                type="button"
+                className="mobile-thumb-dock-top-btn bounce-click"
+                aria-label="맨 위로 이동"
+                title="맨 위로 이동"
+                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              >
+                <ArrowUp size={16} aria-hidden="true" />
+              </button>
+            )}
+          </div>
         )}
 
         <footer className="footer">

@@ -2126,6 +2126,25 @@ export default function DealDetailModal({
                 fontSize: "0.8rem",
               }}
             >
+              <div
+                style={{
+                  gridColumn: "1 / -1",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  paddingBottom: "6px",
+                  borderBottom: "1px solid var(--card-border)",
+                  fontSize: "0.75rem",
+                  fontWeight: 800,
+                  color: "var(--accent)",
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                <span>핵심 3줄 체크</span>
+                <span style={{ color: "var(--text-muted)", fontWeight: 600 }}>
+                  구매 전 주요 조건
+                </span>
+              </div>
               <div>
                 <div style={{ color: "var(--text-muted)", fontSize: "0.72rem", fontWeight: 700 }}>판매처 · 출처</div>
                 <div style={{ color: "var(--text-main)", fontWeight: 800, marginTop: "2px" }}>
@@ -2180,7 +2199,7 @@ export default function DealDetailModal({
               }}
             >
               {deal.aiSummary ||
-                `[${deal.community_name}]에서 등록된 핫딜입니다. 쿠폰 및 카드 할인 조건은 아래 쇼핑몰 또는 원본 게시글에서 확인해 주세요.`}
+                `[${deal.community_name}]에 등록된 특가 정보입니다. 쿠폰·카드 할인 및 재고는 아래 구매처 또는 원본 글에서 확인해 주세요.`}
             </div>
           )}
 

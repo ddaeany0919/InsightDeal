@@ -64,13 +64,18 @@ export default function DealCard({
 }: DealCardProps) {
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
+  const [heartPopping, setHeartPopping] = useState(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const prefetchTimerRef = useRef<number | null>(null);
+  const heartPopTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
       if (prefetchTimerRef.current !== null && typeof window !== "undefined") {
         window.clearTimeout(prefetchTimerRef.current);
+      }
+      if (heartPopTimerRef.current !== null && typeof window !== "undefined") {
+        window.clearTimeout(heartPopTimerRef.current);
       }
     };
   }, []);
@@ -360,22 +365,7 @@ export default function DealCard({
             );
           })}
           {shopBadge && (
-            <span
-              style={{
-                fontSize: "var(--fs-caption)",
-                fontWeight: 700,
-                color: "var(--text-main)",
-                background: "var(--badge-bg)",
-                border: "1px solid var(--card-border)",
-                padding: "3px 8px",
-                borderRadius: "var(--radius-xs)",
-                display: "inline-flex",
-                alignItems: "center",
-                lineHeight: 1.3,
-              }}
-            >
-              {shopBadge}
-            </span>
+            <span className="deal-shop-badge">{shopBadge}</span>
           )}
           <span aria-hidden="true">·</span>
           <span>{liveTimeAgo}</span>
@@ -424,37 +414,15 @@ export default function DealCard({
 
         {/* 3. 가격 + 배지 + 찜/알림/공유 액션 */}
         <div className="price-section">
-          <div
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              gap: "6px",
-              flexWrap: "wrap",
-              minWidth: 0,
-            }}
-          >
+          <div className="deal-price-group">
             <span className="deal-price">{displayPriceText}</span>
             {foreignKrwHint && (
-              <span
-                style={{
-                  fontSize: "0.75rem",
-                  fontWeight: 700,
-                  color: "var(--text-sub)",
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
+              <span className="deal-price-hint">
                 ({foreignKrwHint.formatted})
               </span>
             )}
             {shippingTotalHint && (
-              <span
-                style={{
-                  fontSize: "0.72rem",
-                  fontWeight: 700,
-                  color: "var(--text-sub)",
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
+              <span className="deal-price-hint">
                 {shippingTotalHint.label}
               </span>
             )}
@@ -515,12 +483,7 @@ export default function DealCard({
                 return (
                   <span
                     key={tIdx}
-                    className="deal-tag"
-                    style={{
-                      background: "var(--badge-bg)",
-                      color: "var(--badge-text)",
-                      border: "1px solid var(--card-border)",
-                    }}
+                    className="deal-tag deal-tag--subtle"
                   >
                     {cleanTag}
                   </span>
@@ -569,8 +532,22 @@ export default function DealCard({
             </button>
             <button
               type="button"
-              onClick={(e) => onToggleWishlist(e, deal.id)}
-              className="deal-card-icon-btn bounce-click"
+              onClick={(e) => {
+                setHeartPopping(true);
+                if (typeof window !== "undefined") {
+                  if (heartPopTimerRef.current !== null) {
+                    window.clearTimeout(heartPopTimerRef.current);
+                  }
+                  heartPopTimerRef.current = window.setTimeout(() => {
+                    setHeartPopping(false);
+                    heartPopTimerRef.current = null;
+                  }, 420);
+                }
+                onToggleWishlist(e, deal.id);
+              }}
+              className={`deal-card-icon-btn bounce-click ${
+                heartPopping ? "deal-action-btn--heart-pop" : ""
+              }`}
               aria-label="찜하기"
               aria-pressed={isWishlisted}
               title="찜하기"

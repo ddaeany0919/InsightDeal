@@ -3718,31 +3718,43 @@ fun DealHeader(
                     titleHint = resolvedShopTitle.cleanTitle,
                     isFree = isFreeDeal
                 )
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
-                    elevation = CardDefaults.cardElevation(0.dp),
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(0.75.dp, semantic.cardBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
                         modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "핵심 3줄 체크",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "구매 조건 요약",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Medium,
+                                color = semantic.textMuted
+                            )
+                        }
+                        HorizontalDivider(thickness = 0.75.dp, color = semantic.cardBorder)
                         Text(
-                            text = "핵심 요약",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "판매처: ${resolvedShopTitle.shopBadge ?: deal.siteName} · 가격: $summaryPrice${displayShippingInfo?.let { " · 배송비: $it" }.orEmpty()}",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "• 판매처: ${resolvedShopTitle.shopBadge ?: deal.siteName}\n• 혜택가: $summaryPrice${displayShippingInfo?.let { "\n• 배송비: $it" }.orEmpty()}",
+                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         if (cleanedBodyText.isBlank()) {
                             Text(
-                                text = "커뮤니티 본문이 짧거나 이미지 위주예요. 아래 원본 게시글 버튼으로 상세 조건을 확인해 보세요.",
+                                text = "본문이 짧거나 이미지 위주예요. 아래 원본 게시글에서 상세 조건을 확인해 보세요.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = semantic.textMuted
                             )
@@ -4019,25 +4031,37 @@ fun DealHeader(
             val cleanAiSummary = remember(deal.aiSummary) {
                 deal.aiSummary
                     ?.replace(Regex("[🔥✨🤖💡⚡🎉📦]+"), "")
+                    ?.replace("[커뮤니티 인증 핫딜]", "")
+                    ?.replace("[커뮤니티 인기]", "")
+                    ?.replace(Regex("^\\s*(AI\\s*요약\\s*[:\\-]?\\s*)"), "")
                     ?.replace(Regex("\\s{2,}"), " ")
                     ?.trim()
                     .orEmpty()
             }
-            if (cleanAiSummary.isNotEmpty() && cleanAiSummary != "[커뮤니티 인증 핫딜]" && !(multiOptions.size > 1 && cleanAiSummary.contains("[구성 상품"))) {
+            if (cleanAiSummary.isNotEmpty() && !(multiOptions.size > 1 && cleanAiSummary.contains("[구성 상품"))) {
                 Spacer(modifier = Modifier.height(16.dp))
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                    elevation = CardDefaults.cardElevation(0.dp),
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(0.75.dp, semantic.cardBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "핵심 3줄 체크",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        HorizontalDivider(thickness = 0.75.dp, color = semantic.cardBorder)
                         Text(
                             text = cleanAiSummary,
                             style = MaterialTheme.typography.bodyMedium,
                             lineHeight = 21.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             letterSpacing = (-0.2).sp
                         )
                     }
