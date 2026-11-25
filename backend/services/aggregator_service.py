@@ -1950,6 +1950,50 @@ class AggregatorService:
         if image_url and _is_banned_placeholder_img(image_url):
             image_url = ""
             scraped_data["image_url"] = ""
+        if not image_url and ecommerce_url:
+            canon_img_key = extract_canonical_product_key(ecommerce_url)
+            key_parts = canon_img_key.split("_") if canon_img_key else []
+            prod_token = key_parts[1] if len(key_parts) >= 2 else ""
+            if prod_token and len(prod_token) >= 4:
+                def _find_shared_product_image_sync() -> str:
+                    from datetime import timedelta
+                    cutoff = datetime.utcnow() - timedelta(days=30)
+                    cands = (
+                        self.db.query(Deal)
+                        .options(defer(Deal.content_html), defer(Deal.search_keywords))
+                        .filter(
+                            Deal.image_url.isnot(None),
+                            Deal.image_url != "",
+                            Deal.ecommerce_link.contains(prod_token),
+                            Deal.indexed_at >= cutoff,
+                        )
+                        .order_by(Deal.indexed_at.desc())
+                        .limit(20)
+                        .all()
+                    )
+                    best_small = ""
+                    for cand in cands:
+                        cand_img = (cand.image_url or "").strip()
+                        if not cand_img or _is_banned_placeholder_img(cand_img):
+                            continue
+                        cand_key = extract_canonical_product_key(cand.ecommerce_link or "")
+                        if cand_key == canon_img_key or (
+                            canon_img_key.startswith("coupang_")
+                            and cand_key.startswith(f"coupang_{prod_token}")
+                        ):
+                            if "/small_" not in cand_img.lower():
+                                return cand_img
+                            if not best_small:
+                                best_small = cand_img
+                    return best_small
+
+                try:
+                    shared_img = await self._run_db_sync(_find_shared_product_image_sync)
+                    if shared_img:
+                        image_url = shared_img
+                        scraped_data["image_url"] = shared_img
+                except Exception as _share_err:
+                    logger.debug(f"Shared product image lookup error: {_share_err}")
 
         # 2. 중복 및 롤링 윈도우 클러스터링 체크 (Upsert 로직의 핵심)
         def _find_exact_or_title_duplicates_sync() -> list[Deal]:

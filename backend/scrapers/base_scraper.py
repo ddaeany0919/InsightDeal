@@ -719,7 +719,7 @@ class AsyncBaseScraper(ABC):
             ]
             return not any(tok in low for tok in bad_tokens)
 
-        # 1. 지마켓(Gmarket) 안티봇 차단 원천 우회를 위한 초고속 CDN 이미지 조립 룰 적용
+        # 1. 지마켓(Gmarket) · 다나와(Danawa) 정적 CDN 이미지 규칙 적용
         if url and 'gmarket.co.kr' in url.lower():
             match = re.search(r'(?:goodscode=|/vi/product/|/item/)([0-9]+)', url, re.IGNORECASE)
             if match:
@@ -737,6 +737,58 @@ class AsyncBaseScraper(ABC):
                         return f"https://gdimg.gmarket.co.kr/{gm_match.group(1)}/still/600"
                 except Exception:
                     pass
+
+        if url and 'danawa.com' in url.lower():
+            m_dnw = re.search(r'pcode=([0-9]{6,})', url, re.IGNORECASE)
+            if m_dnw and self.client:
+                pcode = m_dnw.group(1)
+                dnw_cand = f"https://img.danawa.com/prod_img/500000/{pcode[-3:]}/{pcode[-6:-3]}/img/{pcode}_1.jpg?shrink=500:500"
+                try:
+                    dnw_res = await self.client.head(
+                        dnw_cand,
+                        headers={"Referer": "https://prod.danawa.com/"},
+                        timeout=3.0,
+                    )
+                    dnw_hdrs = {str(k).lower(): str(v) for k, v in (getattr(dnw_res, "headers", None) or {}).items()}
+                    if getattr(dnw_res, "status_code", 0) == 200 and dnw_hdrs.get("content-type", "").lower().startswith("image/"):
+                        return dnw_cand
+                except Exception:
+                    pass
+
+        def _extract_valid_img_from_html(html_text: str, base_u: str) -> Optional[str]:
+            if not html_text:
+                return None
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html_text, 'html.parser')
+            meta_img = (
+                soup.find('meta', property='og:image')
+                or soup.find('meta', attrs={'name': 'twitter:image'})
+                or soup.find('meta', itemprop='image')
+            )
+            if meta_img and meta_img.get('content'):
+                img_url = meta_img['content'].strip()
+                if img_url.startswith('//'):
+                    img_url = 'https:' + img_url
+                elif not img_url.startswith('http'):
+                    img_url = urljoin(base_u, img_url)
+                if _is_valid_product_img(img_url):
+                    return img_url
+
+            for img in soup.select('img'):
+                raw_src = (img.get('data-original') or img.get('data-src') or img.get('src') or '').strip()
+                if not raw_src or raw_src.startswith('data:'):
+                    continue
+                if raw_src.startswith('//'):
+                    full_src = 'https:' + raw_src
+                elif not raw_src.startswith('http'):
+                    full_src = urljoin(base_u, raw_src)
+                else:
+                    full_src = raw_src
+                if _is_valid_product_img(full_src) and any(
+                    k in full_src.lower() for k in ['product', 'goods', 'item', 'prd', 'upload', 'shop', 'image', 'img']
+                ):
+                    return full_src
+            return None
 
         # 2. 외부 쇼핑몰 직접 파싱 시도
         is_community_internal = any(
@@ -785,36 +837,24 @@ class AsyncBaseScraper(ABC):
                         except Exception:
                             pass
                     if response.status_code == 200 and response.text:
-                        from bs4 import BeautifulSoup
-                        soup = BeautifulSoup(response.text, 'html.parser')
-                        meta_img = (
-                            soup.find('meta', property='og:image')
-                            or soup.find('meta', attrs={'name': 'twitter:image'})
-                            or soup.find('meta', itemprop='image')
-                        )
-                        if meta_img and meta_img.get('content'):
-                            img_url = meta_img['content'].strip()
-                            if img_url.startswith('//'):
-                                img_url = 'https:' + img_url
-                            elif not img_url.startswith('http'):
-                                img_url = urljoin(final_base_url, img_url)
-                            if _is_valid_product_img(img_url):
-                                return img_url
-
-                        for img in soup.select('img'):
-                            raw_src = (img.get('data-original') or img.get('data-src') or img.get('src') or '').strip()
-                            if not raw_src or raw_src.startswith('data:'):
-                                continue
-                            if raw_src.startswith('//'):
-                                full_src = 'https:' + raw_src
-                            elif not raw_src.startswith('http'):
-                                full_src = urljoin(final_base_url, raw_src)
-                            else:
-                                full_src = raw_src
-                            if _is_valid_product_img(full_src) and any(
-                                k in full_src.lower() for k in ['product', 'goods', 'item', 'prd', 'upload', 'shop', 'image', 'img']
-                            ):
-                                return full_src
+                        found_img = _extract_valid_img_from_html(response.text, final_base_url)
+                        if found_img:
+                            return found_img
+                    if 'aliexpress.com' in t_low:
+                        for ali_ua in ("Twitterbot/1.0", "WhatsApp/2.23.20.0"):
+                            try:
+                                ali_res = await self.client.get(target_url, timeout=og_timeout, allow_redirects=True, headers={
+                                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                                    "Accept-Language": "ko-KR,ko;q=0.9",
+                                    "User-Agent": ali_ua,
+                                })
+                                if getattr(ali_res, 'status_code', 0) == 200 and getattr(ali_res, 'text', ''):
+                                    ali_base = str(getattr(ali_res, 'url', target_url) or target_url)
+                                    found_ali = _extract_valid_img_from_html(ali_res.text, ali_base)
+                                    if found_ali:
+                                        return found_ali
+                            except Exception:
+                                pass
                 except Exception as e:
                     logger.warning(f"⚠️ [og:image] 외부 쇼핑몰 이미지 파싱 실패 ({target_url}): {e}")
 

@@ -822,8 +822,13 @@ def infer_shop_from_url(raw_url: Optional[str], post_url: Optional[str] = "") ->
                 host = urllib.parse.urlparse(unwrapped).netloc.lower()
             except Exception:
                 host = unwrapped
+            host_clean = host.split(":")[0]
             for dom, shop in _DOMAIN_SHOP_RULES:
-                if host == dom or host.endswith("." + dom) or dom in unwrapped:
+                if (
+                    host_clean == dom
+                    or host_clean.endswith("." + dom)
+                    or re.search(rf"(?:^|[/:.?&=]|%2f){re.escape(dom)}(?:[/:?&%#]|$)", unwrapped)
+                ):
                     return shop
     if post_url and "id=ppomppu8" in post_url.lower():
         return "알리익스프레스"

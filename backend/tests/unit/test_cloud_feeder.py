@@ -586,3 +586,57 @@ async def test_ppomppu_cdn_thumb_naver_bridge_banned_tokens_and_cache_scrub(tmp_
     assert cf._SEEN_DETAIL_CACHE[("뽐뿌", "https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=1")]["image_url"] == ""
     assert cf._SEEN_DETAIL_CACHE[("뽐뿌", "https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=2")]["image_url"] == ""
     assert cf._SEEN_DETAIL_CACHE[("뽐뿌", "https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=3")]["image_url"] == "https://cdn4.ppomppu.co.kr/zboard/data/_thumb/ppomppu/3/small_3.jpg"
+
+
+@pytest.mark.asyncio
+async def test_danawa_cdn_aliexpress_og_bot_and_domain_shop_boundary():
+    from backend.core.deal_normalizer import infer_shop_from_url
+
+    assert infer_shop_from_url("https://prod.danawa.com/info?pcode=19627934&keyword=7800x3d") == "다나와"
+    assert infer_shop_from_url("https://www.nbkorea.com/event/blackfridayfw2026_main.action") == ""
+    assert infer_shop_from_url("https://www.7thpizza.com/sub/promotion/view.php") == ""
+    assert infer_shop_from_url("https://www.kfckorea.com/promotion/promotionlist/detail/1137") == ""
+    assert infer_shop_from_url("https://a.co/d/1234567") == "아마존"
+
+    async with PpomppuScraper(1) as sc:
+        ali_ua_seen = []
+
+        class FakeResp:
+            def __init__(self, status_code, text="", url="", headers=None):
+                self.status_code = status_code
+                self.text = text
+                self.url = url
+                self.headers = headers or {}
+
+        class FakeMultiClient:
+            async def head(self, url, headers=None, **kwargs):
+                if "img.danawa.com/prod_img/500000/934/627/img/19627934_1.jpg" in url:
+                    return FakeResp(200, headers={"Content-Type": "image/jpeg"})
+                return FakeResp(404)
+
+            async def get(self, url, headers=None, **kwargs):
+                ua = (headers or {}).get("User-Agent", "")
+                ali_ua_seen.append(ua)
+                if "aliexpress.com" in url and ua == "Twitterbot/1.0":
+                    return FakeResp(
+                        200,
+                        '<meta property="og:image" content="https://ae-pic-a1.aliexpress-media.com/kf/S6e5bce474d764bc0ade5782d8e4ac749e.jpg" />',
+                        url,
+                    )
+                if "aliexpress.com" in url:
+                    return FakeResp(200, "<html><body>challenge</body></html>", url)
+                return FakeResp(404)
+
+            async def close(self):
+                pass
+
+        sc.client = FakeMultiClient()
+        assert (
+            await sc.fetch_og_image("https://prod.danawa.com/info?pcode=19627934&keyword=7800x3d")
+            == "https://img.danawa.com/prod_img/500000/934/627/img/19627934_1.jpg?shrink=500:500"
+        )
+        assert (
+            await sc.fetch_og_image("https://ko.aliexpress.com/item/1005013625400532.html")
+            == "https://ae-pic-a1.aliexpress-media.com/kf/S6e5bce474d764bc0ade5782d8e4ac749e.jpg"
+        )
+        assert "Twitterbot/1.0" in ali_ua_seen
