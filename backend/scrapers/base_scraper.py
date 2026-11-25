@@ -682,7 +682,24 @@ class AsyncBaseScraper(ABC):
     async def fetch_og_image(self, url: str = "", fallback_title: str = "") -> Optional[str]:
         """외부 쇼핑몰 URL의 정적 CDN 또는 og:image 메타 태그만 파싱 (웹검색 기반 엉뚱한 이미지 추측 전면 배제)."""
         import re
-        from urllib.parse import urljoin
+        from urllib.parse import parse_qs, unquote, urljoin, urlparse
+
+        if url:
+            url = url.strip()
+            if "unsafelink.com/" in url.lower():
+                m_unsafe = re.search(r"unsafelink\.com/(https?://.+)$", url, re.IGNORECASE)
+                if m_unsafe:
+                    url = m_unsafe.group(1).strip()
+            try:
+                parsed_wrap = urlparse(url)
+                qs_wrap = parse_qs(parsed_wrap.query)
+                tu_vals = qs_wrap.get("tu") or qs_wrap.get("url")
+                if tu_vals and tu_vals[0] and ("newtip.net" in parsed_wrap.netloc.lower() or "linkprice" in parsed_wrap.netloc.lower() or "click." in parsed_wrap.netloc.lower()):
+                    unwrapped_tu = unquote(tu_vals[0]).strip()
+                    if unwrapped_tu.startswith("http"):
+                        url = unwrapped_tu
+            except Exception:
+                pass
 
         def _is_valid_product_img(candidate_url: str) -> bool:
             if not candidate_url or not candidate_url.startswith('http'):
@@ -702,18 +719,30 @@ class AsyncBaseScraper(ABC):
             return not any(tok in low for tok in bad_tokens)
 
         # 1. 지마켓(Gmarket) 안티봇 차단 원천 우회를 위한 초고속 CDN 이미지 조립 룰 적용
-        if url and 'gmarket.co.kr' in url:
+        if url and 'gmarket.co.kr' in url.lower():
             match = re.search(r'(?:goodscode=|/vi/product/|/item/)([0-9]+)', url, re.IGNORECASE)
             if match:
                 g_id = match.group(1)
                 return f"https://gdimg.gmarket.co.kr/{g_id}/still/600"
+            if 'link.gmarket.co.kr' in url.lower() and self.client:
+                try:
+                    gm_res = await self.client.get(url, timeout=4.0, allow_redirects=True, headers={
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language": "ko-KR,ko;q=0.9",
+                    })
+                    final_gm_url = str(getattr(gm_res, 'url', '') or '')
+                    gm_match = re.search(r'(?:goodscode=|/vi/product/|/item/)([0-9]+)', final_gm_url, re.IGNORECASE)
+                    if gm_match:
+                        return f"https://gdimg.gmarket.co.kr/{gm_match.group(1)}/still/600"
+                except Exception:
+                    pass
 
-        # 2. 외부 쇼핑몰 직접 파싱 시도 (클라우드 미국 IP에서 타임아웃되는 국내 쇼핑몰은 즉시 0.2s 네이버 쇼핑 이미지 검색으로 직행)
+        # 2. 외부 쇼핑몰 직접 파싱 시도
         is_community_internal = any(
             x in (url or '') for x in ['ppomppu.co.kr', 'fmkorea.com', 'fmkorea.org', 'quasarzone.com', 'clien.net', 'ruliweb.com', 'bbasak.com']
         )
         is_kr_mall_blocked_in_cloud = IS_CLOUD_ENV and any(
-            x in (url or '').lower() for x in ['11st.co.kr', 'lotteon.com', 'auction.co.kr', 'hmall.com', 'ssg.com']
+            x in (url or '').lower() for x in ['11st.co.kr', 'auction.co.kr', 'hmall.com', 'ssg.com']
         )
         if url and url.startswith('http') and not is_community_internal and not is_kr_mall_blocked_in_cloud and self.client:
             candidate_urls = [url]
@@ -727,8 +756,17 @@ class AsyncBaseScraper(ABC):
                     logger.info(f"🔍 [og:image] 외부 쇼핑몰 og:image 탐색 시도: {target_url}")
                     response = await self.client.get(target_url, timeout=og_timeout, allow_redirects=True, headers={
                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
                     })
+                    t_low = target_url.lower()
+                    if getattr(response, 'status_code', 0) in (403, 429, 490) and any(
+                        h in t_low for h in ('brand.naver.com', 'smartstore.naver.com', 'naver.me', 'musinsa.com')
+                    ):
+                        response = await self.client.get(target_url, timeout=og_timeout, allow_redirects=True, headers={
+                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                            "Accept-Language": "ko-KR,ko;q=0.9",
+                            "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+                        })
                     if response.status_code == 200 and response.text:
                         from bs4 import BeautifulSoup
                         final_base_url = str(getattr(response, 'url', target_url) or target_url)

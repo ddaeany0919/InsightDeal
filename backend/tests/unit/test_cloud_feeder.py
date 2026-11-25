@@ -472,3 +472,28 @@ async def test_jsmon_enrichment_recovers_ppomppu_cdn_and_gmarket_mobile_without_
 
     async with PpomppuScraper(1) as sc:
         assert await sc.fetch_og_image("https://m.gmarket.co.kr/vi/product/3242140960") == "https://gdimg.gmarket.co.kr/3242140960/still/600"
+        assert await sc.fetch_og_image("https://newtip.net/click.php?m=gmarket&tu=https%3A%2F%2Fm.gmarket.co.kr%2Fvi%2Fproduct%2F4318086821") == "https://gdimg.gmarket.co.kr/4318086821/still/600"
+
+        class FakeOgResp:
+            def __init__(self, status_code, text="", url=""):
+                self.status_code = status_code
+                self.text = text
+                self.url = url
+
+        ua_seen = []
+
+        class FakeOgClient:
+            async def get(self, url, headers=None, **kwargs):
+                ua = (headers or {}).get("User-Agent", "")
+                ua_seen.append(ua)
+                if "facebookexternalhit" in ua:
+                    return FakeOgResp(200, '<meta property="og:image" content="https://shop-phinf.pstatic.net/2026/hd_product.jpg" />', url)
+                return FakeOgResp(490, "", url)
+
+            async def close(self):
+                pass
+
+        sc.client = FakeOgClient()
+        hd_naver = await sc.fetch_og_image("https://brand.naver.com/ashley/products/5715779766")
+        assert hd_naver == "https://shop-phinf.pstatic.net/2026/hd_product.jpg"
+        assert any("facebookexternalhit" in u for u in ua_seen)

@@ -1923,7 +1923,7 @@ class AggregatorService:
                     if ou and not _is_search_fallback_img(ou):
                         image_url = ou
                         break
-        if not image_url:
+        if not image_url or _is_search_fallback_img(image_url):
             try:
                 from backend.scrapers.ppomppu_scraper import PpomppuScraper
                 async with PpomppuScraper(1) as _img_sc:
