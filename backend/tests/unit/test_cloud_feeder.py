@@ -497,3 +497,92 @@ async def test_jsmon_enrichment_recovers_ppomppu_cdn_and_gmarket_mobile_without_
         hd_naver = await sc.fetch_og_image("https://brand.naver.com/ashley/products/5715779766")
         assert hd_naver == "https://shop-phinf.pstatic.net/2026/hd_product.jpg"
         assert any("facebookexternalhit" in u for u in ua_seen)
+
+
+@pytest.mark.asyncio
+async def test_ppomppu_cdn_thumb_naver_bridge_banned_tokens_and_cache_scrub(tmp_path, monkeypatch):
+    import json
+    from backend.scheduler import cloud_feeder as cf
+
+    # 1. fetch_ppomppu_cdn_thumb: 200 image/jpeg vs 404
+    async with PpomppuScraper(1) as sc:
+        class FakeHeadResp:
+            def __init__(self, status_code, ct="image/jpeg"):
+                self.status_code = status_code
+                self.headers = {"Content-Type": ct}
+
+        class FakeCdnClient:
+            async def head(self, url, headers=None, **kwargs):
+                if "ppomppu/4/small_749614.jpg" in url and (headers or {}).get("Referer") == "https://www.ppomppu.co.kr/":
+                    return FakeHeadResp(200, "image/jpeg")
+                return FakeHeadResp(404, "text/html")
+
+            async def get(self, url, headers=None, **kwargs):
+                class FakeR:
+                    def __init__(self, status_code, text="", final_url=""):
+                        self.status_code = status_code
+                        self.text = text
+                        self.url = final_url
+
+                if "naver.me/" in url:
+                    return FakeR(
+                        200,
+                        '<meta property="og:image" content="https://shopv.pstatic.net/web/r/_next/static/og/nplus-store/OG_450x235.png" />',
+                        "https://app.shopping.naver.com/app-bridge?dst=https%3A%2F%2Fbrand.naver.com%2Fpork%2Fproducts%2F12345",
+                    )
+                if "brand.naver.com/pork/products/12345" in url:
+                    ua = (headers or {}).get("User-Agent", "")
+                    if "facebookexternalhit" in ua:
+                        return FakeR(
+                            200,
+                            '<meta property="og:image" content="https://d2w999htn2iva3.cloudfront.net/thumbs/bad.jpg" /><img data-src="https://shop-phinf.pstatic.net/2026/products/pork_hd.jpg" />',
+                            url,
+                        )
+                    return FakeR(429, "", url)
+                if "badog.example.com" in url:
+                    return FakeR(
+                        200,
+                        '<meta property="og:image" content="https://search2.kakaocdn.net/argon/600x0_65_wr/JaqiqttJhft" />',
+                        url,
+                    )
+                return FakeR(404, "", url)
+
+            async def close(self):
+                pass
+
+        sc.client = FakeCdnClient()
+        assert (
+            await sc.fetch_ppomppu_cdn_thumb("https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=749614")
+            == "https://cdn4.ppomppu.co.kr/zboard/data/_thumb/ppomppu/4/small_749614.jpg"
+        )
+        assert await sc.fetch_ppomppu_cdn_thumb("https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu8&no=106807") is None
+        assert await sc.fetch_og_image("https://badog.example.com/item") is None
+        assert await sc.fetch_og_image("https://naver.me/Fhu9SGqd") == "https://shop-phinf.pstatic.net/2026/products/pork_hd.jpg"
+
+    # 2. _load_local_seen_cache scrubs legacy cloudfront and kakaocdn/argon URLs
+    cache_file = tmp_path / "feeder_seen_cache.json"
+    cache_file.write_text(
+        json.dumps(
+            {
+                "뽐뿌::https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=1": {
+                    "image_url": "https://d2w999htn2iva3.cloudfront.net/thumbs/3/1.jpg",
+                    "ecommerce_link": "https://www.11st.co.kr/products/1",
+                },
+                "뽐뿌::https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=2": {
+                    "image_url": "https://search2.kakaocdn.net/argon/600x0_65_wr/abc",
+                    "ecommerce_link": "https://www.11st.co.kr/products/2",
+                },
+                "뽐뿌::https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=3": {
+                    "image_url": "https://cdn4.ppomppu.co.kr/zboard/data/_thumb/ppomppu/3/small_3.jpg",
+                    "ecommerce_link": "https://www.11st.co.kr/products/3",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cf, "_CACHE_FILE", str(cache_file))
+    cf._SEEN_DETAIL_CACHE.clear()
+    cf._load_local_seen_cache()
+    assert cf._SEEN_DETAIL_CACHE[("뽐뿌", "https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=1")]["image_url"] == ""
+    assert cf._SEEN_DETAIL_CACHE[("뽐뿌", "https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=2")]["image_url"] == ""
+    assert cf._SEEN_DETAIL_CACHE[("뽐뿌", "https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=3")]["image_url"] == "https://cdn4.ppomppu.co.kr/zboard/data/_thumb/ppomppu/3/small_3.jpg"

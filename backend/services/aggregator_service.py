@@ -1869,15 +1869,24 @@ class AggregatorService:
         content_html = scraped_data.get("content_html", scraped_data.get("content", ""))
         image_url = scraped_data.get("image_url")
 
-        def _is_search_fallback_img(u: str) -> bool:
+        def _is_banned_placeholder_img(u: str) -> bool:
             if not u:
                 return False
             ul = u.lower()
             return any(k in ul for k in (
                 'search.pstatic.net', 'kakaocdn.net/argon', 'bing.com',
+                'd2w999htn2iva3.cloudfront.net', 'nplus-store/og_', '_next/static/og_',
                 'blogfiles.naver.net', 'postfiles.pstatic.net', 'mblogthumb-phinf',
                 'cafeptthumb', 'blogpfthumb', 'influencer-phinf', 'clip-service-phinf',
-                'nplus-store/og_', '_next/static/og/',
+            ))
+
+        def _is_search_fallback_img(u: str) -> bool:
+            if not u:
+                return False
+            if _is_banned_placeholder_img(u):
+                return True
+            ul = u.lower()
+            return any(k in ul for k in (
                 'filesn/', '_70x50', 'crop.webp', '_thumb', 'thumb/', 'small_', 'zboard/data/ppomppu'
             ))
 
@@ -1931,8 +1940,16 @@ class AggregatorService:
                     if fb_img:
                         image_url = fb_img
                         scraped_data["image_url"] = fb_img
+                    elif (not image_url or _is_banned_placeholder_img(image_url)) and "ppomppu.co.kr" in (url or "").lower():
+                        pp_thumb = await _img_sc.fetch_ppomppu_cdn_thumb(url)
+                        if pp_thumb:
+                            image_url = pp_thumb
+                            scraped_data["image_url"] = pp_thumb
             except Exception as _img_err:
                 logger.debug(f"Aggregator image fallback error: {_img_err}")
+        if image_url and _is_banned_placeholder_img(image_url):
+            image_url = ""
+            scraped_data["image_url"] = ""
 
         # 2. 중복 및 롤링 윈도우 클러스터링 체크 (Upsert 로직의 핵심)
         def _find_exact_or_title_duplicates_sync() -> list[Deal]:

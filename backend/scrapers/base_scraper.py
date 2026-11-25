@@ -711,6 +711,7 @@ class AsyncBaseScraper(ABC):
                 'logo', 'icon', 'noimage', 'no_image', 'blank', 'transparent',
                 'common/', 'btn_', 'button', 'share_', 'footer', 'header', 'avatar', 'lazyload',
                 '11st_', 'gmarket_logo', 'auction_logo', 'naver_logo',
+                'd2w999htn2iva3.cloudfront.net', 'kakaocdn.net/argon',
                 '_next/static/og/', 'nplus-store/og_', 'default_og', 'og_default', 'og_image_default', 'shopv.pstatic.net/web/r/',
                 'lookaside.fbsbx.com', 'facebook.com', 'instagram.com',
                 'close.jpg', 'close.png', 'close.gif', 'tvcast', 'sstatic/search', 'cafefiles.naver', '아이콘',
@@ -751,7 +752,13 @@ class AsyncBaseScraper(ABC):
                 candidate_urls.append(f"https://m.11st.co.kr/products/m/{st11_m.group(1)}")
 
             og_timeout = 5.0 if IS_CLOUD_ENV else 8.0
-            for target_url in candidate_urls:
+            tried_urls: set[str] = set()
+            pending_urls = list(candidate_urls)
+            while pending_urls:
+                target_url = pending_urls.pop(0)
+                if not target_url or target_url in tried_urls:
+                    continue
+                tried_urls.add(target_url)
                 try:
                     logger.info(f"🔍 [og:image] 외부 쇼핑몰 og:image 탐색 시도: {target_url}")
                     response = await self.client.get(target_url, timeout=og_timeout, allow_redirects=True, headers={
@@ -767,9 +774,18 @@ class AsyncBaseScraper(ABC):
                             "Accept-Language": "ko-KR,ko;q=0.9",
                             "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
                         })
+                    final_base_url = str(getattr(response, 'url', target_url) or target_url)
+                    if "app-bridge" in final_base_url.lower():
+                        try:
+                            dst_vals = parse_qs(urlparse(final_base_url).query).get("dst") or []
+                            if dst_vals:
+                                dst_url = unquote(dst_vals[0]).strip()
+                                if dst_url.startswith(("http://", "https://")) and dst_url not in tried_urls:
+                                    pending_urls.insert(0, dst_url)
+                        except Exception:
+                            pass
                     if response.status_code == 200 and response.text:
                         from bs4 import BeautifulSoup
-                        final_base_url = str(getattr(response, 'url', target_url) or target_url)
                         soup = BeautifulSoup(response.text, 'html.parser')
                         meta_img = (
                             soup.find('meta', property='og:image')
@@ -803,6 +819,33 @@ class AsyncBaseScraper(ABC):
                     logger.warning(f"⚠️ [og:image] 외부 쇼핑몰 이미지 파싱 실패 ({target_url}): {e}")
 
         # 3. GEMINI.md 5조 & 오매칭 제로 원칙: 네이버/다음/빙 키워드 웹검색 및 외부 쇼핑몰 검색 API 추측은 전면 배제하고 None 반환
+        return None
+
+    async def fetch_ppomppu_cdn_thumb(self, post_url: str) -> Optional[str]:
+        """HD 이미지가 없고 기존 썸네일이 비었거나 오염된 뽐뿌 글의 공식 CDN 썸네일만 HEAD 검증 후 반환."""
+        import re
+        from urllib.parse import parse_qs, urlparse
+
+        if not post_url or "ppomppu.co.kr" not in post_url.lower() or not self.client:
+            return None
+        try:
+            qs = parse_qs(urlparse(post_url).query)
+            bid = (qs.get("id") or [""])[0].strip()
+            no = (qs.get("no") or [""])[0].strip()
+            if not re.fullmatch(r"ppomppu\d*", bid) or not re.fullmatch(r"\d+", no):
+                return None
+            candidate = f"https://cdn4.ppomppu.co.kr/zboard/data/_thumb/{bid}/{no[-1]}/small_{no}.jpg"
+            resp = await self.client.head(
+                candidate,
+                headers={"Referer": "https://www.ppomppu.co.kr/"},
+                timeout=3.0,
+            )
+            headers_lc = {str(k).lower(): str(v) for k, v in (getattr(resp, "headers", None) or {}).items()}
+            ct = headers_lc.get("content-type", "").lower()
+            if getattr(resp, "status_code", 0) == 200 and ct.startswith("image/"):
+                return candidate
+        except Exception as e:
+            logger.debug(f"[뽐뿌 CDN 썸네일] HEAD 검증 실패 ({post_url}): {e}")
         return None
 
     @abstractmethod

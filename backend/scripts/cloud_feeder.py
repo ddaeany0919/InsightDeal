@@ -147,6 +147,9 @@ def _load_local_seen_cache():
                     pf, u = k_str.split("::", 1)
                     if is_search_or_community_url(val.get("ecommerce_link", "")):
                         val["ecommerce_link"] = ""
+                    raw_img = str(val.get("image_url") or "")
+                    if any(tok in raw_img.lower() for tok in ("d2w999htn2iva3.cloudfront.net", "kakaocdn.net/argon")):
+                        val["image_url"] = ""
                     _SEEN_DETAIL_CACHE[(pf, u)] = val
         except Exception:
             pass
