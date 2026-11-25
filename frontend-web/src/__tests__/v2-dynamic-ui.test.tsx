@@ -271,14 +271,12 @@ describe("v2.0 Dynamic Commerce UI 모션·스크롤 헤더·모바일 엄지 �
       });
 
       const dock = container.querySelector(".mobile-thumb-dock");
-      expect(dock).not.toBeNull();
+      expect(dock).toBeNull();
 
-      const dockFilterBtn = screen.getByRole("button", {
-        name: "빠른 상세 필터 열기",
-      });
+      const topFilterBtn = screen.getByRole("button", { name: /상세 필터/ });
       expect(screen.queryByRole("dialog", { name: "상세 필터" })).toBeNull();
 
-      fireEvent.click(dockFilterBtn);
+      fireEvent.click(topFilterBtn);
       expect(
         screen.getByRole("dialog", { name: "상세 필터" })
       ).toBeInTheDocument();

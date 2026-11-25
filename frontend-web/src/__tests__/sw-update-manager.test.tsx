@@ -128,7 +128,7 @@ describe("SwUpdateManager & Multi-Source DealCard", () => {
       scraped_at: "2026-11-24T13:03:15Z",
       post_link: "https://quasarzone.com/bbs/qb_saleinfo/views/2004021",
       ecommerce_url: "https://brand.naver.com/artmu/products/13891267753",
-      image_url: "https://d2w999htn2iva3.cloudfront.net/thumbs/3/2004021.jpg",
+      image_url: "https://cdn.example.com/thumbs/2004021.jpg",
       category: "PC용품",
       isClosed: false,
       sources: [

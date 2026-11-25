@@ -411,9 +411,9 @@ async def test_cloud_feeder_rss_1rtt_attaches_hmac_and_ingest_stays_plaintext(mo
 
 
 @pytest.mark.asyncio
-async def test_hotgusa_enrichment_recovers_missing_has_thumb_and_gmarket_mobile(monkeypatch):
+async def test_jsmon_enrichment_recovers_ppomppu_cdn_and_gmarket_mobile_without_hotgusa(monkeypatch):
     import backend.scheduler.cloud_feeder as cf
-    from backend.scrapers.base_scraper import AsyncBaseScraper
+    from backend.scrapers.ppomppu_scraper import PpomppuScraper
 
     class Resp:
         def __init__(self, status_code, text="", json_data=None, headers=None):
@@ -428,39 +428,47 @@ async def test_hotgusa_enrichment_recovers_missing_has_thumb_and_gmarket_mobile(
     jsmon_html = """
     <div class="tgme_widget_message_wrap">
       <div class="tgme_widget_message_text">
+        [지마켓] 그래놀라 3팩(13,900원/무료)
         <a href="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=751710">원문</a>
         <a href="https://m.gmarket.co.kr/vi/product/3242140960">구매</a>
       </div>
     </div>
+    <div class="tgme_widget_message_wrap">
+      <div class="tgme_widget_message_text">
+        [네이버] 감귤 4kg(11,900원/무배)
+        <a href="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=751709">원문</a>
+        <a href="https://smartstore.naver.com/koreafarmers/products/13839774075">구매</a>
+      </div>
+    </div>
     """
-    hotgusa_payload = {
-        "products": [
-            {"community_id": 0, "id": "0_751715", "title": "상품1", "mall_name": "네이버"},
-            {"community_id": 0, "id": "0_751709", "title": "감귤", "mall_name": "네이버"},
-        ]
-    }
+
+    called_urls = []
 
     class FakeProbeClient:
         async def get(self, url, **kwargs):
+            called_urls.append(url)
             if url == "https://t.me/s/jsmon":
                 return Resp(200, text=jsmon_html)
-            if "hotgusa.com/api/products" in url:
-                return Resp(200, json_data=hotgusa_payload)
             return Resp(404)
 
         async def head(self, url, **kwargs):
-            if "cloudfront.net/thumbs/0/751715.jpg" in url:
-                return Resp(200, headers={"content-length": "5648"})
-            if "cloudfront.net/thumbs/0/751709.jpg" in url:
-                return Resp(403)
+            called_urls.append(url)
             if "small_751709.jpg" in url:
                 return Resp(200, headers={"content-length": "4653"})
             return Resp(404)
 
     enrichment = await cf._fetch_jsmon_and_hotgusa_enrichment(FakeProbeClient())
-    assert enrichment["https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=751710"]["image_url"] == "https://gdimg.gmarket.co.kr/3242140960/still/600"
-    assert enrichment["https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=751715"]["image_url"] == "https://d2w999htn2iva3.cloudfront.net/thumbs/0/751715.jpg"
-    assert enrichment["https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=751709"]["image_url"] == "https://cdn4.ppomppu.co.kr/zboard/data/_thumb/ppomppu/9/small_751709.jpg"
+    assert not any("hotgusa" in u or "d2w999htn2iva3" in u for u in called_urls)
+
+    gmarket_entry = enrichment["https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=751710"]
+    assert gmarket_entry["image_url"] == "https://gdimg.gmarket.co.kr/3242140960/still/600"
+    assert gmarket_entry["price"] == 13900
+    assert gmarket_entry["shop_name"] == "지마켓"
+
+    naver_entry = enrichment["https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=751709"]
+    assert naver_entry["image_url"] == "https://cdn4.ppomppu.co.kr/zboard/data/_thumb/ppomppu/9/small_751709.jpg"
+    assert naver_entry["price"] == 11900
+    assert naver_entry["shipping_fee"] == "무료배송"
 
     async with PpomppuScraper(1) as sc:
         assert await sc.fetch_og_image("https://m.gmarket.co.kr/vi/product/3242140960") == "https://gdimg.gmarket.co.kr/3242140960/still/600"

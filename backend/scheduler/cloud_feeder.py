@@ -224,16 +224,17 @@ async def _preload_existing_urls(http_client: httpx.AsyncClient):
 
 async def _fetch_jsmon_and_hotgusa_enrichment(http_client: httpx.AsyncClient) -> dict[str, dict]:
     """
-    🌐 [클라우드 Zero-403 초고속 아웃링크 & 상태 브릿지]
+    🌐 [클라우드 Zero-403 자체 브릿지]
     1) https://t.me/s/jsmon (0.2s, 200 OK): 뽐뿌(id=ppomppu) 및 퀘이사존(qb_saleinfo)의
-       실제 디코딩된 쇼핑몰 직접 링크(ecommerce_link), 본문 텍스트, 쇼핑몰명 추출
-    2) https://www.hotgusa.com/api/products (0.2s, 200 OK): 뽐뿌(0_) 및 퀘이사존(3_)의
-       실시간 마감 상태(is_end), 추천수(recm_cnt), 조회수(view_cnt), 댓글수(cmt_cnt), 고화질 썸네일 추출
+       제목/가격/배송비/쇼핑몰명/실제 쇼핑몰 직접 링크(ecommerce_link)/본문 텍스트 추출
+    2) 뽐뿌 자체 공식 CDN(`cdn4.ppomppu.co.kr`) 썸네일 & 지마켓 고화질 CDN(`gdimg.gmarket.co.kr`) 결합
     """
     from bs4 import BeautifulSoup
+    from backend.core.deal_normalizer import normalize_shipping_fee, parse_title_price_and_shipping
     from backend.core.url_utils import normalize_url
 
     enrichment_map: dict[str, dict] = {}
+    ppomppu_thumb_candidates: dict[str, str] = {}
 
     # 1. t.me/s/jsmon 파싱 (최근 5페이지 = 100개 메시지)
     try:
@@ -275,7 +276,13 @@ async def _fetch_jsmon_and_hotgusa_enrichment(http_client: httpx.AsyncClient) ->
                 if not post_url:
                     continue
 
-                full_txt = text_el.get_text(" ", strip=True) if text_el else w.get_text(" ", strip=True)
+                raw_lines = [
+                    ln.strip()
+                    for ln in (text_el.get_text("\n", strip=True) if text_el else w.get_text("\n", strip=True)).splitlines()
+                    if ln.strip()
+                ]
+                first_line = raw_lines[0] if raw_lines else ""
+                full_txt = " ".join(raw_lines)
                 photo_el = w.select_one(".tgme_widget_message_photo_wrap")
                 img_u = ""
                 if photo_el and photo_el.get("style"):
@@ -284,6 +291,25 @@ async def _fetch_jsmon_and_hotgusa_enrichment(http_client: httpx.AsyncClient) ->
                         img_u = m_img.group(1)
 
                 entry = enrichment_map.setdefault(post_url, {})
+                if first_line and not entry.get("title"):
+                    entry["title"] = first_line
+                    extracted_p, extracted_curr, extracted_ship, _ = parse_title_price_and_shipping(first_line)
+                    if extracted_p > 0:
+                        entry["price"] = extracted_p
+                        entry["currency"] = extracted_curr
+                    ship_val = extracted_ship or normalize_shipping_fee("", title_hint=first_line)
+                    if ship_val:
+                        entry["shipping_fee"] = ship_val
+                    m_shop = re.match(r"^\s*\[([^\]]{1,24})\]", first_line)
+                    if m_shop:
+                        entry["shop_name"] = m_shop.group(1).strip()
+                    if any(k in first_line for k in ("종료", "품절", "마감")):
+                        entry["is_closed"] = True
+
+                time_el = w.select_one("time[datetime]")
+                if time_el and time_el.get("datetime") and not entry.get("posted_at"):
+                    entry["posted_at"] = time_el["datetime"].strip()
+
                 if ecom_url and not entry.get("ecommerce_link"):
                     entry["ecommerce_link"] = ecom_url
                 if ecom_url and "gmarket.co.kr" in ecom_url.lower() and not img_u and not entry.get("image_url"):
@@ -294,115 +320,39 @@ async def _fetch_jsmon_and_hotgusa_enrichment(http_client: httpx.AsyncClient) ->
                     entry["image_url"] = img_u
                 if full_txt and not entry.get("content_html"):
                     entry["content_html"] = f"<p>{full_txt}</p>"
+
+                if "ppomppu.co.kr" in post_url and "id=ppomppu&" in post_url and not entry.get("image_url"):
+                    m_pno = re.search(r"[?&]no=(\d+)", post_url)
+                    if m_pno:
+                        ppomppu_thumb_candidates.setdefault(post_url, m_pno.group(1))
     except Exception as je:
         logger.warning(f"⚠️ [jsmon 브릿지] 보강 데이터 페칭 경고: {je}")
 
-    # 2. hotgusa API 파싱 (뽐뿌 0_, 퀘이사존 3_ 실시간 마감/추천/조회수/썸네일 동기화)
-    try:
-        hg_url = (
-            "https://www.hotgusa.com/api/products?communities=0,3&isOutOfStock=true"
-            "&category=&sort=date&shop=all&timeRange=24h&hiddenKeywords="
-            "&lastId=9_99999999999&lastValue=2099-12-31T23:59:59%2B09:00"
-        )
-        rh = await http_client.get(hg_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8.0)
-        if rh.status_code == 200:
-            payload = rh.json()
-            rows = payload.get("products", []) if isinstance(payload, dict) else (payload if isinstance(payload, list) else [])
-            if isinstance(rows, list):
-                thumb_candidates: list[tuple[str, int, str]] = []
-                for row in rows:
-                    if not isinstance(row, dict):
-                        continue
-                    cid = row.get("community_id")
-                    pno = row.get("product_no")
-                    if cid is None or not pno:
-                        raw_id = str(row.get("id") or "")
-                        if "_" in raw_id:
-                            p_cid, p_no = raw_id.split("_", 1)
-                            cid = int(p_cid) if p_cid.isdigit() else cid
-                            pno = p_no or pno
-                    if cid == 0 and pno:
-                        p_url = normalize_url(f"https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no={pno}")
-                    elif cid == 3 and pno:
-                        p_url = normalize_url(f"https://quasarzone.com/bbs/qb_saleinfo/views/{pno}")
-                    else:
-                        continue
+    # 2. 뽐뿌 자체 공식 CDN(`cdn4.ppomppu.co.kr`) 썸네일 직접 확인
+    if ppomppu_thumb_candidates and hasattr(http_client, "head"):
+        probe_sem = asyncio.Semaphore(8)
 
-                    entry = enrichment_map.setdefault(p_url, {})
-                    if row.get("is_end"):
-                        entry["is_closed"] = True
-                    recm = int(row.get("recm_cnt") or 0)
-                    vcnt = int(row.get("view_cnt") or 0)
-                    ccnt = int(row.get("cmt_cnt") or 0)
-                    if recm > int(entry.get("like_count") or 0):
-                        entry["like_count"] = recm
-                    if vcnt > int(entry.get("view_count") or 0):
-                        entry["view_count"] = vcnt
-                    if ccnt > int(entry.get("comment_count") or 0):
-                        entry["comment_count"] = ccnt
-                    if recm >= 8 or vcnt >= 2500:
-                        entry["is_super_hotdeal"] = True
-                    if row.get("mall_name") and not entry.get("shop_name"):
-                        entry["shop_name"] = str(row["mall_name"]).strip()
-                    if row.get("has_thumb", True) and not entry.get("image_url") and isinstance(cid, int):
-                        thumb_candidates.append((p_url, cid, str(pno)))
-                    if row.get("title") and not entry.get("title"):
-                        entry["title"] = str(row["title"]).strip()
-                    if row.get("price") is not None and not entry.get("price"):
-                        try:
-                            hg_price = int(float(row["price"]))
-                            if hg_price > 0:
-                                entry["price"] = hg_price
-                                entry["currency"] = "USD" if int(row.get("currency_code") or 0) == 1 else "KRW"
-                        except (TypeError, ValueError):
-                            pass
-                    if row.get("delivery_price") is not None and not entry.get("shipping_fee"):
-                        try:
-                            dp = int(float(row["delivery_price"]))
-                            entry["shipping_fee"] = "무료배송" if dp == 0 else f"{dp:,}원"
-                        except (TypeError, ValueError):
-                            pass
-                    if row.get("reg_date") and not entry.get("posted_at"):
-                        entry["posted_at"] = str(row["reg_date"]).strip()
-
-                if thumb_candidates and hasattr(http_client, "head"):
-                    probe_sem = asyncio.Semaphore(8)
-
-                    async def _probe_thumb(target_p_url: str, target_cid: int, target_pno: str) -> None:
-                        async with probe_sem:
-                            cf_u = f"https://d2w999htn2iva3.cloudfront.net/thumbs/{target_cid}/{target_pno}.jpg"
-                            try:
-                                cf_res = await http_client.head(
-                                    cf_u,
-                                    headers={"User-Agent": "Mozilla/5.0"},
-                                    timeout=3.0,
-                                )
-                                if cf_res.status_code == 200:
-                                    enrichment_map[target_p_url]["image_url"] = cf_u
-                                    return
-                            except Exception:
-                                pass
-
-                            if target_cid == 0 and target_pno.isdigit():
-                                pp_u = f"https://cdn4.ppomppu.co.kr/zboard/data/_thumb/ppomppu/{target_pno[-1]}/small_{target_pno}.jpg"
-                                try:
-                                    pp_res = await http_client.head(
-                                        pp_u,
-                                        headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.ppomppu.co.kr/"},
-                                        timeout=3.0,
-                                    )
-                                    c_len = int((pp_res.headers or {}).get("content-length") or 0)
-                                    if pp_res.status_code == 200 and c_len >= 500:
-                                        enrichment_map[target_p_url]["image_url"] = pp_u
-                                except Exception:
-                                    pass
-
-                    await asyncio.gather(
-                        *(_probe_thumb(pu, c, pn) for pu, c, pn in thumb_candidates[:40]),
-                        return_exceptions=True,
+        async def _probe_ppomppu_thumb(target_post_url: str, target_pno: str) -> None:
+            if enrichment_map.get(target_post_url, {}).get("image_url"):
+                return
+            async with probe_sem:
+                pp_u = f"https://cdn4.ppomppu.co.kr/zboard/data/_thumb/ppomppu/{target_pno[-1]}/small_{target_pno}.jpg"
+                try:
+                    pp_res = await http_client.head(
+                        pp_u,
+                        headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.ppomppu.co.kr/"},
+                        timeout=3.0,
                     )
-    except Exception as he:
-        logger.warning(f"⚠️ [hotgusa API] 보강 데이터 페칭 경고: {he}")
+                    c_len = int((pp_res.headers or {}).get("content-length") or 0)
+                    if pp_res.status_code == 200 and c_len >= 500:
+                        enrichment_map[target_post_url]["image_url"] = pp_u
+                except Exception:
+                    pass
+
+        await asyncio.gather(
+            *(_probe_ppomppu_thumb(pu, pn) for pu, pn in list(ppomppu_thumb_candidates.items())[:40]),
+            return_exceptions=True,
+        )
 
     return enrichment_map
 
@@ -583,7 +533,7 @@ async def scrape_and_push_once():
                                 if page_no >= 1 and (unseen_today_on_page == 0 or today_on_page == 0):
                                     break
 
-                        # 2.4 뽐뿌(국내) 전 경로 403 차단 시 jsmon+hotgusa 브릿지로 무중단 대체 수집
+                        # 2.4 뽐뿌(국내) 전 경로 403 차단 시 jsmon 브릿지로 무중단 대체 수집
                         if not items and name == "ppomppu" and enrichment_map:
                             for e_url, ext in enrichment_map.items():
                                 if "ppomppu.co.kr" in e_url and "id=ppomppu&" in e_url and ext.get("title"):
@@ -611,9 +561,9 @@ async def scrape_and_push_once():
                                         "_page_no": 1,
                                     })
                             if items:
-                                logger.info(f"⚡ [{display_name}] 403 차단으로 jsmon+hotgusa 브릿지에서 {len(items)}건 무중단 대체 수집 완료")
+                                logger.info(f"⚡ [{display_name}] 403 차단으로 jsmon 브릿지에서 {len(items)}건 무중단 대체 수집 완료")
 
-                        # 2.5 외부 브릿지(jsmon + hotgusa) 보강 데이터 즉시 병합
+                        # 2.5 외부 브릿지(jsmon) 보강 데이터 즉시 병합
                         for pit in items:
                             norm_u = normalize_url(pit["url"])
                             ext = enrichment_map.get(norm_u)
@@ -637,7 +587,7 @@ async def scrape_and_push_once():
                                 if int(ext.get("comment_count") or 0) > int(pit.get("comment_count") or 0):
                                     pit["comment_count"] = int(ext["comment_count"])
 
-                        # 2.55 캐시된 기존 딜 중 브릿지(hotgusa)에서 종료(is_end)로 전환된 항목 즉시 마감 전파
+                        # 2.55 캐시된 기존 딜 중 브릿지(jsmon)에서 종료로 전환된 항목 즉시 마감 전파
                         for (c_pf, c_url), c_val in list(_SEEN_DETAIL_CACHE.items()):
                             if c_pf != cache_pf or c_val.get("is_closed") or not c_val.get("title"):
                                 continue

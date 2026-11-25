@@ -784,9 +784,7 @@ body {
   .deal-card-buy-link,
   .deal-card-wish-overlay,
   .floating-new-deals-pill,
-  .floating-new-deals-dot,
-  .mobile-thumb-dock,
-  .mobile-thumb-dock-top-btn {
+  .floating-new-deals-dot {
     animation: none !important;
     transition: none !important;
   }
@@ -3332,7 +3330,7 @@ mark.search-highlight {
 
 /* 푸터 */
 
-/* 우측 하단 맨 위로 플로팅 버튼 (데스크톱 전용) & 모바일 엄지 도크 */
+/* 우측 하단 맨 위로 플로팅 버튼 */
 .scroll-top-fab {
   position: fixed;
   right: 20px;
@@ -3361,91 +3359,12 @@ mark.search-highlight {
 
 @media (max-width: 640px) {
   .scroll-top-fab {
-    display: none;
+    right: 12px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    width: 38px;
+    height: 38px;
+    opacity: 0.92;
   }
-}
-
-.mobile-thumb-dock {
-  position: fixed;
-  right: 14px;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  z-index: 920;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px;
-  border-radius: var(--radius-pill);
-  background: var(--navbar-scrolled-bg);
-  backdrop-filter: blur(16px) saturate(1.3);
-  -webkit-backdrop-filter: blur(16px) saturate(1.3);
-  border: 1px solid var(--card-border);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
-  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease;
-}
-
-:root[data-theme="dark"] .mobile-thumb-dock,
-:root[data-theme="amoled"] .mobile-thumb-dock {
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .mobile-thumb-dock {
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
-  }
-}
-
-@media (min-width: 641px) {
-  .mobile-thumb-dock {
-    display: none;
-  }
-}
-
-.mobile-thumb-dock-btn {
-  position: relative;
-  height: 42px;
-  min-height: 42px;
-  padding: 0 14px;
-  border-radius: var(--radius-pill);
-  background: var(--surface-subtle);
-  color: var(--text-main);
-  border: 1px solid var(--card-border);
-  font-size: 0.8rem;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  white-space: nowrap;
-}
-
-.mobile-thumb-dock-btn::after,
-.mobile-thumb-dock-top-btn::after {
-  content: "";
-  position: absolute;
-  inset: -2px;
-  min-width: var(--touch-target-min);
-  min-height: var(--touch-target-min);
-}
-
-.mobile-thumb-dock-btn.is-active {
-  background: var(--accent);
-  color: var(--on-accent);
-  border-color: var(--accent);
-}
-
-.mobile-thumb-dock-top-btn {
-  position: relative;
-  width: 42px;
-  height: 42px;
-  min-width: 42px;
-  min-height: 42px;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  color: var(--on-accent);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  animation: fadeIn 0.18s ease;
 }
 .footer {
   border-top: 1px solid var(--card-border);

@@ -3756,7 +3756,7 @@ export default function Home() {
           {toastMessage && <div className="toast">{toastMessage}</div>}
         </div>
 
-        {!isMobileViewport && showScrollTop && !selectedDeal && (
+        {showScrollTop && !selectedDeal && (
           <button
             type="button"
             className="scroll-top-fab bounce-click"
@@ -3766,50 +3766,6 @@ export default function Home() {
           >
             <ArrowUp size={18} aria-hidden="true" />
           </button>
-        )}
-
-        {isMobileViewport && !selectedDeal && (
-          <div
-            className={`mobile-thumb-dock ${
-              isHeaderCollapsed ? "mobile-thumb-dock--scrolled" : ""
-            }`}
-            role="region"
-            aria-label="모바일 빠른 탐색 도구"
-          >
-            <button
-              type="button"
-              aria-expanded={isFilterDrawerOpen}
-              aria-controls={filterDrawerId}
-              aria-label={
-                isFilterDrawerOpen ? "빠른 상세 필터 닫기" : "빠른 상세 필터 열기"
-              }
-              onClick={() => setIsFilterDrawerOpen((v) => !v)}
-              className={`mobile-thumb-dock-btn bounce-click ${
-                isFilterDrawerOpen || secondaryActiveFilterCount > 0
-                  ? "is-active"
-                  : ""
-              }`}
-            >
-              <SlidersHorizontal size={15} aria-hidden="true" />
-              <span>
-                상세 필터
-                {secondaryActiveFilterCount > 0
-                  ? ` (${secondaryActiveFilterCount})`
-                  : ""}
-              </span>
-            </button>
-            {showScrollTop && (
-              <button
-                type="button"
-                className="mobile-thumb-dock-top-btn bounce-click"
-                aria-label="맨 위로 이동"
-                title="맨 위로 이동"
-                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-              >
-                <ArrowUp size={16} aria-hidden="true" />
-              </button>
-            )}
-          </div>
         )}
 
         <footer className="footer">
