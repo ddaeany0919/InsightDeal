@@ -280,6 +280,81 @@ export async function copyTextSafe(text: string): Promise<boolean> {
   return false;
 }
 
+export interface ShareDealInTossParams {
+  dealId: number | string;
+  title: string;
+  priceText: string;
+  shippingFee?: string | null;
+  shopName?: string | null;
+  ogImageUrl?: string | null;
+}
+
+export type TossShareOutcome = "shared" | "cancelled" | "unsupported" | "fallback";
+
+type LegacyTossShareModule = TossSdkModule & {
+  getTossShareLink?: (path: string, ogImageUrl?: string) => Promise<string>;
+  share?: (params: { message: string }) => Promise<void>;
+};
+
+/**
+ * 토스 미니앱 내부에서 Share.createLink(`intoss://insightdeal?dealId=...`)와
+ * Share.sendMessage를 호출해 수신자가 토스 앱으로 즉시 진입할 수 있는 공유 시트를 엽니다.
+ */
+export async function shareDealInToss({
+  dealId,
+  title,
+  priceText,
+  shippingFee,
+  shopName,
+  ogImageUrl,
+}: ShareDealInTossParams): Promise<TossShareOutcome> {
+  if (!hasTossBridge()) return "unsupported";
+  const sdk = (await loadTossSdk()) as LegacyTossShareModule | null;
+  if (!sdk) return "fallback";
+
+  const createLinkFn = sdk.Share?.createLink
+    ? (path: string, ogImg?: string) => sdk.Share.createLink({ path, ogImageUrl: ogImg })
+    : sdk.getTossShareLink;
+  const sendMessageFn = sdk.Share?.sendMessage
+    ? (message: string) => sdk.Share.sendMessage({ message })
+    : sdk.share
+      ? (message: string) => sdk.share!({ message })
+      : null;
+
+  if (!createLinkFn || !sendMessageFn) return "fallback";
+
+  try {
+    const deepLink = `intoss://insightdeal?dealId=${encodeURIComponent(String(dealId))}`;
+    const validOgImg =
+      ogImageUrl && /^https?:\/\//i.test(ogImageUrl) ? ogImageUrl : undefined;
+    const tossShareUrl = await createLinkFn(deepLink, validOgImg);
+    if (!tossShareUrl) return "fallback";
+
+    const metaParts = [priceText, shippingFee?.trim(), shopName?.trim()].filter(Boolean);
+    const metaLine = metaParts.join(" · ");
+    const message = [
+      `🔥 ${title}`,
+      metaLine ? `${metaLine}` : null,
+      "토스 '얼만데'에서 가격 추이·품절 여부 바로 보기 👇",
+      tossShareUrl,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    await sendMessageFn(message);
+    logTossClick("share_deal", {
+      deal_id: Number(dealId) || 0,
+      channel: "toss_native",
+    });
+    return "shared";
+  } catch (err) {
+    if (err instanceof Error && /abort|cancel/i.test(err.name + " " + err.message)) {
+      return "cancelled";
+    }
+    return "fallback";
+  }
+}
+
 /**
  * URL 파라미터 디버그 모드(`?toss=1`)로 접근한 경우 내부 라우트 이동 시에도 `?toss=1`을 유지합니다.
  */

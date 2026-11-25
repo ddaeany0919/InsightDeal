@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useId, useState, useRef, useCallback } from "react";
+import { useEffect, useId, useState, useRef, useCallback } from "react";
 import {
   Heart,
   Bell,
@@ -3641,28 +3641,45 @@ export default function Home() {
               (() => {
                 const bannerInsertIdx =
                   filteredDeals.length >= 2
-                    ? Math.min(4, filteredDeals.length - 1)
+                    ? Math.min(1, filteredDeals.length - 1)
                     : -1;
-                return filteredDeals.map((deal, idx) => (
-                  <Fragment key={deal.id}>
-                    <DealCard
-                      deal={deal}
-                      appliedSearch={appliedSearch}
-                      isMounted={isMounted}
-                      currentTime={currentTime}
-                      isWishlisted={wishlist.includes(deal.id)}
-                      isAlertSet={alerts.includes(deal.id)}
-                      priority={idx < 6}
-                      viewMode={viewMode}
-                      showCategoryPill={selectedCategories.length === 0}
-                      onSelectDeal={(selected) => openDealWithHistory(selected)}
-                      onToggleAlert={toggleAlert}
-                      onToggleWishlist={toggleWishlist}
-                      onShowToast={showToast}
-                    />
-                    {idx === bannerInsertIdx && <TossAdBanner />}
-                  </Fragment>
-                ));
+                const leadingDeals =
+                  bannerInsertIdx >= 0
+                    ? filteredDeals.slice(0, bannerInsertIdx + 1)
+                    : filteredDeals;
+                const trailingDeals =
+                  bannerInsertIdx >= 0
+                    ? filteredDeals.slice(bannerInsertIdx + 1)
+                    : [];
+                const renderDealCard = (deal: Deal, idx: number) => (
+                  <DealCard
+                    key={deal.id}
+                    deal={deal}
+                    appliedSearch={appliedSearch}
+                    isMounted={isMounted}
+                    currentTime={currentTime}
+                    isWishlisted={wishlist.includes(deal.id)}
+                    isAlertSet={alerts.includes(deal.id)}
+                    priority={idx < 6}
+                    viewMode={viewMode}
+                    showCategoryPill={selectedCategories.length === 0}
+                    onSelectDeal={(selected) => openDealWithHistory(selected)}
+                    onToggleAlert={toggleAlert}
+                    onToggleWishlist={toggleWishlist}
+                    onShowToast={showToast}
+                  />
+                );
+                return (
+                  <>
+                    {leadingDeals.map((deal, idx) => renderDealCard(deal, idx))}
+                    {bannerInsertIdx >= 0 && (
+                      <TossAdBanner key="toss-home-banner-slot" />
+                    )}
+                    {trailingDeals.map((deal, idx) =>
+                      renderDealCard(deal, bannerInsertIdx + 1 + idx)
+                    )}
+                  </>
+                );
               })()
             )}
           </div>

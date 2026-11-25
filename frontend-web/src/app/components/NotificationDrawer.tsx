@@ -13,7 +13,13 @@ import {
   isSafeHttpUrl,
   loadWishlistIdMap,
 } from "../lib/utils";
-import { appendTossDebugQuery, openExternalUrlInToss } from "../lib/tossBridge";
+import {
+  appendTossDebugQuery,
+  logTossClick,
+  maybeRequestTossReview,
+  openExternalUrlInToss,
+} from "../lib/tossBridge";
+import PopularKeywordPresets from "./PopularKeywordPresets";
 import { useDialogA11y } from "../lib/useDialogA11y";
 
 const subscribeNoop = () => () => {};
@@ -57,6 +63,7 @@ export default function NotificationDrawer({
   const [serverAlerts, setServerAlerts] = useState<NotificationLogItem[]>([]);
   const [serverTargetWishlists, setServerTargetWishlists] = useState<WishlistApiItem[]>([]);
   const [alertIds, setAlertIds] = useState<number[]>([]);
+  const [registeredKeywords, setRegisteredKeywords] = useState<string[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(() => loadReadNotifIds());
   const [nowTs, setNowTs] = useState<number>(0);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -112,7 +119,7 @@ export default function NotificationDrawer({
       await ensureWebDeviceAuth();
       if (signal?.aborted) return;
 
-      const [notifRes, wishlistRes] = await Promise.allSettled([
+      const [notifRes, wishlistRes, keywordsRes] = await Promise.allSettled([
         authFetch(
           (latestAuth) =>
             `/api/users/notifications?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
@@ -121,6 +128,11 @@ export default function NotificationDrawer({
         authFetch(
           (latestAuth) =>
             `/api/wishlist/?user_id=${encodeURIComponent(latestAuth.deviceUuid)}`,
+          { signal }
+        ),
+        authFetch(
+          (latestAuth) =>
+            `/api/push/keywords?device_uuid=${encodeURIComponent(latestAuth.deviceUuid)}`,
           { signal }
         ),
       ]);
@@ -143,6 +155,29 @@ export default function NotificationDrawer({
             (w) => w.alert_enabled !== false && Number(w.target_price) > 0
           );
           setServerTargetWishlists(activeTargets);
+        }
+      }
+
+      if (keywordsRes.status === "fulfilled" && keywordsRes.value?.ok) {
+        const kData = await keywordsRes.value.json().catch(() => null);
+        if (!signal?.aborted && kData && typeof kData === "object") {
+          const rawList = Array.isArray((kData as { detailed_keywords?: unknown[] }).detailed_keywords)
+            ? (kData as { detailed_keywords: { keyword?: string }[] }).detailed_keywords.map((k) =>
+                String(k?.keyword || "").trim()
+              )
+            : Array.isArray((kData as { keywords?: unknown[] }).keywords)
+              ? (kData as { keywords: unknown[] }).keywords.map((k) => String(k || "").trim())
+              : [];
+          const cleanList = rawList.filter(Boolean);
+          setRegisteredKeywords(cleanList);
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem(
+                "insightdeal_web_keywords",
+                JSON.stringify(cleanList.map((kw, idx) => ({ id: String(idx + 1), keyword: kw, is_active: true })))
+              );
+            } catch {}
+          }
         }
       }
 
@@ -171,6 +206,24 @@ export default function NotificationDrawer({
       } catch {
         setAlertIds([]);
       }
+      try {
+        const savedKeywords = localStorage.getItem("insightdeal_web_keywords");
+        const parsedKw = savedKeywords ? JSON.parse(savedKeywords) : [];
+        if (Array.isArray(parsedKw)) {
+          setRegisteredKeywords(
+            parsedKw
+              .map((k: unknown) =>
+                typeof k === "string"
+                  ? k
+                  : k && typeof k === "object" && "keyword" in k
+                    ? String((k as { keyword?: unknown }).keyword || "")
+                    : ""
+              )
+              .map((s) => s.trim())
+              .filter(Boolean)
+          );
+        }
+      } catch {}
     };
 
     const initTimer = window.setTimeout(syncLocalState, 0);
@@ -230,6 +283,61 @@ export default function NotificationDrawer({
       onCountChangeRef.current?.(0);
     } catch {
       setActionError("알림 전체 비우기에 실패했어요. 잠시 후 다시 시도해 주세요.");
+    }
+  };
+
+  const handleTogglePresetKeyword = async (
+    presetKeyword: string,
+    nextEnabled: boolean
+  ): Promise<boolean> => {
+    setActionError(null);
+    const existing = registeredKeywords.find(
+      (k) => k.trim().toLowerCase() === presetKeyword.trim().toLowerCase()
+    );
+    if (nextEnabled && existing) return true;
+    if (!nextEnabled && !existing) return true;
+
+    try {
+      await ensureWebDeviceAuth();
+      const targetKw = nextEnabled ? presetKeyword : existing!;
+      const res = await authFetch((latestAuth) => ({
+        pathOrUrl: "/api/push/keywords",
+        init: {
+          method: nextEnabled ? "POST" : "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            device_uuid: latestAuth.deviceUuid,
+            keyword: targetKw,
+          }),
+        },
+      }));
+      if (!res.ok) {
+        setActionError("인기 키워드 알림 설정을 변경하지 못했어요.");
+        return false;
+      }
+      const nextList = nextEnabled
+        ? [...registeredKeywords, presetKeyword]
+        : registeredKeywords.filter((k) => k !== targetKw);
+      setRegisteredKeywords(nextList);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(
+            "insightdeal_web_keywords",
+            JSON.stringify(nextList.map((kw, idx) => ({ id: String(idx + 1), keyword: kw, is_active: true })))
+          );
+        } catch {}
+      }
+      logTossClick("preset_keyword_toggle", {
+        keyword: presetKeyword,
+        enabled: nextEnabled,
+      });
+      if (nextEnabled) {
+        maybeRequestTossReview();
+      }
+      return true;
+    } catch {
+      setActionError("인기 키워드 알림 설정 중 네트워크 오류가 발생했어요.");
+      return false;
     }
   };
 
@@ -697,6 +805,14 @@ export default function NotificationDrawer({
               ))}
             </>
           )}
+        </div>
+
+        <div style={{ marginTop: "12px" }}>
+          <PopularKeywordPresets
+            compact
+            activeKeywords={registeredKeywords}
+            onToggleKeyword={handleTogglePresetKeyword}
+          />
         </div>
 
         {/* 정적 export 환경에서 존재하지 않는 RSC payload(__next.*.txt) 404 방지 */}

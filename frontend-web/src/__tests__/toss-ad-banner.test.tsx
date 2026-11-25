@@ -54,9 +54,34 @@ describe("토스 인앱 배너 광고(TossAdBanner)", () => {
 
     delete (window as unknown as { __appsInToss?: unknown }).__appsInToss;
     delete document.documentElement.dataset.theme;
+
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        private cb: IntersectionObserverCallback;
+        constructor(cb: IntersectionObserverCallback) {
+          this.cb = cb;
+        }
+        observe = (target: Element) => {
+          Promise.resolve().then(() => {
+            this.cb(
+              [{ target, isIntersecting: true, intersectionRatio: 1 } as IntersectionObserverEntry],
+              this as unknown as IntersectionObserver
+            );
+          });
+        };
+        disconnect = () => {};
+        unobserve = () => {};
+        takeRecords = () => [];
+        root = null;
+        rootMargin = "";
+        thresholds = [];
+      }
+    );
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     resetTossAdsInitState();
     delete (window as unknown as { __appsInToss?: unknown }).__appsInToss;
     delete document.documentElement.dataset.theme;

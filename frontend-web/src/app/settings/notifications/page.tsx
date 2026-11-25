@@ -22,6 +22,7 @@ import {
   maybeRequestTossReview,
   copyTextSafe,
 } from '../../lib/tossBridge';
+import PopularKeywordPresets from '../../components/PopularKeywordPresets';
 
 const subscribeNoop = () => () => {};
 
@@ -662,6 +663,94 @@ export default function NotificationSettingsPage() {
     }
   };
 
+  const handleTogglePresetKeyword = async (
+    presetKeyword: string,
+    nextEnabled: boolean
+  ): Promise<boolean> => {
+    const existing = keywords.find(
+      (k) => k.keyword.trim().toLowerCase() === presetKeyword.trim().toLowerCase()
+    );
+    if (nextEnabled && existing) return true;
+    if (!nextEnabled && !existing) return true;
+
+    setErrorMsg(null);
+    try {
+      await ensureWebDeviceAuth();
+      if (nextEnabled) {
+        const res = await authFetch((latestAuth) => ({
+          pathOrUrl: '/api/push/keywords',
+          init: {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              device_uuid: latestAuth.deviceUuid,
+              keyword: presetKeyword,
+            }),
+          },
+        }));
+        if (!res.ok) {
+          setErrorMsg('인기 키워드 알림 등록에 실패했어요. 잠시 후 다시 시도해 주세요.');
+          return false;
+        }
+        const created = (await res.json().catch(() => null)) as {
+          id?: string | number;
+          keyword?: string;
+          is_active?: boolean;
+        } | null;
+        const updated = [
+          ...keywords,
+          {
+            id: String(created?.id ?? Date.now()),
+            keyword: created?.keyword || presetKeyword,
+            is_active: created?.is_active !== false,
+          },
+        ];
+        setKeywords(updated);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('insightdeal_web_keywords', JSON.stringify(updated));
+        }
+        logTossClick('preset_keyword_toggle', {
+          keyword: presetKeyword,
+          enabled: true,
+        });
+        maybeRequestTossReview();
+        setLiveAnnouncement(`'${presetKeyword}' 인기 키워드 알림을 켰어요.`);
+        return true;
+      }
+
+      const targetKw = existing!.keyword;
+      const res = await authFetch((latestAuth) => ({
+        pathOrUrl: '/api/push/keywords',
+        init: {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            device_uuid: latestAuth.deviceUuid,
+            keyword: targetKw,
+          }),
+        },
+      }));
+      if (!res.ok) {
+        setErrorMsg('인기 키워드 알림 해제에 실패했어요. 잠시 후 다시 시도해 주세요.');
+        return false;
+      }
+      const updated = keywords.filter((k) => k.keyword !== targetKw);
+      setKeywords(updated);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('insightdeal_web_keywords', JSON.stringify(updated));
+      }
+      logTossClick('preset_keyword_toggle', {
+        keyword: presetKeyword,
+        enabled: false,
+      });
+      setLiveAnnouncement(`'${targetKw}' 인기 키워드 알림을 껐어요.`);
+      return true;
+    } catch {
+      setErrorMsg('네트워크 오류로 인기 키워드 알림을 변경하지 못했어요.');
+      return false;
+    }
+  };
+
   const syncDndToBackend = async (
     nextEnabled: boolean,
     startStr: string,
@@ -1140,6 +1229,12 @@ export default function NotificationSettingsPage() {
                 등록한 단어가 포함된 새 딜이 올라오면 바로 알려드려요
               </p>
             </div>
+
+            <PopularKeywordPresets
+              activeKeywords={keywords.map((k) => k.keyword)}
+              onToggleKeyword={handleTogglePresetKeyword}
+              disabled={isLoading}
+            />
 
             <form onSubmit={handleAddKeyword} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={{ display: 'flex', gap: '10px' }}>

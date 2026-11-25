@@ -75,11 +75,39 @@ function TossAdBannerBase({
 
   const resolvedAdGroupId = adGroupId.trim();
   const [slotState, setSlotState] = useState<SlotState>("loading");
+  const [isInViewport, setIsInViewport] = useState<boolean>(
+    () => typeof IntersectionObserver !== "function"
+  );
   const slotEmptyRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const targetRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!adHostAvailable || !resolvedAdGroupId || slotEmptyRef.current) {
+    if (!adHostAvailable || !resolvedAdGroupId || isInViewport) {
+      return;
+    }
+    if (typeof IntersectionObserver !== "function") {
+      const id = window.setTimeout(() => setIsInViewport(true), 0);
+      return () => window.clearTimeout(id);
+    }
+    const el = containerRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
+          setIsInViewport(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "120px 0px", threshold: 0.01 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [adHostAvailable, resolvedAdGroupId, isInViewport]);
+
+  useEffect(() => {
+    if (!adHostAvailable || !resolvedAdGroupId || !isInViewport || slotEmptyRef.current) {
       return;
     }
 
@@ -145,7 +173,7 @@ function TossAdBannerBase({
       cancelled = true;
       cleanupHandle();
     };
-  }, [adHostAvailable, resolvedAdGroupId, variant, tone, bannerTheme]);
+  }, [adHostAvailable, resolvedAdGroupId, isInViewport, variant, tone, bannerTheme]);
 
   if (!adHostAvailable || !resolvedAdGroupId || slotState === "empty") {
     return null;
@@ -158,6 +186,7 @@ function TossAdBannerBase({
 
   return (
     <div
+      ref={containerRef}
       className={`toss-ad-banner-slot ${stateClass} ${className}`.trim()}
       role="region"
       aria-label="스폰서 광고"

@@ -81,6 +81,7 @@ import {
   maybeRequestTossReview,
   openExternalUrlInToss,
   copyTextSafe,
+  shareDealInToss,
 } from "../lib/tossBridge";
 
 interface DealDetailModalProps {
@@ -1199,12 +1200,34 @@ export default function DealDetailModal({
     const cleanShareTitle = decodeHtmlEntities(deal.title);
     const shareUrl =
       typeof window !== "undefined"
-        ? `${window.location.origin}/?dealId=${deal.id}`
-        : deal.post_link;
+        ? `${window.location.origin}/s/${deal.id}`
+        : `https://eolmande.pages.dev/s/${deal.id}`;
     const sharePrice = showZeroWonPrice
       ? "0원 (무료)"
       : formatPrice(deal.price, deal.currency, cleanShareTitle);
-    const shareText = `${cleanShareTitle} (${sharePrice})`;
+    const cleanShip = decodeHtmlEntities(deal.shipping_fee || "");
+    const shipSuffix = cleanShip ? ` (${cleanShip})` : "";
+    const shareText = `🔥 ${cleanShareTitle} — ${sharePrice}${shipSuffix}\n얼만데에서 가격 추이·품절 여부 바로 보기 👇`;
+
+    const rawProxyImg = isSafeHttpUrl(deal.image_url) ? getProxyImageUrl(deal.image_url) : "";
+    const ogImageUrl =
+      rawProxyImg && /^https?:\/\//i.test(rawProxyImg)
+        ? rawProxyImg
+        : isSafeHttpUrl(deal.image_url)
+          ? deal.image_url
+          : undefined;
+
+    const tossOutcome = await shareDealInToss({
+      dealId: deal.id,
+      title: cleanShareTitle,
+      priceText: sharePrice,
+      shippingFee: cleanShip,
+      shopName: shopBadge,
+      ogImageUrl,
+    });
+    if (tossOutcome === "shared" || tossOutcome === "cancelled") {
+      return;
+    }
 
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
