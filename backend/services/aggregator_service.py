@@ -1877,6 +1877,7 @@ class AggregatorService:
                 'search.pstatic.net', 'kakaocdn.net/argon', 'bing.com',
                 'blogfiles.naver.net', 'postfiles.pstatic.net', 'mblogthumb-phinf',
                 'cafeptthumb', 'blogpfthumb', 'influencer-phinf', 'clip-service-phinf',
+                'nplus-store/og_', '_next/static/og/',
                 'filesn/', '_70x50', 'crop.webp', '_thumb', 'thumb/', 'small_', 'zboard/data/ppomppu'
             ))
 

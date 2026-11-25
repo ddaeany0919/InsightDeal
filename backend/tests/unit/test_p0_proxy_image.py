@@ -264,3 +264,29 @@ def test_proxy_image_alias_routes(monkeypatch, tmp_path):
         blocked_res = client.get(route, params={"url": "http://[::ffff:127.0.0.1]/bad.png"})
         assert blocked_res.status_code == 404
         assert blocked_res.headers.get("cache-control") == "no-store"
+
+
+def test_proxy_image_head_corp_and_generic_og_rejection(monkeypatch, tmp_path):
+    monkeypatch.setattr(main_mod, "IMAGE_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(main_mod, "_get_deal_backup_candidates_sync", lambda *a, **kw: (None, []))
+    monkeypatch.setattr(socket, "getaddrinfo", _public_dns_only)
+
+    async def fake_get(url, **kwargs):
+        return httpx.Response(200, content=VALID_PNG, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(main_mod.proxy_client, "get", fake_get)
+    client = TestClient(main_mod.app)
+
+    for route in ("/api/proxy-image", "/api/community/proxy-image"):
+        head_res = client.head(route, params={"url": "https://cdn.example.com/head-ok.png"})
+        assert head_res.status_code == 200
+        assert head_res.headers.get("cross-origin-resource-policy") == "cross-origin"
+        assert int(head_res.headers.get("content-length") or 0) == len(VALID_PNG)
+        assert head_res.content == b""
+
+    generic_res = client.get(
+        "/api/proxy-image",
+        params={"url": "https://shopv.pstatic.net/web/r/20241122/_next/static/og/nplus-store/OG_450x235.png"},
+    )
+    assert generic_res.status_code == 404
+    assert generic_res.headers.get("cache-control") == "no-store"

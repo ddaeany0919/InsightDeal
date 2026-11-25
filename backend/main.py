@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -617,13 +617,14 @@ async def _resolve_image_variant_leader(
         return 404, b"", None, ""
 
 
-@app.get("/api/proxy-image")
-@app.get("/api/image-proxy")
+@app.api_route("/api/proxy-image", methods=["GET", "HEAD"])
+@app.api_route("/api/image-proxy", methods=["GET", "HEAD"])
 async def proxy_image(
     url: str,
     w: Optional[int] = None,
     width: Optional[int] = None,
     v: Optional[str] = None,
+    request: Request = None,
 ):
     import hashlib
     raw_input_url = url
@@ -641,11 +642,24 @@ async def proxy_image(
     variant_cache_path = os.path.join(IMAGE_CACHE_DIR, f"{url_hash}_{variant_tag}.webp.cache")
     mem_key = f"{IMAGE_CACHE_DIR}:{url_hash}:{variant_tag}"
 
+    def _build_proxy_ok_response(payload_bytes: bytes, mime_type: str) -> Response:
+        is_head = request is not None and request.method == "HEAD"
+        resp_headers = {
+            "Cache-Control": "public, max-age=604800, immutable",
+            "CDN-Cache-Control": "public, max-age=604800, s-maxage=604800, stale-while-revalidate=86400",
+            "Vercel-CDN-Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400",
+            "Cross-Origin-Resource-Policy": "cross-origin",
+        }
+        if is_head:
+            resp_headers["Content-Length"] = str(len(payload_bytes))
+            return Response(status_code=200, media_type=mime_type, headers=resp_headers)
+        return Response(content=payload_bytes, media_type=mime_type, headers=resp_headers)
+
     try:
         if not await _is_safe_external_url_async(url):
             raise ValueError("Unsafe or non-http external URL")
         lower_u = url.lower()
-        if any(bad in lower_u for bad in ("no_image.svg", "thumb_no_image.svg", "noimage", "dot03.gif", "logo_f.svg", "49841804f3d132d75a6c11b1510af812.png")):
+        if any(bad in lower_u for bad in ("no_image.svg", "thumb_no_image.svg", "noimage", "dot03.gif", "logo_f.svg", "49841804f3d132d75a6c11b1510af812.png", "nplus-store/og_", "_next/static/og/")):
             raise ValueError("Known placeholder image URL")
     except Exception:
         return Response(
@@ -656,15 +670,7 @@ async def proxy_image(
     mem_hit = _mem_lru_get(mem_key)
     if mem_hit is not None:
         mem_payload, mem_mime = mem_hit
-        return Response(
-            content=mem_payload,
-            media_type=mem_mime,
-            headers={
-                "Cache-Control": "public, max-age=604800, immutable",
-                "CDN-Cache-Control": "public, max-age=604800, s-maxage=604800, stale-while-revalidate=86400",
-                "Vercel-CDN-Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400",
-            },
-        )
+        return _build_proxy_ok_response(mem_payload, mem_mime)
 
     loop = asyncio.get_running_loop()
     inflight_map = _PROXY_LOOP_INFLIGHT.get(loop)
@@ -697,15 +703,7 @@ async def proxy_image(
     status_code, payload, detected_mime, actual_disk_path = await asyncio.shield(task)
     if status_code == 200 and payload and detected_mime:
         _mem_lru_put(mem_key, payload, detected_mime, actual_disk_path)
-        return Response(
-            content=payload,
-            media_type=detected_mime,
-            headers={
-                "Cache-Control": "public, max-age=604800, immutable",
-                "CDN-Cache-Control": "public, max-age=604800, s-maxage=604800, stale-while-revalidate=86400",
-                "Vercel-CDN-Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400",
-            },
-        )
+        return _build_proxy_ok_response(payload, detected_mime)
     return Response(
         status_code=404,
         headers={"Cache-Control": "no-store"}

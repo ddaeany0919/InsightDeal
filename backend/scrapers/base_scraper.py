@@ -694,6 +694,7 @@ class AsyncBaseScraper(ABC):
                 'logo', 'icon', 'noimage', 'no_image', 'blank', 'transparent',
                 'common/', 'btn_', 'button', 'share_', 'footer', 'header', 'avatar', 'lazyload',
                 '11st_', 'gmarket_logo', 'auction_logo', 'naver_logo',
+                '_next/static/og/', 'nplus-store/og_', 'default_og', 'og_default', 'og_image_default', 'shopv.pstatic.net/web/r/',
                 'lookaside.fbsbx.com', 'facebook.com', 'instagram.com',
                 'close.jpg', 'close.png', 'close.gif', 'tvcast', 'sstatic/search', 'cafefiles.naver', '아이콘',
                 'skin/', 'customizing/', 'sns_', 'bnr_', 'design/', 'popup/'
@@ -702,7 +703,7 @@ class AsyncBaseScraper(ABC):
 
         # 1. 지마켓(Gmarket) 안티봇 차단 원천 우회를 위한 초고속 CDN 이미지 조립 룰 적용
         if url and 'gmarket.co.kr' in url:
-            match = re.search(r'goodscode=([0-9]+)', url)
+            match = re.search(r'(?:goodscode=|/vi/product/|/item/)([0-9]+)', url, re.IGNORECASE)
             if match:
                 g_id = match.group(1)
                 return f"https://gdimg.gmarket.co.kr/{g_id}/still/600"
@@ -720,7 +721,7 @@ class AsyncBaseScraper(ABC):
             if st11_m:
                 candidate_urls.append(f"https://m.11st.co.kr/products/m/{st11_m.group(1)}")
 
-            og_timeout = 3.0 if IS_CLOUD_ENV else 8.0
+            og_timeout = 5.0 if IS_CLOUD_ENV else 8.0
             for target_url in candidate_urls:
                 try:
                     logger.info(f"🔍 [og:image] 외부 쇼핑몰 og:image 탐색 시도: {target_url}")

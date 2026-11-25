@@ -684,15 +684,16 @@ def _update_runtime_scraper_stats(
 def get_scraper_stats():
     return _load_merged_scraper_stats()
 
-@router.get("/proxy-image")
+@router.api_route("/proxy-image", methods=["GET", "HEAD"])
 async def proxy_image(
     url: str,
     w: Optional[int] = None,
     width: Optional[int] = None,
     v: Optional[str] = None,
+    request: Request = None,
 ):
     from backend.main import proxy_image as main_proxy_image
-    return await main_proxy_image(url=url, w=w, width=width, v=v)
+    return await main_proxy_image(url=url, w=w, width=width, v=v, request=request)
 
 _CLEAN_ECOM_URL_CACHE: OrderedDict = OrderedDict()
 _CLEAN_ECOM_URL_CACHE_MAX = 4096

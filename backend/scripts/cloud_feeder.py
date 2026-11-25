@@ -286,6 +286,10 @@ async def _fetch_jsmon_and_hotgusa_enrichment(http_client: httpx.AsyncClient) ->
                 entry = enrichment_map.setdefault(post_url, {})
                 if ecom_url and not entry.get("ecommerce_link"):
                     entry["ecommerce_link"] = ecom_url
+                if ecom_url and "gmarket.co.kr" in ecom_url.lower() and not img_u and not entry.get("image_url"):
+                    gm_match = re.search(r"(?:goodscode=|/vi/product/|/item/)([0-9]+)", ecom_url, re.IGNORECASE)
+                    if gm_match:
+                        img_u = f"https://gdimg.gmarket.co.kr/{gm_match.group(1)}/still/600"
                 if img_u and not entry.get("image_url"):
                     entry["image_url"] = img_u
                 if full_txt and not entry.get("content_html"):
@@ -305,6 +309,7 @@ async def _fetch_jsmon_and_hotgusa_enrichment(http_client: httpx.AsyncClient) ->
             payload = rh.json()
             rows = payload.get("products", []) if isinstance(payload, dict) else (payload if isinstance(payload, list) else [])
             if isinstance(rows, list):
+                thumb_candidates: list[tuple[str, int, str]] = []
                 for row in rows:
                     if not isinstance(row, dict):
                         continue
@@ -339,8 +344,8 @@ async def _fetch_jsmon_and_hotgusa_enrichment(http_client: httpx.AsyncClient) ->
                         entry["is_super_hotdeal"] = True
                     if row.get("mall_name") and not entry.get("shop_name"):
                         entry["shop_name"] = str(row["mall_name"]).strip()
-                    if row.get("has_thumb") and not entry.get("image_url"):
-                        entry["image_url"] = f"https://d2w999htn2iva3.cloudfront.net/thumbs/{cid}/{pno}.jpg"
+                    if row.get("has_thumb", True) and not entry.get("image_url") and isinstance(cid, int):
+                        thumb_candidates.append((p_url, cid, str(pno)))
                     if row.get("title") and not entry.get("title"):
                         entry["title"] = str(row["title"]).strip()
                     if row.get("price") is not None and not entry.get("price"):
@@ -359,6 +364,43 @@ async def _fetch_jsmon_and_hotgusa_enrichment(http_client: httpx.AsyncClient) ->
                             pass
                     if row.get("reg_date") and not entry.get("posted_at"):
                         entry["posted_at"] = str(row["reg_date"]).strip()
+
+                if thumb_candidates and hasattr(http_client, "head"):
+                    probe_sem = asyncio.Semaphore(8)
+
+                    async def _probe_thumb(target_p_url: str, target_cid: int, target_pno: str) -> None:
+                        async with probe_sem:
+                            cf_u = f"https://d2w999htn2iva3.cloudfront.net/thumbs/{target_cid}/{target_pno}.jpg"
+                            try:
+                                cf_res = await http_client.head(
+                                    cf_u,
+                                    headers={"User-Agent": "Mozilla/5.0"},
+                                    timeout=3.0,
+                                )
+                                if cf_res.status_code == 200:
+                                    enrichment_map[target_p_url]["image_url"] = cf_u
+                                    return
+                            except Exception:
+                                pass
+
+                            if target_cid == 0 and target_pno.isdigit():
+                                pp_u = f"https://cdn4.ppomppu.co.kr/zboard/data/_thumb/ppomppu/{target_pno[-1]}/small_{target_pno}.jpg"
+                                try:
+                                    pp_res = await http_client.head(
+                                        pp_u,
+                                        headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.ppomppu.co.kr/"},
+                                        timeout=3.0,
+                                    )
+                                    c_len = int((pp_res.headers or {}).get("content-length") or 0)
+                                    if pp_res.status_code == 200 and c_len >= 500:
+                                        enrichment_map[target_p_url]["image_url"] = pp_u
+                                except Exception:
+                                    pass
+
+                    await asyncio.gather(
+                        *(_probe_thumb(pu, c, pn) for pu, c, pn in thumb_candidates[:40]),
+                        return_exceptions=True,
+                    )
     except Exception as he:
         logger.warning(f"⚠️ [hotgusa API] 보강 데이터 페칭 경고: {he}")
 

@@ -408,3 +408,59 @@ async def test_cloud_feeder_rss_1rtt_attaches_hmac_and_ingest_stays_plaintext(mo
     # /ingest-batch 전송은 여전히 평문 FEEDER_API_TOKEN 유지
     assert len(captured_posts) >= 1
     assert captured_posts[0]["headers"].get("X-Feeder-Token") == "feeder-hmac-secret"
+
+
+@pytest.mark.asyncio
+async def test_hotgusa_enrichment_recovers_missing_has_thumb_and_gmarket_mobile(monkeypatch):
+    import backend.scheduler.cloud_feeder as cf
+    from backend.scrapers.base_scraper import AsyncBaseScraper
+
+    class Resp:
+        def __init__(self, status_code, text="", json_data=None, headers=None):
+            self.status_code = status_code
+            self.text = text
+            self._json = json_data or {}
+            self.headers = headers or {}
+
+        def json(self):
+            return self._json
+
+    jsmon_html = """
+    <div class="tgme_widget_message_wrap">
+      <div class="tgme_widget_message_text">
+        <a href="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=751710">원문</a>
+        <a href="https://m.gmarket.co.kr/vi/product/3242140960">구매</a>
+      </div>
+    </div>
+    """
+    hotgusa_payload = {
+        "products": [
+            {"community_id": 0, "id": "0_751715", "title": "상품1", "mall_name": "네이버"},
+            {"community_id": 0, "id": "0_751709", "title": "감귤", "mall_name": "네이버"},
+        ]
+    }
+
+    class FakeProbeClient:
+        async def get(self, url, **kwargs):
+            if url == "https://t.me/s/jsmon":
+                return Resp(200, text=jsmon_html)
+            if "hotgusa.com/api/products" in url:
+                return Resp(200, json_data=hotgusa_payload)
+            return Resp(404)
+
+        async def head(self, url, **kwargs):
+            if "cloudfront.net/thumbs/0/751715.jpg" in url:
+                return Resp(200, headers={"content-length": "5648"})
+            if "cloudfront.net/thumbs/0/751709.jpg" in url:
+                return Resp(403)
+            if "small_751709.jpg" in url:
+                return Resp(200, headers={"content-length": "4653"})
+            return Resp(404)
+
+    enrichment = await cf._fetch_jsmon_and_hotgusa_enrichment(FakeProbeClient())
+    assert enrichment["https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=751710"]["image_url"] == "https://gdimg.gmarket.co.kr/3242140960/still/600"
+    assert enrichment["https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=751715"]["image_url"] == "https://d2w999htn2iva3.cloudfront.net/thumbs/0/751715.jpg"
+    assert enrichment["https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=751709"]["image_url"] == "https://cdn4.ppomppu.co.kr/zboard/data/_thumb/ppomppu/9/small_751709.jpg"
+
+    async with PpomppuScraper(1) as sc:
+        assert await sc.fetch_og_image("https://m.gmarket.co.kr/vi/product/3242140960") == "https://gdimg.gmarket.co.kr/3242140960/still/600"

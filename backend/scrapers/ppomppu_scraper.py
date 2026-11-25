@@ -370,7 +370,7 @@ class PpomppuScraper(AsyncBaseScraper):
         # 1. 이미지 태그를 먼저 추출 (아래 a.string 치환 시 a 태그 내부 img가 소실되는 버그 원천 차단!)
         images = []
         image_url = ""
-        for img in soup.select('td.board-contents img, div#KH_Content img, td.han img, table.pic_bg img, .cont img'):
+        for img in soup.select('td.board-contents img, div.board-contents img, div#KH_Content img, td.han img, table.pic_bg img, .cont img'):
             src = (img.get('data-original') or img.get('data-src') or img.get('src') or '').strip()
             if src and src.startswith('//'):
                 src = 'https:' + src
@@ -391,6 +391,18 @@ class PpomppuScraper(AsyncBaseScraper):
                     images.append(src)
                 if not image_url:
                     image_url = src
+
+        if not image_url:
+            og_meta_img = soup.find("meta", property="og:image")
+            og_content = (og_meta_img.get("content") or "").strip() if og_meta_img else ""
+            if og_content.startswith("//"):
+                og_content = "https:" + og_content
+            if og_content.startswith(("http://", "https://")):
+                og_low = og_content.lower()
+                if not any(x in og_low for x in ("noimage", "logo", "icon", "blank", "transparent")):
+                    if og_content not in images:
+                        images.append(og_content)
+                    image_url = og_content
 
         # 2. 본문 엘리먼트 정밀 탐색 (우선순위 셀렉터 순회 + 상단 헤더 .cont 오탐지 원천 차단)
         content_element = None
