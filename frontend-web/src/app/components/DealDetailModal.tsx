@@ -1568,7 +1568,7 @@ export default function DealDetailModal({
                     </span>
                   </button>
                 ) : (
-                  <BrandImagePlaceholder compact />
+                  <BrandImagePlaceholder compact shopName={shopBadge} />
                 )}
                 {isClosedState && (
                   <span
@@ -2401,7 +2401,7 @@ export default function DealDetailModal({
                           />
                         </>
                       ) : (
-                        <BrandImagePlaceholder compact />
+                        <BrandImagePlaceholder compact shopName={shopBadge} />
                       )}
                     </button>
                   );

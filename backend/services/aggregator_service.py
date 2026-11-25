@@ -2941,6 +2941,11 @@ class AggregatorService:
                     background_trigger_keyword_alarms(did, session_factory=session_factory)
                 except Exception as ex:
                     logger.error(f"Unified push dispatch error (deal_id={did}): {ex}")
+                try:
+                    from backend.services.telegram_channel import background_broadcast_telegram_hotdeal
+                    background_broadcast_telegram_hotdeal(did, session_factory=session_factory)
+                except Exception as tg_ex:
+                    logger.warning(f"Telegram broadcast hook error (deal_id={did}): {tg_ex}")
 
             try:
                 loop = asyncio.get_running_loop()

@@ -114,7 +114,7 @@ export default function RecentDealsTray({
                       }}
                     />
                   ) : (
-                    <BrandImagePlaceholder compact />
+                    <BrandImagePlaceholder compact shopName={shopBadge} />
                   )}
                 </div>
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
@@ -656,4 +656,51 @@ def update_user_feedback_status(
     row.status = next_status
     db.commit()
     return {"success": True, "id": row.id, "status": row.status}
+
+
+@router.get("/telegram/status", dependencies=[Depends(_verify_admin_key)])
+def get_telegram_broadcast_status():
+    from backend.services.telegram_channel import get_telegram_status
+
+    return get_telegram_status()
+
+
+@router.post("/telegram/test", dependencies=[Depends(_verify_admin_key)])
+def test_telegram_broadcast(
+    payload: Optional[dict] = Body(default=None),
+    db: Session = Depends(get_db_session),
+):
+    from backend.database import models
+    from backend.services.telegram_channel import send_telegram_deal
+
+    data = payload or {}
+    dry_run = bool(data.get("dry_run", False))
+    deal_id = data.get("deal_id")
+    deal = None
+
+    if deal_id is not None:
+        try:
+            deal = db.query(models.Deal).filter(models.Deal.id == int(deal_id)).first()
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid deal_id")
+    else:
+        deal = (
+            db.query(models.Deal)
+            .filter(models.Deal.is_closed == False, models.Deal.is_super_hotdeal == True)
+            .order_by(models.Deal.indexed_at.desc(), models.Deal.id.desc())
+            .first()
+        )
+        if not deal:
+            deal = (
+                db.query(models.Deal)
+                .filter(models.Deal.is_closed == False)
+                .order_by(models.Deal.indexed_at.desc(), models.Deal.id.desc())
+                .first()
+            )
+
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found")
+
+    res = send_telegram_deal(deal, dry_run=dry_run, force=True)
+    return {"deal_id": deal.id, "title": deal.title, **res}
 

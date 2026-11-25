@@ -330,7 +330,7 @@ export default function DealCard({
                 />
               </>
             ) : (
-              <BrandImagePlaceholder />
+              <BrandImagePlaceholder shopName={shopBadge} category={deal.category} />
             )}
 
             {/* 좌상단 핵심 배지 최대 1개 ('품절·종료' 우선, 아니면 honeyScore >= 100 시 '인기') */}

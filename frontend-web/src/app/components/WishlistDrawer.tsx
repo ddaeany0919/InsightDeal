@@ -553,7 +553,7 @@ export default function WishlistDrawer({
                           }}
                         />
                       ) : (
-                        <BrandImagePlaceholder compact />
+                        <BrandImagePlaceholder compact shopName={deal.shop_name} />
                       )}
                     </div>
                     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>

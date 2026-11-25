@@ -275,7 +275,6 @@ export default function Home() {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [isCompactViewport, setIsCompactViewport] = useState(false);
   const [isUltraCompactViewport, setIsUltraCompactViewport] = useState(false);
-  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const urlSyncReadyRef = useRef(false);
@@ -283,7 +282,6 @@ export default function Home() {
   useEffect(() => {
     const syncViewport = () => {
       setIsCompactViewport(window.innerWidth <= 480);
-      setIsMobileViewport(window.innerWidth <= 640);
       const rootFontPx =
         parseFloat(getComputedStyle(document.documentElement).fontSize || "16") ||
         16;
