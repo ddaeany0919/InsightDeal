@@ -485,14 +485,17 @@ def background_trigger_keyword_alarms(
 
             toss_anon_key = getattr(device, "toss_anon_key", None)
             if toss_anon_key:
-                short_kw = sanitize_toss_keyword(display_kw.split(" (")[0] or kw.keyword)
-                toss_res = send_toss_push_message(
-                    toss_anon_key,
-                    context={"keyword": short_kw, "dealId": str(deal.id)},
-                )
-                if toss_res.get("sent"):
-                    stats["toss_push_sent"] += 1
-                    dispatched_channel = True
+                try:
+                    short_kw = sanitize_toss_keyword(display_kw.split(" (")[0] or kw.keyword)
+                    toss_res = send_toss_push_message(
+                        toss_anon_key,
+                        context={"keyword": short_kw, "dealId": str(deal.id)},
+                    )
+                    if toss_res.get("sent"):
+                        stats["toss_push_sent"] += 1
+                        dispatched_channel = True
+                except Exception as toss_err:
+                    logger.warning(f"[TossPush] 키워드 발송 격리 예외: device={device.device_uuid}, err={type(toss_err).__name__}")
 
             if dispatched_channel:
                 _consume_push_rate_limit(device.id, current_date_str)
@@ -605,14 +608,17 @@ def background_trigger_keyword_alarms(
 
                 toss_anon_key = getattr(device, "toss_anon_key", None)
                 if toss_anon_key:
-                    short_kw = sanitize_toss_keyword(wl.keyword)
-                    toss_res = send_toss_push_message(
-                        toss_anon_key,
-                        context={"keyword": short_kw, "dealId": str(deal.id)},
-                    )
-                    if toss_res.get("sent"):
-                        stats["toss_push_sent"] += 1
-                        dispatched_wl_channel = True
+                    try:
+                        short_kw = sanitize_toss_keyword(wl.keyword)
+                        toss_res = send_toss_push_message(
+                            toss_anon_key,
+                            context={"keyword": short_kw, "dealId": str(deal.id)},
+                        )
+                        if toss_res.get("sent"):
+                            stats["toss_push_sent"] += 1
+                            dispatched_wl_channel = True
+                    except Exception as toss_err:
+                        logger.warning(f"[TossPush] 목표가 발송 격리 예외: device={device.device_uuid}, err={type(toss_err).__name__}")
 
                 if dispatched_wl_channel:
                     _consume_push_rate_limit(device.id, current_date_str)
@@ -658,6 +664,7 @@ def dnd_morning_digest_job(
         "digests_sent": 0,
         "fcm_sent": 0,
         "web_push_sent": 0,
+        "toss_push_sent": 0,
     }
     try:
         kst = datetime.timezone(datetime.timedelta(hours=9))
@@ -755,6 +762,33 @@ def dnd_morning_digest_job(
                         if id(al) not in marked_alert_ids:
                             marked_alert_ids.add(id(al))
                             alerts_to_mark.append(al)
+
+            toss_anon_key = getattr(device, "toss_anon_key", None)
+            if toss_anon_key and not device.fcm_token and not device.web_push_subscription:
+                try:
+                    latest_al = user_alerts[-1]
+                    m_did = re.search(r"dealId=(\d+)|/deals/(\d+)", str(getattr(latest_al, "deal_url", "") or ""))
+                    latest_did = (m_did.group(1) or m_did.group(2)) if m_did else ""
+                    toss_res = send_toss_push_message(
+                        toss_anon_key,
+                        context={"keyword": sanitize_toss_keyword(f"밤사이 핫딜 {count_n}건"), "dealId": str(latest_did)},
+                    )
+                    if toss_res.get("sent"):
+                        stats["toss_push_sent"] += 1
+                        if user_id not in counted_users:
+                            counted_users.add(user_id)
+                            stats["digests_sent"] += 1
+                        for al in user_alerts:
+                            if id(al) not in marked_alert_ids:
+                                marked_alert_ids.add(id(al))
+                                alerts_to_mark.append(al)
+                    elif toss_res.get("reason") == "not_configured":
+                        for al in user_alerts:
+                            if id(al) not in marked_alert_ids:
+                                marked_alert_ids.add(id(al))
+                                alerts_to_mark.append(al)
+                except Exception as toss_err:
+                    logger.warning(f"[TossPush] 아침 요약 격리 예외: device={device.device_uuid}, err={type(toss_err).__name__}")
 
         if fcm_entries:
             chunk_size = 500

@@ -221,3 +221,49 @@ def test_admin_telegram_routes_auth_status_and_dry_run_test(tmp_path, monkeypatc
     assert body["dry_run"] is True
     assert body["eligible"] is True
     assert "삼다수 2L 24병" in body["text"]
+
+
+def test_telegram_channel_masks_bot_token_on_exception_and_checks_ok_flag(tmp_path, monkeypatch):
+    """예외 메시지 내 봇 토큰 마스킹 및 HTTP 200 ok=false 실패 판정 검증."""
+    secret_token = "99887766:AAFakeSecretTokenXYZ"
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", secret_token)
+    monkeypatch.setenv("TELEGRAM_CHANNEL_ID", "@eolmande_hotdeal")
+    monkeypatch.setenv("TELEGRAM_ENABLED", "true")
+    monkeypatch.setenv("TELEGRAM_STATE_FILE", str(tmp_path / "tg_state.json"))
+
+    class _SecretLeakClient:
+        def post(self, url, **kwargs):
+            raise RuntimeError(f"Connection failed for {url}")
+
+    deal = _make_deal(
+        id=9901,
+        title="[지마켓] 9800X3D 테스트 핫딜",
+        price="3349900",
+        shop_name="지마켓",
+    )
+
+    res_exc = tg.send_telegram_deal(
+        deal,
+        http_client=_SecretLeakClient(),
+        force=True,
+    )
+    assert res_exc["sent"] is False
+    assert secret_token not in res_exc["reason"]
+    assert "bot***" in res_exc["reason"]
+
+    class _OkFalseResp:
+        status_code = 200
+        def json(self):
+            return {"ok": False, "description": "Forbidden"}
+
+    class _OkFalseClient:
+        def post(self, url, **kwargs):
+            return _OkFalseResp()
+
+    res_ok_false = tg.send_telegram_deal(
+        deal,
+        http_client=_OkFalseClient(),
+        force=True,
+    )
+    assert res_ok_false["sent"] is False
+

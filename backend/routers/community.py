@@ -556,10 +556,10 @@ def get_deal_sources(
                 raw_subs = opt.get("sub_urls") or opt.get("urls") or []
                 clean_subs = [get_clean_ecommerce_url(su, "", deal_id, None, is_multi_item=False) or su for su in raw_subs if su]
                 deal_sources.append({
-                    "site_name": f"{comp_name} - {opt_name}",
+                    "site_name": f"{comp_name} - {str(opt_name or '').strip() or '옵션'}",
                     "post_url": deal.post_link or "",
                     "ecommerce_url": opt_ecom_url,
-                    "price": int(opt.get("price", parsed_price_int)),
+                    "price": max(0, _safe_int_price(opt.get("price"), default=parsed_price_int)),
                     "currency": opt.get("currency", currency),
                     "code": opt.get("code") or "",
                     "image_url": opt.get("image_url") or "",
@@ -942,6 +942,39 @@ def _resolve_canonical_shop_name(deal, ecom_url: str = "") -> str:
     )
 
 
+def _safe_int_price(val, default: int = 0) -> int:
+    if val is None or isinstance(val, bool):
+        return default
+    if isinstance(val, (int, float)):
+        return int(round(val))
+    s = str(val).strip().replace(",", "")
+    if not s:
+        return default
+    try:
+        return int(round(float(s)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _compute_option_min_floor(
+    title_price: int,
+    title_curr: str,
+    base_price: int,
+    curr: str,
+    title: str = "",
+) -> int:
+    norm_curr = (curr or "KRW").strip().upper()
+    norm_tc = (title_curr or "KRW").strip().upper()
+    floor = 100
+    if title_price > 0 and norm_tc == norm_curr:
+        return max(floor, int(title_price * 0.35))
+    if base_price > 0 and _to_krw_equiv(base_price, norm_curr) >= 50000:
+        is_collection = bool(re.search(r'(?:모음|골라담기|외\s*\d+|\d+\s*종|선택)', title or ""))
+        ratio = 0.15 if is_collection else 0.35
+        return max(floor, int(base_price * ratio))
+    return floor
+
+
 def _serialize_options_data(raw_options, deal_id: Optional[int] = None) -> list[dict]:
     if not raw_options:
         return []
@@ -956,6 +989,8 @@ def _serialize_options_data(raw_options, deal_id: Optional[int] = None) -> list[
         if not isinstance(opt, dict):
             continue
         item = dict(opt)
+        item["name"] = str(item.get("name") or "").strip() or "옵션"
+        item["price"] = max(0, _safe_int_price(item.get("price"), default=0))
         raw_u = (item.get("url") or "").strip()
         if raw_u:
             clean_u = get_clean_ecommerce_url(raw_u, "", deal_id, None, is_multi_item=False)
@@ -991,16 +1026,11 @@ def _resolve_option_aware_price_and_currency(
     if is_free:
         return base_price
 
-    min_floor = 100 if curr in ("USD", "EUR", "CNY") else 100
-    if tp > 0 and tc == curr:
-        min_floor = max(min_floor, int(tp * 0.35))
+    min_floor = _compute_option_min_floor(tp, tc, base_price, curr, title)
 
     same_curr_prices = []
     for opt in serialized_opts:
-        try:
-            op = int(opt.get("price") or 0)
-        except (TypeError, ValueError):
-            op = 0
+        op = _safe_int_price(opt.get("price"), default=0)
         oc = (opt.get("currency") or curr).strip().upper()
         if op >= min_floor and oc == curr:
             same_curr_prices.append(op)
@@ -1419,7 +1449,7 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
         re.IGNORECASE
     )
 
-    _MULTI_OPTION_TITLE_RE = re.compile(r'(?:\d+\s*종|모음전?|골라담기|외\s*\d+\s*종)')
+    _MULTI_OPTION_TITLE_RE = re.compile(r'(?:모음전?|골라담기|외\s*\d+\s*(?:종|건|개)|\d+\s*종(?!\s*(?:세트|패키지|구성|선물)))')
 
     def _is_multi_option_collection_deal(d) -> bool:
         raw_opts = getattr(d, 'options_data', None)
@@ -1430,10 +1460,11 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
                     return True
             except Exception:
                 pass
-        if getattr(d, 'has_options', False):
-            d_title = getattr(d, 'title', '') or ''
-            if _MULTI_OPTION_TITLE_RE.search(d_title):
-                return True
+        d_title = getattr(d, 'title', '') or ''
+        if _MULTI_OPTION_TITLE_RE.search(d_title):
+            return True
+        if getattr(d, 'has_options', False) and re.search(r'\d+\s*종', d_title):
+            return True
         return False
 
     def _chimera_blocked(is_multi_a: bool, link_a: str, is_multi_b: bool, link_b: str) -> bool:
@@ -2098,7 +2129,11 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
 
         for deal in deals:
             comp_name = getattr(deal.community, 'display_name', None) or COMMUNITY_MAP.get(deal.community.name, deal.community.name)
+            serialized_opts = _serialize_options_data(getattr(deal, "options_data", None), deal.id)
             parsed_price_int, resolved_currency = resolve_deal_price_and_currency(deal)
+            parsed_price_int = _resolve_option_aware_price_and_currency(
+                parsed_price_int, resolved_currency, serialized_opts, getattr(deal, 'title', '') or ''
+            )
             norm_shipping_fee = _normalize_shipping_fee(deal.shipping_fee, title_hint=deal.title or "")
             total_price = _compute_total_price(parsed_price_int, resolved_currency, norm_shipping_fee)
             
@@ -2113,7 +2148,6 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
             
             cluster_key = dsu.find(deal.id)
             image_url = _resolve_best_image_url(deal, BASE_URL)
-            serialized_opts = _serialize_options_data(getattr(deal, "options_data", None), deal.id)
             deal_body_imgs = _extract_body_images(getattr(deal, "content_html", "") or "")
 
             if cluster_key in cluster_map:
@@ -4259,15 +4293,15 @@ def get_deal(
     if orig_curr != curr:
         original_price, _ = resolve_deal_price_and_currency(best_deal)
     from backend.core.deal_normalizer import parse_title_price_and_shipping
-    _det_tp, _det_tc, _, _det_is_free = parse_title_price_and_shipping(getattr(best_deal, "title", "") or deal.title or "")
-    _opt_min_floor = 100
-    if _det_tp > 0 and _det_tc == curr:
-        _opt_min_floor = max(100, int(_det_tp * 0.35))
-    elif original_price >= 50000:
-        _title_for_floor = getattr(best_deal, "title", "") or deal.title or ""
-        _is_collection_floor = bool(re.search(r'(?:모음|골라담기|외\s*\d+|\d+\s*종|선택)', _title_for_floor))
-        _floor_ratio = 0.15 if _is_collection_floor else 0.35
-        _opt_min_floor = max(100, int(original_price * _floor_ratio))
+    _title_for_floor = getattr(best_deal, "title", "") or deal.title or ""
+    _det_tp, _det_tc, _, _det_is_free = parse_title_price_and_shipping(_title_for_floor)
+    _opt_min_floor = _compute_option_min_floor(
+        _det_tp,
+        _det_tc,
+        original_price,
+        curr,
+        _title_for_floor,
+    )
     same_curr_prices = [
         s["price"]
         for s in sources

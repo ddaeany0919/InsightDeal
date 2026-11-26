@@ -237,3 +237,45 @@ def test_push_worker_dispatches_toss_push_for_keyword_and_wishlist_with_dnd_and_
     st2 = push_worker.background_trigger_keyword_alarms(deal_ids[1], session_factory=SessionCls, now_kst=noon)
     assert st2["toss_push_sent"] == 0
     assert len(sent_calls) == 2
+
+
+def test_toss_push_client_init_error_and_error_payload_handling(isolated_toss_env, monkeypatch):
+    """mTLS 클라이언트 생성 예외 격리 및 HTTP 200 내 error 페이로드 실패 판정 검증."""
+    from backend.services import toss_push_service as tps
+
+    monkeypatch.setattr(
+        tps,
+        "get_toss_push_config",
+        lambda: {
+            "enabled": True,
+            "configured": True,
+            "cert_path": "/tmp/fake.crt",
+            "key_path": "/tmp/fake.key",
+            "cert_exists": True,
+            "key_exists": True,
+            "template_set_code": "insightdeal-keyword-hotdeal",
+            "api_base": "https://apps-in-toss-api.toss.im",
+        },
+    )
+
+    def _raise_client(*args, **kwargs):
+        raise PermissionError("cert file unreadable")
+
+    monkeypatch.setattr("backend.services.toss_push_service.httpx.Client", _raise_client)
+    res_err = tps.send_toss_push_message("anon-test-key", context={"keyword": "테스트", "dealId": "1"})
+    assert res_err["sent"] is False
+    assert res_err["reason"] == "error:PermissionError"
+
+    class _FakeResp:
+        status_code = 200
+        def json(self):
+            return {"error": {"errorCode": "4010", "reason": "invalid"}}
+
+    class _FakeClient:
+        def post(self, *args, **kwargs):
+            return _FakeResp()
+
+    res_payload_err = tps.send_toss_push_message("anon-test-key", context={"keyword": "테스트"}, http_client=_FakeClient())
+    assert res_payload_err["sent"] is False
+    assert res_payload_err["error_code"] == "4010"
+

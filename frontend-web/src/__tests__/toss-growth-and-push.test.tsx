@@ -1,8 +1,11 @@
 import React from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import NotificationDrawer from "@/app/components/NotificationDrawer";
 import NotificationSettingsPage from "@/app/settings/notifications/page";
+import DealCard from "@/app/components/DealCard";
+import DealDetailModal from "@/app/components/DealDetailModal";
+import type { Deal } from "@/app/lib/types";
 import {
   TOSS_DETAIL_BANNER_AD_GROUP_ID,
   TOSS_INTERSTITIAL_AD_GROUP_ID,
@@ -340,5 +343,124 @@ describe("토스 수익화 확장 · 소프트 전면형 · 무료 푸시(anonKe
       expect(screen.getByText("토스 푸시 알림 동의하기")).toBeInTheDocument();
     });
     settingsToss.unmount();
+  });
+
+  it("동의 거부(rejected) 시 백엔드 토스 키 동기화 및 연동 완료 오표시를 하지 않는다", async () => {
+    installTossBridgeAndAdsHost();
+    sdkMocks.getAnonymousKey
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({
+        type: "HASH",
+        hash: "toss-anon-hash-reject",
+      });
+    sdkMocks.requestAgreement.mockImplementation(({ onEvent }) => {
+      onEvent({ type: "agreementRejected" });
+      return vi.fn();
+    });
+
+    render(<NotificationSettingsPage />);
+    const btn = await screen.findByText("토스 푸시 알림 동의하기");
+    await waitFor(() => {
+      expect(sdkMocks.getAnonymousKey).toHaveBeenCalledTimes(1);
+    });
+    sdkMocks.authFetch.mockClear();
+    fireEvent.click(btn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/동의가 거부되었어요/)).toBeInTheDocument();
+    });
+    expect(sdkMocks.authFetch).not.toHaveBeenCalled();
+    expect(screen.queryByText("토스 푸시 연동됨")).toBeNull();
+  });
+
+  it("유료 딜의 0원 옵션은 무료로 오표시되지 않으며 빈 옵션 응답은 허위 배지를 노출하지 않는다", async () => {
+    clearTossHost();
+    const baseDeal: Deal = {
+      id: 77701,
+      title: "[지마켓] 9800X3D RX9070XT 완본체",
+      price: "3349900",
+      shipping_fee: "무료배송",
+      currency: "KRW",
+      shop_name: "지마켓",
+      community_name: "퀘이사존",
+      scraped_at: new Date().toISOString(),
+      post_link: "https://quasarzone.com/bbs/qb_saleinfo/views/77701",
+      ecommerce_url: "https://item.gmarket.co.kr/Item?goodscode=77701",
+      image_url: null,
+      category: "PC/하드웨어",
+      isClosed: false,
+      has_options: true,
+      options_data: [],
+      sources: [
+        {
+          site_name: "옵션 A 가격미상",
+          price: 0,
+          currency: "KRW",
+          post_url: "https://quasarzone.com/bbs/qb_saleinfo/views/77701",
+          ecommerce_url: "https://item.gmarket.co.kr/Item?goodscode=77701",
+        },
+        {
+          site_name: "옵션 B 본품",
+          price: 3349900,
+          currency: "KRW",
+          post_url: "https://quasarzone.com/bbs/qb_saleinfo/views/77701",
+          ecommerce_url: "https://item.gmarket.co.kr/Item?goodscode=77701",
+        },
+      ],
+      isFree: false,
+    };
+
+    const cardView = render(
+      <DealCard
+        deal={baseDeal}
+        appliedSearch=""
+        isMounted={true}
+        currentTime={Date.now()}
+        isWishlisted={false}
+        isAlertSet={false}
+        onSelectDeal={vi.fn()}
+        onToggleAlert={vi.fn()}
+        onToggleWishlist={vi.fn()}
+        onShowToast={vi.fn()}
+      />
+    );
+    expect(screen.queryByText("2종 옵션")).toBeNull();
+    cardView.unmount();
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...baseDeal,
+        options_data: [],
+        sources: baseDeal.sources,
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const modalView = render(
+      <DealDetailModal
+        deal={{
+          ...baseDeal,
+          options_data: [
+            {
+              name: "오염 옵션",
+              price: 100000,
+              currency: "KRW",
+              url: "https://item.gmarket.co.kr/Item?goodscode=77701",
+            },
+          ],
+        }}
+        onClose={vi.fn()}
+        showToast={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    expect(screen.queryByText(/0원 \(무료\)/)).toBeNull();
+    expect(screen.queryByText(/오염 옵션/)).toBeNull();
+    modalView.unmount();
+    vi.unstubAllGlobals();
   });
 });

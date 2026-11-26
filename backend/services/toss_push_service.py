@@ -109,11 +109,12 @@ def send_toss_push_message(
         "x-anon-key": clean_anon_key,
     }
 
-    client = http_client or httpx.Client(
-        cert=(cfg["cert_path"], cfg["key_path"]),
-        timeout=8.0,
-    )
+    client = None
     try:
+        client = http_client or httpx.Client(
+            cert=(cfg["cert_path"], cfg["key_path"]),
+            timeout=8.0,
+        )
         res = client.post(url, json=payload, headers=headers)
         data: dict[str, Any] = {}
         try:
@@ -128,7 +129,7 @@ def send_toss_push_message(
             success_obj = data.get("success") if isinstance(data.get("success"), dict) else {}
             fail_count = int(success_obj.get("failCount") or 0) if success_obj else 0
             msg_count = int(success_obj.get("msgCount") or 0) if success_obj else 0
-            if (result_type == "SUCCESS" or not result_type) and fail_count == 0:
+            if (result_type == "SUCCESS" or not result_type) and fail_count == 0 and not data.get("error"):
                 return {
                     "sent": True,
                     "reason": "sent",
@@ -154,10 +155,10 @@ def send_toss_push_message(
             "http_status": res.status_code,
         }
     except Exception as exc:
-        logger.warning(f"[TossPush] 요청 예외: {exc}")
-        return {"sent": False, "reason": f"error:{exc}"}
+        logger.warning(f"[TossPush] 요청 예외: {type(exc).__name__}")
+        return {"sent": False, "reason": f"error:{type(exc).__name__}"}
     finally:
-        if own_client:
+        if own_client and client is not None:
             try:
                 client.close()
             except Exception:

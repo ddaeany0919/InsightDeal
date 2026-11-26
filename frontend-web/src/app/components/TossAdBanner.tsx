@@ -100,7 +100,7 @@ function TossAdBannerBase({
           observer.disconnect();
         }
       },
-      { rootMargin: "120px 0px", threshold: 0.01 }
+      { rootMargin: "120px 0px", threshold: 0 }
     );
     observer.observe(el);
     return () => observer.disconnect();

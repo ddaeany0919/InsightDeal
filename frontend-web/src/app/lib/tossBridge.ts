@@ -479,27 +479,57 @@ export function preloadTossInterstitial(): void {
         interstitialLoading = false;
         return;
       }
+      let settled = false;
+      let localCleanup: (() => void) | null = null;
+      const timerId = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        interstitialLoaded = false;
+        interstitialLoading = false;
+        const cleanup = localCleanup || interstitialLoadCleanup;
+        localCleanup = null;
+        interstitialLoadCleanup = null;
+        cleanup?.();
+      }, 10000);
+
       try {
-        interstitialLoadCleanup = sdk.loadFullScreenAd({
+        localCleanup = sdk.loadFullScreenAd({
           options: { adGroupId: TOSS_INTERSTITIAL_AD_GROUP_ID },
           onEvent: (event) => {
             if (event?.type === "loaded") {
+              if (settled) return;
+              settled = true;
+              window.clearTimeout(timerId);
               interstitialLoaded = true;
               interstitialLoading = false;
-              const cleanup = interstitialLoadCleanup;
+              const cleanup = localCleanup || interstitialLoadCleanup;
+              localCleanup = null;
               interstitialLoadCleanup = null;
               cleanup?.();
             }
           },
           onError: () => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timerId);
             interstitialLoaded = false;
             interstitialLoading = false;
-            const cleanup = interstitialLoadCleanup;
+            const cleanup = localCleanup || interstitialLoadCleanup;
+            localCleanup = null;
             interstitialLoadCleanup = null;
             cleanup?.();
           },
         });
+        if (settled) {
+          localCleanup?.();
+          localCleanup = null;
+          interstitialLoadCleanup = null;
+        } else {
+          interstitialLoadCleanup = localCleanup;
+        }
       } catch {
+        settled = true;
+        window.clearTimeout(timerId);
         interstitialLoaded = false;
         interstitialLoading = false;
       }
@@ -542,6 +572,7 @@ export function maybeShowTossInterstitialOnDetailClose(): boolean {
         interstitialShowing = false;
         return;
       }
+      let settled = false;
       let recorded = false;
       let showCleanup: (() => void) | null = null;
 
@@ -555,11 +586,18 @@ export function maybeShowTossInterstitialOnDetailClose(): boolean {
       };
 
       const finish = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timerId);
         interstitialShowing = false;
         const cleanup = showCleanup;
         showCleanup = null;
         cleanup?.();
       };
+
+      const timerId = window.setTimeout(() => {
+        finish();
+      }, 60000);
 
       try {
         showCleanup = sdk.showFullScreenAd({
@@ -578,6 +616,10 @@ export function maybeShowTossInterstitialOnDetailClose(): boolean {
             finish();
           },
         });
+        if (settled) {
+          showCleanup?.();
+          showCleanup = null;
+        }
       } catch {
         finish();
       }
@@ -625,7 +667,13 @@ export async function getTossAnonymousKey(): Promise<string | null> {
     if (!fetcher) return null;
 
     try {
-      const res = (await fetcher()) as { type?: string; hash?: string } | undefined | null;
+      const timeoutPromise = new Promise<null>((resolve) => {
+        window.setTimeout(() => resolve(null), 8000);
+      });
+      const res = (await Promise.race([fetcher(), timeoutPromise])) as
+        | { type?: string; hash?: string }
+        | undefined
+        | null;
       if (res && typeof res === "object" && res.type === "HASH" && typeof res.hash === "string") {
         const clean = res.hash.trim();
         if (clean) {
@@ -709,6 +757,10 @@ export async function requestTossPushAgreement(options?: {
           finish("error");
         },
       });
+      if (settled) {
+        cleanup?.();
+        cleanup = null;
+      }
     } catch {
       finish("error");
     }
@@ -728,28 +780,35 @@ export async function syncTossAnonymousKeyToBackend(): Promise<boolean> {
 
     const { ensureWebDeviceAuth, authFetch } = await import("./utils");
     const auth = await ensureWebDeviceAuth();
-    const pairKey = `${auth.deviceUuid}:${anonKey}`;
+    let finalDeviceUuid = auth.deviceUuid;
+    const initialPairKey = `${finalDeviceUuid}:${anonKey}`;
     try {
-      if (sessionStorage.getItem(TOSS_ANON_SYNC_SESSION_KEY) === pairKey) {
+      if (sessionStorage.getItem(TOSS_ANON_SYNC_SESSION_KEY) === initialPairKey) {
         return true;
       }
     } catch {}
 
-    const res = await authFetch((latestAuth) => ({
-      pathOrUrl: "/api/push/device",
-      init: {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          device_uuid: latestAuth.deviceUuid,
-          toss_anon_key: anonKey,
-        }),
-      },
-    }));
+    const res = await authFetch((latestAuth) => {
+      finalDeviceUuid = latestAuth.deviceUuid;
+      return {
+        pathOrUrl: "/api/push/device",
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            device_uuid: latestAuth.deviceUuid,
+            toss_anon_key: anonKey,
+          }),
+        },
+      };
+    });
     if (!res.ok) return false;
 
     try {
-      sessionStorage.setItem(TOSS_ANON_SYNC_SESSION_KEY, pairKey);
+      sessionStorage.setItem(
+        TOSS_ANON_SYNC_SESSION_KEY,
+        `${finalDeviceUuid}:${anonKey}`
+      );
     } catch {}
     return true;
   })()

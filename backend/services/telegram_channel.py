@@ -393,11 +393,28 @@ def send_telegram_deal(
         if not eligible:
             return {"sent": False, "reason": reason}
 
+        def _mask_secret(msg: object) -> str:
+            s = str(msg or "")
+            tok = cfg.get("bot_token") or ""
+            if tok:
+                s = s.replace(tok, "***")
+            return re.sub(r"bot\d+:[A-Za-z0-9_-]+", "bot***", s)
+
+        def _is_tg_ok(res_obj: httpx.Response) -> bool:
+            if res_obj.status_code != 200:
+                return False
+            try:
+                body = res_obj.json()
+                return isinstance(body, dict) and body.get("ok") is True
+            except Exception:
+                return False
+
         api_base = f"https://api.telegram.org/bot{cfg['bot_token']}"
         own_client = http_client is None
-        client = http_client or httpx.Client(timeout=8.0)
+        client = None
         method_used = "sendMessage"
         try:
+            client = http_client or httpx.Client(timeout=8.0)
             sent_ok = False
             last_error = ""
             photo_url = formatted.get("photo_url")
@@ -413,13 +430,13 @@ def send_telegram_deal(
                             "reply_markup": formatted["reply_markup"],
                         },
                     )
-                    if photo_res.status_code == 200:
+                    if _is_tg_ok(photo_res):
                         sent_ok = True
                         method_used = "sendPhoto"
                     else:
                         last_error = f"sendPhoto_http_{photo_res.status_code}"
                 except Exception as photo_err:
-                    last_error = f"sendPhoto_err:{photo_err}"
+                    last_error = f"sendPhoto_err:{_mask_secret(photo_err)}"
 
             if not sent_ok:
                 msg_res = client.post(
@@ -432,7 +449,7 @@ def send_telegram_deal(
                         "reply_markup": formatted["reply_markup"],
                     },
                 )
-                if msg_res.status_code == 200:
+                if _is_tg_ok(msg_res):
                     sent_ok = True
                     method_used = "sendMessage"
                 else:
@@ -467,10 +484,11 @@ def send_telegram_deal(
                 "share_url": formatted["share_url"],
             }
         except Exception as err:
-            logger.warning(f"[Telegram] 채널 발송 오류: {err}")
-            return {"sent": False, "reason": f"error:{err}"}
+            safe_err = _mask_secret(err)
+            logger.warning(f"[Telegram] 채널 발송 오류: {safe_err}")
+            return {"sent": False, "reason": f"error:{safe_err}"}
         finally:
-            if own_client:
+            if own_client and client is not None:
                 try:
                     client.close()
                 except Exception:

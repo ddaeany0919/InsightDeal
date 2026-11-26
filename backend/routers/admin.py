@@ -29,12 +29,13 @@ def _verify_admin_key(
         env = os.getenv("ENV", "development").strip().lower()
         if env in ("production", "prod") or env.startswith("prod"):
             raise HTTPException(status_code=503, detail="ADMIN_API_KEY is not configured")
-        forwarded_for = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip().lower() if request else ""
+        from backend.core.device_auth import extract_client_ip
+        real_client_ip = extract_client_ip(request).strip().lower() if request else ""
         real_ip = (request.headers.get("x-real-ip") or "").strip().lower() if request else ""
         client_host = ((request.client.host if request and request.client else "") or "").strip().lower()
         is_loopback = (
             client_host in _LOOPBACK_HOSTS
-            and (not forwarded_for or forwarded_for in _LOOPBACK_HOSTS)
+            and real_client_ip in _LOOPBACK_HOSTS
             and (not real_ip or real_ip in _LOOPBACK_HOSTS)
         )
         if not is_loopback:

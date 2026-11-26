@@ -1090,3 +1090,158 @@ def test_option_reward_shipping_misparse_chimera_cluster_and_detail_price_floor(
     assert det_24999["price"] == 3571290
 
 
+def test_swarm_audit_parser_normalizer_and_endpoint_consistency_hardening(mem_db):
+    """4대 감사 팀 도출 엣지케이스: 쿠폰가 보존, 23887 가짜 옵션명 차단, deal_normalizer 방어, 3종 API 가격 일관성."""
+    from backend.routers.community import build_dsu
+    from backend.services.aggregator_service import extract_structured_multi_options
+
+    # 1) extract_structured_multi_options: 쿠폰가/할인가 보존 + 프라임 적립 10만원/2,966,700 쿠왕와우 + 23887 가짜 옵션명 차단
+    edge_html = """
+    <p>1. 로지텍 G PRO X 2<br/>
+    <a href="https://item.gmarket.co.kr/Item?goodscode=9001">구매</a><br/>
+    25,000원 쿠폰가</p>
+    <p>2. 로지텍 G304<br/>
+    <a href="https://item.gmarket.co.kr/Item?goodscode=9002">구매</a><br/>
+    25,000원 할인가</p>
+    <p>3. 9800X3D RX9070XT 32GB 1TB<br/>
+    <a href="https://www.coupang.com/vp/products/9802964831">구매</a><br/>
+    2,966,700 쿠왕와우<br/>
+    3,390,000 일반구매</p>
+    """
+    opts_edge = extract_structured_multi_options(
+        "테스트 3종 모음",
+        edge_html,
+        default_currency="KRW",
+        default_url="https://www.fmkorea.com/9000",
+    )
+    assert [o["price"] for o in opts_edge] == [25000, 25000, 2966700]
+
+    # 23887 실제 본문 구조에서 가격+카드사·안내문·디램 O 같은 노이즈 옵션명이 생성되지 않아야 함
+    body_23887_noise = """
+    9800X3D / RX9070XT / D5-5600 16Gx2 / Gen4 1TB 디램 O
+    https://www.e-himart.co.kr/app/goods/goodsDetail?goodsNo=0069966164
+    2,909,000 삼성,롯데
+    https://www.coupang.com/vp/products/9802964831?itemId=29354794450
+    2,966,700 쿠왕와우
+    https://toss.shopping/i/2740700789
+    3,406,000 일반구매 / 프라임 10만원적립
+    토스는 어플에서만 주문가능
+    https://item.gmarket.co.kr/Item?goodscode=4839535724
+    3,522,890 기업나라사랑,지마켓삼성
+    """
+    opts_23887 = extract_structured_multi_options(
+        "9800X3D RX9070XT +32GB +1~2TB 5종",
+        body_23887_noise,
+        default_currency="KRW",
+        default_url="https://www.fmkorea.com/23887",
+    )
+    for o in opts_23887:
+        assert not any(
+            bad in o["name"]
+            for bad in ("삼성,롯데", "쿠왕와우", "어플에서만", "기업나라사랑", "일반구매", "디램 O")
+        )
+        assert o["price"] != 100000
+
+    # 2) deal_normalizer: 적립/배송비 차폐 + 쿠폰가/할인가 보존 + HTML 태그 스트립
+    assert parse_price_string("3,406,000원 (프라임 10만원적립)") == (3406000, "KRW")
+    assert parse_price_string("12,900원 (배송비 3천원)") == (12900, "KRW")
+    assert parse_price_string("10만원적립") == (0, "KRW")
+
+    tp_coupon, _, _, _ = parse_title_price_and_shipping("[지마켓] 마우스 / 25,000원 쿠폰가")
+    assert tp_coupon == 25000
+    tp_rew, _, _, _ = parse_title_price_and_shipping("[지마켓] 완본체 100,000원 적립")
+    assert tp_rew == 0
+    tp_slash_rew, _, _, _ = parse_title_price_and_shipping("[지마켓] 완본체 / 10,000원 할인")
+    assert tp_slash_rew == 0
+
+    assert extract_body_fallback_price("<p><b>100,000원</b> 적립 / 3,406,000원</p>", "[지마켓] 완본체") == (3406000, "KRW")
+    assert extract_body_fallback_price("<p>19,900원 쿠폰가</p>", "[지마켓] 키보드") == (19900, "KRW")
+
+    # 3) build_dsu: 23887이 옵션 정제 후 has_options=False여도 '5종' 제목으로 단일 딜 24226과 병합되지 않아야 함
+    now = datetime.utcnow()
+    d_single = Deal(
+        id=99101,
+        source_community_id=3,
+        title="[지마켓] 9800X3D RX9070XT 16GB +32GB +1TB 완본체",
+        price="3571290",
+        currency="KRW",
+        shop_name="지마켓",
+        post_link="https://quasarzone.com/bbs/qb_saleinfo/views/99101",
+        ecommerce_link="https://item.gmarket.co.kr/Item?goodscode=99101",
+        indexed_at=now - timedelta(hours=1),
+        has_options=False,
+    )
+    d_multi_cleaned = Deal(
+        id=99102,
+        source_community_id=2,
+        title="9800X3D RX9070XT +32GB +1~2TB 5종",
+        price="2909000",
+        currency="KRW",
+        shop_name="하이마트",
+        post_link="https://www.fmkorea.com/99102",
+        ecommerce_link="https://www.fmkorea.com/99102",
+        indexed_at=now - timedelta(hours=1),
+        has_options=False,
+    )
+    dsu_clean = build_dsu([d_single, d_multi_cleaned], time_window_days=3)
+    assert dsu_clean.find(99101) != dsu_clean.find(99102)
+
+    # 4) get_hot_deals / get_top_hot_deals / get_deal 일관성 + 고가 외화($350.00) 하한 방어
+    poisoned_krw = Deal(
+        id=99103,
+        source_community_id=3,
+        title="[지마켓] 9800X3D RX9070XT 완본체 테스트",
+        price="3571290",
+        currency="KRW",
+        shop_name="지마켓",
+        category="PC/하드웨어",
+        honey_score=120,
+        post_link="https://quasarzone.com/bbs/qb_saleinfo/views/99103",
+        ecommerce_link="https://item.gmarket.co.kr/Item?goodscode=99103",
+        indexed_at=now - timedelta(minutes=20),
+        has_options=True,
+        options_data=json.dumps([{"name": "적립 오파싱", "price": 100000, "currency": "KRW"}], ensure_ascii=False),
+    )
+    poisoned_usd = Deal(
+        id=99104,
+        source_community_id=1,
+        title="[아마존] 테스트 고가 모니터",
+        price="35000",
+        currency="USD",
+        shop_name="아마존",
+        category="PC/하드웨어",
+        honey_score=120,
+        post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu4&no=99104",
+        ecommerce_link="https://www.amazon.com/dp/B099104",
+        indexed_at=now - timedelta(minutes=15),
+        has_options=True,
+        options_data=json.dumps([{"name": "쿠폰 오파싱", "price": 500, "currency": "USD"}], ensure_ascii=False),
+    )
+    mem_db.add_all([poisoned_krw, poisoned_usd])
+    mem_db.commit()
+
+    def _override_db():
+        yield mem_db
+
+    invalidate_deals_cache()
+    app.dependency_overrides[get_db_session] = _override_db
+    try:
+        client = TestClient(app)
+        hot_map = {d["id"]: d for d in client.get("/api/community/hot-deals?limit=30").json()["deals"]}
+        top_map = {d["id"]: d for d in client.get("/api/community/top-hot-deals?limit=30").json()["deals"]}
+        det_krw = client.get("/api/community/deals/99103").json()
+        det_usd = client.get("/api/community/deals/99104").json()
+
+        assert hot_map[99103]["price"] == 3571290
+        assert top_map[99103]["price"] == 3571290
+        assert det_krw["price"] == 3571290
+
+        assert hot_map[99104]["price"] == 35000
+        assert top_map[99104]["price"] == 35000
+        assert det_usd["price"] == 35000
+    finally:
+        invalidate_deals_cache()
+        app.dependency_overrides.pop(get_db_session, None)
+
+
+

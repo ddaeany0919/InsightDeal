@@ -134,8 +134,8 @@ export default function DealCard({
 
   const optionSources = getOptionSources(deal.sources, deal.options_data);
   const optionCount = deal.options_count || optionSources.length;
-  const isMultiDeal = Boolean(deal.has_options || optionCount >= 2);
-  const displayCount = optionCount >= 2 ? optionCount : deal.has_options ? 2 : 0;
+  const isMultiDeal = Boolean(optionCount >= 2 || (deal.has_options && !Array.isArray(deal.options_data)));
+  const displayCount = optionCount >= 2 ? optionCount : 0;
 
   const shopBadge = resolveDealShopName({
     shop_name: deal.shop_name,

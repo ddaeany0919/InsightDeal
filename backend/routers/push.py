@@ -89,6 +89,13 @@ class KeywordReq(BaseModel):
     keyword: str
 
 
+def _clean_toss_anon_key(raw: Optional[str]) -> Optional[str]:
+    if not isinstance(raw, str):
+        return None
+    cleaned = re.sub(r"[\x00-\x1f\x7f]", "", raw).strip()
+    return cleaned[:255] if cleaned else None
+
+
 @router.post("/device")
 def register_device(
     req: RegisterDeviceReq,
@@ -130,11 +137,7 @@ def register_device(
 
         device_token = create_device_token(req_uuid)
         clean_fcm = req.fcm_token.strip() if isinstance(req.fcm_token, str) and req.fcm_token.strip() else None
-        clean_toss_anon = (
-            req.toss_anon_key.strip()[:255]
-            if isinstance(req.toss_anon_key, str) and req.toss_anon_key.strip()
-            else None
-        )
+        clean_toss_anon = _clean_toss_anon_key(req.toss_anon_key)
         device = models.DeviceToken(
             device_uuid=req_uuid,
             fcm_token=clean_fcm,
@@ -164,8 +167,9 @@ def register_device(
     # fcm_token / toss_anon_key 보호 가드: None이거나 빈 문자열/공백이면 기존 DB 토큰 절대 덮어쓰기 금지
     if isinstance(req.fcm_token, str) and req.fcm_token.strip():
         device.fcm_token = req.fcm_token.strip()
-    if isinstance(req.toss_anon_key, str) and req.toss_anon_key.strip():
-        device.toss_anon_key = req.toss_anon_key.strip()[:255]
+    clean_toss_update = _clean_toss_anon_key(req.toss_anon_key)
+    if clean_toss_update:
+        device.toss_anon_key = clean_toss_update
 
     if req.night_push_consent is not None:
         device.night_push_consent = req.night_push_consent
@@ -314,6 +318,10 @@ def add_keyword(
     target_uuid = (req.device_uuid or "").strip() or auth_uuid
     assert_device_owner(auth_uuid, target_uuid)
 
+    clean_kw = re.sub(r"[\x00-\x1f\x7f]", "", str(req.keyword or "")).strip()
+    if not clean_kw or len(clean_kw) > 100:
+        raise HTTPException(status_code=400, detail="Keyword must be 1 to 100 characters")
+
     device = db.query(models.DeviceToken).filter(models.DeviceToken.device_uuid == target_uuid).first()
     if not device:
         device = models.DeviceToken(device_uuid=target_uuid)
@@ -323,7 +331,7 @@ def add_keyword(
 
     existing = db.query(models.PushKeyword).filter(
         models.PushKeyword.device_token_id == device.id,
-        models.PushKeyword.keyword == req.keyword,
+        models.PushKeyword.keyword == clean_kw,
     ).first()
 
     if existing:
@@ -331,14 +339,14 @@ def add_keyword(
             existing.is_active = True
             db.commit()
         from backend.services.push_worker import match_existing_deals_for_keyword
-        match_existing_deals_for_keyword(db, target_uuid, req.keyword)
+        match_existing_deals_for_keyword(db, target_uuid, clean_kw)
         return {"success": True, "message": "Keyword active"}
 
-    kw = models.PushKeyword(device_token_id=device.id, keyword=req.keyword)
+    kw = models.PushKeyword(device_token_id=device.id, keyword=clean_kw)
     db.add(kw)
     db.commit()
     from backend.services.push_worker import match_existing_deals_for_keyword
-    match_existing_deals_for_keyword(db, target_uuid, req.keyword)
+    match_existing_deals_for_keyword(db, target_uuid, clean_kw)
     return {"success": True, "message": "Keyword added"}
 
 

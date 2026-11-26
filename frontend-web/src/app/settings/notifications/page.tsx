@@ -117,7 +117,13 @@ function serializeWeekdayWeekendDnd(
 }
 
 export default function NotificationSettingsPage() {
-  const [isTossMiniApp, setIsTossMiniApp] = useState(
+  const isTossMiniApp = useSyncExternalStore(
+    subscribeNoop,
+    () =>
+      process.env.NEXT_PUBLIC_TOSS_MINIAPP === 'true' ||
+      isTossMiniAppEnv() ||
+      (typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('toss') === '1'),
     () => process.env.NEXT_PUBLIC_TOSS_MINIAPP === 'true'
   );
   const homeHref = useSyncExternalStore(
@@ -266,7 +272,6 @@ export default function NotificationSettingsPage() {
         ? new URLSearchParams(window.location.search)
         : null;
     if (isTossMiniAppEnv() || urlParams?.get('toss') === '1') {
-      setIsTossMiniApp(true);
       void syncTossAnonymousKeyToBackend().then((synced) => {
         if (synced) setHasTossPush(true);
       });
@@ -1209,13 +1214,20 @@ export default function NotificationSettingsPage() {
                     setTossAgreementMsg(null);
                     try {
                       const outcome = await requestTossPushAgreement({ force: true });
-                      const synced = await syncTossAnonymousKeyToBackend();
-                      if (synced) setHasTossPush(true);
                       if (outcome === 'agreed') {
-                        setTossAgreementMsg({
-                          ok: true,
-                          text: '토스 푸시 알림 동의를 완료했어요! 등록한 키워드의 특가가 올라오면 바로 알려드릴게요.',
-                        });
+                        const synced = await syncTossAnonymousKeyToBackend();
+                        if (synced) {
+                          setHasTossPush(true);
+                          setTossAgreementMsg({
+                            ok: true,
+                            text: '토스 푸시 알림 동의를 완료했어요! 등록한 키워드의 특가가 올라오면 바로 알려드릴게요.',
+                          });
+                        } else {
+                          setTossAgreementMsg({
+                            ok: false,
+                            text: '토스 알림 동의는 완료됐지만 기기 연결을 마무리하지 못했어요. 잠시 후 다시 눌러 주세요.',
+                          });
+                        }
                       } else if (outcome === 'rejected') {
                         setTossAgreementMsg({
                           ok: false,

@@ -67,6 +67,7 @@ import {
   getDealAgeDays,
   mapRawDealToDeal,
   formatRelativeTimeKo,
+  isFreeGiveawayTitle,
 } from "../lib/utils";
 import type { PriceTrendStats } from "./PriceTrendChart";
 import DealDetailSecondarySections, {
@@ -138,7 +139,7 @@ export default function DealDetailModal({
 
   const [detailHtml, setDetailHtml] = useState<string>("");
   const [detailSources, setDetailSources] = useState<DealSource[]>([]);
-  const [detailOptionsData, setDetailOptionsData] = useState<DealOptionItem[]>([]);
+  const [detailOptionsData, setDetailOptionsData] = useState<DealOptionItem[] | null>(null);
   const [detailShopName, setDetailShopName] = useState<string>("");
   const [detailImageUrl, setDetailImageUrl] = useState<string | null | undefined>(undefined);
   const [detailBodyImages, setDetailBodyImages] = useState<string[]>([]);
@@ -278,7 +279,7 @@ export default function DealDetailModal({
     setDetailInitialHistoryPeriod(undefined);
     setDetailHtml(currentDeal?.contentHtml || "");
     setDetailSources(currentDeal?.sources || []);
-    setDetailOptionsData(currentDeal?.options_data || []);
+    setDetailOptionsData(null);
     setDetailShopName(currentDeal?.shop_name || "");
     setDetailImageUrl(undefined);
     setDetailBodyImages(currentDeal?.bodyImages || []);
@@ -370,9 +371,9 @@ export default function DealDetailModal({
       if (Array.isArray(d.sources) && d.sources.length > 0) {
         setDetailSources(d.sources);
       }
-      if (Array.isArray(d.options_data) && d.options_data.length > 0) {
+      if (Array.isArray(d.options_data)) {
         setDetailOptionsData(d.options_data);
-      } else if (Array.isArray(d.optionsData) && d.optionsData.length > 0) {
+      } else if (Array.isArray(d.optionsData)) {
         setDetailOptionsData(d.optionsData);
       }
       if (d.shop_name || d.shopName) {
@@ -676,8 +677,7 @@ export default function DealDetailModal({
     }
   }, [dealId, lightboxIndex]);
 
-  const effectiveOptionsData =
-    detailOptionsData.length > 0 ? detailOptionsData : deal?.options_data;
+  const effectiveOptionsData = detailOptionsData ?? deal?.options_data;
   const preOptionSources = deal
     ? getOptionSources(detailSources, effectiveOptionsData)
     : [];
@@ -686,7 +686,10 @@ export default function DealDetailModal({
       ? preOptionSources[selectedOptionIndex]
       : null;
   const preActivePrice =
-    preSelectedOption && preSelectedOption.price !== undefined && preSelectedOption.price >= 0
+    preSelectedOption &&
+    typeof preSelectedOption.price === "number" &&
+    Number.isFinite(preSelectedOption.price) &&
+    (preSelectedOption.price > 0 || isFreeDeal)
       ? preSelectedOption.price
       : deal?.price;
   const preActiveCurrency = preSelectedOption?.currency || deal?.currency || "KRW";
@@ -868,7 +871,10 @@ export default function DealDetailModal({
 
   const activeOptionTitle = selectedOption ? cleanOptionTitle(selectedOption.site_name) : "";
   const activePrice =
-    selectedOption && selectedOption.price !== undefined && selectedOption.price >= 0
+    selectedOption &&
+    typeof selectedOption.price === "number" &&
+    Number.isFinite(selectedOption.price) &&
+    (selectedOption.price > 0 || isFreeDeal)
       ? selectedOption.price
       : deal.price;
   const activeCurrency = selectedOption?.currency || deal.currency || "KRW";
@@ -910,11 +916,12 @@ export default function DealDetailModal({
     )
   );
 
-  const isSelectedOptionZeroFree =
+  const isSelectedOptionFree =
     selectedOption !== null &&
-    (selectedOption.price === 0 || (isFreeDeal && !selectedOption.price));
+    (isFreeDeal || isFreeGiveawayTitle(activeOptionTitle)) &&
+    (selectedOption.price === 0 || !selectedOption.price);
   const showZeroWonPrice =
-    isSelectedOptionZeroFree ||
+    isSelectedOptionFree ||
     (isFreeDeal && !selectedOption) ||
     String(activePrice ?? "").trim() === "0원";
 
@@ -2604,7 +2611,9 @@ export default function DealDetailModal({
                             }}
                           >
                             {src.price === 0
-                              ? "0원 (무료)"
+                              ? isFreeDeal || isFreeGiveawayTitle(optionTitle)
+                                ? "0원 (무료)"
+                                : formatPrice(0, optionCurrency, optionTitle)
                               : src.price && src.price > 0
                                 ? formatPrice(src.price, optionCurrency, optionTitle)
                                 : formatPrice(0, optionCurrency, optionTitle)}

@@ -76,7 +76,7 @@ _BODY_CONTEXT_SUFFIX_MASK_RE = re.compile(
     r"[+\-]\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|천\s*원?|원|달러|불|위안|엔|유로)"
     r"|(?:[$₩￦€¥￥]?\s*[0-9,]+(?:\.[0-9]+)?\s*(?:만\s*원?|천\s*원?|원|달러|불|위안|엔|유로))"
     r"(?:[이가을를은는도]|\s*(?:정도|가량|만큼|더))?\s*"
-    r"(?:추가|할인|적립|쿠폰|캐시백|페이백|차감|인하|절감|배송비|택배비|이상\s*(?:구매|결제|무료|무배|주문))",
+    r"(?:추가|할인(?!\s*가)|적립금?|포인트|리뷰|증정|쿠폰(?!\s*(?:가|적용\s*가|할인\s*가))|캐시백|페이백|차감|인하|절감|배송비|택배비|이상\s*(?:구매|결제|무료|무배|주문))",
     re.IGNORECASE,
 )
 
@@ -1011,7 +1011,23 @@ def parse_price_string(
         " ",
         s_clean,
         flags=re.IGNORECASE,
-    ).strip()
+    )
+    # 유료 배송비 문구('배송비 3,000원', '(배송비 3천원)') 및 적립/할인/쿠폰 보조 금액 선제 제거
+    # (단, 전체 문맥이 소액 적립 전용 딜이 아닌 경우에만 적용)
+    if not re.search(r"(?:출석|클릭|줍줍|페이\s*적립|룰렛)", f"{s_no_ship} {context_hint}", re.IGNORECASE):
+        s_no_ship = re.sub(
+            r"(?:\(\s*)?(?:배송\s*비|택배\s*비|우편\s*비)\s*[:：=]?\s*[0-9,.]+\s*(?:만\s*원?|천\s*원?|원)?(?:\s*\))?",
+            " ",
+            s_no_ship,
+            flags=re.IGNORECASE,
+        )
+        s_no_ship = re.sub(
+            r"(?:(?:선착순\s*|프라임\s*|리뷰\s*|네페\s*|네이버페이\s*)?(?:적립금?|포인트|캐시백|페이백|환급)\s*[:：=]?\s*[$₩￦]?\s*[0-9,.]+\s*(?:만\s*원?|천\s*원?|원)?|[0-9,.]+\s*(?:만\s*원?|천\s*원?|원)\s*(?:적립금?|포인트|캐시백|페이백|증정|환급|지급|할인(?!\s*가)|쿠폰(?!\s*(?:가|적용\s*가|할인\s*가))))",
+            " ",
+            s_no_ship,
+            flags=re.IGNORECASE,
+        )
+    s_no_ship = s_no_ship.strip()
 
     ctx_low = f"{s_no_ship} {context_hint}".lower()
 
@@ -1184,6 +1200,8 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
     if m_sep:
         price_part = m_sep.group(1).strip()
         ship_part = m_sep.group(2).strip()
+        if re.match(r"^(?:적립금?|포인트|할인|쿠폰|캐시백|페이백|증정|토스\s*포인트|네페)", ship_part, re.IGNORECASE):
+            return 0, "KRW", ""
     else:
         m_comma = re.match(r"^(.+?)\s*,\s*(?![0-9]{3}(?:\D|$))(.+)$", cleaned)
         if m_comma and (
@@ -1329,13 +1347,14 @@ _TITLE_JPY_RE = re.compile(
 )
 _TITLE_MAN_CHUN_RE = re.compile(
     r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)([0-9]+)\s*만\s*([0-9]+)\s*천\s*원?"
+    r"(?!\s*(?:할인(?!\s*가)|적립금?|포인트|리뷰|네페|쿠폰(?!\s*(?:가|적용\s*가|할인\s*가))|캐시백|페이백|증정|상당|이상|이하|권))"
 )
 _TITLE_MAN_RE = re.compile(
-    r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)(\d(?:[\d,]*\d)?(?:\.[\d]+)?)\s*만(?!\s*(?:원\s*)?(?:할인|적립|쿠폰|캐시백|페이백|이상|권|mAh|mah|암페어|개|명))"
+    r"(?<!보배\s)(?<!보조배터리\s)(?<![0-9Ww]\s)(\d(?:[\d,]*\d)?(?:\.[\d]+)?)\s*만(?!\s*(?:원\s*)?(?:할인(?!\s*가)|적립금?|포인트|리뷰|네페|쿠폰(?!\s*(?:가|적용\s*가|할인\s*가))|캐시백|페이백|증정|상당|이상|이하|권|mAh|mah|암페어|개|명))"
 )
 _TITLE_WON_RE = re.compile(
     r"(?<![+\-\d,])(?<!\d\s~\s)(?<!~\s)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7}|[1-9][0-9]?)\s*원"
-    r"(?!\s*(?:할인|적립\s*쿠폰|쿠폰|캐시백|페이백|청구|즉시|추가|이상|권))"
+    r"(?!\s*(?:할인(?!\s*가)|적립\s*쿠폰|쿠폰(?!\s*(?:가|적용\s*가|할인\s*가))|캐시백|페이백|청구|즉시|추가|이상|권))"
 )
 _TITLE_ALT_SLASH_RE = re.compile(
     r"(?<!\d)([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})(?![0-9,])\s*원?\s*(?:외|부터|~)?\s*"
@@ -1351,8 +1370,8 @@ _TITLE_BARE_DEC_UNIT_RE = re.compile(
     re.IGNORECASE,
 )
 _TITLE_COMMA_FALLBACK_RE = re.compile(
-    r"(?:(?<![a-zA-Z0-9.])([1-9][0-9]{0,2}(?:,[0-9]{3}){2})(?![0-9a-zA-Z])"
-    r"|(?:결제가?|체감가?|최종가?|할인가?|혜택가?|쿠폰가?|/)\s*([1-9][0-9]{0,2}(?:,[0-9]{3})+)(?![0-9a-zA-Z]))"
+    r"(?:(?<![a-zA-Z0-9.])([1-9][0-9]{0,2}(?:,[0-9]{3}){2})(?![0-9a-zA-Z]|(?:\s*원)?\s*(?:할인(?!\s*가)|적립금?|쿠폰(?!\s*(?:가|적용\s*가|할인\s*가))|캐시백|페이백|포인트|증정|배송비|택배비))"
+    r"|(?:결제가?|체감가?|최종가?|할인가?|혜택가?|쿠폰가?|/)\s*([1-9][0-9]{0,2}(?:,[0-9]{3})+)(?![0-9a-zA-Z]|(?:\s*원)?\s*(?:할인(?!\s*가)|적립금?|쿠폰(?!\s*(?:가|적용\s*가|할인\s*가))|캐시백|페이백|포인트|증정|배송비|택배비)))"
 )
 _PLUS_SPLIT_RE = re.compile(r"\s+\+\s+")
 
@@ -1468,9 +1487,16 @@ def _parse_title_price_and_shipping_cached(raw_title: str) -> tuple[int, str, st
                 title_price = int(round(float(m_man.group(1).replace(",", "")) * 10000))
                 title_curr = "KRW"
             elif won_matches:
-                # 우측(최종 할인가) 우선 선택하되 100원 미만은 소액 적립 딜일 때만 허용
+                # 우측(최종 할인가) 우선 선택하되 100원 미만은 소액 적립 딜일 때만 허용, 적립/포인트/증정/배송비 토큰은 배제
                 for wm in reversed(won_matches):
                     cand_w = int(wm.group(1).replace(",", ""))
+                    after_won = masked[wm.end():].lstrip()
+                    if (
+                        cand_w >= 100
+                        and not is_micro_point_deal(cand_w, sanitized)
+                        and re.match(r"^(?:적립금?|포인트|증정|상당|리뷰|배송비|택배비)", after_won, re.IGNORECASE)
+                    ):
+                        continue
                     if cand_w >= 100 or is_micro_point_deal(cand_w, sanitized):
                         title_price = cand_w
                         title_curr = "KRW"
@@ -1575,6 +1601,8 @@ def extract_body_fallback_price(body_text: Optional[str], title_text: str = "") 
     cleaned = re.sub(r"\[첨부된 이미지 링크들\][\s\S]*$", " ", cleaned)
     cleaned = re.sub(r"\[상품이미지\s*:[^\]]*\]", " ", cleaned)
     cleaned = re.sub(r"https?://[^\s\)\]\'\"<>]+", " ", cleaned)
+    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
     cleaned = _UNIT_PRICE_RE.sub(" ", cleaned)
     cleaned = _DATE_TIME_PAREN_RE.sub(" ", cleaned)
     cleaned = _BODY_SURCHARGE_PAREN_RE.sub(" ", cleaned)
