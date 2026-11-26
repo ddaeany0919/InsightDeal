@@ -971,3 +971,122 @@ def test_p1_p2_unmerged_pairs_image_guard_similar_deals_time_weighted_and_heartb
         app.dependency_overrides.pop(get_db_session, None)
         app.dependency_overrides.pop(require_device_token, None)
 
+
+def test_option_reward_shipping_misparse_chimera_cluster_and_detail_price_floor(mem_db):
+    """적립금/배송비 옵션 오파싱 + 단일/모음전 키메라 병합 + 무제목가 딜 최저가 하한선 회귀 검증."""
+    from backend.routers.community import build_dsu, get_deal
+    from backend.services.aggregator_service import extract_structured_multi_options
+
+    # 1) '3,406,000 일반구매 / 프라임 10만원적립' 본문에서 100,000원 적립금이 옵션 가격으로 오파싱되지 않아야 함
+    pc_html_with_specs = """
+    <p>1. 9800X3D RX9070XT 32GB 1TB<br/>
+    <a href="https://toss.shopping/i/2740700789">https://toss.shopping/i/2740700789</a><br/>
+    3,406,000 일반구매 / 프라임 10만원적립</p>
+    <p>2. 9800X3D RTX5070Ti 32GB 1TB<br/>
+    <a href="https://toss.shopping/i/2740700790">https://toss.shopping/i/2740700790</a><br/>
+    2,909,000 삼성,롯데 / 5만원적립</p>
+    """
+    opts_pc = extract_structured_multi_options(
+        "9800X3D RX9070XT +32GB +1~2TB 5종",
+        pc_html_with_specs,
+        default_currency="KRW",
+        default_url="https://www.fmkorea.com/23887",
+    )
+    assert all(o["price"] != 100000 and o["price"] != 50000 for o in opts_pc)
+    assert any(o["price"] == 3406000 for o in opts_pc)
+    assert any(o["price"] == 2909000 for o in opts_pc)
+
+    # 가격 줄만 있고 옵션명이 없는 토스 쇼핑 다중 링크에서도 '3,406,000 일반구매'가 100,000원 옵션으로 생성되면 안 됨
+    pc_html_bare_links = """
+    <p><a href="https://toss.shopping/i/2740700789">https://toss.shopping/i/2740700789</a><br/>
+    3,406,000 일반구매 / 프라임 10만원적립</p>
+    <p><a href="https://toss.shopping/i/2740700790">https://toss.shopping/i/2740700790</a><br/>
+    3,406,000 일반구매 / 프라임구독 10만원적립</p>
+    """
+    opts_bare = extract_structured_multi_options(
+        "9800X3D RX9070XT +32GB +1~2TB 5종",
+        pc_html_bare_links,
+        default_currency="KRW",
+        default_url="https://www.fmkorea.com/23887",
+    )
+    assert all(o["price"] != 100000 for o in opts_bare)
+
+    # 2) 제목 끝 '/88,900/3,000' 배송비가 '3,000' 3,000원 옵션으로 생성되지 않아야 함
+    opts_ship = extract_structured_multi_options(
+        "[게임터치몰] PS5 콜 오브 듀티 모던 워페어 4 /88,900/3,000",
+        "<p>배송비 3,000원</p>",
+        default_currency="KRW",
+        default_url="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=24397",
+    )
+    assert opts_ship == []
+
+    # 3) build_dsu: 단일 고가 PC 완본체(24226 유형)와 5종 다중 옵션 글(23887 유형) 키메라 병합 차단
+    now = datetime.utcnow()
+    single_pc = Deal(
+        id=24226,
+        source_community_id=3,
+        title="[지마켓] 9800X3D RX9070XT 16GB +32GB +1TB 완본체",
+        price="3571290",
+        currency="KRW",
+        shipping_fee="무료배송",
+        shop_name="지마켓",
+        post_link="https://quasarzone.com/bbs/qb_saleinfo/views/24226",
+        ecommerce_link="https://item.gmarket.co.kr/Item?goodscode=24226",
+        category="PC/하드웨어",
+        indexed_at=now - timedelta(hours=2),
+        has_options=False,
+    )
+    multi_pc = Deal(
+        id=23887,
+        source_community_id=2,
+        title="9800X3D RX9070XT +32GB +1~2TB 5종",
+        price="2909000",
+        currency="KRW",
+        shipping_fee="무료배송",
+        shop_name="쿠팡",
+        post_link="https://www.fmkorea.com/23887",
+        ecommerce_link="https://www.fmkorea.com/23887",
+        category="PC/하드웨어",
+        indexed_at=now - timedelta(hours=1),
+        has_options=True,
+        options_data=json.dumps(
+            [
+                {"name": "옵션 A", "price": 100000, "currency": "KRW", "url": "https://toss.shopping/i/1"},
+                {"name": "옵션 B", "price": 100000, "currency": "KRW", "url": "https://toss.shopping/i/2"},
+            ],
+            ensure_ascii=False,
+        ),
+    )
+    # 4) 제목에 가격이 없는 단일 고가 딜에 100,000원 오염 옵션이 붙어 있어도 상세 최저가 하한선이 방어해야 함
+    poisoned_single = Deal(
+        id=24999,
+        source_community_id=3,
+        title="[지마켓] 9800X3D RX9070XT 16GB +32GB +1TB 완본체",
+        price="3571290",
+        currency="KRW",
+        shipping_fee="무료배송",
+        shop_name="지마켓",
+        post_link="https://quasarzone.com/bbs/qb_saleinfo/views/24999",
+        ecommerce_link="https://item.gmarket.co.kr/Item?goodscode=24999",
+        category="PC/하드웨어",
+        indexed_at=now - timedelta(minutes=30),
+        has_options=True,
+        options_data=json.dumps(
+            [{"name": "적립 오파싱", "price": 100000, "currency": "KRW", "url": "https://toss.shopping/i/1"}],
+            ensure_ascii=False,
+        ),
+    )
+    mem_db.add_all([single_pc, multi_pc, poisoned_single])
+    mem_db.commit()
+
+    dsu = build_dsu([single_pc, multi_pc], time_window_days=3)
+    assert dsu.find(24226) != dsu.find(23887)
+
+    det_24226 = get_deal(24226, db=mem_db)
+    assert det_24226["price"] == 3571290
+    assert det_24226["shop_name"] == "지마켓"
+
+    det_24999 = get_deal(24999, db=mem_db)
+    assert det_24999["price"] == 3571290
+
+

@@ -1419,6 +1419,31 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
         re.IGNORECASE
     )
 
+    _MULTI_OPTION_TITLE_RE = re.compile(r'(?:\d+\s*종|모음전?|골라담기|외\s*\d+\s*종)')
+
+    def _is_multi_option_collection_deal(d) -> bool:
+        raw_opts = getattr(d, 'options_data', None)
+        if raw_opts:
+            try:
+                parsed_opts = json.loads(raw_opts) if isinstance(raw_opts, str) else raw_opts
+                if isinstance(parsed_opts, list) and len(parsed_opts) >= 2:
+                    return True
+            except Exception:
+                pass
+        if getattr(d, 'has_options', False):
+            d_title = getattr(d, 'title', '') or ''
+            if _MULTI_OPTION_TITLE_RE.search(d_title):
+                return True
+        return False
+
+    def _chimera_blocked(is_multi_a: bool, link_a: str, is_multi_b: bool, link_b: str) -> bool:
+        # 다중 옵션/모음전 딜은 서로 다른 post_link의 단일 딜·타 모음전과 병합 금지 (옵션·가격 오염 차단)
+        if not is_multi_a and not is_multi_b:
+            return False
+        if link_a and link_b and link_a == link_b:
+            return False
+        return True
+
     def get_core_words(words_set: set[str]) -> set[str]:
         return {w.lower() for w in words_set if len(w.strip()) >= 2 and not unit_or_generic_re.match(w.strip())}
 
@@ -1433,6 +1458,8 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
         curr_model = (getattr(deal, 'model_code', None) or "").strip().lower()
         curr_shop = _resolve_canonical_shop_name(deal, raw_ecom)
         curr_brand_store = _extract_brand_store_slug(raw_ecom)
+        curr_post_link = (getattr(deal, 'post_link', None) or "").strip()
+        curr_is_multi_opt = _is_multi_option_collection_deal(deal)
         _EXACT_ID_PREFIXES = (
             "gmarket_", "auction_", "11st_", "coupang_", "aliexpress_",
             "naver_", "lotteon_", "ssg_", "musinsa_", "ohouse_", "kakao_", "himart_",
@@ -1448,7 +1475,9 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
         if n_url and not any(x in n_url for x in ["ppomppu", "fmkorea", "ruliweb", "quasarzone", "clien", "bbasak"]):
             n_url_key = n_url
             if n_url_key in url_to_deal:
-                for past_id, past_words_set, past_core_set, past_price, past_currency in url_to_deal[n_url_key]:
+                for past_id, past_words_set, past_core_set, past_price, past_currency, past_is_multi, past_post_link in url_to_deal[n_url_key]:
+                    if _chimera_blocked(curr_is_multi_opt, curr_post_link, past_is_multi, past_post_link):
+                        continue
                     if curr_words_set and past_words_set:
                         intersection = len(curr_words_set.intersection(past_words_set))
                         union = len(curr_words_set.union(past_words_set))
@@ -1476,7 +1505,7 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
                                 ):
                                     dsu.union(deal.id, past_id)
                                     break
-            url_to_deal.setdefault(n_url_key, []).append((deal.id, curr_words_set, curr_core_set, curr_price, curr_currency))
+            url_to_deal.setdefault(n_url_key, []).append((deal.id, curr_words_set, curr_core_set, curr_price, curr_currency, curr_is_multi_opt, curr_post_link))
 
         # 2단계: 고유 제조사 모델코드 일치 시 교차 병합 (범용 스펙 토큰 배제 + 가격 15% 이내 시 핵심토큰 1개+ 허용)
         true_codes = {
@@ -1490,7 +1519,9 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
             )
         for code_key in true_codes:
             if code_key in model_to_deal:
-                for past_id, past_words_set, past_core_set, past_price, past_currency in model_to_deal[code_key]:
+                for past_id, past_words_set, past_core_set, past_price, past_currency, past_is_multi, past_post_link in model_to_deal[code_key]:
+                    if _chimera_blocked(curr_is_multi_opt, curr_post_link, past_is_multi, past_post_link):
+                        continue
                     core_inter_cnt = len(curr_core_set.intersection(past_core_set))
                     min_core_req = 1 if _is_close_price(curr_price, past_price, curr_currency, past_currency, 0.15) else 2
                     if (
@@ -1502,7 +1533,7 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
                     ):
                         dsu.union(deal.id, past_id)
                         break
-            model_to_deal.setdefault(code_key, []).append((deal.id, curr_words_set, curr_core_set, curr_price, curr_currency))
+            model_to_deal.setdefault(code_key, []).append((deal.id, curr_words_set, curr_core_set, curr_price, curr_currency, curr_is_multi_opt, curr_post_link))
 
         # 3단계: 정규화 상품명 및 핵심 토큰 유사도 기반 매칭 (역인덱스로 공통 핵심 토큰 보유 클러스터만 O(1) 후보 추출)
         if n_name and curr_core_set:
@@ -1518,6 +1549,8 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
             cand_idxs = sorted(cand_idx_set)
             for idx in cand_idxs:
                 cluster = name_clusters[idx]
+                if _chimera_blocked(curr_is_multi_opt, curr_post_link, bool(cluster.get('is_multi_opt')), cluster.get('post_link', '')):
+                    continue
                 if curr_model and cluster.get('model_code') and curr_model != cluster['model_code']:
                     continue
                 time_diff_ok = False
@@ -1614,6 +1647,8 @@ def build_dsu(deals, time_window_days=1, price_memo: Optional[dict[int, tuple[in
                     'exact_id': curr_exact_id,
                     'shop_name': curr_shop,
                     'brand_store': curr_brand_store,
+                    'is_multi_opt': curr_is_multi_opt,
+                    'post_link': curr_post_link,
                     'price': curr_price,
                     'currency': curr_currency,
                     'times': [deal_time] if deal_time else []
@@ -4228,6 +4263,11 @@ def get_deal(
     _opt_min_floor = 100
     if _det_tp > 0 and _det_tc == curr:
         _opt_min_floor = max(100, int(_det_tp * 0.35))
+    elif original_price >= 50000:
+        _title_for_floor = getattr(best_deal, "title", "") or deal.title or ""
+        _is_collection_floor = bool(re.search(r'(?:모음|골라담기|외\s*\d+|\d+\s*종|선택)', _title_for_floor))
+        _floor_ratio = 0.15 if _is_collection_floor else 0.35
+        _opt_min_floor = max(100, int(original_price * _floor_ratio))
     same_curr_prices = [
         s["price"]
         for s in sources
