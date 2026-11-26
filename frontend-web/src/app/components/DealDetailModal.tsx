@@ -74,14 +74,19 @@ import DealDetailSecondarySections, {
 } from "./DealDetailSecondarySections";
 import BrandImagePlaceholder from "./BrandImagePlaceholder";
 import ImageLightboxModal from "./ImageLightboxModal";
+import TossAdBanner from "./TossAdBanner";
 import { useDialogA11y } from "../lib/useDialogA11y";
 import {
+  TOSS_DETAIL_BANNER_AD_GROUP_ID,
   logTossScreen,
   logTossClick,
   maybeRequestTossReview,
   openExternalUrlInToss,
   copyTextSafe,
   shareDealInToss,
+  recordDealDetailViewAndPreload,
+  requestTossPushAgreement,
+  syncTossAnonymousKeyToBackend,
 } from "../lib/tossBridge";
 
 interface DealDetailModalProps {
@@ -329,6 +334,7 @@ export default function DealDetailModal({
       deal_id: dealId,
       category: currentDeal.category || "기타",
     });
+    recordDealDetailViewAndPreload();
 
     const controller = new AbortController();
     const { signal } = controller;
@@ -1178,6 +1184,7 @@ export default function DealDetailModal({
       } catch {}
 
       onTargetAlertSaved?.(deal.id);
+      void requestTossPushAgreement().then(() => syncTossAnonymousKeyToBackend());
 
       showToast(
         pushGranted
@@ -2912,6 +2919,13 @@ export default function DealDetailModal({
             </div>
           </section>
         )}
+
+        {/* 상세 하단 이미지 강조 인앱 배너 (토스 앱 호스트 전용, 스크롤 가시성 기반 Lazy 로드) */}
+        <TossAdBanner
+          adGroupId={TOSS_DETAIL_BANNER_AD_GROUP_ID}
+          variant="expanded"
+          className="toss-ad-banner-slot--detail"
+        />
 
         {/* 하단 Sticky 2버튼 액션 바 (닫기 버튼은 상단 X로 일원화하여 360px 압착 해소) */}
         <div className="deal-modal-footer">

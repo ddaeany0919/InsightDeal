@@ -154,6 +154,7 @@ class DatabaseManager:
                 ("dnd_end_time", "VARCHAR(5) NOT NULL DEFAULT '08:00'", "VARCHAR(5) NOT NULL DEFAULT '08:00'"),
                 ("dnd_settings_json", "TEXT", "TEXT"),
                 ("web_push_subscription", "TEXT", "TEXT"),
+                ("toss_anon_key", "VARCHAR(255)", "VARCHAR(255)"),
             ],
         }
 

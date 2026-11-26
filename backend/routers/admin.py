@@ -658,6 +658,26 @@ def update_user_feedback_status(
     return {"success": True, "id": row.id, "status": row.status}
 
 
+@router.get("/toss-push/status", dependencies=[Depends(_verify_admin_key)])
+def get_toss_push_admin_status(db: Session = Depends(get_db_session)):
+    from backend.database import models
+    from backend.services.toss_push_service import get_toss_push_status
+
+    registered_count = (
+        db.query(models.DeviceToken)
+        .filter(
+            models.DeviceToken.is_active == True,
+            models.DeviceToken.toss_anon_key.isnot(None),
+            models.DeviceToken.toss_anon_key != "",
+        )
+        .count()
+    )
+    return {
+        **get_toss_push_status(),
+        "registered_toss_devices": int(registered_count),
+    }
+
+
 @router.get("/telegram/status", dependencies=[Depends(_verify_admin_key)])
 def get_telegram_broadcast_status():
     from backend.services.telegram_channel import get_telegram_status

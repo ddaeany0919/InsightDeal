@@ -28,6 +28,7 @@ import {
   formatPrice,
   apiUrl,
   getOrCreateWebDeviceUuid,
+  getStoredWebDeviceToken,
   ensureWebDeviceAuth,
   authFetch,
   ensureWebPushSubscribed,
@@ -41,10 +42,13 @@ import {
   normalizePriceRange,
 } from "./lib/utils";
 import {
+  hasTossBridge,
   isTossMiniAppEnv,
   logTossScreen,
   logTossClick,
   maybeRequestTossReview,
+  maybeShowTossInterstitialOnDetailClose,
+  syncTossAnonymousKeyToBackend,
 } from "./lib/tossBridge";
 
 import PrivacyModal from "./components/PrivacyModal";
@@ -2261,6 +2265,7 @@ export default function Home() {
 
   const handleCloseDealModal = useCallback(() => {
     setSelectedDeal(null);
+    maybeShowTossInterstitialOnDetailClose();
   }, []);
 
   const handleTargetAlertSaved = useCallback(
@@ -2444,6 +2449,9 @@ export default function Home() {
         setIsTossMiniApp(true);
       }
       logTossScreen("home_feed_view", { tab: "전체" });
+      if (hasTossBridge() && getStoredWebDeviceToken()) {
+        void syncTossAnonymousKeyToBackend();
+      }
       urlSyncReadyRef.current = true;
     }
 

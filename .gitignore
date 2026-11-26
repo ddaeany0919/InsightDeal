@@ -49,6 +49,8 @@ firebase-service-account.json
 *-firebase-adminsdk-*.json
 *.pem
 *.key
+*.crt
+backend/certs/
 vapid*.json
 vapid_keys*
 secrets/

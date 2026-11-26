@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef, useId, useCallback, useSyncExternalStore } from "react";
-import { Bell, CheckCheck, Trash2, RefreshCw } from "lucide-react";
+import { Bell, CheckCheck, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import type { Deal, NotificationLogItem, WishlistApiItem } from "../lib/types";
 import {
@@ -15,9 +15,12 @@ import {
 } from "../lib/utils";
 import {
   appendTossDebugQuery,
+  isTossMiniAppEnv,
   logTossClick,
   maybeRequestTossReview,
   openExternalUrlInToss,
+  requestTossPushAgreement,
+  syncTossAnonymousKeyToBackend,
 } from "../lib/tossBridge";
 import PopularKeywordPresets from "./PopularKeywordPresets";
 import { useDialogA11y } from "../lib/useDialogA11y";
@@ -103,6 +106,14 @@ export default function NotificationDrawer({
     subscribeNoop,
     () => appendTossDebugQuery("/settings/notifications"),
     () => "/settings/notifications"
+  );
+  const isTossMiniApp = useSyncExternalStore(
+    subscribeNoop,
+    () =>
+      isTossMiniAppEnv() ||
+      (typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("toss") === "1"),
+    () => process.env.NEXT_PUBLIC_TOSS_MINIAPP === "true"
   );
 
   useEffect(() => {
@@ -333,6 +344,7 @@ export default function NotificationDrawer({
       });
       if (nextEnabled) {
         maybeRequestTossReview();
+        void requestTossPushAgreement().then(() => syncTossAnonymousKeyToBackend());
       }
       return true;
     } catch {
@@ -814,6 +826,55 @@ export default function NotificationDrawer({
             onToggleKeyword={handleTogglePresetKeyword}
           />
         </div>
+
+        {!isTossMiniApp && (
+          <a
+            href="https://t.me/eolmande_hotdeal"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="telegram-channel-cta"
+            className="bounce-click"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "12px",
+              padding: "12px 14px",
+              borderRadius: "14px",
+              background: "var(--surface-subtle)",
+              border: "1px solid var(--card-border)",
+              textDecoration: "none",
+              color: "var(--text-main)",
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
+              <span style={{ fontSize: "0.84rem", fontWeight: 800, color: "var(--text-main)" }}>
+                📢 텔레그램 실시간 초특가 채널
+              </span>
+              <span style={{ fontSize: "0.75rem", color: "var(--text-sub)", lineHeight: 1.4 }}>
+                꿀딜 지수 100+ 검증된 초특가만 골라 보내드려요
+              </span>
+            </div>
+            <span
+              style={{
+                flexShrink: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                fontSize: "0.76rem",
+                fontWeight: 800,
+                color: "var(--accent)",
+                padding: "6px 10px",
+                borderRadius: "999px",
+                background: "var(--accent-soft-bg)",
+                border: "1px solid var(--accent-soft-border)",
+              }}
+            >
+              <span>구독하기</span>
+              <ExternalLink size={12} aria-hidden="true" />
+            </span>
+          </a>
+        )}
 
         {/* 정적 export 환경에서 존재하지 않는 RSC payload(__next.*.txt) 404 방지 */}
         <Link

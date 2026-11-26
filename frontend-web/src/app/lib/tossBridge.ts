@@ -30,6 +30,39 @@ export const TOSS_HOME_BANNER_AD_GROUP_ID = (
   "ait.v2.live.b3a879ee2cbd4df8"
 ).trim();
 
+export const TOSS_DETAIL_BANNER_AD_GROUP_ID = (
+  process.env.NEXT_PUBLIC_TOSS_DETAIL_BANNER_AD_GROUP_ID ||
+  "ait.v2.live.3599842d107c48bd"
+).trim();
+
+export const TOSS_INTERSTITIAL_AD_GROUP_ID = (
+  process.env.NEXT_PUBLIC_TOSS_INTERSTITIAL_AD_GROUP_ID ||
+  "ait.v2.live.ac45d5b23fb94fc7"
+).trim();
+
+export const TOSS_PUSH_TEMPLATE_CODE = (
+  process.env.NEXT_PUBLIC_TOSS_PUSH_TEMPLATE_CODE ||
+  "insightdeal-keyword-hotdeal"
+).trim();
+
+const INTERSTITIAL_DAILY_STORAGE_KEY = "insightdeal_toss_interstitial_daily";
+const INTERSTITIAL_MAX_PER_DAY = 2;
+const INTERSTITIAL_COOLDOWN_MS = 10 * 60 * 1000;
+const INTERSTITIAL_MIN_DETAIL_VIEWS = 3;
+
+const TOSS_ANON_SYNC_SESSION_KEY = "insightdeal_toss_anon_synced";
+const TOSS_PUSH_AGREEMENT_TIMEOUT_MS = 15000;
+
+let sessionDetailViews = 0;
+let interstitialLoaded = false;
+let interstitialLoading = false;
+let interstitialShowing = false;
+let interstitialLoadCleanup: (() => void) | null = null;
+
+let cachedAnonKey: string | null = null;
+let anonKeyPromise: Promise<string | null> | null = null;
+let anonSyncPromise: Promise<boolean> | null = null;
+
 /**
  * 실제 토스 앱(Apps in Toss 호스트 WebView) 브릿지가 주입된 런타임인지 판별합니다.
  * 일반 모바일/데스크톱 웹(insightdeal.vercel.app)에서는 항상 false를 반환하여
@@ -372,4 +405,367 @@ export function appendTossDebugQuery(path: string): string {
   } catch {
     return path;
   }
+}
+
+interface InterstitialDailyState {
+  date: string;
+  count: number;
+  lastShownAt: number;
+}
+
+function getKstDateKey(nowMs = Date.now()): string {
+  return new Date(nowMs + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function readInterstitialDailyState(nowMs = Date.now()): InterstitialDailyState {
+  const today = getKstDateKey(nowMs);
+  if (typeof window === "undefined") {
+    return { date: today, count: 0, lastShownAt: 0 };
+  }
+  try {
+    const raw = localStorage.getItem(INTERSTITIAL_DAILY_STORAGE_KEY);
+    if (!raw) return { date: today, count: 0, lastShownAt: 0 };
+    const parsed = JSON.parse(raw) as Partial<InterstitialDailyState>;
+    const sameDay = parsed?.date === today;
+    return {
+      date: today,
+      count: sameDay ? Math.max(0, Number(parsed?.count) || 0) : 0,
+      lastShownAt: Math.max(0, Number(parsed?.lastShownAt) || 0),
+    };
+  } catch {
+    return { date: today, count: 0, lastShownAt: 0 };
+  }
+}
+
+function canShowInterstitialByQuota(nowMs = Date.now()): boolean {
+  const st = readInterstitialDailyState(nowMs);
+  if (st.count >= INTERSTITIAL_MAX_PER_DAY) return false;
+  if (st.lastShownAt > 0 && nowMs - st.lastShownAt < INTERSTITIAL_COOLDOWN_MS) {
+    return false;
+  }
+  return true;
+}
+
+function markInterstitialShown(nowMs = Date.now()): void {
+  if (typeof window === "undefined") return;
+  try {
+    const st = readInterstitialDailyState(nowMs);
+    const next: InterstitialDailyState = {
+      date: getKstDateKey(nowMs),
+      count: st.count + 1,
+      lastShownAt: nowMs,
+    };
+    localStorage.setItem(INTERSTITIAL_DAILY_STORAGE_KEY, JSON.stringify(next));
+  } catch {}
+}
+
+/**
+ * 전면형 인앱 광고를 사전 로드합니다. (일일 상한·쿨다운 미충족 또는 미지원 환경에서는 호출하지 않음)
+ */
+export function preloadTossInterstitial(): void {
+  if (typeof window === "undefined") return;
+  if (!hasTossBridge() && !hasTossAdsHost()) return;
+  if (!TOSS_INTERSTITIAL_AD_GROUP_ID) return;
+  if (interstitialLoaded || interstitialLoading || interstitialShowing) return;
+  if (!canShowInterstitialByQuota()) return;
+
+  interstitialLoading = true;
+  void loadTossSdk()
+    .then((sdk) => {
+      if (
+        !sdk?.loadFullScreenAd?.isSupported?.() ||
+        !sdk?.showFullScreenAd?.isSupported?.()
+      ) {
+        interstitialLoading = false;
+        return;
+      }
+      try {
+        interstitialLoadCleanup = sdk.loadFullScreenAd({
+          options: { adGroupId: TOSS_INTERSTITIAL_AD_GROUP_ID },
+          onEvent: (event) => {
+            if (event?.type === "loaded") {
+              interstitialLoaded = true;
+              interstitialLoading = false;
+              const cleanup = interstitialLoadCleanup;
+              interstitialLoadCleanup = null;
+              cleanup?.();
+            }
+          },
+          onError: () => {
+            interstitialLoaded = false;
+            interstitialLoading = false;
+            const cleanup = interstitialLoadCleanup;
+            interstitialLoadCleanup = null;
+            cleanup?.();
+          },
+        });
+      } catch {
+        interstitialLoaded = false;
+        interstitialLoading = false;
+      }
+    })
+    .catch(() => {
+      interstitialLoading = false;
+    });
+}
+
+/**
+ * 핫딜 상세 진입 횟수를 기록하고 2번째 상세 탐색 시점부터 전면 광고를 사전 로드합니다.
+ */
+export function recordDealDetailViewAndPreload(): void {
+  if (typeof window === "undefined") return;
+  if (!hasTossBridge() && !hasTossAdsHost()) return;
+  sessionDetailViews += 1;
+  if (sessionDetailViews >= INTERSTITIAL_MIN_DETAIL_VIEWS - 1) {
+    preloadTossInterstitial();
+  }
+}
+
+/**
+ * 사용자가 상세 모달을 닫고 피드로 복귀하는 자연스러운 전환 시점에만
+ * 소프트 전면형 광고(일 최대 2회 · 10분 쿨다운 · 3회 이상 탐색 후)를 노출합니다.
+ */
+export function maybeShowTossInterstitialOnDetailClose(): boolean {
+  if (typeof window === "undefined") return false;
+  if (!hasTossBridge() && !hasTossAdsHost()) return false;
+  if (!TOSS_INTERSTITIAL_AD_GROUP_ID) return false;
+  if (sessionDetailViews < INTERSTITIAL_MIN_DETAIL_VIEWS) return false;
+  if (!interstitialLoaded || interstitialShowing) return false;
+  if (!canShowInterstitialByQuota()) return false;
+
+  interstitialShowing = true;
+  interstitialLoaded = false;
+
+  void loadTossSdk()
+    .then((sdk) => {
+      if (!sdk?.showFullScreenAd?.isSupported?.()) {
+        interstitialShowing = false;
+        return;
+      }
+      let recorded = false;
+      let showCleanup: (() => void) | null = null;
+
+      const recordShowOnce = () => {
+        if (recorded) return;
+        recorded = true;
+        markInterstitialShown();
+        logTossClick("interstitial_ad_show", {
+          ad_group_id: TOSS_INTERSTITIAL_AD_GROUP_ID,
+        });
+      };
+
+      const finish = () => {
+        interstitialShowing = false;
+        const cleanup = showCleanup;
+        showCleanup = null;
+        cleanup?.();
+      };
+
+      try {
+        showCleanup = sdk.showFullScreenAd({
+          options: { adGroupId: TOSS_INTERSTITIAL_AD_GROUP_ID },
+          onEvent: (event) => {
+            if (event?.type === "show" || event?.type === "impression") {
+              recordShowOnce();
+            } else if (event?.type === "dismissed") {
+              recordShowOnce();
+              finish();
+            } else if (event?.type === "failedToShow") {
+              finish();
+            }
+          },
+          onError: () => {
+            finish();
+          },
+        });
+      } catch {
+        finish();
+      }
+    })
+    .catch(() => {
+      interstitialShowing = false;
+    });
+
+  return true;
+}
+
+/**
+ * 테스트 격리를 위해 소프트 전면 광고 세션 상태를 초기화합니다.
+ */
+export function resetTossInterstitialState(): void {
+  sessionDetailViews = 0;
+  interstitialLoaded = false;
+  interstitialLoading = false;
+  interstitialShowing = false;
+  interstitialLoadCleanup?.();
+  interstitialLoadCleanup = null;
+}
+
+/**
+ * 토스 로그인 없이 미니앱 사용자의 익명 푸시 식별 키(`x-anon-key`)를 조회합니다.
+ */
+export async function getTossAnonymousKey(): Promise<string | null> {
+  if (typeof window === "undefined" || !hasTossBridge()) return null;
+  if (cachedAnonKey) return cachedAnonKey;
+  if (anonKeyPromise) return anonKeyPromise;
+
+  anonKeyPromise = (async (): Promise<string | null> => {
+    const sdk = (await loadTossSdk()) as (TossSdkModule & {
+      getAnonymousKey?: (() => Promise<unknown>) & { isSupported?: () => boolean };
+    }) | null;
+    if (!sdk) return null;
+
+    const fetcher =
+      sdk.User?.getAnonymousKey?.isSupported?.()
+        ? () => sdk.User.getAnonymousKey()
+        : sdk.getAnonymousKey?.isSupported?.()
+          ? () => sdk.getAnonymousKey!()
+          : null;
+
+    if (!fetcher) return null;
+
+    try {
+      const res = (await fetcher()) as { type?: string; hash?: string } | undefined | null;
+      if (res && typeof res === "object" && res.type === "HASH" && typeof res.hash === "string") {
+        const clean = res.hash.trim();
+        if (clean) {
+          cachedAnonKey = clean;
+          return clean;
+        }
+      }
+    } catch {}
+    return null;
+  })().finally(() => {
+    anonKeyPromise = null;
+  });
+
+  return anonKeyPromise;
+}
+
+export type TossPushAgreementResult = "agreed" | "rejected" | "unsupported" | "error";
+
+/**
+ * 기능성 푸시(`insightdeal-keyword-hotdeal`) 수신 동의를 토스 앱 바텀시트로 요청합니다.
+ */
+export async function requestTossPushAgreement(options?: {
+  force?: boolean;
+}): Promise<TossPushAgreementResult> {
+  if (typeof window === "undefined" || !hasTossBridge()) return "unsupported";
+  if (!TOSS_PUSH_TEMPLATE_CODE) return "unsupported";
+
+  const cacheKey = `insightdeal_toss_push_agreed_${TOSS_PUSH_TEMPLATE_CODE}`;
+  if (!options?.force) {
+    try {
+      if (localStorage.getItem(cacheKey) === "1") {
+        return "agreed";
+      }
+    } catch {}
+  }
+
+  const sdk = (await loadTossSdk()) as (TossSdkModule & {
+    requestNotificationAgreement?: TossSdkModule["Notification"]["requestAgreement"];
+  }) | null;
+  if (!sdk) return "unsupported";
+
+  const requestFn = sdk.Notification?.requestAgreement?.isSupported?.()
+    ? sdk.Notification.requestAgreement
+    : sdk.requestNotificationAgreement?.isSupported?.()
+      ? sdk.requestNotificationAgreement
+      : null;
+
+  if (!requestFn) return "unsupported";
+
+  return await new Promise<TossPushAgreementResult>((resolve) => {
+    let settled = false;
+    let cleanup: (() => void) | null = null;
+    const timerId = window.setTimeout(() => {
+      finish("error");
+    }, TOSS_PUSH_AGREEMENT_TIMEOUT_MS);
+
+    const finish = (outcome: TossPushAgreementResult) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timerId);
+      const unsub = cleanup;
+      cleanup = null;
+      unsub?.();
+      resolve(outcome);
+    };
+
+    try {
+      cleanup = requestFn({
+        options: { templateCode: TOSS_PUSH_TEMPLATE_CODE },
+        onEvent: ({ type }) => {
+          if (type === "newAgreement" || type === "alreadyAgreed") {
+            try {
+              localStorage.setItem(cacheKey, "1");
+            } catch {}
+            finish("agreed");
+          } else if (type === "agreementRejected") {
+            finish("rejected");
+          }
+        },
+        onError: () => {
+          finish("error");
+        },
+      });
+    } catch {
+      finish("error");
+    }
+  });
+}
+
+/**
+ * 토스 익명 푸시 키(`x-anon-key`)를 백엔드 `DeviceToken`에 동기화합니다.
+ */
+export async function syncTossAnonymousKeyToBackend(): Promise<boolean> {
+  if (typeof window === "undefined" || !hasTossBridge()) return false;
+  if (anonSyncPromise) return anonSyncPromise;
+
+  anonSyncPromise = (async (): Promise<boolean> => {
+    const anonKey = await getTossAnonymousKey();
+    if (!anonKey) return false;
+
+    const { ensureWebDeviceAuth, authFetch } = await import("./utils");
+    const auth = await ensureWebDeviceAuth();
+    const pairKey = `${auth.deviceUuid}:${anonKey}`;
+    try {
+      if (sessionStorage.getItem(TOSS_ANON_SYNC_SESSION_KEY) === pairKey) {
+        return true;
+      }
+    } catch {}
+
+    const res = await authFetch((latestAuth) => ({
+      pathOrUrl: "/api/push/device",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          device_uuid: latestAuth.deviceUuid,
+          toss_anon_key: anonKey,
+        }),
+      },
+    }));
+    if (!res.ok) return false;
+
+    try {
+      sessionStorage.setItem(TOSS_ANON_SYNC_SESSION_KEY, pairKey);
+    } catch {}
+    return true;
+  })()
+    .catch(() => false)
+    .finally(() => {
+      anonSyncPromise = null;
+    });
+
+  return anonSyncPromise;
+}
+
+/**
+ * 테스트 격리를 위해 토스 익명 키/푸시 동기화 캐시를 초기화합니다.
+ */
+export function resetTossPushHelpersForTest(): void {
+  cachedAnonKey = null;
+  anonKeyPromise = null;
+  anonSyncPromise = null;
 }

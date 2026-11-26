@@ -21,6 +21,8 @@ import {
   logTossClick,
   maybeRequestTossReview,
   copyTextSafe,
+  requestTossPushAgreement,
+  syncTossAnonymousKeyToBackend,
 } from '../../lib/tossBridge';
 import PopularKeywordPresets from '../../components/PopularKeywordPresets';
 
@@ -144,6 +146,9 @@ export default function NotificationSettingsPage() {
   const [weekendDndEnd, setWeekendDndEnd] = useState('09:00');
   const [testPushMsg, setTestPushMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [isSendingTest, setIsSendingTest] = useState(false);
+  const [hasTossPush, setHasTossPush] = useState(false);
+  const [isRequestingTossPush, setIsRequestingTossPush] = useState(false);
+  const [tossAgreementMsg, setTossAgreementMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
@@ -189,6 +194,9 @@ export default function NotificationSettingsPage() {
         setIsDndEnabled(Boolean(data.dnd_enabled));
         setDndStart(data.dnd_start_time || '21:00');
         setDndEnd(data.dnd_end_time || '08:00');
+        if (Boolean(data.has_toss_push)) {
+          setHasTossPush(true);
+        }
         if (data.dnd_settings_json) {
           const parsedWeek = parseWeekdayWeekendDnd(
             data.dnd_settings_json,
@@ -259,6 +267,9 @@ export default function NotificationSettingsPage() {
         : null;
     if (isTossMiniAppEnv() || urlParams?.get('toss') === '1') {
       setIsTossMiniApp(true);
+      void syncTossAnonymousKeyToBackend().then((synced) => {
+        if (synced) setHasTossPush(true);
+      });
     }
     logTossScreen('keyword_settings_view');
     const status = getWebPushSupportStatus();
@@ -482,6 +493,13 @@ export default function NotificationSettingsPage() {
         button_name: 'settings_keyword_submit',
       });
       maybeRequestTossReview();
+      if (isTossMiniApp) {
+        void requestTossPushAgreement()
+          .then(() => syncTossAnonymousKeyToBackend())
+          .then((synced) => {
+            if (synced) setHasTossPush(true);
+          });
+      }
       setLiveAnnouncement(`'${newKeywordStr}' 알림 키워드를 등록했어요.`);
       setKeywordInput('');
       setExcludeInput('');
@@ -714,6 +732,13 @@ export default function NotificationSettingsPage() {
           enabled: true,
         });
         maybeRequestTossReview();
+        if (isTossMiniApp) {
+          void requestTossPushAgreement()
+            .then(() => syncTossAnonymousKeyToBackend())
+            .then((synced) => {
+              if (synced) setHasTossPush(true);
+            });
+        }
         setLiveAnnouncement(`'${presetKeyword}' 인기 키워드 알림을 켰어요.`);
         return true;
       }
@@ -1155,15 +1180,85 @@ export default function NotificationSettingsPage() {
                 style={{
                   background: 'var(--accent-soft-bg)',
                   border: '1px solid var(--accent-soft-border)',
-                  padding: '12px 14px',
+                  padding: '14px',
                   borderRadius: '12px',
                   fontSize: '0.86rem',
-                  color: 'var(--accent)',
+                  color: 'var(--text-main)',
                   fontWeight: 600,
                   lineHeight: 1.5,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  alignItems: 'flex-start',
                 }}
               >
-                토스 미니앱 환경에서는 브라우저 웹 푸시 대신 아래 키워드 등록 및 상단 알림함 기능을 이용해 주세요.
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ color: 'var(--accent)', fontWeight: 800 }}>
+                    {hasTossPush ? '토스 푸시 연동됨' : '토스 알림 동의 필요'}
+                  </span>
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-sub)' }}>
+                    키워드를 등록하고 토스 알림에 동의하면 새 특가가 뜰 때 토스 앱 푸시와 알림함으로 바로 알려드려요.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={isRequestingTossPush}
+                  onClick={async () => {
+                    if (isRequestingTossPush) return;
+                    setIsRequestingTossPush(true);
+                    setTossAgreementMsg(null);
+                    try {
+                      const outcome = await requestTossPushAgreement({ force: true });
+                      const synced = await syncTossAnonymousKeyToBackend();
+                      if (synced) setHasTossPush(true);
+                      if (outcome === 'agreed') {
+                        setTossAgreementMsg({
+                          ok: true,
+                          text: '토스 푸시 알림 동의를 완료했어요! 등록한 키워드의 특가가 올라오면 바로 알려드릴게요.',
+                        });
+                      } else if (outcome === 'rejected') {
+                        setTossAgreementMsg({
+                          ok: false,
+                          text: '토스 알림 동의가 거부되었어요. 원하실 때 다시 눌러 동의할 수 있어요.',
+                        });
+                      } else {
+                        setTossAgreementMsg({
+                          ok: false,
+                          text: '현재 토스 앱 버전에서는 푸시 동의 시트를 열 수 없어요. 키워드 내역은 알림함에 계속 기록됩니다.',
+                        });
+                      }
+                    } finally {
+                      setIsRequestingTossPush(false);
+                    }
+                  }}
+                  className="btn-primary"
+                  style={{ minHeight: '44px', borderRadius: '10px', fontSize: '0.82rem' }}
+                >
+                  {isRequestingTossPush
+                    ? '확인 중...'
+                    : hasTossPush
+                      ? '토스 푸시 알림 동의 다시 확인'
+                      : '토스 푸시 알림 동의하기'}
+                </button>
+                {tossAgreementMsg && (
+                  <div
+                    role="status"
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '10px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      background: tossAgreementMsg.ok ? 'var(--card-bg)' : 'var(--danger-bg)',
+                      border: tossAgreementMsg.ok
+                        ? '1px solid var(--accent-soft-border)'
+                        : '1px solid var(--danger-border)',
+                      color: tossAgreementMsg.ok ? 'var(--accent)' : 'var(--danger-text)',
+                    }}
+                  >
+                    {tossAgreementMsg.text}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1918,6 +2013,47 @@ export default function NotificationSettingsPage() {
               </div>
             )}
           </section>
+
+          {!isTossMiniApp && (
+            <section
+              className="glass-panel"
+              data-testid="telegram-channel-cta"
+              style={{
+                borderRadius: '18px',
+                padding: '22px 24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '14px',
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <h2 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                  📢 텔레그램 실시간 초특가 채널
+                </h2>
+                <p style={{ color: 'var(--text-sub)', fontSize: '0.86rem', lineHeight: 1.45 }}>
+                  꿀딜 지수 100+ 검증된 초특가만 텔레그램(@eolmande_hotdeal)으로 바로 받아보세요
+                </p>
+              </div>
+              <a
+                href="https://t.me/eolmande_hotdeal"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary bounce-click"
+                style={{
+                  minHeight: '44px',
+                  padding: '10px 18px',
+                  borderRadius: '12px',
+                  fontSize: '0.86rem',
+                  fontWeight: 800,
+                  textDecoration: 'none',
+                }}
+              >
+                구독하기 ↗
+              </a>
+            </section>
+          )}
         </main>
       </div>
     </div>

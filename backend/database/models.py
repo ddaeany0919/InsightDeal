@@ -146,6 +146,7 @@ class DeviceToken(Base):
     dnd_end_time = Column(String(5), default="08:00", nullable=False) # [DND] 방해금지 종료 (ex: "07:00")
     dnd_settings_json = Column(TEXT, nullable=True) # [DND] 요일별 상세 방해금지 설정 JSON (ex: '{"mon": {"enabled": true, "start": "22:00", "end": "08:00"}, ...}')
     web_push_subscription = Column(TEXT, nullable=True) # [Web Push] 웹 브라우저 구독 정보 JSON (endpoint, keys)
+    toss_anon_key = Column(String(255), nullable=True, index=True) # [Apps in Toss] 비로그인 유저 익명 푸시 키 (x-anon-key)
     registered_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     
     keywords = relationship("PushKeyword", back_populates="device_token", cascade="all, delete-orphan")

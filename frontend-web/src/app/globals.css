@@ -4380,6 +4380,11 @@ mark.search-highlight {
   width: 100%;
 }
 
+.toss-ad-banner-slot--detail {
+  flex-shrink: 0;
+  margin: 4px 0 8px;
+}
+
 /* 최근 본 핫딜 가로 스크롤 초슬림 1줄 트레이 */
 .recent-deals-panel {
   padding: 8px 12px;

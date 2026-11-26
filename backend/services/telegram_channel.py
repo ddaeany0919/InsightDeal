@@ -302,6 +302,7 @@ def format_telegram_deal_message(
     if ai_summary:
         lines.append(f"💡 {html.escape(_truncate_plain(ai_summary, 240))}")
     lines.append(f'👉 <a href="{html.escape(share_url, quote=True)}">얼만데에서 상세·시세 보기</a>')
+    lines.append("<i>※ 제휴 링크를 통해 구매 시 일정액의 수수료를 제공받을 수 있습니다.</i>")
 
     text = "\n".join(lines)
     buttons: list[dict[str, str]] = [

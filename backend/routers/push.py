@@ -67,6 +67,7 @@ def _validate_dnd_json(value: Optional[str]) -> Optional[str]:
 class RegisterDeviceReq(BaseModel):
     device_uuid: Optional[str] = None
     fcm_token: Optional[str] = None
+    toss_anon_key: Optional[str] = None
     night_push_consent: Optional[bool] = None
     dnd_enabled: Optional[bool] = None
     dnd_start_time: Optional[str] = None
@@ -129,9 +130,15 @@ def register_device(
 
         device_token = create_device_token(req_uuid)
         clean_fcm = req.fcm_token.strip() if isinstance(req.fcm_token, str) and req.fcm_token.strip() else None
+        clean_toss_anon = (
+            req.toss_anon_key.strip()[:255]
+            if isinstance(req.toss_anon_key, str) and req.toss_anon_key.strip()
+            else None
+        )
         device = models.DeviceToken(
             device_uuid=req_uuid,
             fcm_token=clean_fcm,
+            toss_anon_key=clean_toss_anon,
             night_push_consent=bool(req.night_push_consent) if req.night_push_consent is not None else False,
             dnd_enabled=bool(req.dnd_enabled) if req.dnd_enabled is not None else False,
             dnd_start_time=validated_start or "21:00",
@@ -147,15 +154,18 @@ def register_device(
             "message": "Device registered",
             "device_uuid": req_uuid,
             "device_token": device_token,
+            "has_toss_push": bool(device.toss_anon_key),
             "registered_at": to_utc_iso(device.registered_at),
         }
 
     auth_uuid = verify_device_token_value(x_device_token)
     assert_device_owner(auth_uuid, device.device_uuid)
 
-    # fcm_token 보호 가드: None이거나 빈 문자열/공백이면 기존 DB fcm_token 절대 덮어쓰기 금지
+    # fcm_token / toss_anon_key 보호 가드: None이거나 빈 문자열/공백이면 기존 DB 토큰 절대 덮어쓰기 금지
     if isinstance(req.fcm_token, str) and req.fcm_token.strip():
         device.fcm_token = req.fcm_token.strip()
+    if isinstance(req.toss_anon_key, str) and req.toss_anon_key.strip():
+        device.toss_anon_key = req.toss_anon_key.strip()[:255]
 
     if req.night_push_consent is not None:
         device.night_push_consent = req.night_push_consent
@@ -175,6 +185,7 @@ def register_device(
         "success": True,
         "message": "Device registered",
         "device_uuid": device.device_uuid,
+        "has_toss_push": bool(device.toss_anon_key),
         "registered_at": to_utc_iso(device.registered_at),
     }
 
@@ -241,6 +252,7 @@ def get_keywords(
             "dnd_end_time": "08:00",
             "dnd_settings_json": None,
             "night_push_consent": False,
+            "has_toss_push": False,
         }
     return {
         "keywords": [k.keyword for k in device.keywords if k.is_active],
@@ -258,6 +270,7 @@ def get_keywords(
         "dnd_end_time": device.dnd_end_time,
         "dnd_settings_json": device.dnd_settings_json,
         "night_push_consent": device.night_push_consent,
+        "has_toss_push": bool(getattr(device, "toss_anon_key", None)),
     }
 
 
@@ -460,6 +473,7 @@ def send_test_push(
     test_body = "얼만데 테스트 알림이에요! 실시간 특가 알림이 정상 작동 중입니다."
     sent_web = False
     sent_fcm = False
+    sent_toss = False
 
     db.add(
         models.NotificationAlert(
@@ -510,14 +524,31 @@ def send_test_push(
         except Exception as exc:
             logger.warning(f"테스트 FCM 푸시 발송 실패 ({target_uuid}): {exc}")
 
+    if getattr(device, "toss_anon_key", None):
+        try:
+            from backend.services.toss_push_service import send_toss_push_message
+
+            toss_res = send_toss_push_message(
+                device.toss_anon_key,
+                context={"keyword": "테스트", "dealId": "0"},
+            )
+            sent_toss = bool(toss_res.get("sent"))
+        except Exception as exc:
+            logger.warning(f"테스트 토스 푸시 발송 실패 ({target_uuid}): {exc}")
+
     return {
         "success": True,
         "sent_web": sent_web,
         "sent_fcm": sent_fcm,
-        "has_subscription": bool(device.web_push_subscription or device.fcm_token),
+        "sent_toss": sent_toss,
+        "has_subscription": bool(
+            device.web_push_subscription
+            or device.fcm_token
+            or getattr(device, "toss_anon_key", None)
+        ),
         "message": (
             "테스트 푸시 알림을 발송했어요!"
-            if (sent_web or sent_fcm)
+            if (sent_web or sent_fcm or sent_toss)
             else "인앱 알림함에 테스트 알림을 기록했어요. (푸시 권한이 꺼져 있으면 브라우저 알림은 울리지 않을 수 있어요)"
         ),
     }

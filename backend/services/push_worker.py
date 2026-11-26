@@ -377,6 +377,7 @@ def background_trigger_keyword_alarms(
         "fcm_queued": 0,
         "fcm_sent": 0,
         "web_push_sent": 0,
+        "toss_push_sent": 0,
     }
     try:
         deal = db.query(Deal).filter(Deal.id == deal_id).first()
@@ -398,6 +399,10 @@ def background_trigger_keyword_alarms(
         deal_krw_est = _estimate_krw_price(deal_price_int, deal_currency)
 
         from backend.services.notification_service import NotificationService
+        from backend.services.toss_push_service import (
+            sanitize_toss_keyword,
+            send_toss_push_message,
+        )
 
         messages = []
 
@@ -476,6 +481,17 @@ def background_trigger_keyword_alarms(
                 )
                 if sent_web:
                     stats["web_push_sent"] += 1
+                    dispatched_channel = True
+
+            toss_anon_key = getattr(device, "toss_anon_key", None)
+            if toss_anon_key:
+                short_kw = sanitize_toss_keyword(display_kw.split(" (")[0] or kw.keyword)
+                toss_res = send_toss_push_message(
+                    toss_anon_key,
+                    context={"keyword": short_kw, "dealId": str(deal.id)},
+                )
+                if toss_res.get("sent"):
+                    stats["toss_push_sent"] += 1
                     dispatched_channel = True
 
             if dispatched_channel:
@@ -585,6 +601,17 @@ def background_trigger_keyword_alarms(
                     )
                     if sent_web:
                         stats["web_push_sent"] += 1
+                        dispatched_wl_channel = True
+
+                toss_anon_key = getattr(device, "toss_anon_key", None)
+                if toss_anon_key:
+                    short_kw = sanitize_toss_keyword(wl.keyword)
+                    toss_res = send_toss_push_message(
+                        toss_anon_key,
+                        context={"keyword": short_kw, "dealId": str(deal.id)},
+                    )
+                    if toss_res.get("sent"):
+                        stats["toss_push_sent"] += 1
                         dispatched_wl_channel = True
 
                 if dispatched_wl_channel:

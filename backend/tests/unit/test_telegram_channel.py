@@ -117,6 +117,7 @@ def test_telegram_format_html_escape_and_currency(monkeypatch):
     assert "&lt;2TB&gt;" in msg["text"]
     assert "$89.99" in msg["text"]
     assert "https://eolmande.pages.dev/s/999" in msg["text"]
+    assert "제휴 링크를 통해 구매 시 일정액의 수수료를 제공받을 수 있습니다." in msg["text"]
     assert msg["photo_url"] is None  # small_ 저화질 썸네일은 사진 대신 링크 미리보기/메시지 사용
     buttons = msg["reply_markup"]["inline_keyboard"][0]
     assert buttons[0]["url"] == "https://eolmande.pages.dev/s/999"
@@ -169,24 +170,32 @@ def test_admin_telegram_routes_auth_status_and_dry_run_test(tmp_path, monkeypatc
             db.add(comm)
             db.commit()
             db.refresh(comm)
-        deal = Deal(
-            source_community_id=comm.id,
-            title="[네이버] 삼다수 2L 24병",
-            post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=88888",
-            ecommerce_link="https://brand.naver.com/samdasoo/products/123",
-            shop_name="네이버",
-            price="15900",
-            shipping_fee="무료배송",
-            currency="KRW",
-            image_url="https://cdn.example.com/samdasoo.jpg",
-            category="식품",
-            is_closed=False,
-            honey_score=150,
-            is_super_hotdeal=True,
+        deal_link = "https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=88888"
+        deal_title = "[네이버] 삼다수 2L 24병"
+        deal = (
+            db.query(Deal)
+            .filter(Deal.post_link == deal_link, Deal.title == deal_title)
+            .first()
         )
-        db.add(deal)
-        db.commit()
-        db.refresh(deal)
+        if not deal:
+            deal = Deal(
+                source_community_id=comm.id,
+                title=deal_title,
+                post_link=deal_link,
+                ecommerce_link="https://brand.naver.com/samdasoo/products/123",
+                shop_name="네이버",
+                price="15900",
+                shipping_fee="무료배송",
+                currency="KRW",
+                image_url="https://cdn.example.com/samdasoo.jpg",
+                category="식품",
+                is_closed=False,
+                honey_score=150,
+                is_super_hotdeal=True,
+            )
+            db.add(deal)
+            db.commit()
+            db.refresh(deal)
         created_id = deal.id
     finally:
         db.close()
