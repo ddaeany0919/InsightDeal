@@ -276,6 +276,8 @@ def test_bridge_stale_deals_expire_and_loader_skips_fmkorea(monkeypatch):
     targets = sched_main._load_recent_open_deals_sync()
     target_urls = {t[1] for t in targets}
     assert "https://www.fmkorea.com/1060000001" not in target_urls
+    assert "https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=1" not in target_urls
+    assert "https://quasarzone.com/bbs/qb_saleinfo/views/2" not in target_urls
     assert "https://bbs.ruliweb.com/market/board/1020/read/109000" in target_urls
 
     expired = sched_main._auto_expire_stale_deals_sync(max_age_days=14, bridge_max_age_days=5)

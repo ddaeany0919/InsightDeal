@@ -403,6 +403,8 @@ def _load_recent_open_deals_sync() -> list[tuple[int, str, str | None, str]]:
                 Deal.indexed_at >= target_date,
                 ~Deal.post_link.contains("fmkorea.com"),
                 ~Deal.post_link.contains("fmkorea.org"),
+                ~Deal.post_link.contains("ppomppu.co.kr"),
+                ~Deal.post_link.contains("quasarzone.com"),
             )
             .order_by(Deal.indexed_at.desc())
             .limit(200)
@@ -589,30 +591,37 @@ def _apply_validator_result_db_sync(
 
 
 async def validate_closed_deals():
-    """과거 핫딜(3일 이내) 품절 상태(Ping) 검증 데몬 (병합 서브 딜 및 삭제 뱃지 실시간 소거 및 자가치유 탑재)"""
+    """과거 핫딜(7일 이내) 품절 상태(Ping) 검증 데몬 (병합 서브 딜 및 삭제 뱃지 실시간 소거 및 자가치유 탑재)"""
+    from urllib.parse import urlparse
     from curl_cffi.requests import AsyncSession
 
     try:
-        logger.info("🔍 [Background] 과거 핫딜(3일 이내) 품절 상태 검증 데몬 가동")
+        logger.info("🔍 [Background] 과거 핫딜(7일 이내) 품절 상태 검증 데몬 가동")
+        stale_expired = await _run_bg_blocking(_auto_expire_stale_deals_sync, 14, 5)
         deal_targets = await _run_bg_blocking(_load_recent_open_deals_sync)
         await asyncio.sleep(0)
 
         closed_count = 0
+        host_err_counts: dict[str, int] = {}
         headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
         }
 
-        async with AsyncSession(impersonate='chrome120', timeout=10.0) as client:
+        async with AsyncSession(impersonate='chrome120', timeout=6.0) as client:
             for deal_id, post_link, orig_merged_str, deal_title in deal_targets:
                 try:
                     async def check_url_deleted(url: str) -> bool:
                         if not url or url == "#":
                             return True
-                        if "fmkorea" in url:
+                        url_low = url.lower()
+                        if any(h in url_low for h in ("fmkorea", "ppomppu.co.kr", "quasarzone.com")):
+                            return False
+                        host = urlparse(url).netloc.lower()
+                        if host and host_err_counts.get(host, 0) >= 3:
                             return False
                         try:
-                            await asyncio.sleep(0.4)
+                            await asyncio.sleep(0.25)
                             req_headers = headers.copy()
                             if "ppomppu" in url:
                                 req_headers["Referer"] = "https://www.ppomppu.co.kr/"
@@ -635,9 +644,15 @@ async def validate_closed_deals():
                                     mob_headers["Referer"] = "https://m.ppomppu.co.kr/"
                                     resp = await client.get(mob_u, headers=mob_headers)
                             if resp.status_code == 404:
+                                if host:
+                                    host_err_counts[host] = 0
                                 return True
                             elif resp.status_code in [403, 430]:
+                                if host:
+                                    host_err_counts[host] = 0
                                 return False
+                            if host:
+                                host_err_counts[host] = 0
 
                             resp_text = _decode_validator_html(resp.content, str(resp.url))
 
@@ -662,6 +677,8 @@ async def validate_closed_deals():
                             await asyncio.sleep(0)
                             return is_closed_html
                         except Exception as e:
+                            if host:
+                                host_err_counts[host] = host_err_counts.get(host, 0) + 1
                             logger.error(f"[Validator Ping Error] {url}: {e}")
                             return False
 
@@ -706,7 +723,6 @@ async def validate_closed_deals():
                 except Exception as deal_err:
                     logger.error(f"[Validator Deal Error] Deal ID {deal_id}: {deal_err}")
 
-        stale_expired = await _run_bg_blocking(_auto_expire_stale_deals_sync, 14, 5)
         logger.info(f"✅ 상태 검증 완료: 총 {len(deal_targets)}개 핑(Ping) 테스트 수행 -> {closed_count}개 품절 처리 (장기만료 {stale_expired}건)")
     except Exception as e:
         logger.error(f"❌ 상태 검증 데몬 에러: {e}")
