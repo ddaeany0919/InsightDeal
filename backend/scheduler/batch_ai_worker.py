@@ -200,7 +200,10 @@ def _estimate_tokens(text: str) -> int:
     return max(1, math.ceil(len(text) * 0.9))
 
 
-def _reserve_call_budget(estimated_input_tokens: int) -> tuple[bool, str]:
+def _reserve_call_budget(
+    estimated_input_tokens: int,
+    enforce_min_interval: bool = True,
+) -> tuple[bool, str]:
     global _LAST_CALL_MONOTONIC
     max_calls = _get_max_daily_calls()
     max_tokens = _get_max_daily_tokens()
@@ -212,7 +215,12 @@ def _reserve_call_budget(estimated_input_tokens: int) -> tuple[bool, str]:
     now_mono = time.monotonic()
     with _STATE_LOCK:
         _rollover_budget_day_unlocked()
-        if min_interval > 0 and _LAST_CALL_MONOTONIC > 0 and (now_mono - _LAST_CALL_MONOTONIC) < min_interval:
+        if (
+            enforce_min_interval
+            and min_interval > 0
+            and _LAST_CALL_MONOTONIC > 0
+            and (now_mono - _LAST_CALL_MONOTONIC) < min_interval
+        ):
             return False, "min_interval"
         if _DAILY_BUDGET["calls"] >= max_calls:
             return False, "daily_calls"
@@ -261,10 +269,13 @@ def _set_provider_cooldown(provider: str, seconds: Optional[float] = None) -> No
 def _strip_html_preview(raw_html: Optional[str], max_chars: int = 140) -> str:
     if not raw_html or max_chars <= 0:
         return ""
+    cleaned = re.sub(r"\[상품이미지\s*:\s*https?://[^\]]+\]", " ", str(raw_html), flags=re.IGNORECASE)
+    cleaned = re.sub(r"\[첨부된\s*이미지[^\]]*\]", " ", cleaned, flags=re.IGNORECASE)
     try:
-        text = BeautifulSoup(str(raw_html), "html.parser").get_text(" ", strip=True)
+        text = BeautifulSoup(cleaned, "html.parser").get_text(" ", strip=True)
     except Exception:
-        text = re.sub(r"<[^>]+>", " ", str(raw_html))
+        text = re.sub(r"<[^>]+>", " ", cleaned)
+    text = re.sub(r"https?://\S+", " ", text)
     return re.sub(r"\s+", " ", text).strip()[:max_chars]
 
 
@@ -322,12 +333,26 @@ def _parse_batch_summaries(raw_text: str) -> dict[int, str]:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError:
         arr_match = re.search(r"\[.*\]", cleaned, re.DOTALL)
-        if not arr_match:
+        if arr_match:
+            try:
+                parsed = json.loads(arr_match.group(0))
+            except json.JSONDecodeError:
+                parsed = None
+
+    if parsed is None:
+        recovered = []
+        for obj_m in re.finditer(
+            r'\{[^{}]*"id"\s*:\s*\d+[^{}]*"ai_summary"\s*:\s*"(?:[^"\\]|\\.)*"[^{}]*\}',
+            cleaned,
+            re.DOTALL,
+        ):
+            try:
+                recovered.append(json.loads(obj_m.group(0)))
+            except json.JSONDecodeError:
+                continue
+        if not recovered:
             return {}
-        try:
-            parsed = json.loads(arr_match.group(0))
-        except json.JSONDecodeError:
-            return {}
+        parsed = recovered
 
     if isinstance(parsed, dict):
         for key in ("items", "results", "deals", "data"):
@@ -617,10 +642,12 @@ def process_ai_batch(
         logger.info("🚀 %d개 핫딜 초절전 3줄 요약 마이크로배치 시작...", len(deals_to_process))
         prompt = _build_batch_prompt(deals_to_process)
         estimated_in_tokens = _estimate_tokens(prompt)
-        max_output_tokens = min(1200, 140 + len(deals_to_process) * 70)
+        max_output_tokens = min(4096, 200 + len(deals_to_process) * 160)
 
-        for provider_name, cfg, call_fn in providers:
-            allowed, reason = _reserve_call_budget(estimated_in_tokens)
+        for idx, (provider_name, cfg, call_fn) in enumerate(providers):
+            allowed, reason = _reserve_call_budget(
+                estimated_in_tokens, enforce_min_interval=(idx == 0)
+            )
             if not allowed:
                 logger.warning(
                     "AI 예산/빈도 가드(%s)로 외부 호출 차단 (calls=%d/%d, tokens=%d/%d).",

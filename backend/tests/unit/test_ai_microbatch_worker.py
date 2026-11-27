@@ -189,7 +189,7 @@ def test_gemini_rest_batch_uses_thinking_budget_zero_compact_json_and_updates_de
     assert "gemini-3.5-flash-lite" in req_url
     gen_cfg = req_body["generationConfig"]
     assert gen_cfg["thinkingConfig"] == {"thinkingLevel": "MINIMAL"}
-    assert gen_cfg["maxOutputTokens"] == min(1200, 140 + 2 * 70)
+    assert gen_cfg["maxOutputTokens"] == min(4096, 200 + 2 * 160)
     prompt_text = req_body["contents"][0]["parts"][0]["text"]
     assert "\n  {" not in prompt_text  # indent=2 미사용(compact JSON)
 
@@ -544,3 +544,61 @@ def test_process_ai_batch_unfiltered_skips_closed_deals(tmp_path, monkeypatch):
     updated = process_ai_batch(deal_ids=None, db_session_factory=SessionFactory)
     assert updated == 1
     assert sent_ids == [deal_ids[1]]
+
+
+def test_strip_preview_removes_image_tags_and_fallback_bypasses_min_interval(tmp_path, monkeypatch):
+    """선두 [상품이미지: URL] 제거로 본문 쿠폰/체감가를 보존하고, 잘린 JSON 복구 및 동일 배치 폴백 시 min_interval 차단을 우회해야 한다."""
+    from backend.scheduler.batch_ai_worker import _parse_batch_summaries, _strip_html_preview
+
+    raw_body = "\n".join(
+        [
+            "[상품이미지: https://image.fmkorea.com/files/attach/new5/20261119/10573430092_img1.jpg.webp]",
+            "[상품이미지: https://image.fmkorea.com/files/attach/new5/20261119/10573430092_img2.jpg.webp]",
+            "[첨부된 이미지]",
+            "토스앱 혜택 2천원 쿠폰 적용 후 토스결제하면 19,440원",
+        ]
+    )
+    preview = _strip_html_preview(raw_body, max_chars=300)
+    assert "상품이미지" not in preview
+    assert "image.fmkorea.com" not in preview
+    assert "19,440원" in preview
+
+    truncated_json = '[{"id": 101, "ai_summary": "✅ 완료 항목\\n✅ B\\n✅ C"}, {"id": 102, "ai_summary": "✅ 잘린'
+    assert _parse_batch_summaries(truncated_json) == {101: "✅ 완료 항목\n✅ B\n✅ C"}
+
+    SessionFactory = _create_isolated_session_factory(tmp_path)
+    deal_ids = _seed_deals(SessionFactory, count=1)
+
+    monkeypatch.setenv("USE_GEMINI_AI", "true")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini_fail_key_1234")
+    monkeypatch.setenv("GROQ_API_KEY", "groq_fallback_key_5678")
+    monkeypatch.setenv("AI_MIN_CALL_INTERVAL_SEC", "15")
+
+    calls = []
+
+    def mock_post(self, url, **kwargs):
+        calls.append(url)
+        if "generativelanguage.googleapis.com" in url:
+            return _MockHttpResp(200, {"candidates": [{"content": {"parts": [{"text": "["}]}}]})
+        return _MockHttpResp(
+            200,
+            {
+                "usage": {"total_tokens": 220},
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                [{"id": deal_ids[0], "ai_summary": "✅ 폴백 성공\n✅ B\n✅ C"}],
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+
+    assert process_ai_batch(deal_ids=deal_ids, db_session_factory=SessionFactory) == 1
+    assert len(calls) == 2
+    assert "api.groq.com" in calls[1]
