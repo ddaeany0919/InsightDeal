@@ -22,7 +22,12 @@ if root_dir not in sys.path:
 
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(root_dir, ".env"))
+for _env_path in (
+    os.path.join(root_dir, ".env"),
+    os.path.join(root_dir, "backend", ".env"),
+):
+    if os.path.exists(_env_path):
+        load_dotenv(_env_path, override=False)
 
 from backend.core.ai_utils import (  # noqa: E402
     get_cloudflare_ai_config,
@@ -162,9 +167,9 @@ def _get_max_batch_size() -> int:
 
 def _get_content_preview_chars() -> int:
     try:
-        return max(0, min(400, int(os.getenv("AI_CONTENT_PREVIEW_CHARS", "140") or "140")))
+        return max(0, min(500, int(os.getenv("AI_CONTENT_PREVIEW_CHARS", "300") or "300")))
     except ValueError:
-        return 140
+        return 300
 
 
 def _get_rate_limit_cooldown_sec() -> float:
@@ -299,9 +304,9 @@ def _build_batch_prompt(deals_to_process: list[Deal]) -> str:
 
     compact_json = json.dumps(input_data, ensure_ascii=False, separators=(",", ":"))
     return (
-        '한국 핫딜 JSON 요약기. 입력 배열의 id를 유지하고 ai_summary에 '
-        '"✅ 스펙/장점\\n✅ 체감가/혜택\\n✅ 주의사항"(총 120자 이내, hot=1이면 앞부분에 "🔥 [커뮤니티 인증 핫딜] ")을 채운 '
-        f"순수 JSON 배열만 반환하라: [{{\"id\":1,\"ai_summary\":\"...\"}}\n입력:{compact_json}"
+        '한국 핫딜 JSON 구매 요약기. 입력 배열의 id를 유지하고 ai_summary에 '
+        '"✅ 체감가/혜택\\n✅ 구매방법/스펙\\n✅ 필수조건/주의"(총 150자 이내, 쿠폰·결제수단·체감가 언급 시 구체 수치 포함, hot=1이면 앞부분에 "🔥 [커뮤니티 인증 핫딜] ")을 채운 '
+        f"순수 JSON 배열만 반환하라: [{{\"id\":1,\"ai_summary\":\"...\"}}]\n입력:{compact_json}"
     )
 
 
@@ -393,13 +398,18 @@ def _call_gemini_rest(
     api_key = cfg["api_key"]
     model = cfg["model"]
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    thinking_cfg = (
+        {"thinkingBudget": 0}
+        if model.lower().startswith("gemini-2.")
+        else {"thinkingLevel": "MINIMAL"}
+    )
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.1,
             "maxOutputTokens": max_output_tokens,
             "responseMimeType": "application/json",
-            "thinkingConfig": {"thinkingBudget": 0},
+            "thinkingConfig": thinking_cfg,
         },
     }
     headers = {
@@ -418,7 +428,11 @@ def _call_gemini_rest(
     data = resp.json()
     try:
         parts = data["candidates"][0]["content"]["parts"]
-        text = "".join(str(p.get("text", "")) for p in parts if isinstance(p, dict))
+        text = "".join(
+            str(p.get("text", ""))
+            for p in parts
+            if isinstance(p, dict) and not p.get("thought")
+        )
         return text, _extract_gemini_total_tokens(data)
     except (KeyError, IndexError, TypeError) as exc:
         raise _ProviderCallError("gemini", resp.status_code, f"Malformed response: {exc}") from exc
@@ -602,7 +616,7 @@ def process_ai_batch(
         logger.info("🚀 %d개 핫딜 초절전 3줄 요약 마이크로배치 시작...", len(deals_to_process))
         prompt = _build_batch_prompt(deals_to_process)
         estimated_in_tokens = _estimate_tokens(prompt)
-        max_output_tokens = min(900, 120 + len(deals_to_process) * 55)
+        max_output_tokens = min(1200, 140 + len(deals_to_process) * 70)
 
         for provider_name, cfg, call_fn in providers:
             allowed, reason = _reserve_call_budget(estimated_in_tokens)

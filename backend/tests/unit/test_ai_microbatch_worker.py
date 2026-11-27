@@ -32,6 +32,7 @@ for _p in (_PROJECT_ROOT, _BACKEND_DIR):
 
 from backend.core.ai_utils import (  # noqa: E402
     get_microbatch_gemini_key,
+    get_openai_compatible_config,
     get_random_gemini_key,
     reset_dead_keys,
 )
@@ -101,10 +102,13 @@ def _reset_ai_state(monkeypatch):
         "USE_LEGACY_GEMINI_PER_DEAL",
         "GEMINI_API_KEY",
         "GEMINI_API_KEYS",
+        "GEMINI_SUMMARY_MODEL",
         "GOOGLE_API_KEY",
         "GROQ_API_KEY",
+        "GROQ_MODEL",
         "LLM_BASE_URL",
         "LLM_API_KEY",
+        "LLM_MODEL",
         "CLOUDFLARE_ACCOUNT_ID",
         "CLOUDFLARE_AI_API_TOKEN",
         "AI_MAX_DAILY_CALLS",
@@ -182,9 +186,10 @@ def test_gemini_rest_batch_uses_thinking_budget_zero_compact_json_and_updates_de
 
     req_url, req_body = captured_requests[0]
     assert "generativelanguage.googleapis.com" in req_url
+    assert "gemini-3.5-flash-lite" in req_url
     gen_cfg = req_body["generationConfig"]
-    assert gen_cfg["thinkingConfig"] == {"thinkingBudget": 0}
-    assert gen_cfg["maxOutputTokens"] == min(900, 120 + 2 * 55)
+    assert gen_cfg["thinkingConfig"] == {"thinkingLevel": "MINIMAL"}
+    assert gen_cfg["maxOutputTokens"] == min(1200, 140 + 2 * 70)
     prompt_text = req_body["contents"][0]["parts"][0]["text"]
     assert "\n  {" not in prompt_text  # indent=2 미사용(compact JSON)
 
@@ -440,3 +445,53 @@ async def test_schedule_ai_summary_microbatch_debounces_into_single_call(tmp_pat
             assert "디바운스" in row.ai_summary
     finally:
         db.close()
+
+
+def test_gemini_2_override_uses_thinking_budget_zero_and_groq_default_model(tmp_path, monkeypatch):
+    SessionFactory = _create_isolated_session_factory(tmp_path)
+    deal_ids = _seed_deals(SessionFactory, count=1)
+
+    monkeypatch.setenv("USE_GEMINI_AI", "true")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini_legacy2_key_1234")
+    monkeypatch.setenv("GEMINI_SUMMARY_MODEL", "gemini-2.5-flash-lite")
+    monkeypatch.setenv("GROQ_API_KEY", "groq_default_model_test_key")
+
+    groq_cfg = get_openai_compatible_config()
+    assert groq_cfg is not None
+    assert groq_cfg["provider"] == "groq"
+    assert groq_cfg["model"] == "qwen/qwen3.8-27b"
+
+    captured_requests = []
+
+    def mock_post(self, url, **kwargs):
+        captured_requests.append((url, kwargs.get("json")))
+        return _MockHttpResp(
+            200,
+            {
+                "usageMetadata": {"totalTokenCount": 210},
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {"text": "internal thought", "thought": True},
+                                {
+                                    "text": json.dumps(
+                                        [{"id": deal_ids[0], "ai_summary": "✅ 2.5 모델 호환\n✅ B\n✅ C"}],
+                                        ensure_ascii=False,
+                                    )
+                                },
+                            ]
+                        }
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+
+    updated = process_ai_batch(deal_ids=deal_ids, db_session_factory=SessionFactory)
+    assert updated == 1
+    assert len(captured_requests) == 1
+    req_url, req_body = captured_requests[0]
+    assert "gemini-2.5-flash-lite" in req_url
+    assert req_body["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}

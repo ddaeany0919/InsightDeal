@@ -15,9 +15,13 @@ def _load_root_env_if_needed() -> None:
     if _ROOT_ENV_LOADED:
         return
     from dotenv import load_dotenv
-    root_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
-    if os.path.exists(root_env):
-        load_dotenv(root_env)
+    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    for env_path in (
+        os.path.join(root_dir, ".env"),
+        os.path.join(root_dir, "backend", ".env"),
+    ):
+        if os.path.exists(env_path):
+            load_dotenv(env_path, override=False)
     _ROOT_ENV_LOADED = True
 
 
@@ -54,7 +58,7 @@ def is_legacy_per_deal_ai_enabled() -> bool:
 
 
 def get_gemini_summary_model() -> str:
-    return (os.getenv("GEMINI_SUMMARY_MODEL") or "gemini-2.5-flash-lite").strip() or "gemini-2.5-flash-lite"
+    return (os.getenv("GEMINI_SUMMARY_MODEL") or "gemini-3.5-flash-lite").strip() or "gemini-3.5-flash-lite"
 
 
 def _select_valid_gemini_key() -> Optional[str]:
@@ -127,7 +131,7 @@ def get_openai_compatible_config() -> Optional[dict]:
         api_key = llm_key or groq_key or "lm-studio"
         if api_key in _DEAD_KEYS:
             return None
-        default_model = "llama-3.1-8b-instant" if "groq.com" in base_url.lower() else "local-model"
+        default_model = "qwen/qwen3.8-27b" if "groq.com" in base_url.lower() else "local-model"
         model = (os.getenv("LLM_MODEL") or os.getenv("GROQ_MODEL") or default_model).strip() or default_model
         provider = "groq" if "groq.com" in base_url.lower() else "openai_compatible"
         return {
@@ -138,12 +142,12 @@ def get_openai_compatible_config() -> Optional[dict]:
         }
 
     if groq_key and groq_key not in _DEAD_KEYS:
-        model = (os.getenv("GROQ_MODEL") or os.getenv("LLM_MODEL") or "llama-3.1-8b-instant").strip()
+        model = (os.getenv("GROQ_MODEL") or os.getenv("LLM_MODEL") or "qwen/qwen3.8-27b").strip()
         return {
             "provider": "groq",
             "base_url": "https://api.groq.com/openai/v1",
             "api_key": groq_key,
-            "model": model or "llama-3.1-8b-instant",
+            "model": model or "qwen/qwen3.8-27b",
         }
 
     return None
