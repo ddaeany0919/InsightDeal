@@ -734,6 +734,10 @@ async def scrape_and_push_once():
                                         or "뽐뿌 - 사람이 좋아 함께하는 곳" in cached_html_str
                                     )
                                 )
+                                is_truncated_title_cache = (
+                                    ("ruliweb.com" in item_url)
+                                    and bool(re.search(r"(?:\.{2,}|…)\s*$", cached_title_str))
+                                )
                                 is_truncated_on_local = (
                                     (not IS_CLOUD_ENV)
                                     and (
@@ -749,7 +753,7 @@ async def scrape_and_push_once():
                                     and (time.time() - last_attempt_ts) >= 1800
                                     and not is_relay_blocked(item_url)[0]
                                 )
-                                if (is_truncated_ppomppu or is_truncated_on_local) and can_retry_truncated:
+                                if (is_truncated_ppomppu or is_truncated_on_local or is_truncated_title_cache) and can_retry_truncated:
                                     cached_detail["detail_retry_count"] = retry_count + 1
                                     cached_detail["detail_last_attempt_ts"] = int(time.time())
                                     item["_detail_retry_count"] = cached_detail["detail_retry_count"]
@@ -767,6 +771,25 @@ async def scrape_and_push_once():
                                 if not status_changed:
                                     skipped_count += 1
                                     continue
+
+                                cached_title = str(cached_detail.get("title") or "").strip()
+                                cur_item_title = str(item.get("title") or "").strip()
+                                title_restored_from_cache = False
+                                if cached_title and (
+                                    not cur_item_title
+                                    or (
+                                        bool(re.search(r"(?:\.{2,}|…)\s*$", cur_item_title))
+                                        and (not re.search(r"(?:\.{2,}|…)\s*$", cached_title) or len(cached_title) > len(cur_item_title))
+                                    )
+                                ):
+                                    item["title"] = cached_title
+                                    title_restored_from_cache = True
+
+                                cached_price = int(cached_detail.get("price") or 0)
+                                if cached_price > 0 and (int(item.get("price") or 0) <= 0 or title_restored_from_cache):
+                                    item["price"] = cached_price
+                                    if cached_detail.get("currency"):
+                                        item["currency"] = cached_detail["currency"]
 
                                 for k in ("content_html", "image_url", "shipping_fee", "options_data", "has_options"):
                                     v = cached_detail.get(k)

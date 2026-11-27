@@ -2173,7 +2173,9 @@ class AggregatorService:
                      stop = {"무료", "무배", "무료배송", "특가", "할인", "쿠폰", "체감가", "역대급", "대박", "추천", "공구", "행사", "마감", "종료", "끌올"}
                      return {w for w in cleaned.split() if len(w) >= 2 and w not in stop}
 
-                 if is_same_post_url and existing_deal.title != raw_title:
+                 is_new_title_truncated = bool(re.search(r"(?:\.{2,}|…)\s*$", raw_input_title)) and len(existing_deal.title or "") >= len(raw_title)
+
+                 if is_same_post_url and existing_deal.title != raw_title and not is_new_title_truncated:
                      old_tokens = _extract_title_tokens(existing_deal.title)
                      new_tokens = _extract_title_tokens(raw_title)
                      overlap = len(old_tokens.intersection(new_tokens))
@@ -2198,7 +2200,6 @@ class AggregatorService:
                  new_ch_str = (content_html or "").strip()
                  is_old_rss_trunc = (len(old_ch_str) == 110 or old_ch_str.endswith("...</p>") or old_ch_str.endswith("...") or "<p>출처:" in old_ch_str)
                  is_new_rss_trunc = (len(new_ch_str) == 110 or new_ch_str.endswith("...</p>") or new_ch_str.endswith("...") or "<p>출처:" in new_ch_str)
-                 is_new_title_truncated = bool(re.search(r"(?:\.{2,}|…)\s*$", raw_input_title)) and len(existing_deal.title or "") >= len(raw_title)
 
                  # [Self-Healing Chimera Guard]: 동일 게시글(is_same_post_url) 재수집 시, 과거 잘못된 병합으로 인해
                  # 기존 본문(old_ch_str)에는 제목 토큰이 전혀 없고 새 본문(new_ch_str)에는 제목 토큰이 존재한다면 즉시 Full Force Sync!
@@ -2355,7 +2356,7 @@ class AggregatorService:
                  # 가격 갱신 및 시세 이력 기록:
                  # 1) 더 저렴한 가격이 등장했을 때 대표 최저가 갱신 + 푸시 트리거 예약
                  # 2) 타 커뮤니티 병합 시 가격이 달라도(소폭 높더라도) 시세 등락 그래프를 위해 PriceHistory에는 기록
-                 if is_same_post_url and price > 0 and str(existing_deal.price) != str(price):
+                 if is_same_post_url and price > 0 and str(existing_deal.price) != str(price) and not (is_new_title_truncated and old_price != float('inf') and old_price > 0):
                      existing_deal.price = str(price)
                      price_changed = True
                      if 0 < price < old_price and old_price != float('inf'):
@@ -2508,7 +2509,8 @@ class AggregatorService:
 
                  # [Smart Shipping Fee Merge Guard]
                  # 새로 긁어온 배송비가 '정보 없음'이고 기존에 이미 유효한 배송 정보가 기재되어 있다면 덮어쓰지 않고 기존 값 유지!
-                 if shipping_fee and shipping_fee != "정보 없음":
+                 # 잘린 목록 제목에서 추론된 배송비가 기존 값을 덮어쓰지 않도록 보호!
+                 if shipping_fee and shipping_fee != "정보 없음" and not (is_new_title_truncated and not raw_shipping_fee):
                      existing_deal.shipping_fee = shipping_fee
                  elif not existing_deal.shipping_fee or existing_deal.shipping_fee == "정보 없음":
                      existing_deal.shipping_fee = shipping_fee or "정보 없음"

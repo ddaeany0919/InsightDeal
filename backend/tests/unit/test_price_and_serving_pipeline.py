@@ -1244,4 +1244,74 @@ def test_swarm_audit_parser_normalizer_and_endpoint_consistency_hardening(mem_db
         app.dependency_overrides.pop(get_db_session, None)
 
 
+@pytest.mark.asyncio
+async def test_truncated_comma_price_in_title_and_upsert_preservation(mem_db):
+    assert (
+        sanitize_ingested_title("[무신사] PS5 PRO 선착순 판매 11/28 오후8시 (1,298,0...")
+        == "[무신사] PS5 PRO 선착순 판매 11/28 오후8시"
+    )
+    assert (
+        sanitize_ingested_title("[무신사] PS5 PRO 선착순 판매 11/28 오후8시 (1,298,...")
+        == "[무신사] PS5 PRO 선착순 판매 11/28 오후8시"
+    )
+    assert (
+        sanitize_ingested_title("[무신사] PS5 PRO 선착순 판매 11/28 오후8시 (1,298,0")
+        == "[무신사] PS5 PRO 선착순 판매 11/28 오후8시"
+    )
+    assert (
+        sanitize_ingested_title("[지마켓] CJ 비비고 왕교자 만두 세트 (16,680원/무료")
+        == "[지마켓] CJ 비비고 왕교자 만두 세트 (16,680원/무료)"
+    )
+
+    assert parse_title_price_and_shipping("[무신사] PS5 PRO 선착순 판매 11/28 오후8시 (1,298,0)") == (0, "KRW", "", False)
+    assert parse_title_price_and_shipping("[무신사] PS5 PRO 선착순 판매 11/28 오후8시 (1,298,00)") == (0, "KRW", "", False)
+    assert parse_title_price_and_shipping("[지마켓] 비비고 (19,900원, 무배)") == (19900, "KRW", "무료배송", False)
+    assert parse_title_price_and_shipping("[지마켓] 비비고 (19,900원, 0원)") == (19900, "KRW", "무료배송", False)
+
+    agg = AggregatorService(mem_db)
+    post_url = "https://bbs.ruliweb.com/market/board/1020/read/109427"
+    full_title = "[무신사] PS5 PRO 선착순 판매 11/28 오후8시 (1,298,000원)"
+    created = await agg.process_scraped_deal(
+        4,
+        {
+            "title": full_title,
+            "url": post_url,
+            "price": 1298000,
+            "currency": "KRW",
+            "shop_name": "무신사",
+            "ecommerce_link": "https://www.musinsa.com/products/7883566",
+            "content_html": "순삭 될거같긴한데\n필요하신분들 꼭 성공하시길 바랍니다.",
+            "shipping_fee": "",
+            "like_count": 3,
+            "view_count": 1500,
+        },
+    )
+    assert created is not None
+    assert created.title == full_title
+    assert str(created.price) == "1298000"
+
+    updated = await agg.process_scraped_deal(
+        4,
+        {
+            "title": "[무신사] PS5 PRO 선착순 판매 11/28 오후8시 (1,298,0...",
+            "url": post_url,
+            "price": 0,
+            "currency": "KRW",
+            "shop_name": "",
+            "ecommerce_link": "",
+            "content_html": "",
+            "shipping_fee": "",
+            "like_count": 5,
+            "view_count": 2600,
+            "is_super_hotdeal": True,
+        },
+    )
+    assert updated is not None
+    assert updated.id == created.id
+    assert updated.title == full_title
+    assert str(updated.price) == "1298000"
+    assert updated.is_super_hotdeal is True
+
+
+
 

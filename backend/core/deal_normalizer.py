@@ -555,12 +555,17 @@ def sanitize_ingested_title(raw_title: str) -> str:
     while t.endswith("]") and t.count("]") > t.count("["):
         t = t[:-1].strip()
     while t.count("(") > t.count(")"):
-        if re.search(r"\(\s*\$?\s*\.{2,}\s*$", t):
-            t = re.sub(r"\s*\(\s*\$?\s*\.{2,}\s*$", "", t).strip()
+        if re.search(r"\([^()]*?(?:\.{2,}|…)\s*$", t):
+            t = re.sub(r"\s*\([^()]*?(?:\.{2,}|…)\s*$", "", t).strip()
+        elif re.search(r"\([^()]*\d,\d{1,2}\s*$", t):
+            t = re.sub(r"\s*\([^()]*\d,\d{1,2}\s*$", "", t).strip()
         else:
-            t = re.sub(r"\.{2,}\s*$", "", t).rstrip(" ,/-") + ")"
+            t = re.sub(r"(?:\.{2,}|…)\s*$", "", t).rstrip(" ,/-") + ")"
     while t.count("[") > t.count("]"):
-        t = re.sub(r"\.{2,}\s*$", "", t).rstrip(" ,/-") + "]"
+        if re.search(r"\[[^\[\]]*?(?:\.{2,}|…)\s*$", t):
+            t = re.sub(r"\s*\[[^\[\]]*?(?:\.{2,}|…)\s*$", "", t).strip()
+        else:
+            t = re.sub(r"(?:\.{2,}|…)\s*$", "", t).rstrip(" ,/-") + "]"
     if re.search(r"(?:\.{2,}|…)\s*$", t):
         t = re.sub(r"(?:\.{2,}|…)+\s*$", "", t).rstrip(" ,/-·")
     if t.count(")") > t.count("("):
@@ -1189,6 +1194,10 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
             break
         cleaned = nxt
 
+    # 절단된 천단위 콤마 숫자('(1,298,0)', '(1,298,00)') 배제
+    if re.match(r"^[0-9]{1,3}(?:,[0-9]{3})*,[0-9]{1,2}\s*$", cleaned):
+        return 0, "KRW", ""
+
     # 가격 파트와 배송비 파트 분리:
     # 1) '/' 또는 '|' 구분자 분리
     # 2) 천단위 숫자 구분자가 아닌 ',' 구분자 분리 (예: '19,900원, 무배', '$19.99, FS')
@@ -1204,7 +1213,13 @@ def _parse_paren_candidate(inner_raw: str, is_unclosed_end: bool = False, contex
             return 0, "KRW", ""
     else:
         m_comma = re.match(r"^(.+?)\s*,\s*(?![0-9]{3}(?:\D|$))(.+)$", cleaned)
-        if m_comma and (
+        is_trunc_comma_num = bool(
+            m_comma
+            and re.fullmatch(r"\d+", m_comma.group(2).strip())
+            and re.search(r"\d,\d+\s*$", cleaned)
+            and not re.search(r"(?:원|만|달러|유로|위안|엔|\$|€|¥|￥)\s*$", m_comma.group(1).strip())
+        )
+        if m_comma and not is_trunc_comma_num and (
             _EXPLICIT_SHIPPING_KEYWORD_RE.search(m_comma.group(2))
             or m_comma.group(2).strip().lower() in ("무", "0", "0원", "무배", "무료", "무료배송", "free", "fs", "다양")
         ):

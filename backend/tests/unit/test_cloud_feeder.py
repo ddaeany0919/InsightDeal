@@ -640,3 +640,98 @@ async def test_danawa_cdn_aliexpress_og_bot_and_domain_shop_boundary():
             == "https://ae-pic-a1.aliexpress-media.com/kf/S6e5bce474d764bc0ade5782d8e4ac749e.jpg"
         )
         assert "Twitterbot/1.0" in ali_ua_seen
+
+
+@pytest.mark.asyncio
+async def test_cloud_feeder_status_changed_restores_cached_title_and_price(monkeypatch, tmp_path):
+    import backend.scheduler.cloud_feeder as cf
+    from backend.scrapers.ruliweb_scraper import RuliwebScraper
+
+    monkeypatch.setenv("FEEDER_API_TOKEN", "feeder-secret")
+    monkeypatch.setattr(cf, "IS_CLOUD_ENV", True)
+    monkeypatch.setattr(cf, "_CACHE_FILE", str(tmp_path / "feeder_seen_cache.json"))
+    monkeypatch.setattr(cf, "_preload_existing_urls", AsyncMock())
+    monkeypatch.setattr(cf, "_fetch_jsmon_and_hotgusa_enrichment", AsyncMock(return_value={}))
+    monkeypatch.setattr(cf, "_send_feeder_heartbeat", AsyncMock())
+    monkeypatch.setattr(cf, "_rotate_cron_log_if_needed", lambda *a, **kw: None)
+
+    post_url = "https://bbs.ruliweb.com/market/board/1020/read/109427"
+    full_title = "[무신사] PS5 PRO 선착순 판매 11/28 오후8시 (1,298,000원)"
+    cf._SEEN_DETAIL_CACHE.clear()
+    cf._SEEN_DETAIL_CACHE[("루리웹", post_url)] = {
+        "title": full_title,
+        "price": 1298000,
+        "currency": "KRW",
+        "content_html": "순삭 될거같긴한데 필요하신분들 꼭 성공하시길 바랍니다.",
+        "ecommerce_link": "https://www.musinsa.com/products/7883566",
+        "image_url": "https://i1.ruliweb.com/img/26/11/27/1a21add00674bfa2f.webp",
+        "shipping_fee": "",
+        "is_closed": False,
+        "is_super_hotdeal": False,
+        "like_count": 1,
+        "view_count": 1500,
+        "comment_count": 0,
+    }
+
+    captured_posts = []
+
+    class FakeResp:
+        def __init__(self, status_code, json_data=None):
+            self.status_code = status_code
+            self._json = json_data or {}
+
+        def json(self):
+            return self._json
+
+    class FakeHttpClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, url, headers=None, **kwargs):
+            return FakeResp(200, {})
+
+        async def post(self, url, json=None, headers=None, **kwargs):
+            captured_posts.append({"url": url, "json": json, "headers": dict(headers or {})})
+            return FakeResp(200, {"processed": len((json or {}).get("deals", []))})
+
+    async def fake_run(self, url=None):
+        if isinstance(self, RuliwebScraper):
+            return [
+                {
+                    "title": "[무신사] PS5 PRO 선착순 판매 11/28 오후8시 (1,298,0...",
+                    "url": post_url,
+                    "price": 0,
+                    "currency": "KRW",
+                    "shop_name": "",
+                    "image_url": "",
+                    "ecommerce_link": "",
+                    "is_closed": False,
+                    "shipping_fee": "",
+                    "is_super_hotdeal": True,
+                    "like_count": 5,
+                    "view_count": 2600,
+                    "comment_count": 5,
+                    "content_html": "",
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(cf.httpx, "AsyncClient", FakeHttpClient)
+    from backend.scrapers.base_scraper import AsyncBaseScraper
+    monkeypatch.setattr(AsyncBaseScraper, "run", fake_run)
+
+    await cf.scrape_and_push_once()
+
+    ruliweb_posts = [p for p in captured_posts if (p.get("json") or {}).get("community_name") == "ruliweb"]
+    assert len(ruliweb_posts) == 1
+    sent_deal = ruliweb_posts[0]["json"]["deals"][0]
+    assert sent_deal["title"] == full_title
+    assert sent_deal["price"] == 1298000
+    assert sent_deal["currency"] == "KRW"
+
