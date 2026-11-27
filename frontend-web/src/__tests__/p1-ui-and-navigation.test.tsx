@@ -1043,6 +1043,12 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
       label: "10ml당 1,900원",
       detail: "총 100ml · 개당 9,500원",
     });
+    expect(
+      computeUnitPriceBadge("천연사이다 제로 + 맥콜 제로 250mL X 각 30캔, 총 60캔", 20158, "KRW", "음식")
+    ).toEqual({
+      label: "100ml당 134원",
+      detail: "총 15,000ml · 개당 336원",
+    });
     expect(extractPaymentConditionBadge("[던킨도너츠] 네이버페이 결제시 50% 할인", "")).toBe("네이버페이 조건");
     expect(extractPaymentConditionBadge("[컴퓨존] 스위치2 포켓몬 레전드 ZA (우리카드)", "")).toBe("우리카드 조건");
     expect(extractPaymentConditionBadge("퍼실 세탁세제", "네멤무료")).toBe("네멤 조건");
@@ -1137,5 +1143,43 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     expect(onCloseModal).not.toHaveBeenCalled();
     fireEvent(window, new PopStateEvent("popstate", { state: null }));
     expect(onCloseModal).toHaveBeenCalledTimes(1);
+  });
+
+  it("DealDetailModal은 본문이 있어도 유효한 aiSummary가 있으면 AI 구매 요약 카드를 노출하고 스텁 배지는 숨긴다", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => null,
+    } as Response);
+
+    const { rerender } = render(
+      <DealDetailModal
+        deal={buildDeal(904, {
+          contentHtml: "<p>토스앱 혜택 2천원 쿠폰 + 오늘의집 1천원 쿠폰 적용 시 19,440원</p>",
+          aiSummary: "✅ 체감가/혜택: 토스결제 19,440원\n✅ 구매방법/스펙\n총 60캔 (250ml 각 30캔)\n✅ 필수조건/주의: 쿠폰 2종 필수",
+        })}
+        onClose={vi.fn()}
+        showToast={vi.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText("AI 구매 요약")).toBeInTheDocument();
+    expect(screen.getByText(/✅ 체감가\/혜택: 토스결제 19,440원/)).toBeInTheDocument();
+    expect(screen.getByText(/✅ 구매방법\/스펙: 총 60캔/)).toBeInTheDocument();
+    expect(screen.getByText(/✅ 필수조건\/주의: 쿠폰 2종 필수/)).toBeInTheDocument();
+
+    rerender(
+      <DealDetailModal
+        deal={buildDeal(905, {
+          contentHtml: "<p>일반 본문 텍스트입니다.</p>",
+          aiSummary: "🔥 [커뮤니티 인증 핫딜]",
+        })}
+        onClose={vi.fn()}
+        showToast={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByLabelText("AI 구매 요약")).not.toBeInTheDocument();
+    fetchMock.mockRestore();
   });
 });

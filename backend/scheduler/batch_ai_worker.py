@@ -603,6 +603,7 @@ def process_ai_batch(
                     or_(Deal.ai_summary.is_(None), Deal.ai_summary == ""),
                     Deal.price != "0",
                     Deal.price.isnot(None),
+                    or_(Deal.is_closed == False, Deal.is_closed.is_(None)),
                     Deal.indexed_at >= limit_time,
                 )
                 .order_by(Deal.indexed_at.desc(), Deal.id.desc())
@@ -761,6 +762,7 @@ def run_all_batches(max_batches: int = 20) -> int:
                     or_(Deal.ai_summary.is_(None), Deal.ai_summary == ""),
                     Deal.price != "0",
                     Deal.price.isnot(None),
+                    or_(Deal.is_closed == False, Deal.is_closed.is_(None)),
                     Deal.indexed_at >= limit_time,
                 )
                 .count()

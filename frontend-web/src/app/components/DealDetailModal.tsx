@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   EyeOff,
+  Sparkles,
 } from "lucide-react";
 import type {
   Deal,
@@ -138,6 +139,7 @@ export default function DealDetailModal({
   const [savingTargetAlert, setSavingTargetAlert] = useState<boolean>(false);
 
   const [detailHtml, setDetailHtml] = useState<string>("");
+  const [detailAiSummary, setDetailAiSummary] = useState<string>("");
   const [detailSources, setDetailSources] = useState<DealSource[]>([]);
   const [detailOptionsData, setDetailOptionsData] = useState<DealOptionItem[] | null>(null);
   const [detailShopName, setDetailShopName] = useState<string>("");
@@ -278,6 +280,7 @@ export default function DealDetailModal({
     setDetailInitialHistory(undefined);
     setDetailInitialHistoryPeriod(undefined);
     setDetailHtml(currentDeal?.contentHtml || "");
+    setDetailAiSummary(currentDeal?.aiSummary || "");
     setDetailSources(currentDeal?.sources || []);
     setDetailOptionsData(null);
     setDetailShopName(currentDeal?.shop_name || "");
@@ -368,6 +371,10 @@ export default function DealDetailModal({
     const applyDetailPayload = (d: RawDealApiResponse) => {
       const htmlBody = d.content_html ?? d.contentHtml;
       if (htmlBody) setDetailHtml(htmlBody);
+      const nextAiSummary = d.ai_summary ?? d.aiSummary;
+      if (typeof nextAiSummary === "string") {
+        setDetailAiSummary(decodeHtmlEntities(nextAiSummary).trim());
+      }
       if (Array.isArray(d.sources) && d.sources.length > 0) {
         setDetailSources(d.sources);
       }
@@ -498,6 +505,9 @@ export default function DealDetailModal({
         syncedPatch.category = d.category.includes("해외핫딜")
           ? "해외직구"
           : d.category.trim();
+      }
+      if (typeof nextAiSummary === "string") {
+        syncedPatch.aiSummary = decodeHtmlEntities(nextAiSummary).trim();
       }
       if (Object.keys(syncedPatch).length > 0) {
         onDealSyncedRef.current?.(dealId, syncedPatch);
@@ -861,6 +871,46 @@ export default function DealDetailModal({
   if (!deal) return null;
 
   const cleanBodyText = polishDealBodyText(detailHtml, deal.title);
+  const rawEffectiveAiSummary = (detailAiSummary || deal.aiSummary || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
+  const cleanedAiSummaryBody = rawEffectiveAiSummary
+    .replace(/^(?:🔥\s*)?\[(?:커뮤니티\s*인증\s*핫딜|커뮤니티\s*인기|모음전)\]\s*/g, "")
+    .trim();
+  const isHotAiCertified =
+    rawEffectiveAiSummary.includes("인증 핫딜") ||
+    Boolean(deal.isSuperHotdeal) ||
+    Number(deal.honeyScore ?? 0) >= 100;
+  const aiSummaryLines = (() => {
+    if (cleanedAiSummaryBody.length < 8) return [];
+    const rawLines = cleanedAiSummaryBody
+      .replace(/\s*(✅|☑|✔|•)\s*/g, "\n$1 ")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const merged: string[] = [];
+    for (const line of rawLines) {
+      if (
+        merged.length > 0 &&
+        /^[✅☑✔]\s*[^\n:]{2,18}$/.test(merged[merged.length - 1]) &&
+        !/^[✅☑✔]/.test(line)
+      ) {
+        merged[merged.length - 1] = `${merged[merged.length - 1]}: ${line}`;
+      } else {
+        merged.push(
+          line.replace(
+            /^([✅☑✔]\s*(?:체감가\/혜택|구매방법\/스펙|필수조건\/주의|스펙\/장점|주의사항))\s+(?!:)/,
+            "$1: "
+          )
+        );
+      }
+    }
+    return merged.filter((l) => l.replace(/[✅☑✔•\s]/g, "").length >= 2).slice(0, 4);
+  })();
   const promoCodes = extractPromoCodes(cleanBodyText, deal.title);
   const optionSources = getOptionSources(detailSources, effectiveOptionsData);
 
@@ -2287,6 +2337,81 @@ export default function DealDetailModal({
             </div>
           )}
 
+          {aiSummaryLines.length > 0 && (
+            <div
+              aria-label="AI 구매 요약"
+              style={{
+                background: "var(--card-bg)",
+                border: "1px solid var(--accent-soft-border)",
+                borderRadius: "12px",
+                padding: "12px 14px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "8px",
+                  paddingBottom: "6px",
+                  borderBottom: "1px solid var(--card-border)",
+                }}
+              >
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    fontSize: "0.78rem",
+                    fontWeight: 800,
+                    color: "var(--accent)",
+                  }}
+                >
+                  <Sparkles size={13} aria-hidden="true" />
+                  <span>AI 구매 요약</span>
+                </span>
+                {isHotAiCertified && (
+                  <span
+                    style={{
+                      fontSize: "0.7rem",
+                      fontWeight: 700,
+                      color: "var(--deal-orange)",
+                    }}
+                  >
+                    커뮤니티 인기
+                  </span>
+                )}
+              </div>
+              <ul
+                style={{
+                  listStyle: "none",
+                  margin: 0,
+                  padding: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "5px",
+                }}
+              >
+                {aiSummaryLines.map((line, idx) => (
+                  <li
+                    key={`${idx}-${line.slice(0, 16)}`}
+                    style={{
+                      fontSize: "0.83rem",
+                      lineHeight: 1.5,
+                      color: "var(--text-main)",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {cleanBodyText ? (
             <div
               style={{
@@ -2299,7 +2424,7 @@ export default function DealDetailModal({
             >
               {cleanBodyText.slice(0, 3500)}
             </div>
-          ) : (
+          ) : aiSummaryLines.length === 0 ? (
             <div
               style={{
                 fontSize: "0.86rem",
@@ -2309,10 +2434,9 @@ export default function DealDetailModal({
                 wordBreak: "break-word",
               }}
             >
-              {deal.aiSummary ||
-                `[${deal.community_name}]에 등록된 특가 정보입니다. 쿠폰·카드 할인 및 재고는 아래 구매처 또는 원본 글에서 확인해 주세요.`}
+              {`[${deal.community_name}]에 등록된 특가 정보입니다. 쿠폰·카드 할인 및 재고는 아래 구매처 또는 원본 글에서 확인해 주세요.`}
             </div>
-          )}
+          ) : null}
 
           {galleryImages.length > 0 && (
             <div

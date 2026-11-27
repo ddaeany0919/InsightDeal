@@ -240,6 +240,24 @@
   --glass-blur: blur(18px);
 }
 
+::selection {
+  background: rgba(0, 184, 122, 0.22);
+  color: var(--text-main);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) ::selection {
+    background: rgba(52, 211, 153, 0.28);
+    color: #f9fafb;
+  }
+}
+
+:root[data-theme="dark"] ::selection,
+:root[data-theme="amoled"] ::selection {
+  background: rgba(52, 211, 153, 0.28);
+  color: #f9fafb;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

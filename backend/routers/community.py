@@ -1291,8 +1291,10 @@ def has_quantity_conflict(words_a, words_b):
         )
         for val_str, unit in matches:
             val = float(val_str)
-            if unit in ['개', '개입', '입', '판', '팩', '봉', '포', '세트', '매', '캔', '병', '박스', '롤', '정', '캡슐']:
+            if unit in ['개', '개입', '입', '판', '팩', '봉', '포', '세트', '캔', '병', '박스', '롤', '정', '캡슐']:
                 u_key = 'count'
+            elif unit == '매':
+                u_key = 'sheet'
             elif unit == 'kg':
                 val *= 1000
                 u_key = 'weight'
@@ -1322,6 +1324,8 @@ def has_quantity_conflict(words_a, words_b):
     for unit, vals_a in qa.items():
         if unit in qb:
             if not vals_a.intersection(qb[unit]):
+                return True
+            if unit == 'count' and max(vals_a) != max(qb[unit]):
                 return True
     return False
 

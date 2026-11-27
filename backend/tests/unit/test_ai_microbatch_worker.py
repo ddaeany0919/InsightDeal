@@ -495,3 +495,52 @@ def test_gemini_2_override_uses_thinking_budget_zero_and_groq_default_model(tmp_
     req_url, req_body = captured_requests[0]
     assert "gemini-2.5-flash-lite" in req_url
     assert req_body["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}
+
+
+def test_process_ai_batch_unfiltered_skips_closed_deals(tmp_path, monkeypatch):
+    """deal_ids=None 자동 배치 모드는 종료된(is_closed=True) 딜에 무료 토큰을 소모하지 않아야 한다."""
+    SessionFactory = _create_isolated_session_factory(tmp_path)
+    deal_ids = _seed_deals(SessionFactory, count=2)
+    db = SessionFactory()
+    try:
+        closed_deal = db.query(Deal).filter(Deal.id == deal_ids[0]).first()
+        closed_deal.is_closed = True
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setenv("USE_GEMINI_AI", "true")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini_active_only_key_1234")
+
+    sent_ids = []
+
+    def mock_post(self, url, **kwargs):
+        text = kwargs["json"]["contents"][0]["parts"][0]["text"]
+        payload_part = json.loads(text.split("입력:", 1)[1])
+        sent_ids.extend(item["id"] for item in payload_part)
+        return _MockHttpResp(
+            200,
+            {
+                "usageMetadata": {"totalTokenCount": 180},
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "text": json.dumps(
+                                        [{"id": deal_ids[1], "ai_summary": "✅ 활성 딜 요약\n✅ B\n✅ C"}],
+                                        ensure_ascii=False,
+                                    )
+                                }
+                            ]
+                        }
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+
+    updated = process_ai_batch(deal_ids=None, db_session_factory=SessionFactory)
+    assert updated == 1
+    assert sent_ids == [deal_ids[1]]

@@ -791,3 +791,25 @@ async def test_aggregator_builds_search_keywords_and_blocks_cross_currency_merge
     ph_usd_prices = [ph.price for ph in audit_db.query(models.PriceHistory).filter_by(deal_id=d_usd.id).all()]
     assert ph_usd_prices == ["2500"]
 
+
+def test_has_quantity_conflict_separates_total_bundle_and_sheet_pack():
+    """'각 30캔 총 60캔'과 '30캔' 수량 혼재 및 '70매 10팩' vs '70매 20팩' 병합을 차단해야 한다."""
+    from backend.routers.community import has_quantity_conflict
+
+    assert has_quantity_conflict(
+        "천연사이다 제로 맥콜 제로 250ml 각 30캔 총 60캔",
+        "천연사이다 제로 250ml 30캔",
+    ) is True
+    assert has_quantity_conflict(
+        "천연사이다 제로 맥콜 제로 250ml 각 30캔 총 60캔",
+        "맥콜 제로 천연사이다 제로 250ml 각 30캔 총 60캔",
+    ) is False
+    assert has_quantity_conflict(
+        "천연사이다 제로 맥콜 제로 250ml 각 30캔 총 60캔",
+        "천연사이다 제로 250ml 60캔",
+    ) is False
+    assert has_quantity_conflict(
+        "베베숲 물티슈 70매 10팩",
+        "베베숲 물티슈 70매 20팩",
+    ) is True
+

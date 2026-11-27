@@ -2566,12 +2566,28 @@ export const computeUnitPriceBadge = (
     }
   }
 
-  // Helper: 기준 단위 직후 36자 내 2단 번들((2g x 30포) 2박스, 5봉 x 4팩), 단위 없는 x24, 1+1/2+1 추출
+  // Helper: 기준 단위 직후 36자 내 명시적 총수량(총 60캔), 2단 번들((2g x 30포) 2박스, 5봉 x 4팩), 단위 없는 x24, 1+1/2+1 추출
   const extractTrailingMeta = (
     afterStr: string,
     pattern: RegExp
   ): { count: number; matched: boolean; unitLabel: string } => {
     const windowStr = afterStr.slice(0, 36);
+    const totalM =
+      /(?:^|[\s,xX×*(/])총\s*(\d{1,3})\s*(개입|개|캔|병|팩|페트|pet|봉지|봉|포|스틱|통|입|박스|세트|캡슐|정|환)(?![a-wyzA-WYZ가-힣])/i.exec(
+        windowStr
+      );
+    if (totalM) {
+      const prefixBeforeTotal = windowStr.slice(0, totalM.index);
+      const hasOtherMeasureBeforeTotal = /\d+(?:\.\d+)?\s*(?:ml|l|리터|kg|g)(?![a-wyz])/i.test(
+        prefixBeforeTotal
+      );
+      if (!hasOtherMeasureBeforeTotal) {
+        const totalCnt = Number(totalM[1]);
+        if (Number.isFinite(totalCnt) && totalCnt >= 2 && totalCnt <= 500) {
+          return { count: totalCnt, matched: true, unitLabel: totalM[2] || "" };
+        }
+      }
+    }
     const m = pattern.exec(windowStr);
     if (!m) {
       const unitlessM = /^\s*[xX×*]\s*(\d{1,3})(?=\s|$|\))/.exec(windowStr);
@@ -2620,9 +2636,9 @@ export const computeUnitPriceBadge = (
   };
 
   const trailingWeightRe =
-    /^(?:\s*(?:본품|리필|용기|증정)\s*(?:[xX×*,]|\s)+|(?:[xX×*,]|\s)+)(\d{1,3})\s*(개입|개|팩|봉지|봉|캔|병|통|포|스틱|캡슐|정|환|곽|입|박스|세트|종(?:\s*세트)?)(?![가-힣])/;
+    /^(?:\s*(?:본품|리필|용기|증정|각)\s*(?:[xX×*,]|\s)+|(?:[xX×*,]|\s)+(?:각\s*)?)(\d{1,3})\s*(개입|개|팩|봉지|봉|캔|병|통|포|스틱|캡슐|정|환|곽|입|박스|세트|종(?:\s*세트)?)(?![가-힣])/;
   const trailingVolumeRe =
-    /^(?:\s*(?:본품|리필|용기|증정)\s*(?:[xX×*,]|\s)+|(?:[xX×*,]|\s)+)(\d{1,3})\s*(개입|개|캔|병|팩|페트|pet|포|스틱|통|입|박스|세트|종(?:\s*세트)?)(?![a-wyzA-WYZ가-힣])/i;
+    /^(?:\s*(?:본품|리필|용기|증정|각)\s*(?:[xX×*,]|\s)+|(?:[xX×*,]|\s)+(?:각\s*)?)(\d{1,3})\s*(개입|개|캔|병|팩|페트|pet|포|스틱|통|입|박스|세트|종(?:\s*세트)?)(?![a-wyzA-WYZ가-힣])/i;
 
   const volumeTokenPresent = /(?<![a-zA-Z0-9.])\d+(?:\.\d+)?\s*(?:ml|l|리터)(?![a-wyz]|x(?!\d)|당)/i.test(
     cleanedTitle
