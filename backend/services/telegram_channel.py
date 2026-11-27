@@ -289,6 +289,29 @@ def format_telegram_deal_message(
 
     shipping = str(getattr(deal, "shipping_fee", None) or "").strip()
     ai_summary = str(getattr(deal, "ai_summary", None) or "").strip()
+    ai_summary_line = ""
+    raw_items_json = getattr(deal, "ai_summary_json", None)
+    if raw_items_json:
+        try:
+            parsed_items = json.loads(raw_items_json) if isinstance(raw_items_json, str) else raw_items_json
+            if isinstance(parsed_items, list):
+                parts = [
+                    f"{str(it.get('k', '')).strip()}: {str(it.get('v', '')).strip()}"
+                    for it in parsed_items
+                    if isinstance(it, dict) and str(it.get("k", "")).strip() and str(it.get("v", "")).strip()
+                ]
+                ai_summary_line = " · ".join(parts)
+        except Exception:
+            ai_summary_line = ""
+    if not ai_summary_line and ai_summary:
+        cleaned_ai = re.sub(
+            r"^(?:🔥\s*)?\[(?:커뮤니티\s*인증\s*핫딜|커뮤니티\s*인기|모음전)\]\s*",
+            "",
+            ai_summary,
+        ).strip()
+        cleaned_ai = re.sub(r"[🔥✨🤖💡⚡🎉📦✅⚠️]+", "", cleaned_ai).strip()
+        if len(re.sub(r"\s+", "", cleaned_ai)) >= 8:
+            ai_summary_line = re.sub(r"\s+", " ", cleaned_ai).strip()
 
     prefix = f"[{shop_name}] " if shop_name else ""
     header_plain = _truncate_plain(f"{prefix}{clean_title}", 160)
@@ -299,8 +322,8 @@ def format_telegram_deal_message(
         price_line += f" · {html.escape(_truncate_plain(shipping, 40))}"
 
     lines = [header_line, price_line]
-    if ai_summary:
-        lines.append(f"💡 {html.escape(_truncate_plain(ai_summary, 240))}")
+    if ai_summary_line:
+        lines.append(f"💡 {html.escape(_truncate_plain(ai_summary_line, 240))}")
     lines.append(f'👉 <a href="{html.escape(share_url, quote=True)}">얼만데에서 상세·시세 보기</a>')
     lines.append("<i>※ 제휴 링크를 통해 구매 시 일정액의 수수료를 제공받을 수 있습니다.</i>")
 

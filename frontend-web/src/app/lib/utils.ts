@@ -56,7 +56,10 @@ function decodeHtmlPass(input: string): string {
 }
 
 // 제목/배송비/옵션명 HTML 엔티티 디코딩 헬퍼 (이중 인코딩 &amp;#039; 등까지 복원)
-export const decodeHtmlEntities = (raw?: string | null): string => {
+export const decodeHtmlEntities = (
+  raw?: string | null,
+  preserveNewlines = false
+): string => {
   if (!raw) return "";
   let decoded = String(raw).replace(/\u00A0/g, " ").replace(/\uFFFD/g, "");
   if (decoded.includes("&")) {
@@ -64,6 +67,14 @@ export const decodeHtmlEntities = (raw?: string | null): string => {
     if (decoded.includes("&")) {
       decoded = decodeHtmlPass(decoded);
     }
+  }
+  if (preserveNewlines) {
+    return decoded
+      .replace(/\r\n?/g, "\n")
+      .split("\n")
+      .map((line) => line.replace(/[^\S\n]+/g, " ").trim())
+      .filter(Boolean)
+      .join("\n");
   }
   return decoded.replace(/\s+/g, " ").trim();
 };
@@ -2195,7 +2206,23 @@ export function mapRawDealToDeal(
     honeyScore: Number(d.honey_score ?? d.honeyScore ?? d.score ?? 0),
     isSuperHotdeal: Boolean(d.is_super_hotdeal),
     likeCount: d.like_count ?? d.buy_count ?? d.buyCount ?? undefined,
-    aiSummary: decodeHtmlEntities(d.ai_summary || d.aiSummary || ""),
+    aiSummary: decodeHtmlEntities(d.ai_summary || d.aiSummary || "", true),
+    aiSummaryItems: (() => {
+      const rawItems = d.ai_summary_items ?? d.aiSummaryItems;
+      if (!Array.isArray(rawItems)) return undefined;
+      const valid = rawItems
+        .filter(
+          (it): it is { k: string; v: string } =>
+            Boolean(it && typeof it.k === "string" && typeof it.v === "string" && it.k.trim() && it.v.trim())
+        )
+        .map((it) => ({
+          k: decodeHtmlEntities(it.k),
+          v: decodeHtmlEntities(it.v),
+        }));
+      return valid.length > 0 ? valid : undefined;
+    })(),
+    isHotAiCertified:
+      d.is_hot_ai_certified ?? d.isHotAiCertified ?? undefined,
     contentHtml: d.content_html || d.contentHtml || "",
     sources: d.sources || [],
     tags: Array.isArray(d.tags)

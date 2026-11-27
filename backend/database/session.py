@@ -147,6 +147,9 @@ class DatabaseManager:
             "deals": [
                 ("brand", "VARCHAR(100)", "VARCHAR(100)"),
                 ("model_code", "VARCHAR(100)", "VARCHAR(100)"),
+                ("ai_summary_json", "TEXT", "TEXT"),
+                ("ai_summary_status", "VARCHAR(24)", "VARCHAR(24)"),
+                ("ai_summary_source_hash", "VARCHAR(32)", "VARCHAR(32)"),
             ],
             "device_tokens": [
                 ("dnd_enabled", "BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
@@ -179,6 +182,13 @@ class DatabaseManager:
                     logger.warning(f"자동 마이그레이션 컬럼 추가 스킵 ({table_name}.{col_name}): {e}")
 
         self._ensure_sqlite_deals_normalization_and_triggers(existing_tables)
+
+        if not is_sqlite and "deals" in existing_tables:
+            try:
+                with self.engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE deals ALTER COLUMN ai_summary TYPE TEXT"))
+            except Exception as e:
+                logger.debug(f"PostgreSQL deals.ai_summary TEXT 전환 스킵: {e}")
 
         if "deals" in existing_tables:
             for stmt in self._DEALS_COMPOSITE_INDEX_STATEMENTS:

@@ -1882,6 +1882,9 @@ class AggregatorService:
 
         # [Phase 6.5] 💡 글로벌 쇼핑몰 링크 캐싱 (고유 상품 키가 확인되고 제목이 유사한 동일 상품일 때만 캐시 재사용)
         cached_ai_summary = None
+        cached_ai_summary_json = None
+        cached_ai_summary_status = None
+        cached_ai_summary_hash = None
         ecommerce_url = scraped_data.get("ecommerce_link")
         from backend.core.url_utils import extract_canonical_product_key
         if ecommerce_url and len(ecommerce_url) > 15 and extract_canonical_product_key(ecommerce_url):
@@ -1897,9 +1900,12 @@ class AggregatorService:
                 .first()
             )
             
-            if recent_duplicate and recent_duplicate.ai_summary:
+            if recent_duplicate and (recent_duplicate.ai_summary or recent_duplicate.ai_summary_status):
                 logger.info(f"[Global Cache Hit] 중복 핫딜의 AI 분석을 복사합니다: {ecommerce_url}")
                 cached_ai_summary = recent_duplicate.ai_summary
+                cached_ai_summary_json = getattr(recent_duplicate, "ai_summary_json", None)
+                cached_ai_summary_status = getattr(recent_duplicate, "ai_summary_status", None)
+                cached_ai_summary_hash = getattr(recent_duplicate, "ai_summary_source_hash", None)
                 if final_price == 0 and recent_duplicate.price and recent_duplicate.price != "0":
                     price = int(recent_duplicate.price)
                     final_price = price
@@ -2305,6 +2311,9 @@ class AggregatorService:
                          existing_deal.options_data = None
                          existing_deal.has_options = False
                          existing_deal.ai_summary = None
+                         existing_deal.ai_summary_json = None
+                         existing_deal.ai_summary_status = None
+                         existing_deal.ai_summary_source_hash = None
 
                      # PriceHistory: 과거 이종 상품의 가격 시세 오염 방지를 위해 기존 이력 삭제 후 새 가격 기준점 등록
                      def _reset_recycled_price_history_sync(did: int = existing_deal.id):
@@ -2458,6 +2467,9 @@ class AggregatorService:
                      or ((is_same_post_url or lowest_price_dropped) and not is_new_rss_trunc and len(new_ch_str) > len(old_ch_str) + 40)
                  ):
                      existing_deal.content_html = content_html
+                     if getattr(existing_deal, "ai_summary_status", None) in ("skipped_empty", "skipped_simple"):
+                         existing_deal.ai_summary_status = "pending"
+                         existing_deal.ai_summary_source_hash = None
 
                  # 본문에 실제 게시글 이미지([상품이미지: ...])가 존재하는데 대표 이미지가 검색 폴백/저화질이거나 본문 이미지와 불일치하면 즉시 본문 원본 이미지로 복원!
                  eff_body_html = existing_deal.content_html or content_html or ""
@@ -2945,6 +2957,9 @@ class AggregatorService:
                     base_product_name=normalized.name,
                     image_url=image_url,
                     ai_summary=single_ai_summary,
+                    ai_summary_json=cached_ai_summary_json,
+                    ai_summary_status=cached_ai_summary_status,
+                    ai_summary_source_hash=cached_ai_summary_hash,
                     content_html=content_html,
                     honey_score=honey_score,
                     view_count=view_count,

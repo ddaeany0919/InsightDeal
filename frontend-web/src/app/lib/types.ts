@@ -9,6 +9,11 @@ export interface DealSource {
   sub_urls?: string[];
 }
 
+export interface AiSummaryItem {
+  k: string;
+  v: string;
+}
+
 export interface DealOptionItem {
   name?: string;
   title?: string;
@@ -59,6 +64,10 @@ export interface RawDealApiResponse {
   is_super_hotdeal?: boolean;
   ai_summary?: string;
   aiSummary?: string;
+  ai_summary_items?: AiSummaryItem[];
+  aiSummaryItems?: AiSummaryItem[];
+  is_hot_ai_certified?: boolean;
+  isHotAiCertified?: boolean;
   content_html?: string;
   contentHtml?: string;
   sources?: DealSource[];
@@ -124,6 +133,8 @@ export interface Deal {
   isSuperHotdeal?: boolean;
   likeCount?: number;
   aiSummary?: string;
+  aiSummaryItems?: AiSummaryItem[];
+  isHotAiCertified?: boolean;
   contentHtml?: string;
   sources?: DealSource[];
   tags?: string[];

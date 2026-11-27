@@ -1985,9 +1985,60 @@ def _clean_ai_summary(raw_summary: str) -> str:
         "가격이 0원이거나 역동적 할인이 적용되어",
     )):
         return "[커뮤니티 인증 핫딜]" if ("인기" in raw_summary or "인증" in raw_summary) else ""
-    cleaned = re.sub(r'[🔥✨🤖💡⚡🎉📦✅⚠️]+', '', raw_summary).strip()
+    cleaned = re.sub(r'[🔥✨🤖💡⚡🎉📦⚠️]+', '', raw_summary).strip()
     cleaned = re.sub(r'^\s*\[커뮤니티 인기\]\s*', '[커뮤니티 인증 핫딜] ', cleaned).strip()
-    return re.sub(r'\s{2,}', ' ', cleaned)
+    lines = []
+    for raw_ln in cleaned.replace('\r\n', '\n').replace('\r', '\n').split('\n'):
+        ln = re.sub(r'[^\S\r\n]{2,}', ' ', raw_ln).strip()
+        if ln:
+            lines.append(ln)
+    return '\n'.join(lines)
+
+
+def _extract_ai_summary_items(deal) -> list[dict[str, str]]:
+    if deal is None:
+        return []
+    raw_json = getattr(deal, "ai_summary_json", None)
+    if not raw_json:
+        return []
+    try:
+        parsed = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    items: list[dict[str, str]] = []
+    for it in parsed:
+        if not isinstance(it, dict):
+            continue
+        k = str(it.get("k") or "").strip()
+        v = str(it.get("v") or "").strip()
+        if k and v:
+            items.append({"k": k, "v": v})
+    return items[:4]
+
+
+def _is_ai_stub_only(raw_summary: Optional[str]) -> bool:
+    if not raw_summary:
+        return True
+    cleaned = re.sub(
+        r'^(?:🔥\s*)?\[(?:커뮤니티\s*인증\s*핫딜|커뮤니티\s*인기|모음전)\]\s*',
+        '',
+        str(raw_summary).strip(),
+    ).strip()
+    return len(re.sub(r'\s+', '', cleaned)) < 6
+
+
+def _is_hot_ai_certified(deal) -> bool:
+    if deal is None:
+        return False
+    raw = str(getattr(deal, "ai_summary", None) or "")
+    return bool(
+        getattr(deal, "is_super_hotdeal", False)
+        or (getattr(deal, "honey_score", 0) or 0) >= 100
+        or "인증 핫딜" in raw
+        or "커뮤니티 인기" in raw
+    )
 
 
 def clean_deal_title(raw_title: str) -> str:
@@ -2217,13 +2268,25 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
                 # 다수의 중복 딜 중 하나라도 핫딜이면 핫딜 상태 병합
                 if getattr(deal, 'honey_score', 0) >= 100:
                     existing["honey_score"] = max(existing.get("honey_score", 0), 100)
-                if deal.ai_summary and ("🔥" in deal.ai_summary or "인증 핫딜" in deal.ai_summary):
+                deal_items = _extract_ai_summary_items(deal)
+                if deal_items and not existing.get("ai_summary_items"):
+                    existing["ai_summary_items"] = deal_items
+                    existing["aiSummaryItems"] = deal_items
+                if not existing.get("ai_summary") or _is_ai_stub_only(existing.get("ai_summary")):
+                    cand_sum = _clean_ai_summary(deal.ai_summary or "")
+                    if cand_sum and not _is_ai_stub_only(cand_sum):
+                        existing["ai_summary"] = cand_sum
+                if _is_hot_ai_certified(deal):
+                    existing["is_hot_ai_certified"] = True
+                    existing["isHotAiCertified"] = True
                     if not existing.get("ai_summary"):
                         existing["ai_summary"] = "[커뮤니티 인증 핫딜]"
                     elif "인증 핫딜" not in existing["ai_summary"]:
                         existing["ai_summary"] = "[커뮤니티 인증 핫딜] " + existing["ai_summary"]
             else:
                 ai_sum = _clean_ai_summary(deal.ai_summary)
+                ai_items = _extract_ai_summary_items(deal)
+                ai_hot_cert = _is_hot_ai_certified(deal)
                 # Clean title for display
                 clean_title = clean_deal_title(deal.title)
                 
@@ -2264,6 +2327,10 @@ def get_top_hot_deals(db: Session = Depends(get_db_session)):
                     "is_closed": deal.is_closed,
                     "honey_score": deal.honey_score or 0,
                     "ai_summary": ai_sum,
+                    "ai_summary_items": ai_items,
+                    "aiSummaryItems": ai_items,
+                    "is_hot_ai_certified": ai_hot_cert,
+                    "isHotAiCertified": ai_hot_cert,
                     "content_html": _clean_content_text(deal.content_html or "", clean_title),
                     "has_options": bool(getattr(deal, "has_options", False) or serialized_opts),
                     "body_images": deal_body_imgs,
@@ -3290,7 +3357,13 @@ def get_hot_deals(
                         existing["score"] = existing["honey_score"]
                     if getattr(deal, 'is_super_hotdeal', False):
                         existing["is_super_hotdeal"] = True
-                    if deal.ai_summary and ("🔥" in deal.ai_summary or "인증 핫딜" in deal.ai_summary):
+                    top_deal_items = _extract_ai_summary_items(deal)
+                    if top_deal_items and not existing.get("ai_summary_items"):
+                        existing["ai_summary_items"] = top_deal_items
+                        existing["aiSummaryItems"] = top_deal_items
+                    if _is_hot_ai_certified(deal):
+                        existing["is_hot_ai_certified"] = True
+                        existing["isHotAiCertified"] = True
                         if not existing.get("ai_summary"):
                             existing["ai_summary"] = "[커뮤니티 인증 핫딜]"
                         elif "인증 핫딜" not in existing["ai_summary"]:
@@ -3342,6 +3415,10 @@ def get_hot_deals(
                         "score": final_honey_score,
                         "is_super_hotdeal": is_hot,
                         "ai_summary": _clean_ai_summary(deal.ai_summary or ""),
+                        "ai_summary_items": _extract_ai_summary_items(deal),
+                        "aiSummaryItems": _extract_ai_summary_items(deal),
+                        "is_hot_ai_certified": _is_hot_ai_certified(deal),
+                        "isHotAiCertified": _is_hot_ai_certified(deal),
                         "content_html": _clean_content_text(loaded_html, clean_title),
                         "is_closed": getattr(deal, 'is_closed', False),
                         "created_at": to_utc_iso(deal.indexed_at),
@@ -4126,6 +4203,8 @@ def get_deal(
                     models.Deal.honey_score,
                     func.length(models.Deal.content_html),
                     models.Deal.title,
+                    models.Deal.ai_summary,
+                    models.Deal.ai_summary_status,
                 )
                 .filter(models.Deal.id == deal_id)
                 .first()
@@ -4138,6 +4217,8 @@ def get_deal(
                     int(stamp_row[3] or 0),
                     int(stamp_row[4] or 0),
                     stamp_row[5] or "",
+                    stamp_row[6] or "",
+                    stamp_row[7] or "",
                 )
                 if stamp_row is not None
                 else None
@@ -4540,7 +4621,16 @@ def get_deal(
         "indexed_at": to_utc_iso(deal.indexed_at),
         "is_closed": is_closed,
         "score": getattr(best_deal, "honey_score", 0) or getattr(deal, "honey_score", 0),
-        "ai_summary": _clean_ai_summary(getattr(best_deal, "ai_summary", "") or getattr(deal, "ai_summary", "") or ""),
+        "ai_summary": _clean_ai_summary(
+            (getattr(best_deal, "ai_summary", None) if not _is_ai_stub_only(getattr(best_deal, "ai_summary", None)) else None)
+            or getattr(deal, "ai_summary", None)
+            or getattr(best_deal, "ai_summary", None)
+            or ""
+        ),
+        "ai_summary_items": _extract_ai_summary_items(best_deal) or _extract_ai_summary_items(deal),
+        "aiSummaryItems": _extract_ai_summary_items(best_deal) or _extract_ai_summary_items(deal),
+        "is_hot_ai_certified": _is_hot_ai_certified(best_deal) or _is_hot_ai_certified(deal),
+        "isHotAiCertified": _is_hot_ai_certified(best_deal) or _is_hot_ai_certified(deal),
         "content_html": _clean_content_text(raw_detail_content, deal.title or ""),
         "has_options": bool(getattr(best_deal, "has_options", False) or getattr(deal, "has_options", False) or serialized_detail_opts),
         "buy_count": buy_count,
@@ -4578,6 +4668,8 @@ def get_deal(
             int(deal.honey_score or 0),
             len(deal.content_html or ""),
             deal.title or "",
+            deal.ai_summary or "",
+            getattr(deal, "ai_summary_status", None) or "",
         )
         with _DEAL_DETAIL_CACHE_LOCK:
             _DEAL_DETAIL_CACHE[detail_cache_key] = {

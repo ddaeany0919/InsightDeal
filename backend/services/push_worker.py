@@ -195,8 +195,8 @@ def _match_smart_keyword(raw_keyword: str, deal: Deal, deal_price_int: int) -> t
     지원 문법:
       - 기본 단어: 공백 구분 AND 매칭 (예: '맥북 에어', 한영 동의어 및 공백 무시 지원)
       - 제외 단어: '-단어' 또는 '!단어' (예: '아이폰 -케이스 !필름')
-      - 상한 금액: ':금액' 또는 '<=금액' (예: '제로콜라 :15,000', '제로콜라 <=15000', 외화는 원화 환산 기준 비교)
-      - 쇼핑몰/카테고리 한정: '@쇼핑몰' / '#카테고리' (예: '물티슈 @쿠팡', 'SSD #PC용품')
+      - 최소/상한 금액: '>=금액' / 'min:금액' / ':금액' / '<=금액' (예: '아이폰 >=700000', '제로콜라 :15,000')
+      - 쇼핑몰/카테고리/인기 한정: '@쇼핑몰' / '#카테고리' / '+인기' (예: '물티슈 @쿠팡', '콜라 +인기')
     """
     if not raw_keyword or not raw_keyword.strip():
         return False, ""
@@ -208,27 +208,40 @@ def _match_smart_keyword(raw_keyword: str, deal: Deal, deal_price_int: int) -> t
     exclude_terms: list[str] = []
     shop_filters: list[str] = []
     cat_filters: list[str] = []
+    min_price: int | None = None
     max_price: int | None = None
+    only_hot = False
+
+    def _parse_pos_int(raw_digits_str: str) -> int | None:
+        digits = "".join(ch for ch in raw_digits_str if ch.isdigit())
+        if not digits:
+            return None
+        try:
+            val = int(digits)
+            return val if val > 0 else None
+        except ValueError:
+            return None
 
     for token in tokens:
-        if token.startswith(":") and len(token) > 1:
-            digits = "".join(ch for ch in token[1:] if ch.isdigit())
-            if digits:
-                try:
-                    parsed_price = int(digits)
-                    if parsed_price > 0:
-                        max_price = parsed_price
-                except ValueError:
-                    pass
+        tok_low = token.lower()
+        if token.startswith(">=") and len(token) > 2:
+            parsed = _parse_pos_int(token[2:])
+            if parsed is not None:
+                min_price = parsed
+        elif tok_low.startswith("min:") and len(token) > 4:
+            parsed = _parse_pos_int(token[4:])
+            if parsed is not None:
+                min_price = parsed
+        elif token.startswith(":") and len(token) > 1:
+            parsed = _parse_pos_int(token[1:])
+            if parsed is not None:
+                max_price = parsed
         elif token.startswith("<=") and len(token) > 2:
-            digits = "".join(ch for ch in token[2:] if ch.isdigit())
-            if digits:
-                try:
-                    parsed_price = int(digits)
-                    if parsed_price > 0:
-                        max_price = parsed_price
-                except ValueError:
-                    pass
+            parsed = _parse_pos_int(token[2:])
+            if parsed is not None:
+                max_price = parsed
+        elif tok_low in ("+인기", "+hot", "*hot", "#인기"):
+            only_hot = True
         elif (token.startswith("-") or token.startswith("!")) and len(token) > 1:
             exclude_terms.append(token[1:].lower())
         elif token.startswith("@") and len(token) > 1:
@@ -240,6 +253,15 @@ def _match_smart_keyword(raw_keyword: str, deal: Deal, deal_price_int: int) -> t
 
     if not positive_terms:
         return False, raw_keyword
+
+    if only_hot:
+        is_hot_deal = bool(
+            getattr(deal, "is_super_hotdeal", False)
+            or (getattr(deal, "honey_score", 0) or 0) >= 80
+            or (getattr(deal, "like_count", 0) or 0) >= 5
+        )
+        if not is_hot_deal:
+            return False, raw_keyword
 
     deal_shop_low = re.sub(r"\s+", "", (getattr(deal, "shop_name", None) or "").lower())
     deal_title_low = (getattr(deal, "title", None) or "").lower()
@@ -283,13 +305,23 @@ def _match_smart_keyword(raw_keyword: str, deal: Deal, deal_price_int: int) -> t
 
     deal_currency = (getattr(deal, "currency", None) or "KRW").strip().upper()
     effective_krw_price = _estimate_krw_price(deal_price_int, deal_currency)
+    if min_price is not None:
+        if effective_krw_price <= 0 or effective_krw_price < min_price:
+            return False, raw_keyword
     if max_price is not None:
         if effective_krw_price <= 0 or effective_krw_price > max_price:
             return False, raw_keyword
 
     display_name = " ".join(positive_terms)
+    cond_parts: list[str] = []
+    if min_price is not None:
+        cond_parts.append(f"{min_price:,}원 이상")
     if max_price is not None:
-        display_name = f"{display_name} ({max_price:,}원 이하)"
+        cond_parts.append(f"{max_price:,}원 이하")
+    if only_hot:
+        cond_parts.append("인기")
+    if cond_parts:
+        display_name = f"{display_name} ({' · '.join(cond_parts)})"
     return True, display_name
 
 

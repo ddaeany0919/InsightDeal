@@ -2,6 +2,7 @@
 .env
 *.env
 .env.*
+.env.laptop
 !.env.example
 local.properties
 google-services.json
@@ -72,6 +73,7 @@ crash_*.txt
 logcat_*.txt
 *.bin
 *.bat
+!scripts/start_laptop_worker.bat
 *.html
 !frontend-web/**/*.html
 response*.json

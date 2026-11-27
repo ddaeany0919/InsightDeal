@@ -49,7 +49,10 @@ class Deal(Base):
     brand = Column(String(100), index=True, nullable=True) # [가격분석] 브랜드명
     model_code = Column(String(100), index=True, nullable=True) # [가격분석] 규격/고유모델번호
     honey_score = Column(Integer, default=0, index=True) # [Phase 11] 추천도 점수
-    ai_summary = Column(String(500), nullable=True) # [Phase 11 Epic 1] AI 핵심 1줄 요약
+    ai_summary = Column(TEXT, nullable=True) # [Phase 11 Epic 1] AI 핵심 요약 (하위호환 텍스트)
+    ai_summary_json = Column(TEXT, nullable=True) # 구조화 AI 요약 JSON [{"k":"체감가","v":"..."}]
+    ai_summary_status = Column(String(24), nullable=True) # pending|done|skipped_empty|skipped_simple|skipped_llm|failed
+    ai_summary_source_hash = Column(String(32), nullable=True) # 입력 변경 감지 MD5 해시
     view_count = Column(Integer, default=0)
     like_count = Column(Integer, default=0)
     comment_count = Column(Integer, default=0)

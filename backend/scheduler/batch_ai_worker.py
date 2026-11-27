@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -9,11 +10,11 @@ import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import httpx
 from bs4 import BeautifulSoup
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 
 # 환경 셋업
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -66,11 +67,29 @@ _STUB_AI_SUMMARIES = (
     "[모음전]",
 )
 
+_COMPLEX_SIGNAL_RE = re.compile(
+    r"(쿠폰|할인|체감|카드|페이|토스|카카오|네이버|적립|캐시백|코드|프로모션|경유|"
+    r"선착순|관부과세|직구|옵션|개당|캔당|팩당|원대|최종|결제|사은품|증정|마감|임박|"
+    r"유통기한|리퍼|중고|뽑기|래플|멤버십|와우|네멤)",
+    re.IGNORECASE,
+)
+
+_ALLOWED_ITEM_KEYS = ("체감가", "구매경로", "스펙/구성", "주의")
+_KRW_AMOUNT_RE = re.compile(r"(\d[\d,]{2,})\s*원")
+_FX_AMOUNT_RE = re.compile(r"(?:\$|USD\s*)(\d+(?:\.\d{1,2})?)", re.IGNORECASE)
+_HTML_BLOCK_BREAK_RE = re.compile(r"(?:<br\s*/?>|</(?:p|div|li|tr|h[1-6])>)", re.IGNORECASE)
+
 
 def _unsummarized_ai_filter():
     return or_(
-        Deal.ai_summary.is_(None),
-        func.trim(Deal.ai_summary).in_(_STUB_AI_SUMMARIES),
+        Deal.ai_summary_status.in_(("pending", "failed")),
+        and_(
+            or_(Deal.ai_summary_status.is_(None), Deal.ai_summary_status == ""),
+            or_(
+                Deal.ai_summary.is_(None),
+                func.trim(Deal.ai_summary).in_(_STUB_AI_SUMMARIES),
+            ),
+        ),
     )
 
 
@@ -176,16 +195,16 @@ def _get_max_daily_tokens() -> int:
 
 def _get_max_batch_size() -> int:
     try:
-        return max(1, min(30, int(os.getenv("AI_MICROBATCH_MAX_SIZE", "20") or "20")))
+        return max(1, min(30, int(os.getenv("AI_MICROBATCH_MAX_SIZE", "12") or "12")))
     except ValueError:
-        return 20
+        return 12
 
 
 def _get_content_preview_chars() -> int:
     try:
-        return max(0, min(500, int(os.getenv("AI_CONTENT_PREVIEW_CHARS", "300") or "300")))
+        return max(0, min(1500, int(os.getenv("AI_CONTENT_PREVIEW_CHARS", "900") or "900")))
     except ValueError:
-        return 300
+        return 900
 
 
 def _get_rate_limit_cooldown_sec() -> float:
@@ -282,17 +301,156 @@ def _set_provider_cooldown(provider: str, seconds: Optional[float] = None) -> No
         _PROVIDER_COOLDOWN_UNTIL[provider] = time.monotonic() + duration
 
 
-def _strip_html_preview(raw_html: Optional[str], max_chars: int = 140) -> str:
-    if not raw_html or max_chars <= 0:
+def _clean_content_for_ai(raw_html: Optional[str]) -> str:
+    if not raw_html:
         return ""
-    cleaned = re.sub(r"\[상품이미지\s*:\s*https?://[^\]]+\]", " ", str(raw_html), flags=re.IGNORECASE)
-    cleaned = re.sub(r"\[첨부된\s*이미지[^\]]*\]", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\[상품이미지\s*:\s*https?://[^\]]+\]", "\n", str(raw_html), flags=re.IGNORECASE)
+    cleaned = re.sub(r"\[첨부된\s*이미지[^\]]*\]", "\n", cleaned, flags=re.IGNORECASE)
+    cleaned = _HTML_BLOCK_BREAK_RE.sub("\n", cleaned)
     try:
-        text = BeautifulSoup(cleaned, "html.parser").get_text(" ", strip=True)
+        text = BeautifulSoup(cleaned, "html.parser").get_text("", strip=False)
     except Exception:
         text = re.sub(r"<[^>]+>", " ", cleaned)
     text = re.sub(r"https?://\S+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()[:max_chars]
+    lines = []
+    for raw_line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        norm_line = re.sub(r"[^\S\n]+", " ", raw_line).strip()
+        if norm_line:
+            lines.append(norm_line)
+    return "\n".join(lines)
+
+
+def _extract_keyword_windows_one_liner(clean_text: str, budget: int = 350) -> str:
+    windows: list[tuple[int, int]] = []
+    for m in _COMPLEX_SIGNAL_RE.finditer(clean_text):
+        start = max(0, m.start() - 80)
+        end = min(len(clean_text), m.end() + 80)
+        if windows and start <= windows[-1][1] + 10:
+            windows[-1] = (windows[-1][0], max(windows[-1][1], end))
+        else:
+            windows.append((start, end))
+    parts: list[str] = []
+    used = 0
+    for s, e in windows:
+        snippet = clean_text[s:e].strip()
+        if not snippet:
+            continue
+        add_len = len(snippet) + (3 if parts else 0)
+        if used + add_len > budget and parts:
+            break
+        parts.append(snippet[: max(40, budget - used)])
+        used += len(parts[-1]) + 3
+        if used >= budget:
+            break
+    return " / ".join(parts)
+
+
+def _strip_html_preview(raw_html: Optional[str], max_chars: int = 900) -> str:
+    """줄바꿈을 보존한 채 본문을 스마트 발췌(Head + Keyword/Window + Tail)합니다."""
+    if not raw_html or max_chars <= 0:
+        return ""
+    clean_text = _clean_content_for_ai(raw_html)
+    if not clean_text:
+        return ""
+    if len(clean_text) <= max_chars:
+        return clean_text
+
+    head_budget = min(350, max(120, int(max_chars * 0.39)))
+    tail_budget = min(200, max(80, int(max_chars * 0.22)))
+    mid_budget = max(0, max_chars - head_budget - tail_budget - 8)
+
+    lines = clean_text.split("\n")
+    head = clean_text[:head_budget].rstrip()
+    tail = clean_text[-tail_budget:].lstrip()
+
+    mid = ""
+    if mid_budget > 0:
+        if len(lines) <= 2 and len(clean_text) > 400:
+            mid = _extract_keyword_windows_one_liner(clean_text[head_budget:-tail_budget], mid_budget)
+        else:
+            kw_lines: list[str] = []
+            used = 0
+            for ln in lines:
+                if _COMPLEX_SIGNAL_RE.search(ln) and ln not in head and ln not in tail:
+                    ln_clip = ln[:140]
+                    if used + len(ln_clip) + 1 > mid_budget and kw_lines:
+                        break
+                    kw_lines.append(ln_clip)
+                    used += len(ln_clip) + 1
+            mid = "\n".join(kw_lines)
+
+    chunks = [head]
+    if mid:
+        chunks.append(mid)
+    if tail and tail not in head:
+        chunks.append(tail)
+    return "\n...\n".join(chunks)[:max_chars]
+
+
+def _compute_ai_source_hash(deal: Deal, clean_text: str) -> str:
+    payload = f"{getattr(deal, 'title', '') or ''}|{getattr(deal, 'price', '') or ''}|{getattr(deal, 'currency', '') or ''}|{clean_text}"
+    return hashlib.md5(payload.encode("utf-8")).hexdigest()[:32]
+
+
+def _should_skip_simple_deal(deal: Deal, clean_text: str) -> Optional[str]:
+    text_no_ws = re.sub(r"\s+", "", clean_text or "")
+    if len(text_no_ws) < 10:
+        return "skipped_empty"
+
+    if len(text_no_ws) >= 60:
+        return None
+
+    has_opts = bool(getattr(deal, "has_options", False))
+    opts_raw = getattr(deal, "options_data", None)
+    if opts_raw:
+        try:
+            opts_parsed = json.loads(opts_raw) if isinstance(opts_raw, str) else opts_raw
+            if isinstance(opts_parsed, list) and len(opts_parsed) > 0:
+                has_opts = True
+        except Exception:
+            pass
+    if has_opts:
+        return None
+
+    if _COMPLEX_SIGNAL_RE.search(clean_text):
+        return None
+
+    deal_curr = (getattr(deal, "currency", None) or "KRW").strip().upper()
+    try:
+        deal_price_raw = int(float(getattr(deal, "price", 0) or 0))
+    except (TypeError, ValueError):
+        deal_price_raw = 0
+
+    if deal_curr == "KRW":
+        for m in _KRW_AMOUNT_RE.finditer(clean_text):
+            try:
+                amt = int(m.group(1).replace(",", ""))
+            except ValueError:
+                continue
+            if amt > 0 and (deal_price_raw <= 0 or abs(amt - deal_price_raw) >= 100):
+                return None
+    else:
+        base_fx = deal_price_raw / 100.0 if deal_curr in ("USD", "EUR", "CNY") else float(deal_price_raw)
+        for m in _FX_AMOUNT_RE.finditer(clean_text):
+            try:
+                amt = float(m.group(1))
+            except ValueError:
+                continue
+            if amt > 0 and (base_fx <= 0 or abs(amt - base_fx) >= 1.0):
+                return None
+
+    return "skipped_simple"
+
+
+def _is_deal_hot(deal: Deal) -> bool:
+    return bool(
+        getattr(deal, "is_super_hotdeal", False)
+        or (getattr(deal, "honey_score", 0) or 0) >= 100
+        or (
+            getattr(deal, "ai_summary", None)
+            and ("🔥" in str(deal.ai_summary) or "인증 핫딜" in str(deal.ai_summary))
+        )
+    )
 
 
 def _format_price_for_prompt(deal: Deal) -> str:
@@ -317,27 +475,102 @@ def _build_batch_prompt(deals_to_process: list[Deal]) -> str:
     preview_chars = _get_content_preview_chars()
     input_data = []
     for d in deals_to_process:
-        entry = {
+        entry: dict[str, Any] = {
             "id": d.id,
             "t": d.title,
             "p": _format_price_for_prompt(d),
+            "shop": (getattr(d, "shop_name", None) or "").strip(),
+            "ship": (getattr(d, "shipping_fee", None) or "").strip(),
+            "cat": (getattr(d, "category", None) or "").strip(),
         }
         snippet = _strip_html_preview(d.content_html, preview_chars)
         if snippet:
             entry["c"] = snippet
-        if d.honey_score == 100 or d.is_super_hotdeal:
-            entry["hot"] = 1
         input_data.append(entry)
 
     compact_json = json.dumps(input_data, ensure_ascii=False, separators=(",", ":"))
     return (
-        '한국 핫딜 JSON 구매 요약기. 입력 배열의 id를 유지하고 ai_summary에 '
-        '"✅ 체감가/혜택\\n✅ 구매방법/스펙\\n✅ 필수조건/주의"(총 150자 이내, 쿠폰·결제수단·체감가 언급 시 구체 수치 포함, hot=1이면 앞부분에 "🔥 [커뮤니티 인증 핫딜] ")을 채운 '
-        f"순수 JSON 배열만 반환하라: [{{\"id\":1,\"ai_summary\":\"...\"}}]\n입력:{compact_json}"
+        "한국 핫딜 구매 조건 구조화 추출기. 각 딜의 제목(t), 가격(p), 판매처(shop), 배송(ship), 카테고리(cat), 본문(c)을 읽고 순수 JSON 배열만 반환하라.\n"
+        "규칙:\n"
+        '1. 본문에 가격 외 추가 혜택(체감가·쿠폰·결제수단), 복잡한 구매경로, 중요 주의사항/특이 스펙이 없으면 "skip": true, "items": []를 반환하라.\n'
+        "2. 제목·가격·판매처·배송비에 이미 있는 정보를 그대로 반복하지 마라.\n"
+        "3. 입력에 없는 원산지·스펙·할인·역대가 표현을 추측해 지어내지 마라.\n"
+        "4. items는 실제로 새로운 정보가 있는 항목만 1~3개 작성하라(억지로 3개를 채우지 마라).\n"
+        '5. 각 item의 k는 "체감가", "구매경로", "스펙/구성", "주의" 중 하나만 사용하고, v 안에 키 이름을 반복하지 마라(각 v 60자 이내).\n'
+        '출력 스키마: [{"id":1,"skip":false,"items":[{"k":"체감가","v":"..."}]}]\n'
+        f"입력:{compact_json}"
     )
 
 
-def _parse_batch_summaries(raw_text: str) -> dict[int, str]:
+def _extract_bracket_json_objects(cleaned: str) -> list[dict]:
+    """문자열 리터럴과 이스케이프를 인지해 잘린 중첩 JSON 배열에서도 완성된 최상위 객체를 복구합니다."""
+    objs: list[dict] = []
+    depth = 0
+    in_string = False
+    escaped = False
+    obj_start: Optional[int] = None
+
+    for idx, ch in enumerate(cleaned):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            if depth == 0:
+                obj_start = idx
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and obj_start is not None:
+                    candidate = cleaned[obj_start : idx + 1]
+                    try:
+                        parsed_obj = json.loads(candidate)
+                        if isinstance(parsed_obj, dict) and "id" in parsed_obj:
+                            objs.append(parsed_obj)
+                    except json.JSONDecodeError:
+                        pass
+                    obj_start = None
+    return objs
+
+
+def _sanitize_summary_items(raw_items: Any) -> list[dict[str, str]]:
+    if not isinstance(raw_items, list):
+        return []
+    result: list[dict[str, str]] = []
+    for it in raw_items:
+        if not isinstance(it, dict):
+            continue
+        k = str(it.get("k") or "").strip()
+        v = str(it.get("v") or "").strip()
+        if not k or not v:
+            continue
+        if k not in _ALLOWED_ITEM_KEYS:
+            if "체감" in k or "혜택" in k or "가격" in k:
+                k = "체감가"
+            elif "구매" in k or "경로" in k or "방법" in k or "쿠폰" in k:
+                k = "구매경로"
+            elif "주의" in k or "조건" in k:
+                k = "주의"
+            else:
+                k = "스펙/구성"
+        v = re.sub(rf"^{re.escape(k)}\s*[:：\-]?\s*", "", v).strip()[:120]
+        if len(v) >= 2:
+            result.append({"k": k, "v": v})
+        if len(result) >= 3:
+            break
+    return result
+
+
+def _parse_batch_summaries(raw_text: str) -> dict[int, dict[str, Any]]:
     if not raw_text:
         return {}
     cleaned = raw_text.strip()
@@ -356,16 +589,7 @@ def _parse_batch_summaries(raw_text: str) -> dict[int, str]:
                 parsed = None
 
     if parsed is None:
-        recovered = []
-        for obj_m in re.finditer(
-            r'\{[^{}]*"id"\s*:\s*\d+[^{}]*"ai_summary"\s*:\s*"(?:[^"\\]|\\.)*"[^{}]*\}',
-            cleaned,
-            re.DOTALL,
-        ):
-            try:
-                recovered.append(json.loads(obj_m.group(0)))
-            except json.JSONDecodeError:
-                continue
+        recovered = _extract_bracket_json_objects(cleaned)
         if not recovered:
             return {}
         parsed = recovered
@@ -379,21 +603,32 @@ def _parse_batch_summaries(raw_text: str) -> dict[int, str]:
     if not isinstance(parsed, list):
         return {}
 
-    summaries: dict[int, str] = {}
+    summaries: dict[int, dict[str, Any]] = {}
     for entry in parsed:
         if not isinstance(entry, dict):
             continue
         raw_id = entry.get("id")
-        raw_summary = entry.get("ai_summary")
-        if raw_id is None or not isinstance(raw_summary, str):
+        if raw_id is None:
             continue
         try:
             deal_id = int(raw_id)
         except (TypeError, ValueError):
             continue
-        summary_text = raw_summary.strip()[:500]
-        if summary_text:
-            summaries[deal_id] = summary_text
+
+        skip_flag = bool(entry.get("skip", False))
+        items = _sanitize_summary_items(entry.get("items"))
+        raw_legacy = entry.get("ai_summary")
+        legacy_text = raw_legacy.strip()[:1500] if isinstance(raw_legacy, str) and raw_legacy.strip() else ""
+
+        if skip_flag and not items:
+            summaries[deal_id] = {"skip": True, "items": [], "legacy_summary": ""}
+        elif items:
+            summaries[deal_id] = {"skip": False, "items": items, "legacy_summary": ""}
+        elif legacy_text:
+            summaries[deal_id] = {"skip": False, "items": [], "legacy_summary": legacy_text}
+        elif "skip" in entry:
+            summaries[deal_id] = {"skip": True, "items": [], "legacy_summary": ""}
+
     return summaries
 
 
@@ -614,11 +849,6 @@ def process_ai_batch(
     if not is_ai_summary_enabled():
         return 0
 
-    providers = _collect_available_providers()
-    if not providers:
-        logger.debug("사용 가능한 무료 AI 프로바이더가 없거나 모두 쿨다운 중입니다.")
-        return 0
-
     factory = db_session_factory or SessionLocal
     db = factory()
     try:
@@ -655,10 +885,45 @@ def process_ai_batch(
         if not deals_to_process:
             return 0
 
-        logger.info("🚀 %d개 핫딜 초절전 3줄 요약 마이크로배치 시작...", len(deals_to_process))
-        prompt = _build_batch_prompt(deals_to_process)
+        llm_targets: list[Deal] = []
+        hash_by_id: dict[int, str] = {}
+        hot_by_id: dict[int, bool] = {}
+        skipped_ids: list[int] = []
+
+        for d in deals_to_process:
+            clean_text = _clean_content_for_ai(d.content_html)
+            src_hash = _compute_ai_source_hash(d, clean_text)
+            is_hot = _is_deal_hot(d)
+            hash_by_id[d.id] = src_hash
+            hot_by_id[d.id] = is_hot
+
+            skip_reason = _should_skip_simple_deal(d, clean_text)
+            if skip_reason:
+                d.ai_summary_status = skip_reason
+                d.ai_summary_source_hash = src_hash
+                d.ai_summary_json = None
+                d.ai_summary = "🔥 [커뮤니티 인증 핫딜] " if is_hot else None
+                skipped_ids.append(d.id)
+            else:
+                llm_targets.append(d)
+
+        if skipped_ids:
+            db.commit()
+            _invalidate_caches_for_deals(skipped_ids)
+            logger.info("⏭️ 단순/초단문 딜 %d건 AI 호출 없이 게이팅 스킵 (%s)", len(skipped_ids), skipped_ids)
+
+        if not llm_targets:
+            return len(skipped_ids)
+
+        providers = _collect_available_providers()
+        if not providers:
+            logger.debug("사용 가능한 무료 AI 프로바이더가 없거나 모두 쿨다운 중입니다.")
+            return len(skipped_ids)
+
+        logger.info("🚀 %d개 핫딜 구조화 AI 구매 요약 마이크로배치 시작...", len(llm_targets))
+        prompt = _build_batch_prompt(llm_targets)
         estimated_in_tokens = _estimate_tokens(prompt)
-        max_output_tokens = min(4096, 200 + len(deals_to_process) * 160)
+        max_output_tokens = min(4096, 300 + len(llm_targets) * 240)
 
         for idx, (provider_name, cfg, call_fn) in enumerate(providers):
             allowed, reason = _reserve_call_budget(
@@ -673,7 +938,7 @@ def process_ai_batch(
                     get_daily_token_count(),
                     _get_max_daily_tokens(),
                 )
-                return 0
+                return len(skipped_ids)
 
             try:
                 raw_text, actual_total_tokens = call_fn(prompt, cfg, max_output_tokens)
@@ -684,10 +949,31 @@ def process_ai_batch(
                     continue
 
                 updated_ids: list[int] = []
-                for d in deals_to_process:
-                    summary = summaries_by_id.get(d.id)
-                    if summary:
-                        d.ai_summary = summary
+                for d in llm_targets:
+                    parsed_entry = summaries_by_id.get(d.id)
+                    if not parsed_entry:
+                        continue
+                    is_hot = hot_by_id.get(d.id, False)
+                    d.ai_summary_source_hash = hash_by_id.get(d.id)
+
+                    if parsed_entry.get("skip"):
+                        d.ai_summary_status = "skipped_llm"
+                        d.ai_summary_json = None
+                        d.ai_summary = "🔥 [커뮤니티 인증 핫딜] " if is_hot else None
+                        updated_ids.append(d.id)
+                    elif parsed_entry.get("items"):
+                        items = parsed_entry["items"]
+                        d.ai_summary_json = json.dumps(items, ensure_ascii=False)
+                        body_lines = "\n".join(f"✅ {it['k']}: {it['v']}" for it in items)
+                        d.ai_summary = (
+                            f"🔥 [커뮤니티 인증 핫딜]\n{body_lines}" if is_hot else body_lines
+                        )[:1500]
+                        d.ai_summary_status = "done"
+                        updated_ids.append(d.id)
+                    elif parsed_entry.get("legacy_summary"):
+                        d.ai_summary_json = None
+                        d.ai_summary = str(parsed_entry["legacy_summary"])[:1500]
+                        d.ai_summary_status = "done"
                         updated_ids.append(d.id)
 
                 if not updated_ids:
@@ -697,14 +983,14 @@ def process_ai_batch(
                 db.commit()
                 _invalidate_caches_for_deals(updated_ids)
                 logger.info(
-                    "✅ [%s] 초절전 AI 배치 완료: %d/%d건 (일일 %d회/%d토큰)",
+                    "✅ [%s] 구조화 AI 배치 완료: %d/%d건 (일일 %d회/%d토큰)",
                     provider_name,
                     len(updated_ids),
-                    len(deals_to_process),
+                    len(llm_targets),
                     get_daily_call_count(),
                     get_daily_token_count(),
                 )
-                return len(updated_ids)
+                return len(skipped_ids) + len(updated_ids)
 
             except _ProviderCallError as exc:
                 if exc.status_code == 429:
@@ -715,8 +1001,8 @@ def process_ai_batch(
             except Exception as exc:
                 logger.warning("⚠️ [%s] 예외 발생 (%s) → 다음 무료 프로바이더 폴백", provider_name, exc)
 
-        # 실패 시 더미 문자열 저장 금지: ai_summary=None 유지 후 다음 배치/상세 재시도 허용
-        return 0
+        # 실패 시 더미 문자열 저장 금지: pending/None 유지 후 다음 배치 재시도 허용
+        return len(skipped_ids)
     finally:
         db.close()
 
@@ -754,7 +1040,7 @@ def schedule_ai_summary_microbatch(
     db_session_factory: Optional[Callable] = None,
 ) -> bool:
     """
-    신규 수집 딜 ID를 디바운스 큐에 적재하고 비차단 마이크로배치로 3줄 요약을 생성합니다.
+    신규 수집 딜 ID를 디바운스 큐에 적재하고 비차단 마이크로배치로 AI 요약을 생성합니다.
     테스트 환경에서는 AI_MICROBATCH_ALLOW_IN_TEST=true 가 아니면 즉시 no-op 반환합니다.
     """
     global _MICROBATCH_TASK

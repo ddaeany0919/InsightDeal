@@ -102,6 +102,38 @@ function parseWeekdayWeekendDnd(
   }
 }
 
+function parseKeywordBadgeChips(rawKeyword: string): Array<{ text: string; tone: 'base' | 'exclude' | 'price' | 'hot' | 'shop' }> {
+  const tokens = rawKeyword.trim().split(/\s+/).filter(Boolean);
+  const positives: string[] = [];
+  const chips: Array<{ text: string; tone: 'base' | 'exclude' | 'price' | 'hot' | 'shop' }> = [];
+  for (const tok of tokens) {
+    const low = tok.toLowerCase();
+    if (tok.startsWith('>=') && tok.length > 2) {
+      const n = Number(tok.slice(2).replace(/[^0-9]/g, ''));
+      if (n > 0) chips.push({ text: `${n.toLocaleString('ko-KR')}원 이상`, tone: 'price' });
+    } else if (low.startsWith('min:') && tok.length > 4) {
+      const n = Number(tok.slice(4).replace(/[^0-9]/g, ''));
+      if (n > 0) chips.push({ text: `${n.toLocaleString('ko-KR')}원 이상`, tone: 'price' });
+    } else if (tok.startsWith(':') && tok.length > 1) {
+      const n = Number(tok.slice(1).replace(/[^0-9]/g, ''));
+      if (n > 0) chips.push({ text: `${n.toLocaleString('ko-KR')}원 이하`, tone: 'price' });
+    } else if (tok.startsWith('<=') && tok.length > 2) {
+      const n = Number(tok.slice(2).replace(/[^0-9]/g, ''));
+      if (n > 0) chips.push({ text: `${n.toLocaleString('ko-KR')}원 이하`, tone: 'price' });
+    } else if (low === '+인기' || low === '+hot' || low === '*hot' || low === '#인기') {
+      chips.push({ text: '인기만', tone: 'hot' });
+    } else if ((tok.startsWith('-') || tok.startsWith('!')) && tok.length > 1) {
+      chips.push({ text: `제외: ${tok.slice(1)}`, tone: 'exclude' });
+    } else if (tok.startsWith('@') && tok.length > 1) {
+      chips.push({ text: tok, tone: 'shop' });
+    } else {
+      positives.push(tok);
+    }
+  }
+  const baseChip = { text: positives.join(' ') || rawKeyword, tone: 'base' as const };
+  return [baseChip, ...chips];
+}
+
 function serializeWeekdayWeekendDnd(
   weekday: DayDndCfg,
   weekend: DayDndCfg
@@ -139,8 +171,10 @@ export default function NotificationSettingsPage() {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [keywordInput, setKeywordInput] = useState('');
   const [excludeInput, setExcludeInput] = useState('');
+  const [minPriceInput, setMinPriceInput] = useState('');
   const [maxPriceInput, setMaxPriceInput] = useState('');
   const [shopFilterInput, setShopFilterInput] = useState('');
+  const [onlyHotInput, setOnlyHotInput] = useState(false);
   const [editingKeywordOrig, setEditingKeywordOrig] = useState<string | null>(null);
   const [editingKeywordVal, setEditingKeywordVal] = useState('');
   const [isDndEnabled, setIsDndEnabled] = useState(false);
@@ -425,13 +459,20 @@ export default function NotificationSettingsPage() {
         .filter(Boolean)
         .forEach((t) => tokens.push(`-${t}`));
     }
+    const minP = minPriceInput.replace(/[^0-9]/g, '');
+    if (minP && Number(minP) > 0 && !base.includes('>=') && !base.toLowerCase().includes('min:')) {
+      tokens.push(`>=${minP}`);
+    }
     const maxP = maxPriceInput.replace(/[^0-9]/g, '');
-    if (maxP && Number(maxP) > 0 && !base.includes(':')) {
+    if (maxP && Number(maxP) > 0 && !base.includes(':') && !base.includes('<=')) {
       tokens.push(`:${maxP}`);
     }
     const sh = shopFilterInput.trim().replace(/^@+/, '');
     if (sh && !base.includes('@')) {
       tokens.push(`@${sh}`);
+    }
+    if (onlyHotInput && !base.includes('+인기') && !base.toLowerCase().includes('+hot')) {
+      tokens.push('+인기');
     }
     return tokens.join(' ').trim();
   };
@@ -444,8 +485,10 @@ export default function NotificationSettingsPage() {
     if (keywords.some((k) => k.keyword === newKeywordStr)) {
       setKeywordInput('');
       setExcludeInput('');
+      setMinPriceInput('');
       setMaxPriceInput('');
       setShopFilterInput('');
+      setOnlyHotInput(false);
       return;
     }
 
@@ -508,8 +551,10 @@ export default function NotificationSettingsPage() {
       setLiveAnnouncement(`'${newKeywordStr}' 알림 키워드를 등록했어요.`);
       setKeywordInput('');
       setExcludeInput('');
+      setMinPriceInput('');
       setMaxPriceInput('');
       setShopFilterInput('');
+      setOnlyHotInput(false);
     } catch {
       setErrorMsg('네트워크 오류로 키워드를 등록하지 못했어요.');
     } finally {
@@ -1396,12 +1441,32 @@ export default function NotificationSettingsPage() {
                   type="number"
                   min={0}
                   step={1000}
+                  value={minPriceInput}
+                  onChange={(e) => setMinPriceInput(e.target.value)}
+                  placeholder="최소 금액 (원)"
+                  aria-label="최소 가격 입력"
+                  style={{
+                    flex: '1 1 110px',
+                    minWidth: 0,
+                    minHeight: '40px',
+                    background: 'var(--surface-subtle)',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '10px',
+                    padding: '8px 12px',
+                    color: 'var(--text-main)',
+                    fontSize: '0.84rem',
+                  }}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  step={1000}
                   value={maxPriceInput}
                   onChange={(e) => setMaxPriceInput(e.target.value)}
                   placeholder="상한 금액 (원)"
                   aria-label="상한 가격 입력"
                   style={{
-                    flex: '1 1 120px',
+                    flex: '1 1 110px',
                     minWidth: 0,
                     minHeight: '40px',
                     background: 'var(--surface-subtle)',
@@ -1419,7 +1484,7 @@ export default function NotificationSettingsPage() {
                   placeholder="쇼핑몰 (예: 쿠팡)"
                   aria-label="쇼핑몰 필터 입력"
                   style={{
-                    flex: '1 1 120px',
+                    flex: '1 1 110px',
                     minWidth: 0,
                     minHeight: '40px',
                     background: 'var(--surface-subtle)',
@@ -1430,6 +1495,28 @@ export default function NotificationSettingsPage() {
                     fontSize: '0.84rem',
                   }}
                 />
+                <button
+                  type="button"
+                  aria-pressed={onlyHotInput}
+                  onClick={() => setOnlyHotInput((prev) => !prev)}
+                  className="bounce-click"
+                  style={{
+                    minHeight: '40px',
+                    padding: '8px 12px',
+                    borderRadius: '10px',
+                    border: onlyHotInput
+                      ? '1px solid var(--accent-soft-border)'
+                      : '1px solid var(--card-border)',
+                    background: onlyHotInput ? 'var(--accent-soft-bg)' : 'var(--surface-subtle)',
+                    color: onlyHotInput ? 'var(--accent)' : 'var(--text-sub)',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  🔥 인기 딜만 받기
+                </button>
               </div>
             </form>
 
@@ -1444,10 +1531,10 @@ export default function NotificationSettingsPage() {
                 lineHeight: 1.5,
               }}
             >
-              <strong style={{ color: 'var(--text-main)' }}>조건 검색 팁:</strong> 제외할 단어
-              앞에는 <code>-</code>를, 상한 금액 앞에는 <code>:</code>를, 쇼핑몰 지정은{' '}
-              <code>@</code>를 붙여 보세요 (예: <code>아이폰 -케이스</code>,{' '}
-              <code>삼다수 :12000 @쿠팡</code>).
+              <strong style={{ color: 'var(--text-main)' }}>조건 검색 팁:</strong> 제외어는{' '}
+              <code>-</code>, 최소 금액은 <code>&gt;=</code>, 상한 금액은 <code>:</code>, 쇼핑몰은{' '}
+              <code>@</code>, 인기 딜 필터는 <code>+인기</code>를 지원해요 (예:{' '}
+              <code>아이폰 -케이스 &gt;=700000</code>, <code>콜라 -콜라겐 :20000 +인기</code>).
             </div>
 
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1461,7 +1548,7 @@ export default function NotificationSettingsPage() {
               >
                 예시 키워드
               </span>
-              {['아이폰 -케이스', '제로콜라 :15000', '그래픽카드', '닭가슴살', 'PS5 -커버'].map(
+              {['아이폰 -케이스 >=700000', '콜라 -콜라겐 :20000 +인기', '그래픽카드', '닭가슴살', 'PS5 -커버'].map(
                 (tag) => (
                   <button
                     key={tag}
@@ -1646,8 +1733,39 @@ export default function NotificationSettingsPage() {
                             cursor: 'pointer',
                           }}
                         >
-                          {kw.keyword}
-                          {!isActive ? ' (일시정지)' : ''}
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                            {parseKeywordBadgeChips(kw.keyword).map((chip, cIdx) => (
+                              <span
+                                key={`${kw.id}-c-${cIdx}`}
+                                style={
+                                  chip.tone === 'base'
+                                    ? undefined
+                                    : {
+                                        fontSize: '0.72rem',
+                                        fontWeight: 700,
+                                        padding: '2px 6px',
+                                        borderRadius: '6px',
+                                        background:
+                                          chip.tone === 'exclude'
+                                            ? 'var(--danger-bg)'
+                                            : chip.tone === 'hot'
+                                              ? 'var(--deal-orange-bg)'
+                                              : 'var(--card-bg)',
+                                        color:
+                                          chip.tone === 'exclude'
+                                            ? 'var(--danger-text)'
+                                            : chip.tone === 'hot'
+                                              ? 'var(--deal-orange)'
+                                              : 'var(--text-sub)',
+                                        border: '1px solid var(--card-border)',
+                                      }
+                                }
+                              >
+                                {chip.text}
+                              </span>
+                            ))}
+                            {!isActive ? ' (일시정지)' : ''}
+                          </span>
                         </button>
                         <button
                           type="button"

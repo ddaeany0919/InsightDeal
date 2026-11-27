@@ -1145,7 +1145,7 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     expect(onCloseModal).toHaveBeenCalledTimes(1);
   });
 
-  it("DealDetailModal은 본문이 있어도 유효한 aiSummary가 있으면 AI 구매 요약 카드를 노출하고 스텁 배지는 숨긴다", async () => {
+  it("DealDetailModal은 구조화 aiSummaryItems(또는 레거시 aiSummary)로 키-밸류 AI 구매 요약 카드와 원문 접힘 토글을 렌더링하고, 37자 단순 딜에서는 스텁·폴백 카드를 숨긴다", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: false,
       status: 404,
@@ -1155,8 +1155,14 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     const { rerender } = render(
       <DealDetailModal
         deal={buildDeal(904, {
-          contentHtml: "<p>토스앱 혜택 2천원 쿠폰 + 오늘의집 1천원 쿠폰 적용 시 19,440원</p>",
-          aiSummary: "✅ 체감가/혜택: 토스결제 19,440원\n✅ 구매방법/스펙\n총 60캔 (250ml 각 30캔)\n✅ 필수조건/주의: 쿠폰 2종 필수",
+          contentHtml:
+            "<p>토스앱 혜택 2천원 쿠폰 받기\n오늘의집 블프 래플 1천원 뽑기\n둘다 적용하고 토스결제하면 19,440원</p>",
+          aiSummaryItems: [
+            { k: "체감가", v: "19,440원 (토스결제 시)" },
+            { k: "구매경로", v: "토스 2천원 + 오늘의집 1천원 적용" },
+            { k: "주의", v: "쿠폰 2종 필수" },
+          ],
+          isHotAiCertified: true,
         })}
         onClose={vi.fn()}
         showToast={vi.fn()}
@@ -1164,15 +1170,26 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     );
 
     expect(screen.getByLabelText("AI 구매 요약")).toBeInTheDocument();
-    expect(screen.getByText(/✅ 체감가\/혜택: 토스결제 19,440원/)).toBeInTheDocument();
-    expect(screen.getByText(/✅ 구매방법\/스펙: 총 60캔/)).toBeInTheDocument();
-    expect(screen.getByText(/✅ 필수조건\/주의: 쿠폰 2종 필수/)).toBeInTheDocument();
+    expect(screen.getByText("커뮤니티 인기")).toBeInTheDocument();
+    expect(screen.getByText("체감가")).toBeInTheDocument();
+    expect(screen.getByText("19,440원 (토스결제 시)")).toBeInTheDocument();
+    expect(screen.getByText("구매경로")).toBeInTheDocument();
+    expect(screen.getByText("토스 2천원 + 오늘의집 1천원 적용")).toBeInTheDocument();
+    expect(screen.getByText("주의")).toBeInTheDocument();
 
+    // 복합 딜의 상세 본문은 기본 접힘(미리보기) -> 토글 클릭 시 전체 펼쳐짐
+    const expandBtn = screen.getByRole("button", { name: /원문 전체 보기/ });
+    expect(expandBtn).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(expandBtn);
+    expect(screen.getByRole("button", { name: /원문 접기/ })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(/둘다 적용하고 토스결제하면 19,440원/)).toBeInTheDocument();
+
+    // 27966 사례: 본문 37자 단순 딜 + 스텁 배지 -> AI 요약 & 핵심 3줄 체크 모두 숨기고 본문 2줄만 노출
     rerender(
       <DealDetailModal
-        deal={buildDeal(905, {
-          contentHtml: "<p>일반 본문 텍스트입니다.</p>",
-          aiSummary: "🔥 [커뮤니티 인증 핫딜]",
+        deal={buildDeal(27966, {
+          contentHtml: "<p>전골이나 수육 등 다양하게 활용 가능<br>손질되어 있어 바로 사용하면 됨</p>",
+          aiSummary: "🔥 [커뮤니티 인증 핫딜] ",
         })}
         onClose={vi.fn()}
         showToast={vi.fn()}
@@ -1180,6 +1197,24 @@ describe("P1 UI 리뉴얼 · 테마 · 11종 플랫폼 · 이미지 폴백 · �
     );
 
     expect(screen.queryByLabelText("AI 구매 요약")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("핫딜 핵심 요약 카드")).not.toBeInTheDocument();
+    expect(screen.getByText(/전골이나 수육 등 다양하게 활용 가능/)).toBeInTheDocument();
+
+    // 레거시 문자열 폴백 호환 검증
+    rerender(
+      <DealDetailModal
+        deal={buildDeal(906, {
+          contentHtml: "<p>레거시 테스트 본문</p>",
+          aiSummary: "✅ 체감가/혜택: 9,900원\n✅ 주의: 선착순",
+        })}
+        onClose={vi.fn()}
+        showToast={vi.fn()}
+      />
+    );
+    expect(screen.getByLabelText("AI 구매 요약")).toBeInTheDocument();
+    expect(screen.getByText("체감가/혜택")).toBeInTheDocument();
+    expect(screen.getByText("9,900원")).toBeInTheDocument();
+
     fetchMock.mockRestore();
   });
 });
