@@ -13,7 +13,7 @@ from typing import Callable, Optional
 
 import httpx
 from bs4 import BeautifulSoup
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 # 환경 셋업
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -56,6 +56,22 @@ _PROVIDER_COOLDOWN_UNTIL: dict[str, float] = {}
 _MICROBATCH_LOCK = threading.Lock()
 _PENDING_DEAL_IDS: list[int] = []
 _MICROBATCH_TASK: Optional[asyncio.Task] = None
+
+_STUB_AI_SUMMARIES = (
+    "",
+    "🔥 [커뮤니티 인증 핫딜]",
+    "[커뮤니티 인증 핫딜]",
+    "🔥 [커뮤니티 인기]",
+    "[커뮤니티 인기]",
+    "[모음전]",
+)
+
+
+def _unsummarized_ai_filter():
+    return or_(
+        Deal.ai_summary.is_(None),
+        func.trim(Deal.ai_summary).in_(_STUB_AI_SUMMARIES),
+    )
 
 
 class _ProviderCallError(Exception):
@@ -615,7 +631,7 @@ def process_ai_batch(
                 db.query(Deal)
                 .filter(
                     Deal.id.in_(unique_ids),
-                    or_(Deal.ai_summary.is_(None), Deal.ai_summary == ""),
+                    _unsummarized_ai_filter(),
                 )
                 .order_by(Deal.id.desc())
                 .all()
@@ -625,7 +641,7 @@ def process_ai_batch(
             deals_to_process = (
                 db.query(Deal)
                 .filter(
-                    or_(Deal.ai_summary.is_(None), Deal.ai_summary == ""),
+                    _unsummarized_ai_filter(),
                     Deal.price != "0",
                     Deal.price.isnot(None),
                     or_(Deal.is_closed == False, Deal.is_closed.is_(None)),
@@ -786,7 +802,7 @@ def run_all_batches(max_batches: int = 20) -> int:
             count = (
                 db.query(Deal)
                 .filter(
-                    or_(Deal.ai_summary.is_(None), Deal.ai_summary == ""),
+                    _unsummarized_ai_filter(),
                     Deal.price != "0",
                     Deal.price.isnot(None),
                     or_(Deal.is_closed == False, Deal.is_closed.is_(None)),

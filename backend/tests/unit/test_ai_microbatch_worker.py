@@ -602,3 +602,77 @@ def test_strip_preview_removes_image_tags_and_fallback_bypasses_min_interval(tmp
     assert process_ai_batch(deal_ids=deal_ids, db_session_factory=SessionFactory) == 1
     assert len(calls) == 2
     assert "api.groq.com" in calls[1]
+
+
+def test_stub_badge_ai_summaries_are_treated_as_unsummarized(tmp_path, monkeypatch):
+    """배지 스텁('🔥 [커뮤니티 인증 핫딜] ' 등)만 채워진 인기 딜도 미요약으로 취급하고 기존 실요약은 보존해야 한다."""
+    SessionFactory = _create_isolated_session_factory(tmp_path)
+    deal_ids = _seed_deals(SessionFactory, count=3)
+    db = SessionFactory()
+    try:
+        d0 = db.query(Deal).filter(Deal.id == deal_ids[0]).first()
+        d1 = db.query(Deal).filter(Deal.id == deal_ids[1]).first()
+        d2 = db.query(Deal).filter(Deal.id == deal_ids[2]).first()
+        d0.ai_summary = "🔥 [커뮤니티 인증 핫딜] "
+        d1.ai_summary = "🔥 [커뮤니티 인기] "
+        d2.ai_summary = "✅ 체감가/혜택: 이미 요약 완료\n✅ 구매방법/스펙: B\n✅ 필수조건/주의: C"
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setenv("USE_GEMINI_AI", "true")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini_stub_filter_key_1234")
+
+    sent_ids_batches = []
+
+    def mock_post(self, url, **kwargs):
+        text = kwargs["json"]["contents"][0]["parts"][0]["text"]
+        payload_part = json.loads(text.split("입력:", 1)[1])
+        batch_ids = [item["id"] for item in payload_part]
+        sent_ids_batches.append(batch_ids)
+        return _MockHttpResp(
+            200,
+            {
+                "usageMetadata": {"totalTokenCount": 240},
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "text": json.dumps(
+                                        [
+                                            {
+                                                "id": did,
+                                                "ai_summary": f"✅ 실요약 교체 {did}\n✅ B\n✅ C",
+                                            }
+                                            for did in batch_ids
+                                        ],
+                                        ensure_ascii=False,
+                                    )
+                                }
+                            ]
+                        }
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+
+    # 1) deal_ids=None 자동 배치에서 d0, d1 선택 & d2 보존 확인
+    updated_auto = process_ai_batch(deal_ids=[deal_ids[0], deal_ids[2]], db_session_factory=SessionFactory)
+    assert updated_auto == 1
+    assert sent_ids_batches[0] == [deal_ids[0]]
+
+    # 2) deal_ids=None에서도 남은 스텁 딜(d1)이 선택되는지 확인
+    updated_unfiltered = process_ai_batch(deal_ids=None, db_session_factory=SessionFactory)
+    assert updated_unfiltered == 1
+    assert sent_ids_batches[1] == [deal_ids[1]]
+
+    db = SessionFactory()
+    try:
+        assert "실요약 교체" in db.query(Deal).filter(Deal.id == deal_ids[0]).first().ai_summary
+        assert "실요약 교체" in db.query(Deal).filter(Deal.id == deal_ids[1]).first().ai_summary
+        assert "이미 요약 완료" in db.query(Deal).filter(Deal.id == deal_ids[2]).first().ai_summary
+    finally:
+        db.close()
