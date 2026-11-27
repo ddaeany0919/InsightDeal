@@ -165,6 +165,12 @@ def _is_valid_option_name(name: str) -> bool:
         return False
     if re.match(r"^(?:토스|네이버|카카오|페이코|카드)\s*결제\s*\d[\d,]*\s*[Pp원]?\s*적립", n, re.IGNORECASE):
         return False
+    if re.match(
+        r"^(?:(?:이벤트|선착순|추가|중복|장바구니|스토어|카드|결제|리뷰|네이버페이|네페|토스|카카오|스마일|출석|앱)\s*)*(?:적립금?|포인트|캐시|쿠폰|할인|상품권)\s*(?:사용|적용|결제|할인|적립|차감|포함|증정)(?:\s*시)?$",
+        n,
+        re.IGNORECASE,
+    ):
+        return False
     if re.search(r"(?:어플|앱|모바일|웹|PC)에서만\s*(?:주문|구매|결제|적용)", n, re.IGNORECASE):
         return False
     if _FAKE_OPTION_NAME_RE.match(n):

@@ -246,3 +246,46 @@ def test_cloud_feeder_byte_parity():
     p1 = os.path.join(_BACKEND_DIR, "scheduler", "cloud_feeder.py")
     p2 = os.path.join(_BACKEND_DIR, "scripts", "cloud_feeder.py")
     assert open(p1, "rb").read() == open(p2, "rb").read()
+
+
+def test_bridge_stale_deals_expire_and_loader_skips_fmkorea(monkeypatch):
+    """브릿지 의존 게시판은 5일 경과 시 자동 마감되고, 핑 대상 로더는 fmkorea를 제외한다."""
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine)
+    TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    monkeypatch.setattr(sched_main, "SessionLocal", TestingSession)
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with TestingSession() as db:
+        c_pp = Community(id=1, name="ppomppu", display_name="뽐뿌", base_url="https://www.ppomppu.co.kr")
+        c_fm = Community(id=2, name="fmkorea", display_name="펨코", base_url="https://www.fmkorea.com")
+        c_qz = Community(id=3, name="quasarzone", display_name="퀘이사존", base_url="https://quasarzone.com")
+        c_rl = Community(id=4, name="ruliweb", display_name="루리웹", base_url="https://bbs.ruliweb.com")
+        db.add_all([c_pp, c_fm, c_qz, c_rl])
+        db.commit()
+
+        db.add_all([
+            Deal(source_community_id=1, title="뽐뿌 6일", post_link="https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=1", is_closed=False, indexed_at=now - timedelta(days=6)),
+            Deal(source_community_id=3, title="퀘이사존 6일", post_link="https://quasarzone.com/bbs/qb_saleinfo/views/2", is_closed=False, indexed_at=now - timedelta(days=6)),
+            Deal(source_community_id=2, title="펨코 6일", post_link="https://www.fmkorea.com/1060000001", is_closed=False, indexed_at=now - timedelta(days=6)),
+            Deal(source_community_id=4, title="루리웹 6일", post_link="https://bbs.ruliweb.com/market/board/1020/read/109000", is_closed=False, indexed_at=now - timedelta(days=6)),
+            Deal(source_community_id=2, title="펨코 15일", post_link="https://www.fmkorea.com/1050000002", is_closed=False, indexed_at=now - timedelta(days=15)),
+        ])
+        db.commit()
+
+    targets = sched_main._load_recent_open_deals_sync()
+    target_urls = {t[1] for t in targets}
+    assert "https://www.fmkorea.com/1060000001" not in target_urls
+    assert "https://bbs.ruliweb.com/market/board/1020/read/109000" in target_urls
+
+    expired = sched_main._auto_expire_stale_deals_sync(max_age_days=14, bridge_max_age_days=5)
+    assert expired == 3
+
+    with TestingSession() as db:
+        closed_map = {d.title: d.is_closed for d in db.query(Deal).all()}
+        assert closed_map["뽐뿌 6일"] is True
+        assert closed_map["퀘이사존 6일"] is True
+        assert closed_map["펨코 15일"] is True
+        assert closed_map["펨코 6일"] is False
+        assert closed_map["루리웹 6일"] is False
+

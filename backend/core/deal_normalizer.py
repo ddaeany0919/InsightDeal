@@ -768,7 +768,8 @@ def _normalize_shipping_fee_cached(raw_fee_str: str, title_hint: str) -> str:
 
         return None
 
-    res = _classify_single(s)
+    is_truncated_fee = bool(re.search(r"(?:\.{2,}|…)\s*$", s))
+    res = "" if is_truncated_fee else _classify_single(s)
     if res is None:
         res = s if len(s) <= 16 else ""
 

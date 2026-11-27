@@ -398,9 +398,14 @@ def _load_recent_open_deals_sync() -> list[tuple[int, str, str | None, str]]:
         target_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
         rows = (
             db.query(Deal.id, Deal.post_link, Deal.merged_communities, Deal.title)
-            .filter(Deal.is_closed == False, Deal.indexed_at >= target_date)
+            .filter(
+                Deal.is_closed == False,
+                Deal.indexed_at >= target_date,
+                ~Deal.post_link.contains("fmkorea.com"),
+                ~Deal.post_link.contains("fmkorea.org"),
+            )
             .order_by(Deal.indexed_at.desc())
-            .limit(150)
+            .limit(200)
             .all()
         )
         return [(int(r[0]), r[1] or "", r[2], r[3] or "") for r in rows]
@@ -469,20 +474,57 @@ def _detect_closed_soup_sync(resp_content: bytes, url: str = "") -> bool:
     return False
 
 
-def _auto_expire_stale_deals_sync(max_age_days: int = 14) -> int:
-    """장기(14일+) 미갱신 활성 딜을 자동 마감 처리하여 좀비 핫딜 노출을 방지합니다."""
+_BRIDGE_STALE_EXPIRE_COMMUNITIES = (
+    "ppomppu",
+    "ali_ppomppu",
+    "ppomppu_overseas",
+    "quasarzone",
+)
+
+
+def _auto_expire_stale_deals_sync(
+    max_age_days: int = 14,
+    bridge_max_age_days: int | None = None,
+) -> int:
+    """장기(14일+) 미갱신 활성 딜 및 해외 IP 차단 브릿지 의존 게시판 단기 만료 딜을 자동 마감 처리합니다."""
     db = SessionLocal()
     try:
-        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max_age_days)
-        updated = (
+        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+        cutoff = now_naive - timedelta(days=max_age_days)
+        updated = int(
             db.query(Deal)
             .filter(Deal.is_closed == False, Deal.indexed_at < cutoff)
             .update({Deal.is_closed: True}, synchronize_session=False)
+            or 0
         )
-        if updated:
+        bridge_updated = 0
+        if bridge_max_age_days is not None and bridge_max_age_days > 0:
+            bridge_cutoff = now_naive - timedelta(days=bridge_max_age_days)
+            bridge_cids = [
+                int(r[0])
+                for r in db.query(Community.id)
+                .filter(Community.name.in_(_BRIDGE_STALE_EXPIRE_COMMUNITIES))
+                .all()
+            ]
+            if bridge_cids:
+                bridge_updated = int(
+                    db.query(Deal)
+                    .filter(
+                        Deal.is_closed == False,
+                        Deal.source_community_id.in_(bridge_cids),
+                        Deal.indexed_at < bridge_cutoff,
+                    )
+                    .update({Deal.is_closed: True}, synchronize_session=False)
+                    or 0
+                )
+        total_updated = updated + bridge_updated
+        if total_updated:
             db.commit()
-            logger.info(f"🧹 [Auto-Expire] {max_age_days}일 경과 장기 미갱신 딜 {updated}건 자동 마감 완료")
-        return int(updated or 0)
+            logger.info(
+                f"🧹 [Auto-Expire] {max_age_days}일 경과 {updated}건 + "
+                f"브릿지({bridge_max_age_days}일) 경과 {bridge_updated}건 자동 마감 완료"
+            )
+        return total_updated
     except Exception:
         db.rollback()
         raise
@@ -664,7 +706,7 @@ async def validate_closed_deals():
                 except Exception as deal_err:
                     logger.error(f"[Validator Deal Error] Deal ID {deal_id}: {deal_err}")
 
-        stale_expired = await _run_bg_blocking(_auto_expire_stale_deals_sync, 14)
+        stale_expired = await _run_bg_blocking(_auto_expire_stale_deals_sync, 14, 5)
         logger.info(f"✅ 상태 검증 완료: 총 {len(deal_targets)}개 핑(Ping) 테스트 수행 -> {closed_count}개 품절 처리 (장기만료 {stale_expired}건)")
     except Exception as e:
         logger.error(f"❌ 상태 검증 데몬 에러: {e}")
@@ -788,7 +830,7 @@ def db_maintenance_job():
             logger.warning(f"⚠️ 만료 기기 동기화 코드 정리 건너뜀: {pairing_err}")
         stale_expired = 0
         try:
-            stale_expired = _auto_expire_stale_deals_sync(14)
+            stale_expired = _auto_expire_stale_deals_sync(14, bridge_max_age_days=5)
         except Exception as stale_err:
             logger.warning(f"⚠️ 장기 미갱신 딜 자동 마감 건너뜀: {stale_err}")
         logger.info(f"✅ [새벽 4시 통합 유지보수 성공] {summary} | pairing_cleaned={cleaned_pairing} | stale_expired={stale_expired}")

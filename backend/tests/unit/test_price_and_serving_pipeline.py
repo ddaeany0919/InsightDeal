@@ -1313,5 +1313,23 @@ async def test_truncated_comma_price_in_title_and_upsert_preservation(mem_db):
     assert updated.is_super_hotdeal is True
 
 
+def test_truncated_shipping_fee_and_reward_use_option_guard():
+    from backend.services.aggregator_service import extract_structured_multi_options
+
+    assert normalize_shipping_fee("...", title_hint="[g마켓] Gta6 (80,800 / 무배)") == "무료배송"
+    assert normalize_shipping_fee("무료...", title_hint="[지마켓] 피오 FT1 (145,540원/무료)") == "무료배송"
+    assert normalize_shipping_fee("무...", title_hint="[쿠팡와우] 하늘보리 (11,120원/무료)") == "무료배송"
+    assert normalize_shipping_fee("배송비 다양...", title_hint="[소프라노] 스위치 (46,000원/배송비 다양)") == ""
+
+    opts = extract_structured_multi_options(
+        "[GS#] 제주 삼다수 무라벨 2L X 6병 (6,800/0) 이벤트 적립금 사용시 3,800원",
+        "",
+        default_currency="KRW",
+        default_url="https://www.gsshop.com/prd/prd.gs?prdid=65430051",
+    )
+    assert all("적립금 사용" not in str(o.get("name") or "") for o in opts)
+
+
+
 
 
